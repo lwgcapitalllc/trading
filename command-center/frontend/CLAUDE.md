@@ -3,7 +3,7 @@
 **Purpose:** React + Vite + TypeScript app (`:5173`) — the UI for the command center; all server state via TanStack Query against the FastAPI backend.
 **Scope:** This covers frontend hook/component/page conventions, the theme system, and routing. It does NOT cover the backend (see `../backend/CLAUDE.md`) or `algos/`/`smart-money/`.
 **Status:** Live — all pages shipped (Overview, Smart Money, Bots, Strategies, Rulesets, Backtests lab, Optimizations, Tuning workbench, Stress Tests, Settings).
-**Last reviewed:** 2026-07-31 — **the Performance panel's rows became label + ⓘ + number, and validating its numbers turned up three that were saying the wrong thing.** Every explanation moved onto the label's tooltip, which deleted the ragged right column and the re-explaining suffixes in one move (`4 days · consecutive losing`); the panel now collapses to its three heroes + the drawdown meter, default ON, so the equity curve shares the fold. The three metric bugs: `worst_losing_streak` counts **trades**, not days (the real worst run of losing calendar days was 2, not 4); time underwater is weighted by the **calendar**, not by row count (`daily_pnl` omits flat days, so 67% "of days" was 67% of ACTIVE days — 71% by the clock); and profit concentration was measured in **dollars**, which on a compounding account reports the compounding — 89% ("edge clustered — overfit risk", the page's only warning colour) against an honest 40%. Plus `fmtDate` parsed dates as UTC midnight and printed a day early in five separate copies. See `## Backtest detail — chart and KPI conventions`. Earlier the same day: **the Evaluation + Performance panel was rebuilt as `PerformancePanel`: a verdict ribbon over three question cards** (Made / Risked / Trusted), replacing the 6+6 `KpiGrid` and its evaluation card. That layout caused all three standing complaints at once — cropped values (a fixed `KPI_ROW_H` on variable content), visibly uneven cards (`KPI_COLS` widened for one long money value), and an empty evaluation box on `unconstrained` — and none was fixable by resizing. Metrics group by the question they answer, so every one fits at once: **the expand toggle and both fixed heights are deleted**, `StackDetail` included. Two rules landed with it: **colour marks the exception, not the sign** (a wall of green ranks nothing, Worst Day can only be negative, and Sharpe 0.91 is positive AND weak — soft numbers say so in words), and the new **`DrawdownMeter` may never invent its references** — the gold limit tick only when the ruleset states a peak-% limit, the hatched tail only from a `dd_basis === 'percent'` stress test, otherwise it says the tail is *unknown, not zero*. The trade count became the ribbon's anchor with its `≈2/month` cadence. See `## Backtest detail — chart and KPI conventions`. Earlier: 2026-07-30 — **Max Drawdown and Calmar were measuring against a static account balance and both were wrong on any compounding run** (1096.7% and a red 0.11 on a run whose true figures are 54.9% and 2.25). Both now divide by the running PEAK — see `## Backtest detail — chart and KPI conventions` → *Drawdown is peak-relative*. Same day: the price chart's **scroll-left paging shows itself** (the blank strip you scroll into is shaded from the oldest loaded bar back, with a `Loading earlier bars…` chip — see `ChartPanel/CLAUDE.md` → *Paging older history*), and the News & Holiday filter **stopped duplicating the KPIs and now reshapes the real ones**. It has no section of its own: it is a pill on the empty half of the **Performance** header, driving the actual `PerformancePanel` (via a synthesized filtered `Run`) plus the Equity chart, with each card's caption swapped for its delta vs unfiltered. Bank holidays became a real checkbox (ticked by default) instead of a hidden always-on rule, every label became a COUNT rather than a state word, and `exit_ms` on `EquityPoint` made **Avg Trade** computable over a subset. See `## The News & Holiday filter` below — especially the four things that deliberately do NOT follow the filter. Earlier: 2026-07-29 — the price chart's **fib levels are configurable** (add / remove / retune / recolour / hide, per drawing or as the tool's persisted default), and the News & Holiday filter became a collapsed-by-default accordion whose state lives in a page-level `useNewsFilter` hook, so the MAIN Equity chart redraws on the kept trades (its own duplicate mini-curve is gone); 2026-07-28 — price chart: a **Go to date** pill that jumps the view to a typed date (paging history in on the way); earlier, the Analysis dropdown (Trades + Winners/Losers, Blocked and **Missed** + per-reason filters), and it now ships/opens on the run's own timeframe with older history paged in on scroll-left
+**Last reviewed:** 2026-07-31 — **the verdict left its full-width bar and became the FOURTH card**, right of Trusted, which takes the section to **180px collapsed / 305px expanded** at 1670 (from 234 / 345, and 318 / 496 on this panel's first build). The bar was charging a whole row — 44px plus its gap, in both states — on a panel whose point is fitting on one screen with the equity curve. **The move was only safe because the content changed shape with it, and that is the transferable lesson:** the rules were inline pills laid out by wrap, fine at full width and five lines at a quarter of it, and since the grid is `items-stretch` a tall fourth card drags the other three with it — as rows each rule is 24px whatever it says. The card anatomy (`panelCardCls` / `CardHead` / `CardHero` / `PanelRows`) moved to module scope so the fourth card cannot drift from the three beside it; `verdict` and `ribbon` are separate props because two callers still want a bar (a stack's strategy legend is genuinely horizontal, an optimizer combo has no verdict at all); and breakpoints are set by the longest real rule label, measured at 118px. See `## Backtest detail — chart and KPI conventions` → *The verdict is a card, not a bar*. Earlier the same day: **the Performance panel's rows became label + ⓘ + number, and validating its numbers turned up three that were saying the wrong thing.** Every explanation moved onto the label's tooltip, which deleted the ragged right column and the re-explaining suffixes in one move (`4 days · consecutive losing`); the panel now collapses to its three heroes + the drawdown meter, default ON, so the equity curve shares the fold. The three metric bugs: `worst_losing_streak` counts **trades**, not days (the real worst run of losing calendar days was 2, not 4); time underwater is weighted by the **calendar**, not by row count (`daily_pnl` omits flat days, so 67% "of days" was 67% of ACTIVE days — 71% by the clock); and profit concentration was measured in **dollars**, which on a compounding account reports the compounding — 89% ("edge clustered — overfit risk", the page's only warning colour) against an honest 40%. Plus `fmtDate` parsed dates as UTC midnight and printed a day early in five separate copies. See `## Backtest detail — chart and KPI conventions`. Earlier the same day: **the Evaluation + Performance panel was rebuilt as `PerformancePanel`: a verdict ribbon over three question cards** (Made / Risked / Trusted), replacing the 6+6 `KpiGrid` and its evaluation card. That layout caused all three standing complaints at once — cropped values (a fixed `KPI_ROW_H` on variable content), visibly uneven cards (`KPI_COLS` widened for one long money value), and an empty evaluation box on `unconstrained` — and none was fixable by resizing. Metrics group by the question they answer, so every one fits at once: **the expand toggle and both fixed heights are deleted**, `StackDetail` included. Two rules landed with it: **colour marks the exception, not the sign** (a wall of green ranks nothing, Worst Day can only be negative, and Sharpe 0.91 is positive AND weak — soft numbers say so in words), and the new **`DrawdownMeter` may never invent its references** — the gold limit tick only when the ruleset states a peak-% limit, the hatched tail only from a `dd_basis === 'percent'` stress test, otherwise it says the tail is *unknown, not zero*. The trade count became the ribbon's anchor with its `≈2/month` cadence. See `## Backtest detail — chart and KPI conventions`. Earlier: 2026-07-30 — **Max Drawdown and Calmar were measuring against a static account balance and both were wrong on any compounding run** (1096.7% and a red 0.11 on a run whose true figures are 54.9% and 2.25). Both now divide by the running PEAK — see `## Backtest detail — chart and KPI conventions` → *Drawdown is peak-relative*. Same day: the price chart's **scroll-left paging shows itself** (the blank strip you scroll into is shaded from the oldest loaded bar back, with a `Loading earlier bars…` chip — see `ChartPanel/CLAUDE.md` → *Paging older history*), and the News & Holiday filter **stopped duplicating the KPIs and now reshapes the real ones**. It has no section of its own: it is a pill on the empty half of the **Performance** header, driving the actual `PerformancePanel` (via a synthesized filtered `Run`) plus the Equity chart, with each card's caption swapped for its delta vs unfiltered. Bank holidays became a real checkbox (ticked by default) instead of a hidden always-on rule, every label became a COUNT rather than a state word, and `exit_ms` on `EquityPoint` made **Avg Trade** computable over a subset. See `## The News & Holiday filter` below — especially the four things that deliberately do NOT follow the filter. Earlier: 2026-07-29 — the price chart's **fib levels are configurable** (add / remove / retune / recolour / hide, per drawing or as the tool's persisted default), and the News & Holiday filter became a collapsed-by-default accordion whose state lives in a page-level `useNewsFilter` hook, so the MAIN Equity chart redraws on the kept trades (its own duplicate mini-curve is gone); 2026-07-28 — price chart: a **Go to date** pill that jumps the view to a typed date (paging history in on the way); earlier, the Analysis dropdown (Trades + Winners/Losers, Blocked and **Missed** + per-reason filters), and it now ships/opens on the run's own timeframe with older history paged in on scroll-left
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
@@ -90,7 +90,7 @@ frontend/src/
     ├── BacktestDetail.tsx    **Tune button carries a COUNT badge** of the iterations already run from this run (`source_run_id === runId`, off the unfiltered `useBacktestRuns()` so it shares the Runs list's cache entry) — clicking it opens the workbench where they all live. Without the badge the only way to discover a run had ever been tuned was to go back to the Runs list and spot the nested Tune rows. Full run detail — params side panel, per-firm evaluation + KPIs, tabbed charts, logs, News & Holiday filter (inline `NewsFilterPill`/`ExcludeRule`/`PerformanceHeader`, driven by the page's `useNewsFilter` hook — which feeds the KPI grid AND the Equity chart)
     ├── StrategyDetail.tsx    strategy "spec sheet" — overview + grouped param reference tables
     ├── SweepDetail.tsx       sweep results — live-updating table sorted by worthiness tier
-    ├── StackDetail.tsx       portfolio stack (`/backtests/stacks/:stackId`). `composeCombined` unions the enabled legs' trades over one shared account (combined start = Σ each leg's opening balance) into a synthetic backtest-shaped `run` + portfolio equity, tagging each equity point with a `leg_<id>` running-balance field for the overlay lines. **Trades + Performance = a single backtest's own panel**: BacktestDetail's exported `PerformancePanel` (ribbon + Made/Risked/Trusted), with `StackTradesRibbon` passed into the `ribbon` slot — the per-strategy trade breakdown inline and the combined total anchored right, in the row a backtest puts its verdict. Recomputes as strategies toggle. (Was a fixed-height `StackTradesCard` beside the 6+6 grid; both that grid and its pinned height are gone.) Charts are a `ChartTabPanel` (Equity / Price / Breakdown) with the SAME controls as a run: **Equity** is the real exported `EquityCurveChart` on the combined portfolio (so it inherits every toggle — Trade excursions, Run-ups & drawdowns, Date/Trade `XModeToggle`, Regimes `RegimeOverlayToggle`, expand) with a line per enabled strategy overlaid via the new `overlayLines` prop; Breakdown reuses exported `DrawdownChart`/`DailyPnlChart`/`DirectionBreakdown`; Price is exported `PriceChartView` fed the merged stack spec (structure layers/fib/measurement/expand/minimize, drill-down via `base_run_id`, trades layered + tinted per strategy). Regime bands come from `StackDetail.regime_timeline` (backend computes it on-demand for the shared window — sweep-child legs aren't tagged — and caches it). Everything recomputes on the per-strategy chips (≥1 always on). **Rerun** opens the shared `StackConfigModal` prefilled with the stack's full config. Per-strategy row → that leg's BacktestDetail with `state:{fromStack}` so its Back returns here; reused legs are real standalone runs. Trades handed to the price chart carry `layerColor` + `layerName`, which is what makes the chart print `<strategy> · Won` in each outcome chip and build its own **Strategies** dropdown (see `ChartPanel/CLAUDE.md`). `avg_trade_duration_min` is the legs' own averages **trade-weighted** (you can't average durations flat), and profit factor reports `Infinity` when the enabled legs have no losing trade — the Made card prints ∞ rather than a dash that reads as missing data
+    ├── StackDetail.tsx       portfolio stack (`/backtests/stacks/:stackId`). `composeCombined` unions the enabled legs' trades over one shared account (combined start = Σ each leg's opening balance) into a synthetic backtest-shaped `run` + portfolio equity, tagging each equity point with a `leg_<id>` running-balance field for the overlay lines. **Trades + Performance = a single backtest's own panel**: BacktestDetail's exported `PerformancePanel` (Made/Risked/Trusted), with `StackTradesRibbon` passed into the `ribbon` slot — the per-strategy trade breakdown inline and the combined total anchored right. A stack keeps the BAR while a backtest moved its verdict into a fourth card, and that is deliberate: a legend is one entry per leg with its colour, so it is genuinely horizontal and would wrap badly in a quarter-width column. Recomputes as strategies toggle. (Was a fixed-height `StackTradesCard` beside the 6+6 grid; both that grid and its pinned height are gone.) Charts are a `ChartTabPanel` (Equity / Price / Breakdown) with the SAME controls as a run: **Equity** is the real exported `EquityCurveChart` on the combined portfolio (so it inherits every toggle — Trade excursions, Run-ups & drawdowns, Date/Trade `XModeToggle`, Regimes `RegimeOverlayToggle`, expand) with a line per enabled strategy overlaid via the new `overlayLines` prop; Breakdown reuses exported `DrawdownChart`/`DailyPnlChart`/`DirectionBreakdown`; Price is exported `PriceChartView` fed the merged stack spec (structure layers/fib/measurement/expand/minimize, drill-down via `base_run_id`, trades layered + tinted per strategy). Regime bands come from `StackDetail.regime_timeline` (backend computes it on-demand for the shared window — sweep-child legs aren't tagged — and caches it). Everything recomputes on the per-strategy chips (≥1 always on). **Rerun** opens the shared `StackConfigModal` prefilled with the stack's full config. Per-strategy row → that leg's BacktestDetail with `state:{fromStack}` so its Back returns here; reused legs are real standalone runs. Trades handed to the price chart carry `layerColor` + `layerName`, which is what makes the chart print `<strategy> · Won` in each outcome chip and build its own **Strategies** dropdown (see `ChartPanel/CLAUDE.md`). `avg_trade_duration_min` is the legs' own averages **trade-weighted** (you can't average durations flat), and profit factor reports `Infinity` when the enabled legs have no losing trade — the Made card prints ∞ rather than a dash that reads as missing data
     ├── Optimizations.tsx     own top-level page (/optimizations) — optimization list table
     ├── OptimizationDetail.tsx  optimizer results (/optimizations/:id) — table/bar-chart toggle, "Tune winner"
     ├── TuningWorkbench.tsx   /backtests/runs/:runId/tune — param editor + iteration leaderboard + regime overlay. The **Equity overlay** plots ACCOUNT BALANCE (not cumulative P&L from $0) off each run's own `equity_curve` — the same points BacktestDetail's equity chart draws — so the baseline traces an identical path there and here. It reuses that chart's conventions wholesale: starting balance derived as `equity[0] - profit[0]`, y-ticks anchored ON it, dashed break-even ReferenceLine, and the baseline as a monotone `Area` with `baseValue={startBal}` + the split green/red stroke and fill (split offset mapped to the filled shape's bbox, same math). Iterations ride on top as dashed palette Lines. Every run is anchored at the window's start date so the lines share a left edge, and balances FORWARD-FILL on days a run didn't trade (nulls + `connectNulls` drew a fake diagonal across flat stretches); `<runId>__pt` marks the real trade rows so only those get a dot. Regime bands come from ONE `date → regime` map, built TIMELINE-FIRST: the baseline's full-calendar `regime_timeline` if it has one, else any iteration's, else (pre-timeline runs) every run's tagged `daily_pnl` days merged — a run only reports days it traded, so any single run's tags leave the calendar full of holes. Fullscreen has the camera + minimize buttons. Its header controls are the run page's, in the run page's order and spacing — `XModeToggle` then `RegimeOverlayToggle`, `gap-2`. It carries the SAME `XModeToggle` as the run page and reads the SAME stored preference (`lib/chartAxis.ts` `getXMode`/`setXModePref`), so the two pages can never disagree about the axis: Date plots the calendar, Trade # keys each run's curve by trade ordinal (`balByIndex`) and a shorter run simply holds its final balance once it's out of trades. Regime bands project onto whichever axis is active — `regimeBandsFromTimeline` (date) or `regimeBandsByIndex` over the BASELINE's trades (trade #), both fed from one `date → regime` map, timeline-first
@@ -332,9 +332,9 @@ The lab is a platform for designing and stress-testing trading strategies, not a
 
 ## Backtest detail — chart and KPI conventions
 
-BacktestDetail's charts live in one tabbed panel (Equity / Price / Breakdown), each fullscreen-expandable, with a permanent Performance-by-Regime table below. The numbers above them render as **`PerformancePanel` — a verdict ribbon over three question cards** (see the section below). `FitMoney` remains the fallback for genuinely narrow windows: it measures the exact string against its cell and only then drops to `$11.5k`, never rounding harder than one decimal (`$12k` for `$11,525` reads as a different number), keeping 2px of slack off the edge and the exact figure on hover. Verdict colours, chips, and tooltip styling all follow the shared theme tokens (see Theme system above) — nothing here is bespoke to this page.
+BacktestDetail's charts live in one tabbed panel (Equity / Price / Breakdown), each fullscreen-expandable, with a permanent Performance-by-Regime table below. The numbers above them render as **`PerformancePanel` — one row of four question cards** (see the section below). `FitMoney` remains the fallback for genuinely narrow windows: it measures the exact string against its cell and only then drops to `$11.5k`, never rounding harder than one decimal (`$12k` for `$11,525` reads as a different number), keeping 2px of slack off the edge and the exact figure on hover. Verdict colours, chips, and tooltip styling all follow the shared theme tokens (see Theme system above) — nothing here is bespoke to this page.
 
-### The Performance panel is three questions, not twelve peers
+### The Performance panel is four questions, not twelve peers
 
 **Rebuilt 2026-07-31, replacing the 6+6 `KpiGrid`. Read this before adding a metric.**
 
@@ -345,20 +345,22 @@ height on variable content, so the taller cards clipped), **lopsided cards** (`K
 **empty evaluation box** (`unconstrained` states no rules by design, so `EvalCard` rendered 300×196px
 of nothing). None of the three is fixable by resizing; they are all consequences of the layout.
 
-The metrics answer three questions — what did it **Make**, what did it **Risk**, can I **Trust** it —
-so there is one card per question, each with one hero number and its supporting rows. Consequences
-worth knowing before you change it:
+The metrics answer four questions — what did it **Make**, what did it **Risk**, can I **Trust** it,
+and what is the **Verdict** — so there is one card per question, each with one hero number and its
+supporting rows. Consequences worth knowing before you change it:
 
 - **The 6+6 expand toggle is gone**, and with it both fixed heights. Three wide cards hold every
   metric at once, so nothing hides behind a chevron and rows flow instead of clipping. `KPI_ROW_H`,
   `KPI_ROW_H_EXPANDED`, `KPI_COLS`, `MoreMetricsToggle` and `TradeCountStandout` no longer exist —
   in `StackDetail.tsx` either.
-- **The evaluation card became the ribbon.** A row costs no vertical space when a ruleset has little
-  to say and grows a `RuleChip` per rule when it has a lot, so the empty box cannot recur. `StackDetail`
-  passes its per-strategy breakdown into the same `ribbon` slot.
-- **The trade count is the ribbon's anchor**, at 29px with its cadence beneath it (`≈2/month`) —
-  it is the sample size every other number rests on, and cadence is the unit the root `CLAUDE.md`
-  Trading Philosophy states the design target in.
+- **The evaluation card became `VerdictCard`, the fourth card** (2026-07-31, second pass — it was a
+  full-width ribbon in between). The empty box cannot recur because a ruleset with nothing to say
+  simply has no rows. See *The verdict is a card, not a bar* below for why the content had to change
+  shape to move, and what still uses the `ribbon` slot.
+- **The trade count is `VerdictCard`'s hero**, at the same 34px as the other three, with its cadence
+  beneath it (`≈2/month`) — it is the sample size every other number rests on, and cadence is the
+  unit the root `CLAUDE.md` Trading Philosophy states the design target in. It appears exactly once
+  on the panel; printing it in *Trusted* as well made the second copy read as a different number.
 - **`deriveKpis` is unchanged and still the single derivation**, so the news filter's `compare`
   mechanism works exactly as before. Add a metric there first, then to a card's row list.
 - **The whole panel collapses to its heroes** (`collapsed`, persisted under
@@ -367,16 +369,55 @@ worth knowing before you change it:
   equity curve entirely off screen, and the headline and the curve are read together. The three
   heroes and the drawdown meter survive the collapse, so the default still answers "how did this
   run do" without a click. `StackDetail` passes nothing and stays expanded.
-- **Height is measured, not eyeballed.** At 1670×900 with the params panel collapsed, the section
-  (header + ribbon + cards) is **234px collapsed / 359px expanded** — down from 318 / 496 on the
-  first build of this panel, ~27% in both states. Four things carried that, and each is worth
-  knowing before you add height back: the card's **question shares the title's line** (its own row
-  charged ~16px per card, forever, for a sentence nobody re-reads); the meter's **limit-label
-  padding is charged only when a limit exists** (15px of blank card on every ruleset stating
-  none); the **ungraded ribbon sentence is short enough to share line one with the chips** (the
-  long form wrapped and pushed `TradeCountAnchor` to a second row, ~35px in BOTH states); and rows
-  are `py-[4px] leading-[1.3]` at 24px each. Re-measure rather than estimate — the ribbon cost was
-  invisible in the source and only showed up on a real render.
+- **Height is measured, not eyeballed.** At 1670×940 with the params panel collapsed the section
+  (header + cards) is **180px collapsed / 305px expanded**, from 234 / 345 with the ribbon and
+  318 / 496 on the first build of this panel. Things that carried it, each worth knowing before you
+  add height back: the card's **question shares the title's line** (its own row charged ~16px per
+  card, forever, for a sentence nobody re-reads); the meter's **limit-label padding is charged only
+  when a limit exists** (15px of blank card on every ruleset stating none); the **verdict left its
+  own row** (44px + a 10px gap, in both states); and rows are `py-[4px] leading-[1.3]` at 24px each.
+  Re-measure rather than estimate — the biggest single saving on the ribbon build was a sentence
+  that wrapped, which was invisible in the source and only showed up on a real render.
+- **Measuring gotcha, cost an afternoon:** Playwright's option is `newContext({ viewport })`.
+  `viewportSize` is Puppeteer's name, is silently ignored, and every reading lands at the default
+  1280×720 while the script claims 1670. Card *widths* are the tell — if the four sum to ~990 on a
+  1670 run, the viewport never applied. `page.setViewportSize()` IS correct on the page object.
+
+#### The verdict is a card, not a bar
+
+**2026-07-31, second pass.** The verdict went evaluation-box → full-width ribbon → fourth card. The
+bar bought a row it did not need: 44px plus its gap, charged in both states, on a panel whose whole
+point was fitting on one screen with the equity curve.
+
+**Moving it was only safe because the CONTENT changed shape with it, and that is the transferable
+part.** As a bar the rules were inline pills laid out by wrap — fine at 1330px, five or six lines at
+a quarter of that. The grid is `items-stretch`, so a tall fourth card drags the other three up with
+it, and you would trade one 54px row for something worse. As **rows** each rule is 24px whatever it
+says, and each rule's explanation moved from a `title` attribute nobody discovers to the same ⓘ every
+other row uses. Before moving anything else into that grid, ask whether it lays out by wrap.
+
+Rules that hold it together:
+
+- **The card anatomy lives at module scope** — `panelCardCls`, `CardHead`, `CardHero`, `PanelRows`.
+  They were closures inside `PerformancePanel`; a second private copy in `VerdictCard` is exactly
+  how the fourth card would drift out of line with the three beside it. Change the anatomy in one
+  place and all four move.
+- **`VerdictCard` has no question line.** At ~285px there is no room for a title, a question and a
+  verdict chip, so the chip takes the aside slot the other cards use for `no limit set`.
+- **The ruleset name is a caption under the hero, not a row.** It is identity, not measurement, and
+  the row's value column is `whitespace-nowrap` — `Unconstrained (No Limits)` there would push the
+  card wide. As a caption it truncates with the full name on `title`.
+- **`verdict` and `ribbon` are separate props.** Two callers still want a bar and neither is a
+  regression: `StackDetail`'s strategy legend is genuinely horizontal (one entry per leg, with its
+  colour), and an optimizer combo (`isOptCombo`) has no verdict at all — just a prompt to run a real
+  backtest, which earns the width. Passing `verdict` is what switches the grid to four columns.
+- **Breakpoints are set by the longest rule label, measured.** `Daily DD ≤ $5,000` renders 118px at
+  12px, plus its ⓘ and tick. So: weighted `1fr 1fr 1fr 0.8fr` from **xl** (verdict card ~285px at
+  1670, ~202px at 1280 — fits), four EQUAL columns at **lg** (weighted there lands near 148px and
+  would truncate the label to nothing useful), two columns below that.
+- **The `verdict unfiltered` badge became a `Graded on → all 142` row.** Same fact — firm rules are
+  evaluated server-side on every trade, so the grade never follows the news pill — stated as a
+  number instead of a label to decode.
 
 #### A row is a label, a ⓘ and a number — nothing else
 
@@ -389,10 +430,12 @@ its longest sentence. Rules if you add a row:
 - `PanelRow.tip` is **required**. Write what the metric IS, then what THIS value means — the
   `*Label` helpers (`sharpeLabel`, `pfLabel`, `concentrationLabel`, `zScoreLabel`, `winRateLabel`)
   are still the single definition of the words and now end their tip rather than the row.
-- `PanelRow.value` is a **string**, short enough to keep the right edge aligned. Do not use
-  `FitMoney` here — it measures a flex cell that shrinks to its content, decides the number doesn't
-  fit and abbreviates a value with room to spare (that is why Net read `+$846.3k` in a card wide
-  enough for `+$846,257` twice over). `FitMoney` is for the fixed-width hero only.
+- `PanelRow.value` is a **`ReactNode`, but keep it short** — usually a formatted number, or a tick
+  or cross on a pass/fail rule row. The column is `whitespace-nowrap`, so a long value pushes the
+  card wide rather than wrapping. Do not use `FitMoney` here — it measures a flex cell that shrinks
+  to its content, decides the number doesn't fit and abbreviates a value with room to spare (that is
+  why Net read `+$846.3k` in a card wide enough for `+$846,257` twice over). `FitMoney` is for the
+  fixed-width hero only.
 - The **delta** is the one thing allowed beside a value, because it is what the news filter was
   opened to ask. Unmoved rows print nothing.
 - **Units get converted, not printed raw.** `1365 min` is a number the reader has to divide before
@@ -462,7 +505,7 @@ you say what you would accept. Both references are drawn **only when real**:
 
 - the **gold limit tick** is the ruleset's own `personal_max_drawdown_from_peak_pct`. Prop rulesets
   cap a *trailing dollar floor*, which is a different rule from a peak-relative percentage — those
-  get no tick, and their rules show as ribbon chips instead. Do not convert one into the other.
+  get no tick, and their rules show as `VerdictCard` rows instead. Do not convert one into the other.
 - the **hatched extension** is the stress test's worst-1% simulated drawdown, gated on
   `dd_basis === 'percent'` (the dollar basis isn't comparable on a compounding run, and tests before
   2026-07-30 have no percent columns). With no stress test the caption says *"the simulated tail is

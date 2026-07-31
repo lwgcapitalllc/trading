@@ -681,7 +681,8 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
 type PanelRow = {
   key: string
   label: string
-  value: string
+  /** Usually a formatted number. A node so a pass/fail rule can render its tick or cross here. */
+  value: React.ReactNode
   /**
    * What the metric IS, and what this run's value means — on the label's ⓘ, never beside the
    * value. Row suffixes used to carry both ("4 days · consecutive losing", "3.63 · strong —
@@ -699,11 +700,75 @@ type PanelRow = {
   goodWhen?: 'higher' | 'lower' | 'none'
 }
 
+// ── Card anatomy ─────────────────────────────────────────────────────────────
+// Every card on this panel is the same four parts: a head, a hero, an optional caption, and a
+// list of rows. They live at module scope because the VERDICT is one of those cards now, and a
+// second private copy of these styles is exactly how it would drift out of line with the three
+// beside it. Shared shape is the reason the verdict survived leaving its full-width ribbon: a
+// row is 24px whatever it says, where the pills it used to be wrapped unpredictably at a
+// quarter of the width.
+
+/** Expanded, the last row's own padding is the card's bottom margin; collapsed, the meter's
+ *  scale labels would otherwise sit on the border. */
+function panelCardCls(collapsed: boolean, filtered: boolean, topBorder: string): string {
+  return `flex flex-col min-w-0 rounded-xl border border-border-subtle px-4 pt-[13px] ${
+    collapsed ? 'pb-[12px]' : 'pb-[6px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'} ${topBorder}`
+}
+
+/** Title and question share ONE line. The question is orientation you read once; on its own row
+ *  it charged ~16px of card height per card, forever, for a sentence nobody re-reads. The narrow
+ *  fourth card has no room for one at all, so it passes the slot to its aside instead. */
+function CardHead({ title, question, aside }: {
+  title: string; question?: string; aside?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="flex items-baseline gap-2 min-w-0">
+        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary shrink-0">{title}</span>
+        {question && <span className="text-[10.5px] text-text-tertiary truncate">{question}</span>}
+      </span>
+      {aside}
+    </div>
+  )
+}
+
+function CardHero({ value, unit, cls, tip }: {
+  value: React.ReactNode; unit: React.ReactNode; cls: string; tip: string
+}) {
+  return (
+    <div className="flex items-baseline gap-2.5 flex-wrap mt-2 mb-0.5">
+      <span className={`text-[34px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
+      <span className="text-[12px] text-text-tertiary">{unit}<InfoTip text={tip} /></span>
+    </div>
+  )
+}
+
+/** Label + ⓘ on the left, value on the right, nothing else. See PanelRow.tip for why. */
+function PanelRows({ rows, delta }: {
+  rows: PanelRow[]; delta?: (r: PanelRow) => React.ReactNode
+}) {
+  return (
+    <div className="mt-auto pt-2.5 border-t border-border-subtle">
+      {rows.map((r, i) => (
+        <div key={r.key}
+          className={`flex items-baseline justify-between gap-3 py-[4px] text-[12px] leading-[1.3] ${i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
+          <span className="flex items-center text-text-tertiary min-w-0">
+            <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
+          </span>
+          <span className={`font-mono tabular-nums text-right whitespace-nowrap ${r.cls ?? 'text-text-primary'}`}>
+            {r.value}{delta?.(r)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Panel ────────────────────────────────────────────────────────────────────
 
 export function PerformancePanel({
   run, fallback, equity = [], balance = null, compare = null, filtered = false,
-  tailPct = null, limitPct = null, ribbon = null, collapsed = false,
+  tailPct = null, limitPct = null, ribbon = null, verdict = null, collapsed = false,
 }: {
   run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
   // When set, every row's delta is measured against this run instead of showing its caption.
@@ -714,8 +779,15 @@ export function PerformancePanel({
   tailPct?: number | null
   /** The selected ruleset's stated peak-drawdown limit, percent. Null when it states none. */
   limitPct?: number | null
-  /** Verdict ribbon (backtests) or strategy legend (stacks). Rendered above the three cards. */
+  /**
+   * A full-width bar ABOVE the cards. Two callers still want one: a stack's strategy legend is
+   * genuinely horizontal (one entry per leg, with its colour), and an optimizer combo has no
+   * verdict at all — just a prompt to run a real backtest, which deserves the width. A graded
+   * run passes `verdict` instead and gets that row back.
+   */
   ribbon?: React.ReactNode
+  /** A fourth CARD, right of Trusted. Mutually exclusive with `ribbon` in practice. */
+  verdict?: React.ReactNode
   /**
    * Hero numbers + the drawdown meter only — the supporting rows and the meter's caption fold
    * away. Roughly halves the panel, which is what puts the equity curve on the same screen as
@@ -837,22 +909,7 @@ export function PerformancePanel({
     return <span className={`${cls} tabular-nums`}> {(r.fmt ?? fmtRatio)(delta)}</span>
   }
 
-  // Label + ⓘ on the left, number on the right, nothing else. See PanelRow.tip for why.
-  const rows = (list: PanelRow[]) => (
-    <div className="mt-auto pt-2.5 border-t border-border-subtle">
-      {list.map((r, i) => (
-        <div key={r.key}
-          className={`flex items-baseline justify-between gap-3 py-[4px] text-[12px] leading-[1.3] ${i < list.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
-          <span className="flex items-center text-text-tertiary min-w-0">
-            <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
-          </span>
-          <span className={`font-mono tabular-nums text-right whitespace-nowrap ${r.cls ?? 'text-text-primary'}`}>
-            {r.value}{rowDelta(r)}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
+  const rows = (list: PanelRow[]) => <PanelRows rows={list} delta={rowDelta} />
 
   // Hero delta: shown beside the big number, in the unit that number is stated in.
   const heroDelta = (to: number | null | undefined, from: number | null | undefined,
@@ -865,39 +922,34 @@ export function PerformancePanel({
     return <span className={`text-[12px] tabular-nums ${good ? 'text-pos-text' : 'text-neg-text'}`}>{fmt(delta)}</span>
   }
 
-  // Expanded, the last row's own padding is the card's bottom margin; collapsed, the meter's
-  // scale labels would otherwise sit on the border.
-  const cardCls = `flex flex-col rounded-xl border border-border-subtle px-4 pt-[13px] ${collapsed ? 'pb-[12px]' : 'pb-[6px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'}`
-
-  // Title and question share ONE line. The question is orientation you read once; on its own
-  // row it charged ~16px of card height per card, forever, for a sentence nobody re-reads.
-  const head = (title: string, question: string, aside?: React.ReactNode) => (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="flex items-baseline gap-2 min-w-0">
-        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary shrink-0">{title}</span>
-        <span className="text-[10.5px] text-text-tertiary truncate">{question}</span>
-      </span>
-      {aside}
-    </div>
-  )
-
-  const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) => (
-    <div className="flex items-baseline gap-2.5 flex-wrap mt-2 mb-0.5">
-      <span className={`text-[34px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
-      <span className="text-[12px] text-text-tertiary">{unit}<InfoTip text={tip} /></span>
-    </div>
-  )
+  const cardCls = (top: string) => panelCardCls(collapsed, filtered, top)
+  const head = (title: string, question: string, aside?: React.ReactNode) =>
+    <CardHead title={title} question={question} aside={aside} />
+  const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) =>
+    <CardHero value={value} unit={unit} cls={cls} tip={tip} />
 
   const madeTip = "What the account did over the whole test, stated as a multiple of the capital it started with — the unit CLAUDE.md already uses for this strategy ('832x at 64.2% max drawdown'). Moves with the Account balance slider, because the multiple is net P&L ÷ that balance. With no balance set it falls back to net P&L in dollars."
   const riskedTip = "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists."
   const trustedTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown — return earned per unit of pain. Both halves compound, so this DOES move with the Account balance slider; they do not cancel. Above 2 is strong, below 0.5 weak.${d.recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${d.recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The rows beneath are the reasons to distrust the number above them: profit clustered in one quarter, a soft Sharpe, or streaking that isn't random.`
 
+  // Four cards when a verdict joins the row, three otherwise. The verdict is narrower because it
+  // carries one number and a short rule list where the others carry five figures and a meter —
+  // and every point it gives back is a point the three that do the reading get to keep.
+  // The narrowing is weighted only from xl, where the verdict card lands at ~285px. Between lg
+  // and xl it takes an EQUAL quarter instead: weighted there it would sit near 148px, and the
+  // longest real rule label ("Daily DD ≤ $5,000") measures 118px + its ⓘ and tick, so it would
+  // truncate to nothing useful. Below lg the row breaks to two — four across a laptop-width
+  // column is not a card, it's a column of stumps.
+  const grid = verdict
+    ? 'md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[1fr_1fr_1fr_0.8fr]'
+    : 'md:grid-cols-3'
+
   return (
     <div className="space-y-2.5">
       {ribbon}
-      <div className="grid gap-2.5 md:grid-cols-3 items-stretch">
+      <div className={`grid gap-2.5 items-stretch ${grid}`}>
 
-        <div className={`${cardCls} border-t-2 border-t-pos-text/50`}>
+        <div className={cardCls('border-t-2 border-t-pos-text/50')}>
           {head('Made', 'What came out of it')}
           {hero(
             multiple != null ? `${multiple.toFixed(1)}x` : <FitMoney n={run.net_pnl} signed />,
@@ -913,7 +965,7 @@ export function PerformancePanel({
             : rows(madeRows)}
         </div>
 
-        <div className={`${cardCls} border-t-2 border-t-neg-text/50`}>
+        <div className={cardCls('border-t-2 border-t-neg-text/50')}>
           {head('Risked', 'What it cost to hold',
             limitPct != null
               ? <span className="font-mono text-[10px] text-gold-text">vs {limitPct.toFixed(0)}% limit</span>
@@ -943,9 +995,9 @@ export function PerformancePanel({
           {!collapsed && rows(riskedRows)}
         </div>
 
-        <div className={`${cardCls} border-t-2 border-t-accent/45`}>
-          {/* No trade count here — it is the ribbon's anchor directly above, at 29px. Printing
-              it twice within 60px made the second copy read as a different number. */}
+        <div className={cardCls('border-t-2 border-t-accent/45')}>
+          {/* No trade count here — it is the verdict card's hero, two columns across. Printing
+              it twice on one row made the second copy read as a different number. */}
           {head('Trusted', 'Whether to believe it')}
           {hero(kpiNum(calmar), 'Calmar', calmarCls(calmar), trustedTip)}
           {dc
@@ -953,6 +1005,8 @@ export function PerformancePanel({
             : <div className="text-[11px] text-text-tertiary leading-snug mt-2">{calmarLabel(calmar)}</div>}
           {!collapsed && rows(trustedRows)}
         </div>
+
+        {verdict}
 
       </div>
     </div>
@@ -1811,37 +1865,75 @@ function HeaderRulesetChip({ evals, selected, onSelect, compact = false }: {
   )
 }
 
-// ── Verdict ribbon ───────────────────────────────────────────────────────────
-// Replaces the old evaluation CARD. A card forced every ruleset to fill a fixed 300×196px
-// box, and `unconstrained` — which states no rules by design — had nothing to put in it, so
-// it rendered an empty panel next to a green PASS. As one row the verdict costs no vertical
-// space when it has little to say, and it grows a chip per rule when it has a lot.
+// ── Verdict card ─────────────────────────────────────────────────────────────
+// The FOURTH card, right of Trusted. It was a full-width bar above the three, and before that
+// a fixed 300×196px evaluation panel — which `unconstrained` (no rules by design) had nothing
+// to fill, so it rendered empty next to a green PASS. The bar fixed that by costing no height
+// when it had little to say; a card that shares the row costs none at all, which is a whole
+// row (44px + its gap) off the panel in both states.
 //
-// The trade count lives here, at the right, as the ribbon's anchor: it is the sample size
-// every other number on the page rests on, so it gets a size that says so, plus the cadence
-// (trades per month) that the repo's own design target is stated in.
+// Moving it is only safe because the CONTENT changed shape with it. As a bar the rules were
+// inline pills, laid out by wrap — fine at 1330px, five lines at a quarter of that, and since
+// the grid is items-stretch a tall fourth card drags the other three with it. As rows they are
+// 24px each whatever they say, and each rule's explanation moves from a `title` attribute
+// nobody discovers to the same ⓘ every other row on this panel uses.
+//
+// The trade count is the card's HERO: it is the sample size every other number on the page
+// rests on, so it gets the same 34px the other three heroes get, plus the cadence (trades per
+// month) that the repo's own design target is stated in.
 
-const VERDICT_CHIP: Record<string, { label: string; cls: string; rail: string; Icon: typeof CheckCircle }> = {
-  PASS:    { label: 'Pass',       cls: 'bg-pos-muted text-pos-text',        rail: 'border-l-pos-text/60',     Icon: CheckCircle },
-  WARN:    { label: 'Warn',       cls: 'bg-warn-muted text-warn-text',      rail: 'border-l-warn-text/60',    Icon: Minus },
-  DISCARD: { label: 'Discard',    cls: 'bg-neg-muted text-neg-text',        rail: 'border-l-neg-text/60',     Icon: XCircle },
+const VERDICT_CHIP: Record<string, { label: string; cls: string; top: string; Icon: typeof CheckCircle }> = {
+  PASS:    { label: 'Pass',       cls: 'bg-pos-muted text-pos-text',        top: 'border-t-pos-text/50',      Icon: CheckCircle },
+  WARN:    { label: 'Warn',       cls: 'bg-warn-muted text-warn-text',      top: 'border-t-warn-text/50',     Icon: Minus },
+  DISCARD: { label: 'Discard',    cls: 'bg-neg-muted text-neg-text',        top: 'border-t-neg-text/50',      Icon: XCircle },
   // Not a grade — the absence of one. `unconstrained` states no limit, so nothing was
   // checked and there is nothing to pass. Neutral on purpose: a green tick here used to
   // claim a verdict the backend explicitly refuses to give (services/evaluator.py).
-  INFO:    { label: 'Not graded', cls: 'bg-bg-sunken text-text-tertiary',   rail: 'border-l-border-default',  Icon: Info },
+  // border-strong, not border-default: as a card's top edge the latter is indistinguishable from
+  // the card's own border, so the one card in four without a colour read as unfinished rather
+  // than as neutral. Neutral still has to be visible to mean anything.
+  INFO:    { label: 'Not graded', cls: 'bg-bg-sunken text-text-tertiary',   top: 'border-t-border-strong',    Icon: Info },
 }
 
-function RuleChip({ label, pass, detail }: { label: string; pass: boolean; detail: string }) {
-  return (
-    <span
-      title={`${label} — ${detail}`}
-      className={`inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[10.5px] font-medium whitespace-nowrap ${
-        pass ? 'bg-pos-muted/60 text-pos-text' : 'bg-neg-muted/60 text-neg-text'}`}
-    >
-      {pass ? <CheckCircle size={10} /> : <XCircle size={10} />}
-      {label}
-    </span>
-  )
+const UNGRADED_TIP = "Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. Pick a ruleset with a stated limit to grade this run: `personal_forex_risk` is this one's gradeable twin, the same raw behaviour with one stated bar."
+
+/** One row per stated rule, pass or fail. Empty when the ruleset states none. */
+function verdictRuleRows(ev: EvaluationDetail): PanelRow[] {
+  const mark = (pass: boolean): PanelRow['value'] =>
+    pass ? <CheckCircle size={13} className="inline" /> : <XCircle size={13} className="inline" />
+  const cls = (pass: boolean) => pass ? 'text-pos-text' : 'text-neg-text'
+  const out: PanelRow[] = []
+
+  if (isPersonal(ev)) {
+    if (ev.personal_max_drawdown_from_peak_pct != null) {
+      out.push({ key: 'dd', label: `Drawdown ≤ ${ev.personal_max_drawdown_from_peak_pct}%`,
+        value: mark(ev.drawdown_pass), cls: cls(ev.drawdown_pass),
+        tip: 'Measured peak-relative, at end of day.' })
+    }
+    if (ev.personal_daily_loss_cap != null && ev.personal_max_consecutive_loss_days != null) {
+      const pass = personalStreakPass(ev)
+      out.push({ key: 'streak', label: `< ${ev.personal_max_consecutive_loss_days} capped days`,
+        value: mark(pass), cls: cls(pass),
+        tip: `Days in a row that hit the −$${ev.personal_daily_loss_cap.toLocaleString()} daily loss cap.` })
+    }
+    return out
+  }
+
+  out.push({ key: 'dd', label: `Daily DD ≤ $${ev.firm_max_loss_eod.toLocaleString()}`,
+    value: mark(ev.drawdown_pass), cls: cls(ev.drawdown_pass),
+    tip: 'End-of-day trailing max loss — the firm\'s hard floor.' })
+  if (ev.firm_profit_target > 0) {
+    out.push({ key: 'tgt', label: `Target $${ev.firm_profit_target.toLocaleString()}`,
+      value: mark(ev.target_pass), cls: cls(ev.target_pass),
+      tip: 'Net P&L required to pass the evaluation.' })
+  }
+  if (ev.consistency_pass != null && ev.firm_consistency_pct != null) {
+    out.push({ key: 'con',
+      label: `Consistency ${ev.largest_day_share_pct != null ? `${ev.largest_day_share_pct.toFixed(0)}%` : ''}`.trim(),
+      value: mark(ev.consistency_pass), cls: cls(ev.consistency_pass),
+      tip: `No single day may hold more than ${ev.firm_consistency_pct}% of total P&L.` })
+  }
+  return out
 }
 
 // Sample size + cadence. Trades per month is the unit CLAUDE.md's Trading Philosophy states
@@ -1872,75 +1964,68 @@ function TradeCountAnchor({ count, of, spanDays }: {
   )
 }
 
-function VerdictRibbon({ ev, tradeCount, totalTrades, spanDays, filtered }: {
+function VerdictCard({ ev, tradeCount, totalTrades, spanDays, filtered, collapsed }: {
   ev: EvaluationDetail | null
   tradeCount: number | null
   totalTrades?: number | null
   spanDays: number | null
   /** Performance beside this is news-filtered; the firm verdict is not. Say so, don't imply it. */
   filtered: boolean
+  collapsed: boolean
 }) {
   const cfg = ev ? (VERDICT_CHIP[ev.verdict] ?? VERDICT_CHIP.DISCARD) : null
-  // A profitable run that fails a firm rule is amber, not red — same rule the card used.
-  const rail = cfg
-    ? (ev!.verdict === 'DISCARD' && (ev!.net_pnl ?? 0) > 0 ? VERDICT_CHIP.WARN.rail : cfg.rail)
-    : 'border-l-accent/60'
+  // A profitable run that fails a firm rule is amber, not red — same rule the old card used.
+  const top = cfg
+    ? (ev!.verdict === 'DISCARD' && (ev!.net_pnl ?? 0) > 0 ? VERDICT_CHIP.WARN.top : cfg.top)
+    : 'border-t-accent/45'
   const ungraded = ev?.verdict === 'INFO'
 
-  const chips: React.ReactNode[] = []
-  if (ev && !ungraded) {
-    if (isPersonal(ev)) {
-      if (ev.personal_max_drawdown_from_peak_pct != null) {
-        chips.push(<RuleChip key="dd" label={`Drawdown ≤ ${ev.personal_max_drawdown_from_peak_pct}%`}
-          pass={ev.drawdown_pass} detail="peak-relative, end of day" />)
-      }
-      if (ev.personal_daily_loss_cap != null && ev.personal_max_consecutive_loss_days != null) {
-        chips.push(<RuleChip key="streak" label={`< ${ev.personal_max_consecutive_loss_days} capped days`}
-          pass={personalStreakPass(ev)} detail={`days in a row at −$${ev.personal_daily_loss_cap.toLocaleString()}`} />)
-      }
-    } else {
-      chips.push(<RuleChip key="dd" label={`Daily DD ≤ $${ev.firm_max_loss_eod.toLocaleString()}`}
-        pass={ev.drawdown_pass} detail="end-of-day trailing max loss" />)
-      if (ev.firm_profit_target > 0) {
-        chips.push(<RuleChip key="tgt" label={`Target $${ev.firm_profit_target.toLocaleString()}`}
-          pass={ev.target_pass} detail="net P&L required to pass" />)
-      }
-      if (ev.consistency_pass != null && ev.firm_consistency_pct != null) {
-        chips.push(<RuleChip key="con"
-          label={`Consistency ${ev.largest_day_share_pct != null ? `${ev.largest_day_share_pct.toFixed(0)}%` : ''}`.trim()}
-          pass={ev.consistency_pass} detail={`no day above ${ev.firm_consistency_pct}% of total P&L`} />)
-      }
-    }
+  const months = spanDays != null && spanDays > 0 ? spanDays / 30.44 : null
+  const years = months != null ? months / 12 : null
+  const perMonth = months != null && months >= 1 && tradeCount != null ? tradeCount / months : null
+  const cadence = [
+    years != null && years >= 1 ? `${years.toFixed(1)} yrs` : months != null ? `${months.toFixed(0)} mo` : null,
+    perMonth != null ? `≈${perMonth < 1 ? perMonth.toFixed(1) : perMonth.toFixed(0)}/month` : null,
+  ].filter(Boolean).join(' · ')
+
+  const rows: PanelRow[] = []
+  // Was a `verdict unfiltered` badge on the bar. As a row it states the number instead of
+  // asking you to decode a label, and it sits where the reader is already reading numbers.
+  if (filtered && totalTrades != null) {
+    rows.push({ key: 'graded', label: 'Graded on', value: `all ${totalTrades}`,
+      tip: 'Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This card grades the full run even while the Performance numbers beside it have news and holiday trades removed.' })
+  }
+  if (ev && ungraded) {
+    rows.push({ key: 'checks', label: 'Checks run', value: 'none',
+      cls: 'text-text-tertiary', tip: UNGRADED_TIP })
+  } else if (ev) {
+    rows.push(...verdictRuleRows(ev))
   }
 
   return (
-    <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-border-subtle border-l-[3px] ${rail} bg-bg-surface pl-4 pr-2.5 py-2`}>
-      {cfg && (
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-[4px] text-[11px] font-bold uppercase tracking-[0.4px] shrink-0 ${cfg.cls}`}>
-          <cfg.Icon size={11} />{cfg.label}
-        </span>
-      )}
-      {ev && <span className="text-[12.5px] text-text-primary">{ev.ruleset_name}</span>}
-      {chips}
-      {/* Short enough to share the ribbon's FIRST line with the chips — the long form pushed the
-          trade-count anchor onto a second row, which cost the panel ~35px in both states. The
-          reasoning it used to spell out is in the tooltip, where a standing explanation belongs. */}
-      {ungraded && (
-        <span className="text-[11.5px] text-text-tertiary">
-          · no limits stated, so nothing was checked
-          <InfoTip text="Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. Pick a ruleset with a stated limit to grade this run: `personal_forex_risk` is this one's gradeable twin, the same raw behaviour with one stated bar." />
-        </span>
-      )}
-      {!ev && <span className="text-[12.5px] text-text-secondary">No ruleset evaluated</span>}
-      {filtered && (
-        <span className="rounded border border-border-default bg-bg-sunken px-1.5 py-[1px] text-[10px] font-medium text-text-tertiary">
-          verdict unfiltered
-          <InfoTip text="Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This ribbon reports the full run even while the Performance numbers below have news and holiday trades removed." />
-        </span>
-      )}
-      {tradeCount != null && (
-        <TradeCountAnchor count={tradeCount} of={totalTrades} spanDays={spanDays} />
-      )}
+    <div className={panelCardCls(collapsed, filtered, `border-t-2 ${top}`)}>
+      <CardHead
+        title="Verdict"
+        aside={cfg && (
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[10px] font-bold uppercase tracking-[0.4px] shrink-0 ${cfg.cls}`}>
+            <cfg.Icon size={10} />{cfg.label}
+          </span>
+        )}
+      />
+      <CardHero
+        value={tradeCount ?? '—'}
+        unit={totalTrades != null && totalTrades !== tradeCount ? `of ${totalTrades} trades` : 'trades'}
+        cls="text-accent"
+        tip="How many trades this verdict and every number beside it rest on. Sample size is a portfolio property in this repo, not a strategy one — a selective strategy is DESIGNED to trade a couple of times a month, so read the cadence below rather than the count alone (CLAUDE.md → Trading Philosophy)."
+      />
+      {/* The ruleset name is identity, not measurement, so it sits here where it can truncate
+          rather than in the right-hand column, which is nowrap and would push the card wide. */}
+      <div className="text-[11px] text-text-tertiary leading-[1.35] mt-2 truncate"
+        title={ev?.ruleset_name ?? undefined}>
+        {ev ? ev.ruleset_name : 'No ruleset evaluated'}
+      </div>
+      {cadence && <div className="font-mono text-[10.5px] text-text-tertiary">{cadence}</div>}
+      {!collapsed && rows.length > 0 && <PanelRows rows={rows} />}
     </div>
   )
 }
@@ -3823,11 +3908,11 @@ export function BacktestDetail() {
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={scope === 'mt5' ? MT5_RUN_STEPS : scope === 'python' ? PYTHON_RUN_STEPS : NT8_RUN_STEPS} />}
           {isFailed && <FailureBanner run={run} />}
           {/* ── Evaluation + Performance ──────────────────────────────────── */}
-          {/* One stack: verdict ribbon, then the three question cards. The evaluation used to be
-              a fixed-height COLUMN beside a 6+6 KPI grid — see PerformancePanel for why both are
-              gone. An optimizer combo has no verdict yet, so its ribbon prompts a full backtest
-              instead; a run with no evaluations at all gets a ribbon carrying only the trade
-              count. Every path renders the same three cards below. */}
+          {/* One row of four question cards: Made, Risked, Trusted, Verdict. The evaluation used
+              to be a fixed-height COLUMN beside a 6+6 KPI grid, then a full-width ribbon above
+              three cards — see PerformancePanel and VerdictCard for why both are gone. An
+              optimizer combo has no verdict to card up, so it keeps the bar, which is a prompt to
+              run a real backtest rather than a grade and earns its width. */}
           {isComplete && (
             <div className="space-y-2.5">
               <PerformanceHeader
@@ -3846,13 +3931,15 @@ export function BacktestDetail() {
                     onRunFullBacktest={runFullBacktest}
                     busy={retryBacktest.isPending || jobBusy}
                   />
-                ) : (
-                  <VerdictRibbon
+                ) : null}
+                verdict={isOptCombo ? null : (
+                  <VerdictCard
                     ev={selectedEval}
                     tradeCount={kpiRun?.trade_count ?? run.trade_count}
                     totalTrades={run.trade_count}
                     spanDays={runSpanDays}
                     filtered={newsOnKpis}
+                    collapsed={perfCollapsed}
                   />
                 )}
               />
