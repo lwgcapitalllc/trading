@@ -587,7 +587,7 @@ export function KpiGrid({ run, fallback, equity = [], balance = null, showMore =
   // ── Flat KPI layout: 6 core cards always shown, 6 "more" revealed in the same 6-col grid ──
   // Big-number cards with a sentiment-coloured left accent (matches the eval cards). Trade Count
   // moves out to the standout beside the verdict, not here.
-  const calmarTip = `Annualized return (CAGR) ÷ max drawdown, both as a % of capital — so it cancels out: Calmar is capital-independent BY DESIGN and does NOT move with the Account balance slider. It reduces to ≈ annualized net P&L ÷ drawdown${recoveryFactor != null ? ` (= ${recoveryFactor.toFixed(2)} — the old Recovery Factor)` : ''}. The definitive risk-adjusted metric for funded traders; trade-derived, so NT8 and MT5 agree.`
+  const calmarTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown. Both sides compound: CAGR always did, and since 2026-07-30 the drawdown does too — measured against the equity it fell from, not the starting balance. Dividing by a static account_size dragged this ratio down by however far the account had grown (it read 0.11 on a run whose honest value is 2.25). It therefore DOES move with the Account balance slider — both halves depend on the balance and they do not cancel.${recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The definitive risk-adjusted metric for funded traders; trade-derived, so NT8 and MT5 agree.`
   const expectancySub = (run.avg_win != null && run.avg_loss != null)
     ? `avg +$${run.avg_win.toFixed(0)} / -$${Math.abs(run.avg_loss).toFixed(0)}${rr ? ` · ${rr}:1 R:R` : ''}`
     : 'per trade'

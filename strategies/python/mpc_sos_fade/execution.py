@@ -366,6 +366,25 @@ class Execution:
     # fork already makes for the blocked markers, for the same reason.
     _records_misses = True
 
+    @property
+    def cfg(self):
+        """The live config object. READ-ONLY accessor over `_cfg` — no behaviour, no parity
+        impact.
+
+        It exists because two consumers outside this package legitimately need to read the
+        settings a trade was taken under, and both were reaching for `.cfg` defensively:
+        `algos/live/bridge.py` records the risk % on each ledger entry, and
+        `algos/live/runner.py` applies a runtime risk change to the running strategy. With
+        only the private `_cfg`, `getattr(ex, "cfg", None)` silently returned None and both
+        quietly fell back to a default — the ledger recorded no risk at all, and the live
+        reload crashed the loop. Neither failed loudly.
+
+        The object is MUTABLE through this handle, and deliberately so: the runner sets
+        `exec_risk_pct` on it while the bot is flat. Sizing reads `cfg.exec_risk_pct` at
+        trade time (see `_size`), so the next trade picks it up with nothing to rebuild.
+        """
+        return self._cfg
+
     def __init__(self, config, initial_capital: float = 1_000_000.0,
                  resolver=None, profile=None, bar_ms: int = 300_000,
                  account=None, leg: str = "strat") -> None:

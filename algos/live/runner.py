@@ -378,11 +378,13 @@ class LiveRunner:
            strategy edits reaches a running bot, and quietly absorbing it is precisely what
            the source-hash pin exists to prevent. A restart is required, so the pin is
            re-checked and the engines re-warm on the code that is actually there.
-        2. **Applied only when flat.** Not because resizing mid-trade would corrupt an open
-           position (it would not — size is fixed at entry), but so every trade in the
-           ledger is attributable to exactly ONE configuration. A trade recorded at 5% that
-           was sized at 10% makes the live-vs-lab diff unreadable, which is the one thing
-           that diff has to be.
+        2. **Applied only when flat, by REBUILDING the strategy.** The config is a frozen
+           dataclass shared by every component, so applying a change means constructing a
+           fresh strategy and replaying history into it — the same thing a bar gap already
+           does. That is why flat matters: a rebuild discards the emulator's position
+           state, so doing it mid-trade would orphan a live position. Being flat also makes
+           every trade attributable to exactly ONE configuration, which is what keeps the
+           live-vs-lab diff readable.
         3. **The mtime is consumed only when the file is actually handled** — applied or
            refused. A pending change stays pending across polls instead of being noticed
            once and forgotten, which would leave the bot running old settings while the UI
@@ -427,12 +429,25 @@ class LiveRunner:
             return                                   # mtime NOT consumed — retry next poll
 
         self._cfg_mtime = mtime
-        scfg = self.strategy.execution.cfg
-        for name, old, new in allowed:
-            setattr(scfg, name, new)
-            self.cfg.strategy_params[name] = new
         detail = ", ".join(f"{k} {a} → {b}" for k, a, b in allowed)
-        self.log.info(f"Runtime config applied while flat: {detail}")
+
+        # REBUILD, do not mutate. `SosFadeConfig` is a frozen dataclass and ONE instance is
+        # shared by signals, sequence, execution and the secondary arm — so there is no
+        # attribute to set, and reaching past `frozen` with object.__setattr__ would leave
+        # four components able to disagree about their own settings. Frozen is the property
+        # that makes a run reproducible; the reload respects it rather than defeating it.
+        #
+        # This is the same path a bar gap already takes, for the same reason: throw the
+        # strategy away and replay history into a fresh one. It costs a warmup (~3s for
+        # 5,000 bars, measured on the VPS) and only ever runs while flat, so there is no
+        # position to lose and no bar to miss at a 10s poll.
+        self.cfg = fresh
+        self.strategy, _ = self._build_strategy()
+        self.bridge._ex = self.strategy.execution
+        self.warm()
+        self.bridge.begin_live()
+
+        self.log.info(f"Runtime config applied while flat (strategy rebuilt): {detail}")
         self.ledger.event("config_applied", changes=detail)
         self._notify(f"⚙️ {self.cfg.display_name} — {detail}\nApplied; the bot was flat.")
 

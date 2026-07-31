@@ -262,6 +262,8 @@ class OrderBridge:
             # Read off the strategy LIVE, not cached at construction — the runner mutates
             # this same config object when a runtime change is applied, so caching it here
             # would record the risk the bot started with rather than the one it sized on.
+            # `Execution.cfg` is a real property; the nested getattr is only so a test
+            # double without one does not break an alert.
             risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
             confluences=self._confluences(dec, sig))
         self._pos_alert_id = self._notify(alerts.format_entry(

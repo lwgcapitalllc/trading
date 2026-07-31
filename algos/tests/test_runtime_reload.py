@@ -34,6 +34,11 @@ from runner import LiveRunner                                       # noqa: E402
 class _Bridge:
     def __init__(self, flat=True):
         self.is_flat = flat
+        self._ex = None
+        self.began = 0
+
+    def begin_live(self):
+        self.began += 1
 
 
 class _Ledger:
@@ -75,12 +80,26 @@ def runner(tmp_path, monkeypatch):
                             error=lambda *a, **k: None)
     r.ledger = _Ledger()
     r.bridge = _Bridge(flat=True)
-    r.strategy = SimpleNamespace(
-        execution=SimpleNamespace(cfg=SimpleNamespace(exec_risk_pct=10.0)))
     r.notes = []
     r._notify = lambda text, reply_to=None: r.notes.append(text)
     r._cfg_mtime = path.stat().st_mtime
     r._path = path
+    r.warmed = 0
+
+    # Applying a change REBUILDS the strategy and re-warms (the config is frozen — see
+    # test_the_strategy_config_is_frozen_...). Both are stubbed: this file is about which
+    # changes get applied and when, not about the strategy or the engines.
+    def _build():
+        s = SimpleNamespace(execution=SimpleNamespace(
+            cfg=SimpleNamespace(exec_risk_pct=r.cfg.strategy_params["exec_risk_pct"])))
+        return s, s.execution.cfg
+
+    def _warm():
+        r.warmed += 1
+
+    r._build_strategy = _build
+    r.warm = _warm
+    r.strategy, _ = _build()
     return r
 
 
@@ -212,6 +231,49 @@ def test_a_resting_order_counts_as_not_flat(runner):
     assert b.is_flat
     b._pos_ticket = 5
     assert not b.is_flat
+
+
+# ── the contract with the real strategy ─────────────────────────────────────────
+def test_the_real_execution_object_exposes_its_config():
+    """Every test above uses a stand-in with a `.cfg`. The REAL `Execution` kept it private
+    as `_cfg`, so the live reload crashed the loop on the VPS and the ledger's `risk_pct`
+    silently recorded None — with a green suite the whole way.
+
+    This is the one test that touches the actual strategy class, and it lives here rather
+    than with the strategy because `algos/live/` is what depends on the attribute.
+    """
+    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+
+    ex = LAB_STRATEGY["strategy"](LAB_STRATEGY["config"](), initial_capital=1000).execution
+    assert hasattr(ex, "cfg"), "Execution.cfg is gone — the ledger cannot record risk_pct"
+    assert ex.cfg.exec_risk_pct == LAB_STRATEGY["config"]().exec_risk_pct
+
+
+def test_the_strategy_config_is_frozen_which_is_why_a_reload_rebuilds():
+    """Pins the reason `_maybe_reload_runtime` rebuilds instead of assigning.
+
+    If this ever starts passing as mutable, the rebuild is still correct — ONE config
+    instance is shared by signals, sequence, execution and the secondary arm, so setting an
+    attribute on one holder is not the same as changing the strategy's settings.
+    """
+    import dataclasses
+
+    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+
+    cfg = LAB_STRATEGY["config"]()
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cfg.exec_risk_pct = 5.0
+
+
+def test_one_config_object_is_shared_by_every_component():
+    """The other half of the reason. Four holders, one object — a per-holder edit would let
+    them disagree about what the strategy is set to."""
+    from strategies.python.mpc_sos_fade import LAB_STRATEGY
+
+    s = LAB_STRATEGY["strategy"](LAB_STRATEGY["config"](), initial_capital=1000)
+    assert s.execution.cfg is s.config
+    assert s.signals._cfg is s.config
+    assert s.sequence._cfg is s.config
 
 
 # ── robustness ──────────────────────────────────────────────────────────────────
