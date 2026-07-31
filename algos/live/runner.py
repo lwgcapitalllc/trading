@@ -43,8 +43,11 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parent.parent
-for _p in (str(_REPO), str(_REPO / "algos" / "shared"), str(_REPO / "strategies" / "python"),
-           str(_HERE)):
+# `algos/bots` is here for bot_utils (shared logging). It is easy to leave out — the suite never
+# constructed a LiveRunner, so a missing entry surfaced only on the VPS, at __init__, before the
+# bot could log or notify anything about why it died.
+for _p in (str(_REPO), str(_REPO / "algos" / "shared"), str(_REPO / "algos" / "bots"),
+           str(_REPO / "strategies" / "python"), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -77,9 +80,16 @@ class LiveRunner:
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _make_logger(self):
-        import bot_utils
+        """Shared bot logging if it is importable, plain file+stdout logging if it is not.
+
+        The import lives INSIDE the try on purpose. It sat outside once, so a `bot_utils` that
+        could not be imported killed the runner in `__init__` — before it had a logger to say so
+        with, before the version pin, before anything. A logging dependency must never be able to
+        stop a bot; the fallback below writes the same file to the same place.
+        """
         cfg_dict = {"instance_dir": str(self.cfg.instance_dir)}
         try:
+            import bot_utils
             return bot_utils.setup_logging(self.cfg.bot_key, cfg_dict)
         except Exception:
             import logging
