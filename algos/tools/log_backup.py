@@ -1,78 +1,77 @@
-"""log_backup.py — get the decision record off the VPS, and keep the raw logs bounded.
+"""log_backup.py — the VPS half of preserving the decision record.
 
-Run daily as `SYS_LOGBACKUP`:
+Runs daily on the VPS as `SYS_LOGBACKUP`:
 
-    python C:/trading/algos/tools/log_backup.py            # do it
-    python C:/trading/algos/tools/log_backup.py --dry-run  # say what it would do
+    python C:/trading/algos/tools/log_backup.py               # zip + prune
+    python C:/trading/algos/tools/log_backup.py --dry-run     # say what it would do
+    python C:/trading/algos/tools/log_backup.py --list-closed # paths, for the Mac to fetch
 
-**The problem this solves.** `algos/live/ledger.py` writes one JSONL line per bar, per
-blocked setup, per trade — the only record of WHY the bot did what it did, and the input to
-the shadow-diff that has to pass before real money moves. It lives on one VPS disk. There is
-no historical trade data anywhere else in this repo (see `algos/CLAUDE.md` — the old suite
-was deleted, deliberately, with nothing carried forward). Lose the disk and the dry run did
-not happen; it has to be run again from zero.
+**The problem.** `algos/live/ledger.py` writes one JSONL line per bar, per blocked setup, per
+trade — the only record of WHY the bot did what it did, and the input to the shadow-diff that
+has to pass before real money moves. It lives on one VPS disk, and there is no historical
+trade data anywhere else in this repo (the old suite was deleted, deliberately, with nothing
+carried forward). Lose that disk and the dry run did not happen; it gets run again from zero.
 
-So the two halves below are NOT the same job, and conflating them is the mistake to avoid:
+**Why this script does NOT push to git, though an earlier version did.** The obvious design is
+for the VPS to commit the ledger itself. It cannot, and the way it fails is the interesting
+part: the task runs as SYSTEM, SYSTEM has its own credential store, and Git Credential Manager
+there has no cached token and no interactive session to ask for one. `git push` does not
+fail — it BLOCKS, forever, until the task's execution limit kills it. Measured on 2026-07-31:
+the test task sat in `Running` with no output and no error.
 
-  * **the ledger is COMMITTED to git.** That is what makes it survive the VPS. It is small,
-    append-only, line-oriented text — exactly what git is good at.
-  * **the raw `.log` files are ZIPPED IN PLACE and pruned.** That is only about keeping the
-    disk bounded and the last 90 days readable. It does NOT leave the box, and nothing here
-    pretends otherwise.
+Fixing that means putting a GitHub write token on the VPS. That is the wrong trade. This box
+already holds a live MT5 password and a Telegram token; adding a credential that can rewrite
+the source repo widens what a compromise costs, and buys nothing the pull direction does not
+already give. So the split is:
 
-**Four decisions worth knowing before editing this.**
+  * **here (VPS):** zip the raw `.log` files, prune past 90 days, and report which ledger days
+    are closed. Local housekeeping. Nothing leaves the box and nothing here pretends it does.
+  * **`ledger_sync.py` (Mac):** fetch those closed days and commit them, from the machine that
+    already has working git credentials.
 
-*Only days STRICTLY BEFORE today are committed.* Today's ledger file is still being appended
-to by a running bot. Committing it captures a torn half-day that looks, in git, exactly like
-a complete one — and the reader who later trusts it has no way to tell.
+The cost of that split is honest and worth stating: the record leaves the VPS when the Mac
+runs the sync, not on a VPS timer. `--list-closed` exists so the Mac side can ask rather than
+re-derive, and so "closed" has exactly one definition.
 
-*It commits every uncommitted old file, not "yesterday's".* A job that only ever handles
-yesterday loses any day the VPS was down, the push failed, or the task was disabled — and
-loses it permanently and silently. Catching up on whatever is outstanding makes a missed run
-a delay instead of a hole.
+**Two rules that outlive any of the above.**
 
-*It never runs `git add -A`.* This box has `credentials.json` on disk holding a live MT5
-password and a Telegram token. A blanket add is one `.gitignore` slip from publishing them.
-Only paths matching `*/ledger/decisions-YYYY-MM-DD.jsonl` are ever staged, and anything else
-found in a ledger directory is skipped and named in the output.
+*Only days STRICTLY BEFORE today count as closed.* Today's file is still being appended to by
+a running bot. Copying it captures a torn half-day that later reads exactly like a whole one.
 
-*A failed push is loud and retried, not swallowed.* This is the only channel carrying
-evidence off the VPS. If it silently stops, everything still looks fine — the files are on
-disk, the task returns 0 — right up until the disk is gone.
+*Logs are COPIED, never rotated.* The bot holds its log open, and renaming a file Windows has
+open fails with a sharing violation — a rotation scheme would pass on the Mac, break on the
+VPS, and take the day's logs with it.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # DERIVED, never hardcoded — the same rule as algos/shared/bot_state.py. A literal
-# C:/trading path is right on the VPS and quietly wrong everywhere else, which is how a
-# script becomes untestable on the machine it is written on.
+# C:/trading path is right on the VPS and quietly wrong everywhere else.
 ALGOS_ROOT = Path(__file__).resolve().parent.parent
-REPO_ROOT  = ALGOS_ROOT.parent
 INSTANCES  = ALGOS_ROOT / "markets" / "fx" / "instances"
 ARCHIVE    = ALGOS_ROOT / "log_archive"
 
 KEEP_DAYS = 90
 
-# The ONLY filename shape this job will ever stage. Anything else in a ledger directory is
-# somebody's scratch file, and a backup job is the wrong place to find out what it was.
+# The ONLY ledger filename shape recognised anywhere in this pipeline. Anything else found in
+# a ledger directory is somebody's scratch, and a backup job is the wrong place to guess.
 LEDGER_RE = re.compile(r"^decisions-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 ZIP_RE    = re.compile(r"^logs-(\d{4})-(\d{2})-(\d{2})\.zip$")
 
 
-# ── choosing what to preserve ───────────────────────────────────────────────────
 def ledger_files(instances: Path, today: date) -> tuple[list[Path], list[Path]]:
     """Return (closed ledger files, files skipped for not matching the shape).
 
-    "Closed" means dated strictly before `today`: no bot can append to it again, so a commit
-    can never race a write.
+    "Closed" means dated strictly before `today`: no bot can append to it again, so copying
+    it can never race a write. This is the single definition of closed — the Mac side asks
+    for it over `--list-closed` rather than reimplementing the date comparison.
     """
     closed, skipped = [], []
     for ledger_dir in sorted(instances.glob("*/ledger")):
@@ -88,30 +87,9 @@ def ledger_files(instances: Path, today: date) -> tuple[list[Path], list[Path]]:
     return closed, skipped
 
 
-def uncommitted(repo: Path, paths: list[Path]) -> list[Path]:
-    """Narrow to the files git does not already have identical content for.
-
-    Without this the job commits nothing on most days but still pushes, and every run looks
-    the same whether or not it did anything.
-    """
-    if not paths:
-        return []
-    rel = [str(p.relative_to(repo)).replace("\\", "/") for p in paths]
-    out = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "--", *rel],
-                         capture_output=True, text=True)
-    changed = {line[3:].strip().strip('"') for line in out.stdout.splitlines() if line.strip()}
-    return [p for p, r in zip(paths, rel) if r in changed]
-
-
-# ── the raw logs: bounded, local, and honest about being local ──────────────────
 def archive_logs(instances: Path, archive: Path, today: date,
                  dry_run: bool = False) -> Path | None:
-    """Snapshot every instance `.log` into one dated zip.
-
-    COPIES rather than rotates. The bot holds its log open, and renaming a file Windows has
-    open fails with a sharing violation — a rotation scheme here would work on the Mac,
-    break on the VPS, and take the day's logs with it.
-    """
+    """Snapshot every instance `.log` into one dated zip. Copies, never rotates."""
     logs = sorted(p for p in instances.glob("*/*.log") if p.is_file())
     if not logs:
         return None
@@ -147,77 +125,34 @@ def prune(archive: Path, today: date, keep_days: int = KEEP_DAYS,
     return gone
 
 
-# ── git ─────────────────────────────────────────────────────────────────────────
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
-
-
-def commit_and_push(repo: Path, paths: list[Path], today: date,
-                    dry_run: bool = False) -> bool:
-    """Stage exactly `paths`, commit, push. Returns True if the work is safely at origin."""
-    rel = [str(p.relative_to(repo)).replace("\\", "/") for p in paths]
-    if dry_run:
-        print(f"  would commit {len(rel)} file(s): {', '.join(rel)}")
-        return True
-
-    add = _git(repo, "add", "--", *rel)
-    if add.returncode != 0:
-        print(f"  git add failed: {add.stderr.strip()}")
-        return False
-
-    msg = (f"chore(ledger): decision record through {today - timedelta(days=1)}\n\n"
-           f"Written by SYS_LOGBACKUP on the VPS. {len(rel)} file(s).")
-    commit = _git(repo, "commit", "-m", msg, "--", *rel)
-    if commit.returncode != 0 and "nothing to commit" not in commit.stdout:
-        print(f"  git commit failed: {commit.stderr.strip() or commit.stdout.strip()}")
-        return False
-
-    if _git(repo, "push", "origin", "HEAD:main").returncode == 0:
-        return True
-
-    # Origin moved (a deploy from the Mac). Rebasing a ledger-only commit onto it cannot
-    # conflict with source changes — different files entirely.
-    print("  push rejected — rebasing onto origin/main and retrying")
-    if _git(repo, "pull", "--rebase", "origin", "main").returncode != 0:
-        print("  rebase failed — the commit is safe locally, next run will retry")
-        return False
-    if _git(repo, "push", "origin", "HEAD:main").returncode == 0:
-        return True
-    print("  push still rejected — the commit is safe locally, next run will retry")
-    return False
-
-
-# ── entry point ─────────────────────────────────────────────────────────────────
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Back up bot ledgers and logs.")
+    ap = argparse.ArgumentParser(description="Zip and prune VPS bot logs.")
     ap.add_argument("--dry-run", action="store_true", help="report, change nothing")
+    ap.add_argument("--list-closed", action="store_true",
+                    help="print closed ledger paths (relative to the instances dir) and exit")
     ap.add_argument("--keep-days", type=int, default=KEEP_DAYS)
     args = ap.parse_args(argv)
 
     today = datetime.now(timezone.utc).date()
-    print(f"log_backup {today} {'(dry run)' if args.dry_run else ''}".rstrip())
-
     closed, skipped = ledger_files(INSTANCES, today)
+
+    if args.list_closed:
+        # Machine-readable and nothing else: ledger_sync.py parses this over ssh.
+        for path in closed:
+            print(str(path.relative_to(INSTANCES)).replace("\\", "/"))
+        return 0
+
+    print(f"log_backup {today} {'(dry run)' if args.dry_run else ''}".rstrip())
     for path in skipped:
         print(f"  ! skipped, unrecognised name: {path}")
-
-    pending = uncommitted(REPO_ROOT, closed)
-    pushed  = True
-    if pending:
-        pushed = commit_and_push(REPO_ROOT, pending, today, args.dry_run)
-        print(f"  ledger: {len(pending)} file(s) {'pushed' if pushed else 'NOT pushed'}")
-    else:
-        print(f"  ledger: nothing new ({len(closed)} closed file(s) already committed)")
 
     zipped = archive_logs(INSTANCES, ARCHIVE, today, args.dry_run)
     print(f"  logs:   {zipped.name if zipped else 'none found'}")
 
     dropped = prune(ARCHIVE, today, args.keep_days, args.dry_run)
     print(f"  pruned: {len(dropped)} archive(s) older than {args.keep_days} days")
-
-    # Non-zero when the record did NOT reach origin. This is the only signal that the one
-    # channel carrying evidence off this box has stopped working.
-    return 0 if pushed else 1
+    print(f"  ledger: {len(closed)} closed day(s) on disk, awaiting `ledger_sync.py` on the Mac")
+    return 0
 
 
 if __name__ == "__main__":

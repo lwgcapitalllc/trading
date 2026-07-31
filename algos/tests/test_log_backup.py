@@ -1,19 +1,22 @@
-"""Backing up the decision record.
+"""Preserving the decision record — both halves.
 
-The ledger is the only evidence the dry run happened, and this job is the only thing that
-moves it off the VPS disk. Two failure modes are worth more than the rest, and both are
-quiet: committing a file the bot is still writing (a torn day that reads as a whole one), and
-skipping a day the job missed (a hole that nothing ever fills). Everything below is aimed at
-those two, plus the rule that a box holding a live MT5 password never gets a blanket `git add`.
+The ledger is the only evidence the dry run happened. It lives on one VPS disk, and the two
+scripts under test are the only things that bound it and move it. Two failure modes matter
+more than the rest, and both are quiet: copying a file the bot is still writing (a torn day
+that later reads exactly like a whole one), and skipping a day (a hole nothing ever fills).
 
-Git is exercised for real against a throwaway repo in tmp_path — mocking `subprocess` here
-would test the mock, and the thing worth checking is precisely WHICH paths end up staged.
+`log_backup.py` runs on the VPS and does housekeeping. `ledger_sync.py` runs on the Mac and
+does git. The split exists because the VPS cannot push — see either module's docstring.
+
+Git is exercised for real against a throwaway repo in tmp_path. Mocking `subprocess` would
+test the mock, and the thing worth pinning is precisely WHICH paths end up staged.
 """
 
 from __future__ import annotations
 
 import subprocess
 import sys
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -23,6 +26,7 @@ _REPO = Path(__file__).resolve().parent.parent.parent
 if str(_REPO / "algos" / "tools") not in sys.path:
     sys.path.insert(0, str(_REPO / "algos" / "tools"))
 
+import ledger_sync  # noqa: E402
 import log_backup  # noqa: E402
 
 TODAY = date(2026, 8, 15)
@@ -36,9 +40,9 @@ def _ledger(instances: Path, bot: str, day: str, body: str = '{"kind":"bar"}\n')
     return p
 
 
-# ── which files are eligible ────────────────────────────────────────────────────
+# ── which days are eligible (the VPS side) ──────────────────────────────────────
 def test_todays_file_is_left_alone(tmp_path):
-    """It is still being appended to. A commit would capture a torn half-day that is
+    """It is still being appended to. Copying it captures a torn half-day that is
     indistinguishable, later, from a complete one."""
     _ledger(tmp_path, "bot", "2026-08-15")
     closed, _ = log_backup.ledger_files(tmp_path, TODAY)
@@ -62,8 +66,8 @@ def test_every_bot_is_swept_not_just_the_first(tmp_path):
 
 
 def test_a_stray_file_is_skipped_and_named(tmp_path):
-    """A backup job is the wrong place to discover what an unexpected file was — but
-    silently ignoring it is how a real ledger with a typo'd name never gets saved."""
+    """A backup job is the wrong place to guess what an unexpected file was — but silently
+    ignoring it is how a real ledger with a typo'd name never gets saved."""
     d = tmp_path / "bot" / "ledger"
     d.mkdir(parents=True)
     (d / "notes.txt").write_text("scratch")
@@ -73,110 +77,7 @@ def test_a_stray_file_is_skipped_and_named(tmp_path):
     assert [p.name for p in skipped] == ["notes.txt"]
 
 
-# ── git: exactly these paths, and nothing else ──────────────────────────────────
-@pytest.fixture
-def repo(tmp_path):
-    """A real git repo with a real 'origin' to push to, so staging is observed not mocked."""
-    origin = tmp_path / "origin.git"
-    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
-
-    work = tmp_path / "work"
-    work.mkdir()
-    run = lambda *a: subprocess.run(["git", "-C", str(work), *a], check=True,
-                                    capture_output=True)
-    subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
-    run("config", "user.email", "t@t.t")
-    run("config", "user.name", "t")
-    run("remote", "add", "origin", str(origin))
-    (work / "README.md").write_text("x")
-    run("add", "README.md")
-    run("commit", "-qm", "init")
-    run("push", "-q", "origin", "main")
-    return work
-
-
-def _tracked(repo: Path) -> set[str]:
-    out = subprocess.run(["git", "-C", str(repo), "ls-files"],
-                         capture_output=True, text=True)
-    return set(out.stdout.split())
-
-
-def test_a_ledger_file_reaches_origin(repo):
-    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-    assert log_backup.commit_and_push(repo, [p], TODAY) is True
-
-    out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
-                         capture_output=True, text=True)
-    assert "decision record" in out.stdout
-
-
-def test_a_secret_sitting_in_the_tree_is_not_swept_in(repo):
-    """The VPS holds credentials.json with a live MT5 password and a Telegram token. This is
-    the test that says `git add -A` is never acceptable in this job, no matter how much
-    simpler it reads."""
-    (repo / "credentials.json").write_text('{"mt5_password": "hunter2"}')
-    (repo / "algos").mkdir(exist_ok=True)
-    (repo / "algos" / "monitor_state.json").write_text("{}")
-    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-
-    log_backup.commit_and_push(repo, [p], TODAY)
-
-    tracked = _tracked(repo)
-    assert "credentials.json" not in tracked
-    assert "algos/monitor_state.json" not in tracked
-    assert any("decisions-2026-08-14" in t for t in tracked)
-
-
-def test_an_already_committed_file_is_not_re_committed(repo):
-    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-    log_backup.commit_and_push(repo, [p], TODAY)
-    assert log_backup.uncommitted(repo, [p]) == []
-
-
-def test_a_file_that_grew_after_its_commit_is_picked_up_again(repo):
-    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-    log_backup.commit_and_push(repo, [p], TODAY)
-    p.write_text('{"kind":"bar"}\n{"kind":"trade"}\n')
-    assert log_backup.uncommitted(repo, [p]) == [p]
-
-
-def test_a_missed_day_is_caught_up_not_lost(repo):
-    """THE reason this commits everything outstanding rather than 'yesterday'. A day the VPS
-    was off, or the push failed, must become a delay — not a permanent hole."""
-    old = _ledger(repo / "algos" / "inst", "bot", "2026-08-02")
-    new = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-
-    closed, _ = log_backup.ledger_files(repo / "algos" / "inst", TODAY)
-    pending = log_backup.uncommitted(repo, closed)
-    assert set(pending) == {old, new}
-
-    log_backup.commit_and_push(repo, pending, TODAY)
-    assert any("decisions-2026-08-02" in t for t in _tracked(repo))
-
-
-def test_a_moved_origin_is_rebased_onto_rather_than_giving_up(repo, tmp_path):
-    """A deploy from the Mac lands between two backup runs. The ledger commit touches files
-    no source change ever touches, so rebasing is safe — and refusing to would strand the
-    record on the VPS indefinitely."""
-    other = tmp_path / "other"
-    subprocess.run(["git", "clone", "-q", str(tmp_path / "origin.git"), str(other)], check=True)
-    for a in (("config", "user.email", "o@o.o"), ("config", "user.name", "o")):
-        subprocess.run(["git", "-C", str(other), *a], check=True)
-    (other / "src.py").write_text("print(1)")
-    subprocess.run(["git", "-C", str(other), "add", "src.py"], check=True)
-    subprocess.run(["git", "-C", str(other), "commit", "-qm", "deploy"], check=True)
-    subprocess.run(["git", "-C", str(other), "push", "-q"], check=True)
-
-    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
-    assert log_backup.commit_and_push(repo, [p], TODAY) is True
-
-    out = subprocess.run(["git", "-C", str(repo), "ls-tree", "-r", "--name-only",
-                          "origin/main"], capture_output=True, text=True)
-    assert "src.py" in out.stdout
-    assert any("decisions-2026-08-14" in line for line in out.stdout.splitlines())
-
-
-# ── the raw logs ────────────────────────────────────────────────────────────────
+# ── the raw logs (the VPS side) ─────────────────────────────────────────────────
 def test_logs_are_copied_into_a_dated_zip(tmp_path):
     inst = tmp_path / "inst"
     (inst / "bot").mkdir(parents=True)
@@ -184,15 +85,13 @@ def test_logs_are_copied_into_a_dated_zip(tmp_path):
 
     z = log_backup.archive_logs(inst, tmp_path / "arch", TODAY)
     assert z.name == "logs-2026-08-15.zip"
-
-    import zipfile
     with zipfile.ZipFile(z) as zf:
         assert zf.read("bot/bot.log").decode() == "hello"
 
 
 def test_the_live_log_is_left_in_place(tmp_path):
     """It is copied, never rotated. The bot holds it open, and renaming an open file on
-    Windows fails — a rotation scheme would pass on the Mac and lose the day on the VPS."""
+    Windows fails — a rotation scheme would pass here and lose the day on the VPS."""
     inst = tmp_path / "inst"
     (inst / "bot").mkdir(parents=True)
     live = inst / "bot" / "bot.log"
@@ -214,8 +113,8 @@ def test_old_archives_are_pruned_by_filename_date(tmp_path):
 
 
 def test_pruning_never_touches_a_ledger(tmp_path):
-    """The decision record is the artefact. Only the zipped scratch is disposable, and a
-    prune that could reach the ledger would delete the very thing this job exists to keep."""
+    """The decision record is the artefact; only the zipped scratch is disposable. A prune
+    that could reach the ledger would delete the very thing this exists to keep."""
     arch = tmp_path / "arch"
     arch.mkdir()
     keep = arch / "decisions-2026-01-01.jsonl"
@@ -238,3 +137,132 @@ def test_a_dry_run_changes_nothing(tmp_path):
 
     assert not (arch / "logs-2026-08-15.zip").exists()
     assert (arch / "logs-2026-01-01.zip").exists()
+
+
+# ── git: exactly these paths, and nothing else (the Mac side) ───────────────────
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    """A real git repo with a real 'origin', with ledger_sync pointed at it.
+
+    Staging is observed rather than mocked because the property worth pinning is which paths
+    reach the index — the one thing a mock would happily agree with and get wrong.
+    """
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True)
+
+    work = tmp_path / "work"
+    work.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True)
+    for a in (("config", "user.email", "t@t.t"), ("config", "user.name", "t"),
+              ("remote", "add", "origin", str(origin))):
+        subprocess.run(["git", "-C", str(work), *a], check=True)
+    (work / "README.md").write_text("x")
+    subprocess.run(["git", "-C", str(work), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-qm", "init"], check=True)
+    subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "main"], check=True)
+
+    monkeypatch.setattr(ledger_sync, "REPO_ROOT", work)
+    monkeypatch.setattr(ledger_sync, "LOCAL_INSTANCES", work / "algos" / "inst")
+    return work
+
+
+def _tracked(repo: Path) -> set[str]:
+    out = subprocess.run(["git", "-C", str(repo), "ls-files"], capture_output=True, text=True)
+    return set(out.stdout.split())
+
+
+def test_a_ledger_file_reaches_origin(repo):
+    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
+    assert ledger_sync.commit([p], push=True) is True
+
+    out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
+                         capture_output=True, text=True)
+    assert "decision record" in out.stdout
+
+
+def test_a_secret_sitting_in_the_tree_is_not_swept_in(repo):
+    """Says `git add -A` is never acceptable here, however much simpler it reads. The VPS
+    tree this mirrors holds credentials.json with a live MT5 password and a Telegram token."""
+    (repo / "credentials.json").write_text('{"mt5_password": "hunter2"}')
+    (repo / "algos").mkdir(exist_ok=True)
+    (repo / "algos" / "monitor_state.json").write_text("{}")
+    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
+
+    ledger_sync.commit([p], push=True)
+
+    tracked = _tracked(repo)
+    assert "credentials.json" not in tracked
+    assert "algos/monitor_state.json" not in tracked
+    assert any("decisions-2026-08-14" in t for t in tracked)
+
+
+def test_an_already_committed_file_is_not_re_committed(repo):
+    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
+    ledger_sync.commit([p], push=True)
+    assert ledger_sync.pending([p]) == []
+
+
+def test_a_file_that_grew_after_its_commit_is_picked_up_again(repo):
+    """A day can be fetched before the bot has finished writing it only if the clock is
+    wrong — but a re-fetch that git ignores would silently keep the truncated version."""
+    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
+    ledger_sync.commit([p], push=True)
+    p.write_text('{"kind":"bar"}\n{"kind":"trade"}\n')
+    assert ledger_sync.pending([p]) == [p]
+
+
+def test_a_missed_day_is_caught_up_not_lost(repo):
+    """The reason the VPS reports ALL closed days rather than just yesterday. A day the Mac
+    was off must become a delay, not a permanent hole."""
+    old = _ledger(repo / "algos" / "inst", "bot", "2026-08-02")
+    new = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
+
+    closed, _ = log_backup.ledger_files(repo / "algos" / "inst", TODAY)
+    assert set(ledger_sync.pending(closed)) == {old, new}
+
+    ledger_sync.commit(closed, push=True)
+    assert any("decisions-2026-08-02" in t for t in _tracked(repo))
+
+
+def test_no_push_commits_locally_and_says_it_did_not_push(repo):
+    """`--no-push` must not report success — the record is not safe until it is at origin."""
+    p = _ledger(repo / "algos" / "inst", "bot", "2026-08-14")
+    assert ledger_sync.commit([p], push=False) is False
+    assert any("decisions-2026-08-14" in t for t in _tracked(repo))
+
+    out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
+                         capture_output=True, text=True)
+    assert "decision record" not in out.stdout
+
+
+# ── the two halves agree ────────────────────────────────────────────────────────
+def test_the_sync_only_accepts_ledger_shaped_paths(repo, monkeypatch):
+    """`closed_days` validates what the VPS reports rather than trusting it.
+
+    Each reported line becomes a local WRITE TARGET, and the remote is a different machine
+    running whatever it last pulled. The traversal case is the one that matters: a filename-
+    only check passes `../../../decisions-2026-08-14.jsonl` — a perfectly valid ledger name
+    that lands outside the repo — so the whole path shape is anchored instead.
+    """
+    monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
+        a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n"
+                     "../../../../../tmp/decisions-2026-08-14.jsonl\n"
+                     "bot/ledger/../../../etc/decisions-2026-08-14.jsonl\n"
+                     "bot/ledger/notes.txt\n"
+                     "/etc/decisions-2026-08-14.jsonl\n", stderr=""))
+    assert ledger_sync.closed_days("host") == ["bot/ledger/decisions-2026-08-14.jsonl"]
+
+
+def test_a_fetched_path_always_lands_inside_the_repo(repo, monkeypatch):
+    """The property the shape check buys, stated directly against the write target."""
+    monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
+        a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n", stderr=""))
+    for rel in ledger_sync.closed_days("host"):
+        target = (ledger_sync.LOCAL_INSTANCES / rel).resolve()
+        assert target.is_relative_to(repo.resolve())
+
+
+def test_both_halves_share_one_definition_of_a_ledger_filename():
+    """Two regexes would drift, and the drift would show up as a day that is silently never
+    synced — the exact failure this whole pipeline exists to prevent."""
+    assert ledger_sync.LEDGER_RE is log_backup.LEDGER_RE

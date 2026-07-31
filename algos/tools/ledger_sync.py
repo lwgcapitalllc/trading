@@ -1,0 +1,164 @@
+"""ledger_sync.py — the Mac half: fetch the bot's decision record and commit it.
+
+Run it from the repo root, on the machine that has git credentials:
+
+    python algos/tools/ledger_sync.py             # fetch, commit, push
+    python algos/tools/ledger_sync.py --dry-run   # say what it would do
+    python algos/tools/ledger_sync.py --no-push   # commit locally only
+
+**Why the pull direction.** The VPS cannot push. Its scheduled task runs as SYSTEM, SYSTEM has
+its own credential store, and Git Credential Manager there has no cached token and no
+interactive session to ask for one — so `git push` BLOCKS rather than failing, until the task
+is killed. Making it work means storing a GitHub write token on a box that already holds a
+live MT5 password, which widens what a compromise costs for no trading benefit. See
+`log_backup.py` for the measurement.
+
+So the VPS bounds its own disk and reports which ledger days are closed; this runs where
+credentials already work. The honest cost: **the record leaves the VPS when this runs, not on
+a timer.** Until the day it prints has been committed, it exists on exactly one disk. That is
+why the summary line says how many days are outstanding rather than just "done".
+
+**What it will not do.** It stages only files it just fetched into `*/ledger/`, and only ones
+matching `decisions-YYYY-MM-DD.jsonl` — never `git add -A`, never a path it did not write.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from log_backup import LEDGER_RE  # noqa: E402  — one definition of a ledger filename
+
+# The full shape a reported path must have: <bot>/ledger/decisions-YYYY-MM-DD.jsonl.
+#
+# Checking only the FILENAME is not enough. `--list-closed` output is read from another
+# machine running whatever it last pulled, and this script turns each line into a local write
+# target — so `../../../../decisions-2026-08-14.jsonl` has a perfectly valid filename and
+# lands outside the repo entirely. Anchoring the whole path is the cheap way to make that
+# impossible rather than unlikely.
+REMOTE_PATH_RE = re.compile(r"^[A-Za-z0-9._-]+/ledger/decisions-\d{4}-\d{2}-\d{2}\.jsonl$")
+
+REPO_ROOT = _HERE.parent.parent
+LOCAL_INSTANCES = REPO_ROOT / "algos" / "markets" / "fx" / "instances"
+
+DEFAULT_HOST = "forexvps"
+REMOTE_INSTANCES = "C:/trading/algos/markets/fx/instances"
+REMOTE_PYTHON = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
+REMOTE_SCRIPT = r"C:\trading\algos\tools\log_backup.py"
+
+
+def _run(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(args, capture_output=True, text=True)
+
+
+def closed_days(host: str) -> list[str]:
+    """Ask the VPS which ledger days are closed.
+
+    Asking rather than re-deriving keeps "closed" defined in exactly one place. If the two
+    sides ever disagreed, the way it would show up is a half-written day committed as a whole
+    one — which is unreadable later and looks fine at the time.
+    """
+    out = _run("ssh", host, f'{REMOTE_PYTHON} {REMOTE_SCRIPT} --list-closed')
+    if out.returncode != 0:
+        raise RuntimeError(f"could not list closed days on {host}: {out.stderr.strip()}")
+    return [line.strip() for line in out.stdout.splitlines()
+            if REMOTE_PATH_RE.match(line.strip())]
+
+
+def fetch(host: str, rel_paths: list[str], dry_run: bool = False) -> list[Path]:
+    """Copy each closed ledger file down into the local repo. Returns the local paths."""
+    got = []
+    for rel in rel_paths:
+        local = LOCAL_INSTANCES / rel
+        if dry_run:
+            got.append(local)
+            continue
+        local.parent.mkdir(parents=True, exist_ok=True)
+        out = _run("scp", "-q", f"{host}:{REMOTE_INSTANCES}/{rel}", str(local))
+        if out.returncode != 0:
+            print(f"  ! fetch failed for {rel}: {out.stderr.strip()}")
+            continue
+        got.append(local)
+    return got
+
+
+def pending(paths: list[Path]) -> list[Path]:
+    """Narrow to files git does not already have identical content for."""
+    if not paths:
+        return []
+    rel = [str(p.relative_to(REPO_ROOT)) for p in paths]
+    out = _run("git", "-C", str(REPO_ROOT), "status", "--porcelain", "--", *rel)
+    changed = {line[3:].strip().strip('"') for line in out.stdout.splitlines() if line.strip()}
+    return [p for p, r in zip(paths, rel) if r in changed]
+
+
+def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
+    """Stage exactly `paths` and commit. Returns True if the record is safely at origin."""
+    rel = [str(p.relative_to(REPO_ROOT)) for p in paths]
+    if dry_run:
+        print(f"  would commit {len(rel)} file(s): {', '.join(rel)}")
+        return True
+
+    if _run("git", "-C", str(REPO_ROOT), "add", "--", *rel).returncode != 0:
+        print("  git add failed")
+        return False
+
+    days = sorted({p.stem.replace("decisions-", "") for p in paths})
+    span = days[0] if len(days) == 1 else f"{days[0]}..{days[-1]}"
+    msg = (f"chore(ledger): decision record {span}\n\n"
+           f"Fetched from the VPS by algos/tools/ledger_sync.py. {len(rel)} file(s).")
+    c = _run("git", "-C", str(REPO_ROOT), "commit", "-m", msg, "--", *rel)
+    if c.returncode != 0 and "nothing to commit" not in c.stdout:
+        print(f"  git commit failed: {c.stderr.strip() or c.stdout.strip()}")
+        return False
+
+    if not push:
+        print("  committed locally (--no-push)")
+        return False
+    if _run("git", "-C", str(REPO_ROOT), "push", "origin", "HEAD:main").returncode == 0:
+        return True
+    print("  push failed — the commit is safe locally, re-run after a pull")
+    return False
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Fetch bot ledgers from the VPS and commit them.")
+    ap.add_argument("--host", default=DEFAULT_HOST)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-push", action="store_true")
+    args = ap.parse_args(argv)
+
+    today = datetime.now(timezone.utc).date()
+    print(f"ledger_sync {today} from {args.host} {'(dry run)' if args.dry_run else ''}".rstrip())
+
+    try:
+        rel = closed_days(args.host)
+    except RuntimeError as e:
+        print(f"  ! {e}")
+        return 1
+
+    if not rel:
+        print("  nothing closed yet — today's file is still being written")
+        return 0
+
+    local = fetch(args.host, rel, args.dry_run)
+    todo = local if args.dry_run else pending(local)
+    if not todo:
+        print(f"  up to date ({len(rel)} closed day(s), all already committed)")
+        return 0
+
+    ok = commit(todo, push=not args.no_push, dry_run=args.dry_run)
+    print(f"  {len(todo)} day(s) {'pushed' if ok else 'NOT pushed'}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
