@@ -116,17 +116,24 @@ class LiveRunner:
         log.propagate = False          # the root logger is not this package's to write through
         return log
 
-    def _notify(self, text: str) -> None:
+    def _notify(self, text: str, reply_to=None):
         """Every message this bot sends goes to ITS OWN configured destination — the routing is
         per instance, not global, so two bots on two accounts never share one feed unless their
-        configs say to. Empty values fall back to the shared default."""
+        configs say to. Empty values fall back to the shared default.
+
+        Returns Telegram's message id so a later message can reply to this one — that is how a
+        trade's exit lands under its own entry instead of loose in the feed. None on any failure,
+        which the bridge treats as "no thread to reply to" rather than an error.
+        """
         try:
-            from notify import send_telegram
-            send_telegram(text,
-                          chat_id=self.cfg.telegram_chat_id,
-                          token_key=self.cfg.telegram_token_key)
+            from notify import send_telegram_id
+            return send_telegram_id(text,
+                                    chat_id=self.cfg.telegram_chat_id,
+                                    token_key=self.cfg.telegram_token_key,
+                                    reply_to=reply_to)
         except Exception as e:
             self.log.warning(f"Telegram send failed: {e}")
+            return None
 
     def _build_strategy(self):
         """Import the strategy package, build its config from the INSTANCE file only, and

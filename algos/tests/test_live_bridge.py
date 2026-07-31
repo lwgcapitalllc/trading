@@ -178,8 +178,16 @@ def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None):
     mt5ops = mt5ops or _FakeMt5Ops()
     ledger = ledger or _FakeLedger()
     notes = notes if notes is not None else []
+
+    def _notify(text, reply_to=None):
+        """Mirrors the real signature: takes an optional reply target, hands back a message id.
+        The id is what a trade's EXIT replies to, so a fake that returns None would quietly test
+        the no-thread path and never the one that runs."""
+        notes.append(text)
+        return len(notes)
+
     b = live_bridge.OrderBridge(mt5ops, execution, ledger, _Log(),
-                                notify=notes.append, dry_run=dry_run)
+                                notify=_notify, dry_run=dry_run)
     b.state = live_bridge.BridgeState.LIVE
     return b, mt5ops, ledger, notes
 
@@ -325,7 +333,8 @@ def test_closing_a_position_reports_pnl_and_r():
     assert closed["pnl_usd"] == 1260.0
     # risk = |3290 - 3280| × 0.42 lots × 100 contract size = $420 → 3R
     assert closed["r_multiple"] == pytest.approx(3.0)
-    assert any("EXIT" in n and "1,260" in n for n in notes)
+    # The exit alert leads with the OUTCOME, not the word "exit" — see algos/live/alerts.py.
+    assert any("WIN" in n and "+1,260.00" in n for n in notes)
 
 
 def test_a_position_cancels_any_leftover_resting_order():

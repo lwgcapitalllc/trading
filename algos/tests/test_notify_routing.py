@@ -42,6 +42,21 @@ _ENV_VARS = ("LWG_TELEGRAM_TOKEN", "LWG_TELEGRAM_CHAT_ID", "LWG_TELEGRAM_ADMIN_C
              "LWG_TELEGRAM_TOKEN_BLEG")
 
 
+def _ok(message_id=1):
+    """Telegram's success shape. `message_id` matters — it is what an exit replies to."""
+    return type("R", (), {
+        "status_code": 200,
+        "text": "ok",
+        "json": lambda self: {"ok": True, "result": {"message_id": message_id}},
+    })()
+
+
+def _rejected(description):
+    body = '{"ok":false,"error_code":400,"description":"%s"}' % description
+    return type("R", (), {"status_code": 400, "text": body,
+                          "json": lambda self: {"ok": False}})()
+
+
 class _Sent:
     """Captures what would have gone to Telegram."""
 
@@ -49,8 +64,9 @@ class _Sent:
         self.calls = []
 
     def post(self, url, json=None, timeout=None):
-        self.calls.append({"url": url, "chat_id": json["chat_id"], "text": json["text"]})
-        return type("R", (), {"status_code": 200, "text": "ok"})()
+        self.calls.append({"url": url, "chat_id": json["chat_id"], "text": json["text"],
+                           "reply_to": json.get("reply_to_message_id")})
+        return _ok(100 + len(self.calls))
 
     @property
     def last_token(self):
@@ -154,11 +170,8 @@ class _RejectsMarkdown:
     def post(self, url, json=None, timeout=None):
         self.calls.append(json)
         if "parse_mode" in json:
-            return type("R", (), {
-                "status_code": 400,
-                "text": '{"ok":false,"error_code":400,"description":'
-                        '"Bad Request: can\'t parse entities: Can\'t find end of the entity"'})()
-        return type("R", (), {"status_code": 200, "text": "ok"})()
+            return _rejected("Bad Request: can't parse entities: Can't find end of the entity")
+        return _ok()
 
 
 def test_a_message_telegram_cannot_parse_is_resent_unformatted(monkeypatch, capsys):
@@ -185,12 +198,54 @@ def test_a_400_that_is_not_a_parse_error_is_not_retried(monkeypatch):
     class _NotAMember:
         def post(self, url, json=None, timeout=None):
             calls.append(json)
-            return type("R", (), {"status_code": 400,
-                                  "text": '{"description":"Bad Request: chat not found"}'})()
+            return _rejected("Bad Request: chat not found")
 
     monkeypatch.setattr(notify, "_requests", _NotAMember())
     assert notify.send_telegram("hi") is False
     assert len(calls) == 1
+
+
+# ── the exit replies to the entry ───────────────────────────────────────────────
+def test_the_message_id_comes_back_so_a_later_message_can_reply(monkeypatch, sent):
+    """Without the id there is no thread, and a trade's outcome floats loose in the feed."""
+    monkeypatch.setattr(credentials, "_cache",
+                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    assert notify.send_telegram_id("ENTRY") == 101
+
+
+def test_a_reply_carries_the_target_message_id(monkeypatch, sent):
+    monkeypatch.setattr(credentials, "_cache",
+                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    entry_id = notify.send_telegram_id("ENTRY")
+    notify.send_telegram_id("EXIT", reply_to=entry_id)
+    assert sent.calls[-1]["reply_to"] == entry_id
+
+
+def test_a_deleted_entry_does_not_take_the_exit_alert_with_it(monkeypatch, capsys):
+    """If the entry message was deleted, Telegram refuses the whole send. A missing thread link
+    is cosmetic; a missing exit alert means a closed trade nobody was told about."""
+    monkeypatch.setattr(credentials, "_cache",
+                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    calls = []
+
+    class _GoneTarget:
+        def post(self, url, json=None, timeout=None):
+            calls.append(json)
+            if "reply_to_message_id" in json:
+                return _rejected("Bad Request: message to be replied not found")
+            return _ok(77)
+
+    monkeypatch.setattr(notify, "_requests", _GoneTarget())
+    assert notify.send_telegram_id("EXIT", reply_to=999) == 77
+    assert len(calls) == 2
+    assert "reply_to_message_id" not in calls[1]
+    assert "standalone" in capsys.readouterr().out
+
+
+def test_a_failed_send_reports_no_message_id(monkeypatch):
+    """None must mean "there is no thread here", so the next exit does not reply into nothing."""
+    monkeypatch.setattr(credentials, "_cache", {})
+    assert notify.send_telegram_id("hi") is None
 
 
 # ── never raises ────────────────────────────────────────────────────────────────

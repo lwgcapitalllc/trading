@@ -28,8 +28,12 @@ _warned = False
 _warned_keys: set = set()
 
 
-def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
+def send_telegram(text: str, chat_id: str = "", token_key: str = "",
+                  reply_to=None) -> bool:
     """Send `text` to `chat_id` (default: the configured group). Returns True on success.
+
+    Use `send_telegram_id` instead when the message id is needed — this wrapper exists so the
+    many callers that only care whether it went keep reading cleanly.
 
     `chat_id` and `token_key` are what make notifications PER BOT. A deployment sets them in its
     own instance config, so two bots on two accounts can report into two different groups, and
@@ -48,6 +52,21 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
     starts before the file is written picks it up on the next message instead of staying mute
     for its whole session.
     """
+    return send_telegram_id(text, chat_id, token_key, reply_to) is not None
+
+
+def send_telegram_id(text: str, chat_id: str = "", token_key: str = "",
+                     reply_to=None):
+    """Same send, but returns Telegram's `message_id` (or None on failure).
+
+    The id is what lets a later message REPLY to this one — the trade exit replies to the trade
+    entry, so both halves of a trade sit in one thread and an outcome is never read apart from
+    the setup it came from.
+
+    `reply_to` is best-effort by design: if the message being replied to has been deleted,
+    Telegram refuses the send outright. A missing thread link is not a reason to lose a trade
+    alert, so that case retries as a standalone message.
+    """
     global _warned
     token, group, _admin = telegram_credentials()
     if token_key:
@@ -65,20 +84,28 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
             _warned = True
             print("notify: Telegram is not configured (see algos/credentials.template.json) - "
                   "messages will be dropped for the rest of this run")
-        return False
+        return None
     if _requests is None:
         print(f"notify: requests not installed, dropping message: {text}")
-        return False
+        return None
     url = f"https://api.telegram.org/bot{token}/sendMessage"
 
-    def _post(parse_mode):
+    def _post(parse_mode, reply):
         body = {"chat_id": dest, "text": text}
         if parse_mode:
             body["parse_mode"] = parse_mode
+        if reply:
+            body["reply_to_message_id"] = reply
         return _requests.post(url, json=body, timeout=5)
 
     try:
-        r = _post("Markdown")
+        r = _post("Markdown", reply_to)
+        if reply_to and r.status_code == 400 and "replied" in r.text:
+            # The entry message was deleted. Losing the thread link is a cosmetic loss; losing
+            # the trade alert is not.
+            print("notify: reply target is gone, sending standalone")
+            reply_to = None
+            r = _post("Markdown", None)
         if r.status_code == 400 and "parse entities" in r.text:
             # Markdown is a nicety; DELIVERY is the point. An underscore in a bot key, a symbol
             # or a file path inside an exception opens an italic that never closes, and Telegram
@@ -87,11 +114,11 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
             # "MT5_FFT" alone was enough. Retry unformatted rather than lose it.
             print("notify: Markdown rejected, resending as plain text - "
                   f"{r.text[:160]}")
-            r = _post(None)
+            r = _post(None, reply_to)
         if r.status_code != 200:
             print(f"notify: Telegram returned {r.status_code}: {r.text[:200]}")
-            return False
-        return True
+            return None
+        return (r.json().get("result") or {}).get("message_id")
     except Exception as e:
         print(f"notify: send failed: {e}")
-        return False
+        return None

@@ -38,6 +38,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+import alerts
+
 
 class BridgeState(str, Enum):
     WARMING = "warming"   # the emulator opened a position during warmup — wait for it to flatten
@@ -93,8 +95,9 @@ class OrderBridge:
         self._ex = execution
         self._ledger = ledger
         self._log = log
-        self._notify = notify or (lambda text: None)
+        self._notify = notify or (lambda text, reply_to=None: None)
         self.dry_run = dry_run
+        self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
         self.state = BridgeState.LIVE
         self._rest: dict[int, Optional[_Rest]] = {1: None, -1: None}
@@ -106,6 +109,10 @@ class OrderBridge:
         self._pos_intended: float = 0.0
         self._pos_risk_usd: float = 0.0
         self._pos_opened_bar: Optional[int] = None
+        # Telegram's id for THIS position's entry message. The exit replies to it, so the two
+        # halves of a trade read as one thread. None means the entry alert never landed, and the
+        # exit then goes out standalone rather than not at all.
+        self._pos_alert_id = None
         self.halt_reason: str = ""
 
     # ── startup ──────────────────────────────────────────────────────────────
@@ -198,16 +205,19 @@ class OrderBridge:
         self._ledger.trade_closed(
             ticket=self._pos_ticket, direction=side, symbol=self._mt5.symbol, price=price,
             pnl_usd=pnl, r_multiple=r, reason=reason, lots=self._pos_lots, held_bars=held)
-        self._notify(
-            f"🔴 *EXIT* {self._mt5.symbol}\n"
-            f"{side} {self._pos_lots} lots closed @ {price}\n"
-            f"P&L  *${pnl:,.2f}*" + (f"   ({r:+.2f}R)" if r is not None else "") + "\n"
-            f"Reason: {reason}"
-        )
+        self._notify(alerts.format_exit(
+            strategy=self._strategy_name, symbol=self._mt5.symbol, exit_price=price,
+            pnl_usd=pnl, r_multiple=r, digits=self._digits(),
+            # Nested getattr on purpose: this package reads the strategy defensively everywhere
+            # else, and a strategy without a `cfg` must not be able to stop an exit alert.
+            scratch_r=getattr(getattr(self._ex, "cfg", None), "exec_scratch_r", 0.15),
+            when=self._bar_time(sig)),
+            reply_to=self._pos_alert_id)
         self._pos_ticket = None
         self._pos_dir = 0
         self._pos_risk_usd = 0.0
         self._pos_opened_bar = None
+        self._pos_alert_id = None
 
     def _observe_open(self, positions, dec, sig) -> None:
         if self._pos_ticket is not None or not positions:
@@ -237,12 +247,10 @@ class OrderBridge:
             price=p.price_open, stop=p.sl, intended_price=intended,
             tp1=getattr(dec, "tp1", 0.0) or 0.0, tp2=getattr(dec, "tp2", 0.0) or 0.0,
             confluences=self._confluences(dec, sig))
-        self._notify(
-            f"🟢 *ENTRY* {self._mt5.symbol}\n"
-            f"{side} {p.volume} lots @ {p.price_open}\n"
-            f"Stop {p.sl}\n"
-            f"{self._stamp(sig)}"
-        )
+        self._pos_alert_id = self._notify(alerts.format_entry(
+            strategy=self._strategy_name, symbol=self._mt5.symbol, direction=side,
+            entry=p.price_open, stop=p.sl, lots=p.volume,
+            digits=self._digits(), point=self._point(), when=self._bar_time(sig)))
 
     def _agrees(self, positions) -> bool:
         """Both ledgers must tell the same story. Anything else halts — see the module
@@ -390,6 +398,32 @@ class OrderBridge:
             return float(si.trade_contract_size) if si else 1.0
         except Exception:
             return 1.0
+
+    def _symbol_attr(self, name: str, fallback):
+        """One symbol property off the terminal, with a fallback that only applies when MT5 is
+        not there to ask (tests, dry runs on a machine without it). Never hardcoded per symbol —
+        `digits` and `point` differ by broker, and a wrong pip size makes every stop distance in
+        every alert wrong in a way nobody would question."""
+        try:
+            import MetaTrader5 as mt5
+            si = mt5.symbol_info(self._mt5.symbol)
+            return getattr(si, name) if si else fallback
+        except Exception:
+            return fallback
+
+    def _digits(self) -> int:
+        return int(self._symbol_attr("digits", 2))
+
+    def _point(self) -> float:
+        return float(self._symbol_attr("point", 0.01))
+
+    @staticmethod
+    def _bar_time(sig):
+        """The BAR's timestamp, not the wall clock — an alert should be stamped with when the
+        trade happened. Falls back to None, which `alerts` reads as "now"."""
+        from datetime import datetime, timezone
+        ms = getattr(sig, "time_ms", None)
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc) if ms else None
 
     def _infer_exit_reason(self, price: float) -> str:
         if not self._pos_stop or not price:
