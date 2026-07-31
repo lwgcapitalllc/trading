@@ -89,9 +89,33 @@ its own group and `telegram_token_key` lets it send as its own Telegram bot. The
 entry in `algos/credentials.json`; the token itself never enters an instance config. Both empty
 = the shared default, so a one-bot setup needs neither.
 
-Tests: `algos/tests/` — **89, all offline against a faked terminal**, so `pytest algos/` runs on the
-Mac with no MT5 and no VPS. 60 cover this package, 16 cover the pending-order layer in
-`shared/mt5_ops.py`, 13 cover credential resolution and Telegram routing.
+**Runtime config reload (added 2026-07-31).** `exec_risk_pct` can be changed under a RUNNING bot
+from the command center: it rewrites the instance config, pushes, the VPS pulls, and the bot
+notices its own file changed (`runner._maybe_reload_runtime`). Three rules, each guarding a
+specific failure:
+
+1. **Only `live_config.RUNTIME_RELOADABLE` is applied.** If anything else moved — a strategy param,
+   the account, the symbol, the version pin — the change is REFUSED, left on disk, logged and
+   Telegrammed. That is the case where a `git pull` carrying unrelated strategy edits reaches a
+   running bot, and absorbing it silently is exactly what the source-hash pin exists to prevent.
+   A restart is required, so the pin is re-checked and the engines re-warm on the code that is
+   actually there. A refused change is reported ONCE, not every poll.
+2. **Applied only while FLAT** — no position AND nothing resting (`bridge.is_flat`). Not because
+   resizing mid-trade would corrupt an open position (size is fixed at entry) but so every trade in
+   the ledger is attributable to exactly one configuration. A pending change is NOT consumed: it
+   waits, and lands the moment the bot goes flat.
+3. **The ledger records `risk_pct` per trade**, read off the strategy live rather than cached, so
+   "why was trade 14 at 0.05 lots and trade 15 at 0.02" stays answerable.
+
+`RUNTIME_RELOADABLE` is **mirrored** in `command-center/backend/services/bot_params.py`
+(`RUNTIME_EDITABLE`) — the subsystems may not import each other, so the command center pins the two
+sets equal with a test that reads `live_config.py` as text. Drift is silent and one-directional-bad:
+the UI offers an edit, the push and pull both succeed, and the bot ignores the value forever.
+**Change one, change both.**
+
+Tests: `algos/tests/` — **104, all offline against a faked terminal**, so `pytest algos/` runs on
+the Mac with no MT5 and no VPS. 60 cover this package, 16 cover the pending-order layer in
+`shared/mt5_ops.py`, 13 cover credential resolution and Telegram routing, 15 cover the reload above.
 
 **Offline green is not the same as "it runs".** The first real startup on the VPS
 (2026-07-31, dry run, full connect → pin → warm → bridge) found three things a fully green suite
@@ -192,18 +216,44 @@ a stored password, and never trust `schtasks /run`'s exit code — verify `Last 
 ### On hold, by Aaron's call (2026-07-31) — do not delete, do not switch on yet
 
 Only the Telegram bot is maintained from the original suite: **trade ENTRY and EXIT alerts, nothing
-else.** These three are FIXED (they will run when enabled) but deliberately **disabled**, because
-their bot registries are empty and switching them on would push empty reports into the group:
+else.** These three are FIXED (they will run when enabled) but deliberately **disabled**:
 
 | Task | Script | Why it waits |
 |---|---|---|
-| `SYS_MONITOR` | `notifications/monitor.py` | Crash / liveness alerts — wants a registered live bot |
-| `SYS_PNLTRACKER` | `notifications/pnl_tracker.py` | Same |
+| `SYS_MONITOR` | `notifications/monitor.py` | Crash / liveness alerts. **Registry now filled** — only the task is off |
+| `SYS_PNLTRACKER` | `notifications/pnl_tracker.py` | Its bot registry is still empty |
 | `SYS_REPORTER` | `notifications/reporter.py` | Daily report at 21:00 — would send an empty one |
 
-Re-enable with `schtasks /change /tn <NAME> /enable` once the live bot is registered (step 5 of
-`docs/LIVE_TRADING_PIPELINE.md`). **Crash alerting should come back before real money does** — a
-live bot nobody is watching is the thing this whole layer exists to prevent.
+Re-enable with `schtasks /change /tn <NAME> /enable`. **Crash alerting should come back before real
+money does** — a live bot nobody is watching is the thing this whole layer exists to prevent.
+`SYS_MONITOR` is the one that is genuinely ready: `monitor.BOTS` carries `mpc_sos_fade_demo`, so
+enabling the task is the whole job. The Bots page now renders a disabled task as **DISABLED**, not
+"scheduled — waiting for next trigger", so an off watchdog stops reading as a covered one.
+
+### Registering a bot — the four registries, and the crash if you miss one
+
+**2026-07-31: `mpc_sos_fade_demo` is registered.** It is the first bot in the rebuilt suite. Four
+registries had to be filled and they are not optional — `bot_state.set_started()` does
+`BOT_ACCOUNTS[key]` unguarded and `algos/live/runner.py` calls it at the top of its loop, so a bot
+missing from ONE of them connects to MT5, warms 5,000 bars, and then dies on a bare `KeyError`:
+
+| File | What it registers |
+|---|---|
+| `shared/bot_state.py` | `BOT_INSTANCES` / `BOT_ACCOUNTS` / `BOT_NAMES` — the state file, account, display name |
+| `bots/startup_coordinator.py` | `STARTUP_SEQUENCE` — how it boots, and the log line that means "connected" |
+| `notifications/monitor.py` | `BOTS` — liveness watch (inert while SYS_MONITOR is disabled) |
+| `command-center/backend/routers/bots.py` | Six task/bot maps — how it appears on the Bots page |
+
+Two things about that list. `STARTUP_SEQUENCE` entries carry a **full argv**, not a config path
+(the deleted bots took `--config`, `algos/live/runner.py` takes `--bot`) and deliberately do **not**
+pass `--live`, so a bot that boots with the VPS can never arm itself. And there is **no per-bot
+`BOT_*` scheduled task** — boot goes SYS_STARTUP → coordinator, and the command center starts a bot
+through that same coordinator over WMI. The command center's maps are keyed by a task name that
+does not exist as a real task, which is harmless: the PROCESS LIST is authoritative there.
+
+`bot_state.ALGOS_ROOT` is **derived from `__file__`**, not the literal `C:/trading/algos` it used to
+be. The runner is dry-run-capable off the VPS, and a hardcoded Windows path made every state write
+fail on a Mac while looking perfectly correct in the source.
 
 Update this section when the phase changes or a new open question arises.
 

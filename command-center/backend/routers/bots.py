@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 import time as _time
 from datetime import date, datetime, timezone
@@ -203,7 +204,22 @@ def _ssh(cmd: str) -> str:
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
+_MARKER_RE = re.compile(r"(?<!\n)(===[A-Z0-9_]+===)")
+
+
 def _parse_sections(raw: str, initial_section: str) -> dict[str, str]:
+    # Put a glued marker back on its own line before splitting. `type` on Windows emits no
+    # trailing newline, so a marker echoed after it arrives welded to the file's last
+    # character — `}===TELEGRAM_START===` — and the startswith test below silently misses
+    # it, merging two sections into one unparseable blob with no error anywhere.
+    #
+    # The FETCH command already guards this with `echo.` (see _fetch_vps_snapshot). This is
+    # the second line of defence, because the failure is invisible: no exception, no empty
+    # result, just a bot that shows RUNNING and reports nothing about itself. The pattern
+    # is deliberately narrow (upper-case marker names only) so a `===` inside real payload
+    # data cannot be mistaken for one.
+    raw = _MARKER_RE.sub(r"\n\1", raw)
+
     sections: dict[str, str] = {}
     current = initial_section
     buf: list[str] = []
@@ -231,13 +247,20 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     # One `type` per registered instance's bot_state.json, plus the Telegram start marker.
     # Built from _BOT_STATE_SECTIONS so adding a bot never means editing this string —
     # the two drifting apart is how a registered bot silently reports no state forever.
-    # `type X 2>nul`, never `if exist X (type X)`. In cmd a trailing `& next` BINDS to the
-    # if-block, so one missing state file silently swallows every section after it — which
-    # is exactly how the Telegram row went blank the first time this was chained. `type` on
-    # a missing file just prints nothing and moves on.
-    parts = [f"echo ==={s.upper()}=== & type {_BOT_STATE_PATHS[s]} 2>nul"
+    # Two cmd quirks, both of which silently merged sections rather than erroring:
+    #
+    # 1. `type X 2>nul`, never `if exist X (type X)`. A trailing `& next` BINDS to the
+    #    if-block, so ONE missing state file swallows every section after it.
+    # 2. `echo.` before every marker. `type` does not emit a trailing newline, so the next
+    #    marker lands on the same line as the file's last character — `}===TELEGRAM_START===`
+    #    — which `_parse_sections` does not recognise as a marker (it tests startswith).
+    #    Both sections then merge into one unparseable blob and the bot silently reports no
+    #    state at all. This only appears once a state file has CONTENT, so it cannot be
+    #    caught before a bot has run once.
+    parts = [f"echo. & echo ==={s.upper()}=== & type {_BOT_STATE_PATHS[s]} 2>nul"
              for s, _ in _BOT_STATE_SECTIONS]
-    parts.append("echo ===TELEGRAM_START=== & type C:\\trading\\algos\\telegram_start.json 2>nul")
+    parts.append("echo. & echo ===TELEGRAM_START=== "
+                 "& type C:\\trading\\algos\\telegram_start.json 2>nul")
     sections.update(_parse_sections(_ssh(" & ".join(parts)), "state_main"))
     return sections
 
@@ -408,7 +431,12 @@ def get_snapshot():
 
         bots.append(BotStatus(
             name=_DISPLAY_NAMES.get(task_name, task_name),
-            account=state.get("account", ""),
+            # An MT5 login is an INT everywhere it matters — LiveConfig.account is typed
+            # int and BotMT5.connect compares it numerically to refuse the wrong account.
+            # It is only a string for display, so the coercion belongs here and nowhere
+            # upstream: making the registries hold strings to satisfy a label would put a
+            # display concern inside the account guard.
+            account=str(state.get("account") or ""),
             account_type=_TASK_ACCT_TYPE.get(task_name, "demo"),
             balance=state.get("balance"),
             status=status,

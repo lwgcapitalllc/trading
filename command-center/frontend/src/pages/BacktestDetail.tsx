@@ -276,12 +276,39 @@ function maxDrawdownOf(series: number[]): number {
   return maxDd
 }
 
+// The WORST drawdown as a fraction of the equity it fell FROM — the account-ending measure. On a
+// compounding run this is a different EPISODE from the biggest dollar drawdown, and the two must
+// never be presented as one number: on the shipped mpc_sos_fade run the deepest dollar drop is
+// $109,665 from a $330,303 peak (33.2%), while the worst percentage drop is 54.9% ($16,748 →
+// $7,551, only $9,198). Reporting the big dollar figure as the percentage is what produced
+// "1096.7% of capital" — the dollar drawdown divided by a static account_size the account had
+// long outgrown. Returns the dollars and peak of the SAME episode so the card's sub-line can
+// describe the drawdown its value actually names.
+function maxDrawdownPctOf(series: number[]): { pct: number; dollars: number; peak: number } | null {
+  let peak = -Infinity
+  let worst: { pct: number; dollars: number; peak: number } | null = null
+  for (const v of series) {
+    if (v > peak) peak = v
+    if (peak <= 0) continue                       // a non-positive peak has no meaningful percent
+    const dd = peak - v
+    const pct = dd / peak
+    if (worst == null || pct > worst.pct) worst = { pct, dollars: dd, peak }
+  }
+  return worst
+}
+
 // ── Calmar ratio ─────────────────────────────────────────────────────────────
 // Real Calmar = CAGR ÷ max-drawdown-as-fraction (same shape as
-// algos/shared/shared_calmar.py). Both inputs are fractions of starting capital,
+// algos/shared/shared_calmar.py). Both inputs are fractions of capital,
 // and the compounding in CAGR means starting capital does NOT cancel out — it is
 // genuinely required. With a balance supplied (from the ruleset's account_size or the
 // what-if slider), the equity curve is rebased to that balance and the score computes.
+//
+// BOTH sides must compound or the ratio is nonsense. CAGR already does. The drawdown must
+// therefore be measured against the equity it fell FROM, not against the STARTING balance —
+// dividing a late-run dollar drawdown by the opening capital reports a fraction the account
+// never experienced, and dragged this ratio down by the same factor. Measured on the shipped
+// mpc_sos_fade run: 0.11 (red, "poor") against a static $10k, 2.25 ("good") against the peak.
 
 function computeCalmar(equity: EquityPoint[], balance: number | null): number | null {
   if (balance == null || balance <= 0 || equity.length < 2) return null
@@ -293,13 +320,13 @@ function computeCalmar(equity: EquityPoint[], balance: number | null): number | 
   // Derive net P&L and max drawdown from the rebased curve (trade-derived → platform-agnostic).
   const rebased = rebaseEquity(equity, balance)
   const netPnl  = rebased[rebased.length - 1] - balance
-  const dd      = maxDrawdownOf(rebased)
+  const dd      = maxDrawdownPctOf(rebased)
   // Zero drawdown isn't "unknown" — it's an undefeated curve, so Calmar is genuinely infinite.
   // Report Infinity (the card prints ∞) rather than a dash that reads as missing data.
-  if (dd === 0) return netPnl > 0 ? Infinity : null
+  if (dd == null || dd.pct === 0) return netPnl > 0 ? Infinity : null
   const years   = days / 365
   const cagr    = Math.pow(1 + netPnl / balance, 1 / Math.max(years, 0.1)) - 1
-  return cagr / (dd / balance)
+  return cagr / dd.pct
 }
 
 function calmarCls(c: number | null): string {
@@ -497,19 +524,29 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   // backend-persisted value (authoritative, feeds grading); fall back to the client calc
   // for older runs predating the column. Both use the identical formula, so they agree.
   const profitConc = run.profit_concentration_pct ?? computeProfitConcentration(run.daily_pnl ?? [])
-  // 7d — max drawdown as % of capital. Uses the trade-derived drawdown (platform-agnostic)
-  // over the chosen balance. Null only when no balance is available (no ruleset / no trades).
-  const tradeDd  = equity.length >= 2 ? maxDrawdownOf(rebaseEquity(equity, 0)) : null
-  const maxDdPct = (balance != null && balance > 0 && tradeDd != null)
-    ? (tradeDd / balance) * 100
+  // 7d — max drawdown as a % of the equity it fell FROM (peak-relative), which is the drawdown
+  // that would actually have ended the account. NOT the dollar drawdown over a static
+  // account_size: that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak,
+  // because the account had grown 33x away from the balance the denominator was frozen at.
+  // Null only when no balance is available (no ruleset / no trades).
+  const ddWorst  = (balance != null && balance > 0 && equity.length >= 2)
+    ? maxDrawdownPctOf(rebaseEquity(equity, balance))
     : null
-  // Dollar drawdown for the merged Max-DD card (trade-derived; falls back to the run's value).
+  const maxDdPct = ddWorst != null ? ddWorst.pct * 100 : null
+  // The dollars of that SAME episode — what the card's sub-line describes. A different, usually
+  // larger, dollar drawdown exists later in a compounding run; it lives in the tooltip, never
+  // beside the percentage it does not correspond to.
+  const ddAtWorstPct = ddWorst?.dollars ?? null
+  const ddPeak       = ddWorst?.peak ?? null
+  // Deepest drawdown in DOLLARS (trade-derived; falls back to the run's stored value). This is
+  // the prop-firm view — a firm caps dollars — and the comparison fallback when there's no balance.
+  const tradeDd  = equity.length >= 2 ? maxDrawdownOf(rebaseEquity(equity, 0)) : null
   const ddDollar = tradeDd ?? (run.max_drawdown != null ? Math.abs(run.max_drawdown) : null)
 
   return {
     netPnl: run.net_pnl, winRate: run.win_rate, avgDur: run.avg_trade_duration_min,
     sharpe, worstDay, worstStreak, recoveryFactor, calmar, expectancyUsd, zScore,
-    pfValue, profitConc, maxDdPct, ddDollar,
+    pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak,
   }
 }
 type DerivedKpis = ReturnType<typeof deriveKpis>
@@ -530,7 +567,8 @@ export function KpiGrid({ run, fallback, equity = [], balance = null, showMore =
   const dc = compare ? deriveKpis(compare.run, compare.fallback, compare.equity, balance) : null
 
   const { sharpe, worstDay, worstStreak, recoveryFactor, calmar,
-          expectancyUsd, zScore, pfValue, profitConc, maxDdPct, ddDollar } = d
+          expectancyUsd, zScore, pfValue, profitConc, maxDdPct, ddDollar,
+          ddAtWorstPct, ddPeak } = d
   const sharpeEst = run.sharpe == null && fallback.sharpe != null
   // Canonical daily-√252 Sharpe shown as the value; platform's own value + low-sample as sub.
   const sharpeSub = (
@@ -581,12 +619,16 @@ export function KpiGrid({ run, fallback, equity = [], balance = null, showMore =
     { key: 'winrate', label: 'Win Rate', value: pct(run.win_rate), valueCls: winRateCls(run.win_rate), sub: winRateLabel(run.win_rate),
       cmp: k => k.winRate, fmt: fmtPct01,
       tooltip: "% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too." },
-    { key: 'maxdd', label: 'Max DD % of Capital',
+    { key: 'maxdd', label: 'Max Drawdown',
       value: maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
       valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', tone: 'neutral',
-      sub: ddDollar != null ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough${maxDdPct == null ? ' · set a balance for %' : ''}` : 'set an account balance',
+      sub: maxDdPct != null && ddAtWorstPct != null && ddPeak != null
+        ? `−$${Math.round(ddAtWorstPct).toLocaleString()} from a $${Math.round(ddPeak).toLocaleString()} peak`
+        : ddDollar != null
+          ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough · set a balance for %`
+          : 'set an account balance',
       cmp: k => k.maxDdPct ?? k.ddDollar, fmt: maxDdPct != null ? fmtPctPt : fmtMoney, goodWhen: 'lower',
-      tooltip: "Max drawdown — the largest peak-to-trough drop, shown both in dollars (sub-line) and as a % of the account balance (the value; ruleset's account_size, adjustable via the Account balance slider). Prop firms cap this hard. The dollar drawdown is trade-derived, identical across NT8 and MT5. Lower is better." },
+      tooltip: `Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this card read 1096.7% before 2026-07-30). The sub-line gives that same episode in dollars.${ddDollar != null ? ` The DEEPEST drawdown in dollars is $${Math.round(ddDollar).toLocaleString()} — usually a different, later episode, and the one a prop firm's fixed limit caps.` : ''} Trade-derived, so NT8 and MT5 agree. Lower is better.` },
     { key: 'pf', label: 'Profit Factor', value: kpiNum(pfValue), valueCls: pfCls(pfValue), sub: pfLabel(pfValue),
       cmp: k => k.pfValue, fmt: fmtRatio,
       tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0. A run with no losing trade has no denominator, so it shows ∞." },
