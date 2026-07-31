@@ -56,14 +56,14 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
             token = named
         elif token_key not in _warned_keys:
             _warned_keys.add(token_key)
-            print(f"notify: credential {token_key!r} is not set — falling back to the default "
+            print(f"notify: credential {token_key!r} is not set - falling back to the default "
                   f"Telegram bot. Add it to algos/credentials.json, or clear telegram_token_key "
                   f"in this bot's instance config.")
     dest = chat_id or group
     if not token or not dest:
         if not _warned:
             _warned = True
-            print("notify: Telegram is not configured (see algos/credentials.template.json) — "
+            print("notify: Telegram is not configured (see algos/credentials.template.json) - "
                   "messages will be dropped for the rest of this run")
         return False
     if _requests is None:
@@ -85,7 +85,7 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
             # rejects the WHOLE message — so the alert that never arrives is the one reporting a
             # crash, whose text is a traceback full of paths. Measured on the first real send:
             # "MT5_FFT" alone was enough. Retry unformatted rather than lose it.
-            print("notify: Markdown rejected, resending as plain text — "
+            print("notify: Markdown rejected, resending as plain text - "
                   f"{r.text[:160]}")
             r = _post(None)
         if r.status_code != 200:
