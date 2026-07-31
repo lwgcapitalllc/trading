@@ -22,6 +22,42 @@
 
 ---
 
+## 2026-07-31 — `mpc_bos_strategy.pine` defaults now ENCODE the spec, not the bare baseline
+
+**Aaron's spec, stated 2026-07-31:** SOS opens the regime → a BOS with **clean displacement** → that
+break **leaves an FVG** → price retraces into **0.5-0.886** and taps the gap. The **Sniper Zone is
+optional** (it may price a leg that had no qualifying gap; it is never waited for). The **daily does
+NOT have to agree** — no HTF bias gate.
+
+**Four defaults flipped to carry it:** `bosUseFvg` OFF→**ON**, `execReqFVG` OFF→**ON**,
+`bosMinDispAtr` 0.0→**0.5**, and `execConfSZ2` stays ON (that is what makes the zone an optional
+stand-in rather than a requirement). `execHtfWeekly`/`execHtfDaily` stay **"Ignore"** by explicit
+decision, now written on the daily tooltip so nobody "fixes" it later.
+
+**Why the old defaults were not the target.** The file shipped with every filter and every entry
+confirmation OFF so the run measured the raw BOS idea. That is a MEASUREMENT baseline. The standing
+direction for this strategy is **quality over quantity — the confluences ARE the quality lever**, and
+frequency comes from stacking A+, B-LEG and this one on one account, never from loosening this one.
+Reading the old defaults as "keep it loose, it takes more trades" inverts the intent. The filters that
+are still open questions (F1/F3/F4/F5/F6/F8) stay OFF, to be turned on one at a time and judged on
+expectancy and drawdown — **not on how many trades survive.**
+
+**⚠ 0.5 ATR is the spec expressed as a number, NOT a measured optimum.** No run has been taken at any
+displacement value. Sweep 0.25 / 0.5 / 1.0 and set it from results. Same warning on its tooltip.
+
+**⚠ EVERY NUMBER IN THIS FILE'S HEADER DESCRIBES THE OLD DEFAULTS.** The 365-day / 13-trade / −2.65%
+figure and the F4 design-conflict finding were measured on the previous configuration and say nothing
+about this one. The header keeps them, labelled as the previous baseline.
+
+**No logic changed — inputs, defaults and comments only.** `bosEntryFib` is now INERT at the shipped
+defaults (with a gap required, the plain-fib fallback at the bottom of the entry ladder is never
+reached); its tooltip says so. The entry ZONE is not set by that dropdown — the gap edge is clamped to
+0.5 at the shallow end and a gap outside 0.5-0.886 is refused, which is where the band comes from.
+**Not compiled on TradingView yet** (no local Pine compiler), and there is still no export Pine, no
+`compare_bos.py` and no Python port — so nothing here is parity-checked.
+
+---
+
 ## 2026-07-29 — the FVG floor is now SPLIT BY TIMEFRAME (A+, its export, and BOS)
 
 **The bug Aaron found.** `mpc_assistant.pine` draws fair value gaps on a 5m chart
