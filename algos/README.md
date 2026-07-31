@@ -28,12 +28,9 @@ algos/
 ├── shared/
 │   ├── bot_state.py                 ← Single source of truth (read/write)
 │   ├── mt5_ops.py                   ← All MT5 operations (BotMT5 class + free functions)
-│   ├── notify.py                    ← Telegram notification helpers
-│   ├── shared_ai_brain.py           ← Trade logging + AI brain
-│   ├── shared_calmar.py             ← Calmar ratio tracker
+│   ├── notify.py                    ← Telegram sender (per-bot chat + identity)
+│   ├── credentials.py               ← The one place secrets resolve (env → credentials.json)
 │   ├── shared_regime.py             ← Market regime detection
-│   ├── shared_risk.py               ← Dynamic risk / capacity engine (RiskEngine)
-│   ├── shared_scanner.py            ← Multi-instrument scanner (InstrumentScanner, LearningPhaseGate)
 │   ├── structure_engine.py          ← BOS/SOS/retracement event detection
 │   └── thresholds.json              ← Risk cap overrides (written by command-center deploy)
 ├── notifications/

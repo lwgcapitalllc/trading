@@ -1,6 +1,22 @@
 # Multi-Instrument Architecture (Phases 1–5)
 
-This document explains the shared scanner, risk, correlation, and learning-phase system that all four bots use. Bot guides reference this but don't repeat it.
+> ## ⚠ HISTORICAL — this describes code that no longer exists
+>
+> **Every module named here was deleted on 2026-07-31 (commit `e92304a`)**, along with the four
+> bots it was built for. This file is kept as a DESIGN RECORD, not as documentation of the
+> current system: the reasoning is still worth reading, the file paths are not.
+>
+> Do not follow this document to find code. See [`DELETED_CODE.md`](DELETED_CODE.md) for what each
+> module did and the one command that restores it.
+>
+> The live suite as of 2026-07-31 is `algos/live/` — one strategy, one symbol, one position at a
+> time. Multi-instrument scanning, the risk engine and the correlation guard below are **not
+> built** in it. The account-level allocator in particular is still an open prerequisite for
+> running more than one bot (see the root `CLAUDE.md`), and `shared_risk.py` — described here — is
+> the closest prior art.
+
+This document explains the shared scanner, risk, correlation, and learning-phase system that the
+four first-attempt bots used. Bot guides reference this but don't repeat it.
 
 ---
 

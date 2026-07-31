@@ -37,15 +37,20 @@ New bots follow the S.Y.S.T.E.M. process in `docs/BOT_DEVELOPMENT_METHOD.md` (sp
 
 Shared logic lives in `shared/`; the launcher, coordinator, and config loader live in `bots/`.
 
-**Deliberately parked (Aaron's call, 2026-07-06):** with no live bots, `shared_ai_brain.py`, `shared_calmar.py`, `shared_risk.py`, `shared_scanner.py`, and `mt5_ops.py` currently have no consumers. They are kept on purpose for the backtest-first rebuild — do not flag them as dead code or delete them. Note `shared_risk.py` may be superseded by the command-center sizing engine; decide its fate when the first new bot is wired.
+**DELETED 2026-07-31 (Aaron's call), superseding the 2026-07-06 "deliberately parked" note:**
+`shared_ai_brain.py`, `shared_calmar.py`, `shared_risk.py` and `shared_scanner.py` are gone. They
+had no importers for five weeks and were keeping a design alive that no longer exists. **What each
+one did, and the one command to restore it, is in [`docs/DELETED_CODE.md`](docs/DELETED_CODE.md) —
+commit `e92304a`.** Read that before rebuilding any of it from scratch; `shared_risk.py` in
+particular is the closest thing in this repo to the account-level allocator that is still unbuilt.
+
+`shared_regime.py` and `structure_engine.py` survive: they are shims over the canonical `engines/`,
+unused today only because `algos/live/` reaches the engines through `backtest/replay`. Deleting
+them is an architecture decision, not a cleanup.
 
 | File | Location | Role |
 |------|----------|------|
-| `shared_ai_brain.py` | `shared/` | AI engine (Claude API), trade logger, daily performance logger |
-| `shared_calmar.py` | `shared/` | Calmar ratio tracker, morning report |
 | `shared_regime.py` | `shared/` | Market regime classifier shim: 5 labels (TRENDING / TRANSITIONING / RANGING / HIGH_VOLATILITY / LOW_VOLATILITY). Each bot owns its own REGIME_RISK_TABLE. |
-| `shared_scanner.py` | `shared/` | Multi-instrument watchlist scanner — `InstrumentScanner`, `SetupCandidate`, `LearningPhaseGate` |
-| `shared_risk.py` | `shared/` | Dynamic risk / capacity engine — `RiskEngine` tracks portfolio-level risk budget per bot |
 | `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
 | `credentials.py` | `shared/` | **The one place secrets are resolved.** Env var → git-ignored `algos/credentials.json` → empty. Never holds a literal. Copy `algos/credentials.template.json` to set a machine up. **Any key resolves, not just the canonical three** — a per-bot secret needs a new entry in that file and nothing else; the env name is always `LWG_<KEY IN CAPS>` (`env_name()`). |
@@ -132,6 +137,36 @@ n/a — no live bots.
 ### What I Am Working On
 
 **Phase:** No live bots. All four first-attempt bots were deleted 2026-06-22. The suite is being rebuilt backtest-first per the S.Y.S.T.E.M. method (`docs/BOT_DEVELOPMENT_METHOD.md`) — strategies are validated through the command-center backtest lab before any return to live demo trading. The reusable deployment infrastructure is preserved in `docs/BOT_DEPLOYMENT_INFRA.md`.
+
+### CLEAN SLATE — 2026-07-31. Read this before trusting anything older.
+
+**Aaron's decision: the suite starts from scratch today. Nothing from before this date carries
+forward, and nothing is expected to still be on disk.** Both the VPS and the repo were leaned out:
+
+- **Deleted from the repo:** the four dead `shared_*` modules — commit **`e92304a`**, documented in
+  [`docs/DELETED_CODE.md`](docs/DELETED_CODE.md).
+- **Deleted from the VPS:** `C:\algos` (a 36 MB pre-migration copy of the whole old suite, including
+  the dead bots' instance state), `C:\algos-backup`, every stale task XML and log in `C:\temp`,
+  `C:\tmp`, the root probe scripts, the orphaned `C:\trading\regime`, scratch files
+  (`dump_opt.json`, `filetest`, `smoke_out.txt`, dead zero-byte agent logs, a `.vpslocal.bak`), old
+  bot state (`monitor_state.json`, `stop_suppress.json`), stale Telegram runtime state, and every
+  `__pycache__`. `git status` on the VPS is clean.
+
+**The consequences, stated plainly so nobody re-derives them:**
+
+1. **There is no historical trade data on the VPS.** No old ledgers, no `bot_state.json` from a
+   previous bot, no equity logs. The first live ledger entry will be the first real one.
+2. **A file's absence is not a bug.** If something references a path that is not there, the answer is
+   that it was deleted on purpose — check git history and `DELETED_CODE.md` before recreating it.
+3. **To recover anything, use the commit hash.** Do not rewrite deleted code from memory or from a
+   docstring; `git show <commit>^:<path>` gives you the real thing.
+4. **What was deliberately KEPT:** all four MT5 terminal installs (`MT5_FFT`, `MT5_Lab`,
+   `MT5_Scalper`, and the Program Files instances) — Aaron may attach new bots to them;
+   `start_mt5_agent.bat` (`MT5AgentRDP` runs it); `credentials.json` and `users.json`; and the
+   `C:\temp` directory itself, which `bootstrap_vps.ps1` uses as its staging dir.
+5. **Only the Telegram bot is maintained from the original suite**, and only for trade ENTRY and
+   EXIT alerts. Crash alerts, P&L tracking and the daily reporter are fixed but disabled — see
+   *On hold* below.
 
 ### Scheduled tasks — the stored-password trap (found 2026-07-31)
 

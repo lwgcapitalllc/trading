@@ -60,11 +60,15 @@ moment during a simultaneous boot. Cleared by the coordinator at startup.
 - `algos/notifications/telegram_bot.py` — remote start / stop / restart of a bot from Telegram;
   the command-center Bots page drives the same actions over SSH.
 
-### Supporting shared logic (also kept, also reusable)
-`shared/shared_regime.py` (regime classifier shim), `shared/shared_risk.py` (portfolio risk
-budget), `shared/shared_scanner.py` (multi-instrument watchlist scan), `shared/shared_ai_brain.py`
-(AI gate + trade logger), `shared/shared_calmar.py` (Calmar tracker), `shared/structure_engine.py`
-(swing/BOS detection).
+### Supporting shared logic — four of these were DELETED 2026-07-31
+Still present: `shared/shared_regime.py` (regime classifier shim) and `shared/structure_engine.py`
+(swing/BOS detection) — both thin shims over the canonical `engines/`.
+
+**Gone (commit `e92304a`, restorable — see [`DELETED_CODE.md`](DELETED_CODE.md)):**
+`shared_risk.py` (portfolio risk budget), `shared_scanner.py` (multi-instrument watchlist scan),
+`shared_ai_brain.py` (AI gate + trade logger), `shared_calmar.py` (Calmar tracker). They had no
+importers for five weeks after the bots were deleted. The ideas are worth revisiting — the risk
+budget especially — but read the real code out of git rather than rebuilding from this line.
 
 ---
 
