@@ -100,10 +100,14 @@ specific failure:
    running bot, and absorbing it silently is exactly what the source-hash pin exists to prevent.
    A restart is required, so the pin is re-checked and the engines re-warm on the code that is
    actually there. A refused change is reported ONCE, not every poll.
-2. **Applied only while FLAT** — no position AND nothing resting (`bridge.is_flat`). Not because
-   resizing mid-trade would corrupt an open position (size is fixed at entry) but so every trade in
-   the ledger is attributable to exactly one configuration. A pending change is NOT consumed: it
-   waits, and lands the moment the bot goes flat.
+2. **Applied only while FLAT** — no position AND nothing resting (`bridge.is_flat`) — by
+   **REBUILDING the strategy and re-warming** (~3s for 5,000 bars, measured), the same path a bar
+   gap already takes. It rebuilds rather than assigns because `SosFadeConfig` is a **frozen**
+   dataclass and ONE instance is shared by signals, sequence, execution and the secondary arm: there
+   is no attribute to set, and reaching past `frozen` would let four components disagree about their
+   own settings. That is what makes flat load-bearing rather than tidy — a rebuild discards the
+   emulator's position state. A pending change is NOT consumed: it waits, and lands the moment the
+   bot goes flat.
 3. **The ledger records `risk_pct` per trade**, read off the strategy live rather than cached, so
    "why was trade 14 at 0.05 lots and trade 15 at 0.02" stays answerable.
 
@@ -136,6 +140,27 @@ had not, and all three would have stopped the bot dead:
 
 The standing lesson: **run it on the VPS before believing it works.** These were found in one
 five-minute dry run.
+
+**2026-07-31, second dry run — the lesson repeated, and this time the tests were the problem.**
+Registering the bot and adding the runtime reload found three more, all invisible to a green suite:
+
+4. **`bot_state.set_started()` would have killed the bot on startup.** Its registries were empty and
+   the lookup is unguarded, so the bot connected, warmed 5,000 bars and died on a bare `KeyError`.
+5. **`Execution` had no public `cfg`.** `algos/live/` reached for `.cfg` in two places: the reload
+   crashed the loop, and the ledger's per-trade `risk_pct` silently recorded `None` through a
+   defensive `getattr`. **Every reload test passed because every one used a stand-in that HAD a
+   `.cfg`.** A test double that is more capable than the real object tests nothing. There is now one
+   test that builds the REAL strategy.
+6. **The config is frozen**, so the reload could not have assigned to it even with the accessor —
+   which is how the rebuild-instead-of-mutate design was found.
+
+A fourth, in the command center rather than here: the batched snapshot's section markers merged
+whenever a state file had CONTENT (`type` emits no trailing newline), so a running bot reported
+nothing about itself with no error anywhere. That one could not appear until a bot had run once.
+
+**And the diagnosis gap that made all of this slower than it needed to be:** the coordinator's
+single-bot launch sent stdout/stderr to `DEVNULL`. A failure before the bot's own logger exists had
+nowhere to go — "launched", no log, no process. It now writes `<bot_key>_boot.log` beside the config.
 
 One test hashes a strategy package with both `version.py` and the lab's scanner and requires the
 same answer — a pin that disagrees with the lab is worse than no pin.

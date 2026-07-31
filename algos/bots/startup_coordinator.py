@@ -102,18 +102,27 @@ def main():
             print(f"Unknown bot key '{args.bot}'. Available: {', '.join(keys)}")
             sys.exit(1)
 
-        bot_key, name, script, argv, *_ = entry
+        bot_key, name, script, argv, log_path, *_ = entry
         print(f"Starting {name} (single-bot mode)...")
         set_started(bot_key)
+
+        # stdout/stderr to a FILE, never DEVNULL. A bot writes its own log once its logger
+        # exists — but a failure BEFORE that (a bad import, a missing dependency, a config
+        # that will not parse) has nowhere else to go, and DEVNULL made it vanish: the
+        # coordinator printed "launched", nothing appeared in the bot's log, and there was
+        # no process. That is the least diagnosable failure available.
+        boot_log = Path(log_path).with_name(f"{bot_key}_boot.log")
+        boot_log.parent.mkdir(parents=True, exist_ok=True)
+        out = open(boot_log, "a", encoding="utf-8", errors="replace")
         subprocess.Popen(
             [PYTHON, script, *argv],
             cwd=str(BOTS),
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=out,
+            stderr=out,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
-        print(f"  OK {name} launched")
+        print(f"  OK {name} launched (boot output -> {boot_log})")
         return
 
     # ── Full startup mode ─────────────────────────────────────────────────────

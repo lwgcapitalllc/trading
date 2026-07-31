@@ -142,8 +142,13 @@ def _read_instance_config(bot_key: str) -> dict:
 
 
 def _write_instance_config(bot_key: str, data: dict) -> None:
+    # ensure_ascii=False: the file is written as UTF-8 and its `_`-prefixed prose keys are
+    # the reasoning behind every value in it. Escaping those to — turns the one part a
+    # human actually reads into noise, and this file is edited by hand far more often than
+    # it is written from here.
     info = _BOT_INSTANCE_MAP[bot_key]
-    info["path"].write_text(json.dumps(data, indent=2), encoding="utf-8")
+    info["path"].write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                            encoding="utf-8")
 
 
 def _git_commit_push(file_paths: list[Path] | Path, message: str) -> str:
