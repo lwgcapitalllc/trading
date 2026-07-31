@@ -107,19 +107,23 @@ def format_entry(*, strategy: str, symbol: str, direction: str, entry: float, st
 def format_exit(*, strategy: str, symbol: str, exit_price: float, pnl_usd: float,
                 r_multiple: Optional[float] = None, digits: int = 2,
                 currency: str = "USD", scratch_r: float = 0.15,
-                when: Optional[datetime] = None) -> str:
+                threaded: bool = True, when: Optional[datetime] = None) -> str:
     """The reply that closes a trade's thread.
 
-    Outcome first, money second, price third — the order questions actually get asked in. It
-    stays short on purpose: it is a REPLY, so the entry it belongs to is one tap away and does
-    not need repeating.
+    Outcome first, money second, price third — the order the questions actually get asked in.
+
+    `threaded` says whether this will post as a reply to its own entry alert. When it does, the
+    strategy and symbol are left OUT: the entry is one tap away and repeating it is noise. When
+    it does not — the entry alert never sent, so there is no message to reply to — the header
+    carries them, because a bare "WIN" floating in the group names no trade at all.
     """
     v = verdict(pnl_usd, r_multiple, scratch_r)
     money = f"{pnl_usd:+,.2f} {currency}"
     r = f"  ({r_multiple:+.2f}R)" if r_multiple is not None else ""
+    head = f"{_VERDICT_MARK[v]} {v}" if threaded else f"{_VERDICT_MARK[v]} {v} — {strategy} · {symbol}"
 
     return (
-        f"{_VERDICT_MARK[v]} {v} — {strategy} · {symbol}\n"
+        f"{head}\n"
         f"\n"
         f"P&L: {money}{r}\n"
         f"Exit: {_price(exit_price, digits)}\n"

@@ -128,6 +128,23 @@ def test_the_outcome_is_the_first_thing_on_the_line():
     assert msg.splitlines()[0].startswith("✅ WIN")
 
 
+def test_a_threaded_exit_does_not_repeat_the_entrys_header():
+    """It posts as a reply, so the strategy and symbol are one tap away. Aaron's call."""
+    msg = alerts.format_exit(strategy="MPC SOS Fade", symbol="XAUUSD.s", exit_price=4153.40,
+                             pnl_usd=292.65, r_multiple=3.39, when=_WHEN)
+    assert msg.splitlines()[0] == "✅ WIN"
+    assert "MPC SOS Fade" not in msg
+    assert "XAUUSD.s" not in msg
+
+
+def test_an_unthreaded_exit_names_the_trade_it_closed():
+    """No entry alert was sent, so there is nothing to reply to — a bare 'WIN' in the group
+    would name no trade at all."""
+    msg = alerts.format_exit(strategy="MPC SOS Fade", symbol="XAUUSD.s", exit_price=4153.40,
+                             pnl_usd=292.65, r_multiple=3.39, threaded=False, when=_WHEN)
+    assert msg.splitlines()[0] == "✅ WIN — MPC SOS Fade · XAUUSD.s"
+
+
 # ── robustness ──────────────────────────────────────────────────────────────────
 def test_no_markdown_syntax_in_either_template():
     """These messages carry strategy names and broker symbols, which are full of underscores.
@@ -135,8 +152,10 @@ def test_no_markdown_syntax_in_either_template():
     must not depend on the sender's plain-text rescue."""
     entry = alerts.format_entry(strategy="mpc_sos_fade_demo", symbol="XAUUSD.s",
                                 direction="LONG", entry=1.0, stop=0.9, lots=1, when=_WHEN)
+    # threaded=False so the exit actually CARRIES the underscore-heavy name — the threaded form
+    # omits it, which would make this assertion pass without testing anything.
     exit_ = alerts.format_exit(strategy="mpc_sos_fade_demo", symbol="XAUUSD.s", exit_price=1.0,
-                               pnl_usd=1.0, r_multiple=1.0, when=_WHEN)
+                               pnl_usd=1.0, r_multiple=1.0, threaded=False, when=_WHEN)
     for msg in (entry, exit_):
         assert "*" not in msg
         assert msg.count("_") == msg.count("mpc_sos_fade_demo") * 3   # only the name's own
