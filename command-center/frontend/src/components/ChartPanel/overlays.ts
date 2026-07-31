@@ -50,6 +50,10 @@ export const DAY_BREAK = 'lwgDayBreak'
  *  for the current sub-base TF (a TRUE feed limit, not our render cap). */
 export const DATA_EDGE = 'lwgDataEdge'
 
+/** Loading edge — a dashed line at the OLDEST loaded bar, with the empty strip behind it shaded and
+ *  labelled, drawn while a scroll-left page of older history is in flight. */
+export const LOADING_EDGE = 'lwgLoadingEdge'
+
 /** A refused setup — the strategy had the trade ready and one of its OWN rules stopped it. */
 export const BLOCK = 'lwgBlock'
 
@@ -149,6 +153,10 @@ const MARKER_TAG_ROW_H = 20
 // waits. Fixed pixels rather than a bar count so it stays legible at every zoom.
 const MARKER_ENTRY_LINE_BACK = 8
 const MARKER_ENTRY_LINE_FWD = 46
+
+// How wide the blank strip must be before the "loading" label goes INSIDE it. Below this the label
+// sits just inside the data instead, where there is always room for it.
+const LOADING_LABEL_MIN_GAP = 190
 
 // Draw the next UNHIT take-profit only when the trade got at least this far toward it (mfe covered
 // this fraction of the gap from the last hit level) — the "close enough to the next TP" filter, so a
@@ -798,6 +806,64 @@ export function registerChartOverlays(): void {
             backgroundColor: withAlpha('#0d0d1a', 0.82), borderColor: withAlpha(color, 0.5), borderSize: 1,
             borderStyle: 'solid', borderRadius: 3,
             paddingLeft: 5, paddingRight: 5, paddingTop: 2, paddingBottom: 2,
+          },
+          ignoreEvent: true,
+        })
+      }
+      return figures
+    },
+  })
+
+  // Loading edge — DATA_EDGE's companion and its opposite: that one marks a WALL (nothing older
+  // exists), this one marks a WAIT (older bars are on their way). Scrolling past the loaded bars
+  // otherwise gives a blank strip that reads exactly like the end of the run's data, which is the
+  // bug this fixes. The strip is SHADED, not just lined, because a bare line leaves the reader
+  // guessing which side of it is loading.
+  registerOverlay({
+    name: LOADING_EDGE,
+    totalStep: 1,
+    lock: true,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, bounding, overlay }: OverlayCreateFiguresCallbackParams): OverlayFigure[] => {
+      if (coordinates.length < 1) return []
+      const a = coordinates[0]
+      const d = (overlay.extendData ?? {}) as OverlayExtend
+      const color = d.color ?? '#2962ff'
+      const figures: OverlayFigure[] = []
+      if (a.x > 1) {
+        figures.push({
+          type: 'rect',
+          attrs: { x: 0, y: 0, width: a.x, height: bounding.height },
+          styles: { style: 'fill', color: withAlpha(color, 0.07) },
+          ignoreEvent: true,
+        })
+      }
+      figures.push({
+        type: 'line',
+        attrs: { coordinates: [{ x: a.x, y: 0 }, { x: a.x, y: bounding.height }] },
+        styles: { color, size: 1, style: 'dashed', dashedValue: [5, 4] },
+        ignoreEvent: true,
+      })
+      if (d.label) {
+        // Centred in the strip once there is room; until then parked just inside the data, on the
+        // same side DATA_EDGE labels — never half off the pane.
+        const inGap = a.x >= LOADING_LABEL_MIN_GAP
+        figures.push({
+          type: 'text',
+          attrs: {
+            x: inGap ? Math.round(a.x / 2) : a.x + 6,
+            y: Math.round(bounding.height / 2),
+            text: d.label,
+            align: inGap ? 'center' : 'left',
+            baseline: 'middle',
+          },
+          styles: {
+            style: 'stroke_fill', color, size: 11, weight: 'bold',
+            backgroundColor: withAlpha('#0d0d1a', 0.82), borderColor: withAlpha(color, 0.5), borderSize: 1,
+            borderStyle: 'solid', borderRadius: 3,
+            paddingLeft: 7, paddingRight: 7, paddingTop: 4, paddingBottom: 4,
           },
           ignoreEvent: true,
         })

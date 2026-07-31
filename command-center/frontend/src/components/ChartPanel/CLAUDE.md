@@ -3,7 +3,9 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-29 (**configurable fib levels** — the ladder is no longer a hardcoded
+**Last reviewed:** 2026-07-30 (**scroll-left paging now SHOWS itself** — the blank strip you scroll
+into is shaded and labelled `Loading earlier bars…` from the oldest loaded bar back, so a page in
+flight no longer reads as the end of the data; earlier: **configurable fib levels** — the ladder is no longer a hardcoded
 array: add / remove / retune / recolour / hide any level from a live editor, per drawing or as the
 tool's persisted default; 2026-07-28: **Go to date** — a header pill that types you to a date instead of
 dragging there, driving the existing scroll-left pager itself; earlier: the **Missed** layer — how
@@ -116,6 +118,15 @@ here**, so the chart shows exactly what the strategy saw.
     that answers with an overlapping window can't duplicate bars.
   Raising `_CANDLE_CAP` to ship everything instead is the wrong lever: 6.5 years of M15 is ~160k
   candles and a ~15 MB `chart_spec.json` on every chart open.
+  - **A page in flight is drawn, not silent** (`LOADING_EDGE`, 2026-07-30). Scrolling past the loaded
+    bars gave a blank strip with nothing on it — indistinguishable from the end of the run's data, so
+    a ~1.5s page read as "there is nothing back here". While `pagingOlder` (or a jump's `jumping`) is
+    set, the panel draws a dashed accent line at the OLDEST loaded bar and **shades the empty strip
+    behind it** with a `Loading earlier bars…` chip in it. The shading is the point: a bare line
+    leaves the reader guessing which SIDE of it is loading. The chip centres in the strip once it is
+    ≥ `LOADING_LABEL_MIN_GAP` (190px) wide and otherwise parks just inside the data, so it is never
+    half off the pane. Same template shape as `DATA_EDGE` and deliberately its opposite — that one
+    marks a WALL (nothing older exists), this one marks a WAIT.
 - **Go to date** (`GoToDate` in `index.tsx`, header pill next to the timeframe). Type a date, land on
   it — the answer to reach costing a long drag once history pages in. It sits by the timeframe because
   the two answer halves of one question: TF picks the bar SIZE, this picks WHERE.

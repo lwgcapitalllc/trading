@@ -15,7 +15,7 @@ import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, 
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
+import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
 import FibSettings from './FibSettings'
 import { DEFAULT_FIB_LEVELS, loadFibLevels, sameFibLevels, saveFibLevels, type FibLevel } from './fibLevels'
 import { ensureSeriesIndicator } from './indicators'
@@ -597,6 +597,10 @@ export default function ChartPanel({
   // merged those bars and holds the scroll position; re-running `applyNewData` would throw both away
   // and snap the view back — the jump-on-every-page bug.
   const skipApplyRef = useRef(false)
+  // True while a scroll-left page is in flight. Drives the on-chart LOADING_EDGE marker: scrolling
+  // past the loaded bars gives a blank strip that otherwise reads exactly like the end of the run's
+  // data, with nothing saying more is coming.
+  const [pagingOlder, setPagingOlder] = useState(false)
 
   // ── Go to date ───────────────────────────────────────────────────────────────
   // True while a jump is pulling older pages in. Shown on the pill, and it parks klinecharts' own
@@ -1041,13 +1045,14 @@ export default function ChartPanel({
         callback([], type === LoadDataType.Forward)
         return
       }
+      setPagingOlder(true)
       void loadOlderRef.current().then(({ bars, more }) => {
         if (bars.length) {
           skipApplyRef.current = true
           setBaseCandles(prev => [...bars, ...prev])
         }
         callback(candlesToKLine(bars), more)
-      }).catch(() => callback([], false))
+      }).catch(() => callback([], false)).finally(() => setPagingOlder(false))
     })
 
     const ro = new ResizeObserver(() => { chart.resize(); measureInset() })
@@ -1396,6 +1401,23 @@ export default function ChartPanel({
       extendData: { color: theme.neg, label },
     })
   }, [dataEdge, selectedMin, displayCandles])
+
+  // "Loading earlier bars" — the same marker for the opposite state: a dashed line at the oldest
+  // loaded bar with the empty strip behind it shaded, while a page (or a jump's run of pages) is in
+  // flight. Without it, scrolling past the loaded bars is a blank screen that reads as the end of
+  // the data. Rebuilt after every data change like the other vline overlays.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.removeOverlay({ name: LOADING_EDGE })
+    if (!(pagingOlder || jumping) || displayCandles.length === 0) return
+    chart.createOverlay({
+      name: LOADING_EDGE,
+      lock: true,
+      points: [{ timestamp: displayCandles[0].time, value: displayCandles[0].close }],
+      extendData: { color: theme.accent, label: 'Loading earlier bars…' },
+    })
+  }, [pagingOlder, jumping, displayCandles])
 
   // Indicators (shipped series). Created once per spec/visibility; klinecharts re-runs the
   // indicator calc automatically on TF switch, so this does NOT depend on displayCandles.
