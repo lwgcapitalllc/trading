@@ -9,7 +9,7 @@ import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
 import { getXMode, setXModePref, regimeBandsFromTimeline, regimeBandsByIndex, type XMode } from '@/lib/chartAxis'
 import {
-  PerformancePanel, computeFallbacks, EquityCurveChart, DrawdownChart, DailyPnlChart,
+  PerformancePanel, computeFallbacks, worstLosingStreakOf, EquityCurveChart, DrawdownChart, DailyPnlChart,
   DirectionBreakdown, PriceChartView, SeriesToggle, type FallbackMetrics,
 } from '@/pages/BacktestDetail'
 import { C } from '@/themes/chart'
@@ -131,17 +131,10 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>): Combin
     ? durLegs.reduce((a, l) => a + l.avg_trade_duration_min! * l.equity_curve.filter(p => p.direction).length, 0) / durTrades
     : null
 
+  // Sharpe comes from computeFallbacks — this was a third private copy of the formula, and like
+  // the one in computeFallbacks it scored only the days that traded, so a stack printed 13.06.
+  // Flat weekdays are real observations; the shared helper zero-fills them the way the backend does.
   const fallback = computeFallbacks(dailyPnl)
-
-  // Daily √252 Sharpe over the portfolio daily series.
-  let sharpe: number | null = null
-  const vals = dailyPnl.map(d => d.pnl)
-  if (vals.length >= 2) {
-    const mean = vals.reduce((a, b) => a + b, 0) / vals.length
-    const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1)
-    const std = Math.sqrt(variance)
-    if (std > 0) sharpe = (mean / std) * Math.sqrt(252)
-  }
 
   // Synthetic backtest-shaped run carrying exactly the fields KpiGrid reads.
   const run = {
@@ -152,11 +145,13 @@ function composeCombined(legs: StackStrategyLeg[], enabled: Set<string>): Combin
     avg_win: avgWin,
     avg_loss: avgLoss,
     max_drawdown: maxDd || null,
-    sharpe,
+    sharpe: fallback.sharpe,
     platform_sharpe: null,
     sharpe_low_sample: dailyPnl.length < 10 ? 1 : 0,
     worst_day_pnl: fallback.worstDay,
-    worst_losing_streak: fallback.worstStreak,
+    // Counted off the portfolio's TRADES, which is the unit the row is labelled in. `profits` is
+    // in entry order (tagged is sorted above), which a streak requires.
+    worst_losing_streak: worstLosingStreakOf(profits),
     avg_trade_duration_min: avgDuration,
     profit_concentration_pct: null,
     daily_pnl: dailyPnl,

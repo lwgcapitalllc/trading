@@ -471,35 +471,91 @@ function concentrationLabel(c: number | null): string {
 // Derives Sharpe / Worst Day / Worst Streak from daily_pnl when the
 // NT8 agent doesn't report them directly.
 
+const TRADING_DAYS_PER_YEAR = 252
+const SHARPE_LOW_SAMPLE_DAYS = 10
+
+/**
+ * Per-day P&L for EVERY weekday spanned by the series, flat days included as 0.
+ *
+ * Mirrors `backend/services/metrics.py:zero_filled_daily_values` exactly, and it is the whole
+ * story behind the Sharpe bug fixed 2026-07-31. `daily_pnl` holds only days that CLOSED a trade —
+ * flat days are absent by design, because the trailing-drawdown engine walks the days that exist.
+ * Scoring that series as if it were the population asks "how good were the days it traded", then
+ * annualizes by √252 as if it had traded 252 of them. On the shipped mpc_sos_fade run that reads
+ * 2.98 against a true 0.91. A flat day is a real observation and belongs in the series.
+ *
+ * Weekends are skipped to match √252, but any date PRESENT in the input is kept even on a weekend,
+ * so a Sunday-open forex fill is never silently dropped.
+ */
+function zeroFilledDailyValues(daily_pnl: DailyPnlPoint[]): number[] {
+  const byDate = new Map<string, number>()
+  for (const d of daily_pnl) {
+    if (!d.date) continue
+    const key = d.date.slice(0, 10)
+    byDate.set(key, (byDate.get(key) ?? 0) + (d.pnl ?? 0))
+  }
+  if (byDate.size < 2) return [...byDate.values()]
+
+  const keys = [...byDate.keys()].sort()
+  const last = keys[keys.length - 1]
+  // Local midnight, the same guard fmtDate carries — a bare 'YYYY-MM-DD' parses as UTC and steps
+  // the calendar a day early anywhere west of Greenwich.
+  const cur = new Date(`${keys[0]}T00:00:00`)
+  const out: number[] = []
+  for (;;) {
+    const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`
+    const weekday = cur.getDay() >= 1 && cur.getDay() <= 5
+    if (byDate.has(key) || weekday) out.push(byDate.get(key) ?? 0)
+    if (key >= last) break
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
+}
+
+/** Annualized daily Sharpe. The ONE frontend definition — see zeroFilledDailyValues for why. */
+export function dailySharpe(daily_pnl: DailyPnlPoint[]): number | null {
+  const vals = zeroFilledDailyValues(daily_pnl)
+  if (vals.length < 2) return null
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length
+  const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (vals.length - 1)
+  const sd = Math.sqrt(variance)
+  return sd > 0 ? (mean / sd) * Math.sqrt(TRADING_DAYS_PER_YEAR) : null
+}
+
+/**
+ * Longest run of consecutive losing TRADES, from a list of per-trade P&L.
+ *
+ * Takes trades, never days, because the row it feeds is labelled in trades — the backend's
+ * `backtest/output.py:_worst_losing_streak` walks the trade list. Counting consecutive losing
+ * DAYS here and letting it land in that row is how the panel reported one unit while printing
+ * the other, which is why `FallbackMetrics` no longer carries a streak at all.
+ */
+export function worstLosingStreakOf(pnls: number[]): number | null {
+  if (!pnls.length) return null
+  let max = 0, cur = 0
+  for (const p of pnls) {
+    if (p < 0) { cur++; if (cur > max) max = cur }
+    else cur = 0
+  }
+  return max
+}
+
 export interface FallbackMetrics {
   worstDay: number | null
-  worstStreak: number | null
   sharpe: number | null
 }
 
 export function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
-  if (!daily_pnl.length) return { worstDay: null, worstStreak: null, sharpe: null }
+  if (!daily_pnl.length) return { worstDay: null, sharpe: null }
 
-  const pnls = daily_pnl.map(d => d.pnl)
+  // Sample size is still counted in ACTIVE days — zero-filling adds observations to the series
+  // but not evidence, so it must not talk a 4-day run past the low-sample gate.
+  const activeDays = daily_pnl.filter(d => (d.pnl ?? 0) !== 0).length
 
-  const worstDay = Math.min(...pnls)
-
-  let maxStreak = 0, cur = 0
-  for (const p of pnls) {
-    if (p < 0) { cur++; maxStreak = Math.max(maxStreak, cur) }
-    else cur = 0
+  return {
+    worstDay: Math.min(...daily_pnl.map(d => d.pnl)),
+    sharpe: activeDays >= SHARPE_LOW_SAMPLE_DAYS ? dailySharpe(daily_pnl) : null,
   }
-
-  let sharpe: number | null = null
-  const n = pnls.length
-  if (n >= 10) {
-    const mean = pnls.reduce((a, b) => a + b, 0) / n
-    const variance = pnls.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)
-    const std = Math.sqrt(variance)
-    if (std > 0) sharpe = (mean / std) * Math.sqrt(252)
-  }
-
-  return { worstDay, worstStreak: maxStreak, sharpe }
 }
 
 // ── Derived metrics ──────────────────────────────────────────────────────────
@@ -511,7 +567,9 @@ export function computeFallbacks(daily_pnl: DailyPnlPoint[]): FallbackMetrics {
 function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], balance: number | null) {
   const sharpe      = run.sharpe              ?? fallback.sharpe
   const worstDay    = run.worst_day_pnl       ?? fallback.worstDay
-  const worstStreak = run.worst_losing_streak ?? fallback.worstStreak
+  // No fallback: a streak must come from a TRADE list or not at all. Both synthesizers
+  // (buildFilteredRun, StackDetail.composeCombined) set it via worstLosingStreakOf.
+  const worstStreak = run.worst_losing_streak
   const recoveryFactor = computeRecoveryFactor(run.net_pnl, run.max_drawdown, equity)
   // Capital-based scores rebase the equity to `balance` (the ruleset's account_size, or the
   // what-if slider). Both compute off the same stored run — no re-run, no backend.
@@ -884,7 +942,7 @@ export function PerformancePanel({
       // call 0.91 good; amber for "weak" is the threshold that should stop you, which is the
       // policy every other coloured row here follows.
       cls: sharpe != null && sharpe < 1 ? 'text-warn-text' : undefined,
-      tip: `Return per unit of volatility, annualized from daily P&L. Above 2 is excellent, 1 is good, below 0.5 is poor. Compare it only between runs in this lab — flat days are absent from the daily series, which inflates every runner's figure against an outside number. This run: ${sharpe != null ? sharpeLabel(sharpe, sharpeEst) : 'not computed'}.`,
+      tip: `Return per unit of volatility, annualized from daily P&L. Above 2 is excellent, 1 is good, below 0.5 is poor. Every weekday in the run's span counts, flat days included as zero — a strategy that trades 20 days a year is not a 250-day strategy, and scoring only its active days inflated this figure roughly 3x (0.91 read as 2.98 until 2026-07-31). This run: ${sharpe != null ? sharpeLabel(sharpe, sharpeEst) : 'not computed'}.`,
       cmp: k => k.sharpe, fmt: fmtRatio },
     { key: 'z', label: 'Z-score', value: zScore != null ? zScore.toFixed(2) : '—',
       cls: exceptionCls(zScoreCls(zScore)),
@@ -941,13 +999,18 @@ export function PerformancePanel({
   // truncate to nothing useful. Below lg the row breaks to two — four across a laptop-width
   // column is not a card, it's a column of stumps.
   const grid = verdict
-    ? 'md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[1fr_1fr_1fr_0.8fr]'
+    ? 'md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[0.8fr_1fr_1fr_1fr]'
     : 'md:grid-cols-3'
 
   return (
     <div className="space-y-2.5">
       {ribbon}
       <div className={`grid gap-2.5 items-stretch ${grid}`}>
+
+        {/* First, not last: the grade and the sample size are what you check BEFORE reading the
+            three numbers to their right, and it inherits the position the ribbon's own verdict
+            chip held at the panel's top-left. */}
+        {verdict}
 
         <div className={cardCls('border-t-2 border-t-pos-text/50')}>
           {head('Made', 'What came out of it')}
@@ -1005,8 +1068,6 @@ export function PerformancePanel({
             : <div className="text-[11px] text-text-tertiary leading-snug mt-2">{calmarLabel(calmar)}</div>}
           {!collapsed && rows(trustedRows)}
         </div>
-
-        {verdict}
 
       </div>
     </div>
@@ -3074,8 +3135,11 @@ function buildFilteredRun(run: Run, kept: EquityPoint[], curve: EquityPoint[]): 
     daily_pnl:     daily,
     // Recomputed downstream from the filtered daily series.
     worst_day_pnl: null,
-    worst_losing_streak: null,
     sharpe: null,
+    // NOT from the daily series: the row is labelled in trades, so it is counted off the kept
+    // trades here. Nulling it and letting a daily-row fallback answer put consecutive losing DAYS
+    // in a row that says "N trades" — which is what it did until 2026-07-31.
+    worst_losing_streak: worstLosingStreakOf(pnls),
     profit_concentration_pct: null,
     // Recomputed on the filtered day count, not carried over and not zeroed — the flag means "too
     // few days that actually traded for the Sharpe to mean anything", and removing trades can only
