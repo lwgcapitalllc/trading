@@ -41,6 +41,16 @@ class BLegConfig(SosFadeConfig):
     #   Pine is the contract, so the value is pinned here rather than inherited. It is also unused
     #   on this path — a B leg's stop is the frozen band's origin, never the fib anchor — so the
     #   pin costs nothing and only stops a silent drift between this config and its export.
+    exec_min_stop_mode: str = "Off"   # "Minimum stop distance" — pinned OFF, and INERT here
+    #   Inherited from the parent, which added it 2026-07-30 as the guard for a stop that collapses
+    #   onto the entry. It does NOT apply on this path: the floor is enforced in the parent's
+    #   `_place_entries`, which `BLegExecution` overrides, and `mpc_b_leg_strategy.pine` has no such
+    #   input to be parity-checked against. Pinned to the inert value so a future parent default
+    #   change cannot silently claim a guard this fork does not run. The hazard it protects against
+    #   is also structurally absent here — a B leg's stop is the band ORIGIN, always a full band
+    #   away from the 0.5 entry edge, never a fib that can land on top of it.
+    #   Porting it means adding the input to that Pine, the floor check to `_place_entries`, and a
+    #   `cfg_min_stop` column to the B-LEG export — in one commit, then re-run `compare_bleg.py`.
 
     #   `exec_runner_trail` was PINNED to "Structure (swing)" here from 2026-07-28 until later the
     #   same day, because the parent had moved to "Structure + % ratchet" while this fork's Pine

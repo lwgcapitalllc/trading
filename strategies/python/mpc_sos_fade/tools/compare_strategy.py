@@ -52,6 +52,7 @@ _HTF_REQ = {0: "Ignore", 1: "Must agree", 2: "Must not oppose", 3: "Must oppose 
 # is new, so older exports stay readable rather than silently mapping to the new default.
 _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratchet"}
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
+_MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
 _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
@@ -180,6 +181,18 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         v = get(col)
         if v is not None:
             vals[field] = float(v)
+    # Minimum stop distance (added 2026-07-30) — an ENTRY filter that can refuse a setup on
+    # PRICE. An export with no column predates it, and the parent shipped the mode "Off" from
+    # the day it was added, so "absent ⇒ Off" is a FACT about those exports rather than a
+    # guess — which is why this needs no warning, unlike cfg_exitmode above (whose default
+    # moved under it). Do not "improve" this to fall back on the base config: the moment the
+    # Python default is anything but Off, that would refuse setups the exported Pine took.
+    ms = get("cfg_min_stop")
+    vals["exec_min_stop_mode"] = "Off" if ms is None else \
+        _MIN_STOP.get(int(round(ms)), vals["exec_min_stop_mode"])
+    msv = get("cfg_min_stop_val")
+    if msv is not None:
+        vals["exec_min_stop_val"] = float(msv)
     return cls(**vals)
 
 

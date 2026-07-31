@@ -1,0 +1,46 @@
+{
+  "_README": "Copy to algos/markets/fx/instances/<bot_key>/config.json and fill in. This file is the ONLY thing that decides which MT5 terminal, which account, which symbol, and which version of the strategy this bot trades. Nothing here is read from the strategy's own config.py — that is deliberate, so lab experiments cannot reach a live bot. The MT5 password is NOT here: it lives in algos/credentials.json under mt5_accounts.",
+
+  "bot_key": "mpc_sos_fade_demo",
+  "display_name": "MPC SOS Fade",
+
+  "mt5_path": "C:\\MT5_Demo\\terminal64.exe",
+  "account": 0,
+  "server": "",
+  "symbol": "XAUUSD",
+  "magic": 770115,
+  "timeframe": "M15",
+
+  "strategy_package": "mpc_sos_fade",
+  "strategy_class": "MpcSosFadeStrategy",
+  "strategy_params": {
+    "exec_risk_pct": 2.0,
+    "exec_sl_level": "0.886",
+    "exec_min_stop_mode": "% of price",
+    "exec_min_stop_val": 0.1,
+    "fill_model": "bar"
+  },
+  "strategy_source_hash": "",
+  "promoted_commit": "",
+  "promoted_at": "",
+  "strategy_version": 0,
+
+  "telegram_chat_id": "",
+  "telegram_token_key": "",
+
+  "warmup_bars": 5000,
+  "poll_seconds": 10,
+  "initial_capital": 0,
+  "broker_tz_offsets": "2,3",
+
+  "_mt5_path": "Full path to the terminal64.exe of the instance you want traded. BotMT5.connect() binds to exactly this and refuses to fall back to whichever terminal happens to be open.",
+  "_account": "Login number. Checked after connecting; the bot shuts down rather than trade the wrong account.",
+  "_symbol": "The BROKER's symbol string, exactly. PU Prime gold is XAUUSD.s, Vantage is XAUUSD. Wrong here = no bars and no trades.",
+  "_magic": "Unique per bot. Every order this bot places carries it, and every order it reads back is filtered by it — this is what stops two bots on one terminal cancelling each other's orders.",
+  "_strategy_params": "The FULL promoted parameter set, written out explicitly. exec_risk_pct: the shipped default is 10, which measured a 54.9% max drawdown over 6.5 years — choose deliberately. exec_min_stop_mode: turn this ON for live; see strategies/python/mpc_sos_fade/CLAUDE.md. fill_model must stay 'bar' — 'tick' is a backtest cost model and needs a tick source the live bot does not have.",
+  "_strategy_source_hash": "Content hash of the strategy package (see algos/live/version.py). The bot re-hashes on startup and REFUSES to run if the code moved. Empty = unpinned, allowed but logged loudly.",
+  "_telegram_chat_id": "Where THIS bot reports. Empty = the shared group in algos/credentials.json. Set it when a bot deserves its own feed — a demo gold bot and a funded FX bot in one group means the message that matters is the one you scroll past. A chat id is not a secret (it is useless without a token), which is why it lives here.",
+  "_telegram_token_key": "Optional, and only if this bot should appear as its OWN Telegram bot rather than the default one. It NAMES a key in algos/credentials.json (e.g. 'telegram_token_bleg') — never the token itself, because this file is not the place for a secret. Empty = send as the default bot. Remember a Telegram bot can only post to chats it has been added to.",
+  "_warmup_bars": "History replayed to warm the engines before the bot acts. The liquidity engine needs previous-week levels and the RSI engine 100 bars; 5000 x M15 is about 7 weeks and costs a few seconds.",
+  "_broker_tz_offsets": "std,dst hours ahead of UTC for THIS broker's server clock. MEASURE it with backtest/tools/compare_feeds.py — do not assume. A wrong value shifts every session boundary the strategy trades off, and nothing downstream can detect it."
+}

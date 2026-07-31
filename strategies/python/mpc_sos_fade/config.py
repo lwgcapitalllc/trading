@@ -69,6 +69,23 @@ class SosFadeConfig:
     #   SHALLOWER levels (0.618 / 0.702 / 0.786) remain unsupported — 0.786 detonated an account to
     #   −$63k in Run 4. See the ⚠ block in CLAUDE.md before changing this.
     exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
+    exec_min_stop_mode: str = "Off"    # "Minimum stop distance" (Pine execMinStopMode)
+    #   ∈ {"Off", "% of price", "Fixed $", "x ATR(14)"}. An ENTRY filter, nothing to do with the
+    #   runner trail: refuse a setup whose stop lands closer to the entry than this floor.
+    #   **This is the guard for the hazard the `exec_sl_level` warning describes.** The dollar risk
+    #   is nominally unchanged, but `qty = risk / dist` means a collapsing stop distance balloons
+    #   SIZE — and once the stop is narrower than an ordinary bar, price travels straight through
+    #   it and the realised loss is no longer the 1R that was agreed. Measured at `0.786`: a $0.20
+    #   stop, a 39,033 oz position, ~180% of equity lost in a single bar (Run 4).
+    #   DEFAULT "Off" so the shipped baseline and every historical result are unchanged. Run 7
+    #   measured `"% of price"` at 0.10 as the best of three independent definitions — it refuses
+    #   6 of 188 trades over 8 years, is +2.5R (noise-level, so adopt it for SAFETY not for the
+    #   money), and leaves 2021/2024/2025/2026 byte-identical. **Turn it on for live trading.**
+    exec_min_stop_val: float = 0.10    # "↳ floor value (unit = mode above)"
+    #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
+    #   Read only when the mode is not "Off". Mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of
+    #   188 trades and are slightly positive; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start
+    #   eating winners.
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart

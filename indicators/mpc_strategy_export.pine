@@ -117,7 +117,7 @@ var GRP_APLUS = "A+ Setup"
 //  read anywhere in this file. Deleted to buy compile tokens for the
 //  post-SOS divergence veto exemption. Arming is controlled by the
 //  execArmSweep / execArmDiv toggles in the Execution group instead.)
-int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 20160, group = GRP_APLUS, tooltip = "Staleness backstop in TIME: the SOS must fire within this many minutes of the sweep. The real kill switch is narrative (an opposite SOS disarms it), so this only filters extremely old sweeps. Default 4320 = 3 days; ceiling 20160 = 14 days (raised from 4320 on 2026-07-29 — the old ceiling EQUALLED the default, so the field could only be lowered, and typing anything above it was silently clamped). Kept identical to mpc_strategy.pine so a parity export can carry any value the parent can produce.", display = display.none)
+int aplusWindow = input.int(4320, "Max Time: Sweep → SOS (minutes)", minval = 5, maxval = 20160, group = GRP_APLUS, tooltip = "Staleness backstop in TIME: the SOS must fire within this many minutes of the sweep. The real kill switch is narrative (an opposite SOS disarms it), so this only filters extremely old sweeps. Default 4320 = 3 days; ceiling 20160 = 14 days (raised from 4320 on 2026-07-29 — the old ceiling EQUALLED the default, so the field could only be lowered, and typing anything above it was silently clamped).", display = display.none)
 
 //============================================================
 //  A+ DEBUG (bar-replay diagnostics — no effect on trades)
@@ -418,8 +418,18 @@ bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY
 
 // ── 5. SIZE & STOP ─────────────────────────────────────────────────────────
 float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
-string execSlLevel = input.string("0.886", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. DEFAULT 0.886 — the deep edge of the entry band, and what Aaron actually trades (8 years / 188 trades behind it). 1.0 = the leg origin, the widest and structurally safest. The three shallower levels (0.618-0.786) can place the stop ON TOP OF the entry: nothing validates that, and a stop distance near zero balloons position size.")
+string execSlLevel = input.string("0.886", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. DEFAULT 0.886 — the deep edge of the entry band, and what Aaron actually trades (8 years / 188 trades behind it). 1.0 = the leg origin, the widest and structurally safest. The three shallower levels (0.618-0.786) can place the stop ON TOP OF the entry: nothing validates that, and a stop distance near zero balloons position size — turn 'Minimum stop distance' on before using them.")
 float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
+// Minimum stop distance — refuse a setup whose stop lands so close to the entry
+// that the position is degenerate. The $-risk is unchanged but SIZE balloons,
+// ordinary noise takes you out, and price can travel PAST the stop inside the
+// entry bar, so the realised loss beats the 1R you agreed to. Defaults OFF, so
+// the shipped baseline is unchanged until you flip it.
+// This is an ENTRY-TIME filter — it decides whether an order is placed at all. It
+// has nothing to do with the runner trail further down, which only starts once
+// TP2 is hit. Both work at once; neither disables the other.
+string execMinStopMode = input.string("Off", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Skip a setup whose stop sits closer to the entry than the floor below. '% of price' (try 0.10) scales itself as gold runs 1200 to 3300. 'Fixed $' (try 1.50) is one flat number at both ends of that range. 'x ATR(14)' (try 0.5) is the only one that reacts to a quiet vs violent market at the same price. Off greys out the floor value below. An ENTRY filter — unrelated to the runner trail.")
+float execMinStopVal = input.float(0.10, "   ↳ floor value (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.05, active = execMinStopMode != "Off", tooltip = "A PERCENT in '% of price' mode, DOLLARS of price in 'Fixed $', a MULTIPLE in 'x ATR(14)'. Over 8 years of gold 15m, mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive in R; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.")
 
 // ── 6. TARGETS (the TP ladder) ─────────────────────────────────────────────
 float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — the tested best setting. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
@@ -3783,6 +3793,18 @@ f_slAnchor() =>
         "0.786" => fiboP5
         "0.886" => fiboP6
         => fiboP10
+
+// The minimum-stop floor, in PRICE, for whichever mode is selected. `ta.atr` has
+// to run on EVERY bar to stay a valid series, so it is hoisted out of the
+// function — a ta.* call inside a conditionally-called function silently skips
+// bars and returns a different number than the same call on the main body.
+float minStopAtr = ta.atr(14)
+f_minStopFloor(float px) =>
+    switch execMinStopMode
+        "% of price" => px * execMinStopVal / 100.0
+        "Fixed $"    => execMinStopVal
+        "x ATR(14)"  => execMinStopVal * minStopAtr
+        => 0.0
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
 // Method 3 (execDeepFib) — the entry price for a DEEP gap whose NEAR EDGE sits
@@ -4107,9 +4129,9 @@ color BLK_PINKL = color.new(#FF2E9A, 0)
 
 // Reason PRECEDENCE — the first rule that would refuse the order is the one
 // reported, so a tag can never blame a downstream gate for an upstream refusal.
-//   1 direction off · 2 arm source off · 3 final hour · 4 veto · 5 HTF breakout · 6 HTF bias
-f_blkCode(bool dirOff, bool armOff, bool late, bool veto, bool htfBrk, bool htfBias) =>
-    dirOff ? 1 : armOff ? 2 : late ? 3 : veto ? 4 : htfBrk ? 5 : htfBias ? 6 : 0
+//   1 direction off · 2 arm source off · 3 final hour · 4 veto · 5 HTF breakout · 6 HTF bias · 7 stop too tight
+f_blkCode(bool dirOff, bool armOff, bool late, bool veto, bool htfBrk, bool htfBias, bool tight) =>
+    dirOff ? 1 : armOff ? 2 : late ? 3 : veto ? 4 : htfBrk ? 5 : htfBias ? 6 : tight ? 7 : 0
 
 f_blkWhy(int c) =>
     switch c
@@ -4119,6 +4141,7 @@ f_blkWhy(int c) =>
         4 => "Divergence / extreme-RSI veto — opposing divergence live at the SOS, or RSI at an extreme."
         5 => "HTF exhaustion filter — the higher timeframe just CLOSED through its prior extreme, so this is a fresh breakout rather than an exhaustion fade."
         6 => "HTF bias requirement — your Weekly / Daily bias gate is not satisfied."
+        7 => "Minimum stop distance — the stop sits closer to the entry than your floor, so this position would be oversized and noise-sensitive."
         => ""
 
 // ks carries the last (sosBar*10 + code) reported per side — the dedupe key.
@@ -4141,8 +4164,16 @@ var array<int> blkKeys = array.from(-1, -1)
 // not already been traded.
 bool lBlkReady = not na(aplusL_sosBar) and fibo_dir == 1  and not na(longEdge)  and strategy.position_size == 0 and (na(tradedSosL) or aplusL_sosBar != tradedSosL)
 bool sBlkReady = not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) and strategy.position_size == 0 and (na(tradedSosS) or aplusS_sosBar != tradedSosS)
-int  lBlkCode  = f_blkCode(not execLongs,  not armOkL, lateDayBlock, longVetoA  and execRespectVeto, htfBlockLong,  htfBiasBlockLong)
-int  sBlkCode  = f_blkCode(not execShorts, not armOkS, lateDayBlock, shortVetoA and execRespectVeto, htfBlockShort, htfBiasBlockShort)
+// The min-stop refusal happens at order placement below; it is recomputed here so
+// a setup refused on PRICE gets a chart tag like every other refusal. `> 0` keeps
+// an inverted stop (dist <= 0, already handled by its own cancel) from being
+// mislabelled as a floor refusal. na propagates, so a missing fib tags nothing.
+float lBlkDist  = longEdge - (f_slAnchor() - execSlBuf)
+float sBlkDist  = (f_slAnchor() + execSlBuf) - shortEdge
+bool  lBlkTight = lBlkDist > 0 and lBlkDist < f_minStopFloor(longEdge)
+bool  sBlkTight = sBlkDist > 0 and sBlkDist < f_minStopFloor(shortEdge)
+int  lBlkCode  = f_blkCode(not execLongs,  not armOkL, lateDayBlock, longVetoA  and execRespectVeto, htfBlockLong,  htfBiasBlockLong,  lBlkTight)
+int  sBlkCode  = f_blkCode(not execShorts, not armOkS, lateDayBlock, shortVetoA and execRespectVeto, htfBlockShort, htfBiasBlockShort, sBlkTight)
 
 f_blkTag(blkKeys, 0, true,  lBlkReady, lBlkCode, aplusL_sosBar, longEdge,  _dbg23Lo - _dbg23Atr)
 f_blkTag(blkKeys, 1, false, sBlkReady, sBlkCode, aplusS_sosBar, shortEdge, _dbg23Hi + _dbg23Atr)
@@ -4170,7 +4201,7 @@ if longArmed
     float slDist = longEdge - lSL
     lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
     lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
-    if slDist > 0
+    if slDist > 0 and slDist >= f_minStopFloor(longEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosL := aplusL_sosBar
         pendIsBLegL := false
@@ -4187,7 +4218,7 @@ if shortArmed
     float slDist = sSL - shortEdge
     sTP1 := shortDeep ? fiboP2 : fiboP1
     sTP2 := shortDeep ? fiboP1 : fiboP7
-    if slDist > 0
+    if slDist > 0 and slDist >= f_minStopFloor(shortEdge)
         float qty = (strategy.equity * execRiskPct / 100.0) / slDist
         pendSosS := aplusS_sosBar
         pendIsBLegS := false
@@ -4505,8 +4536,9 @@ if strategy.position_size < 0
     if sStage < 2 and low <= sTP2
         sStage := 2
 
-// Runner trail candidate — either the fixed-step ratchet (default) or a structure
-// trail behind the last confirmed swing (st.last_conf_low/high). na = not engaged yet.
+// Runner trail candidate — the fixed-step ratchet, a structure trail parked at the last
+// confirmed swing (st.last_conf_low/high), or that same swing anchor with a % ratchet
+// climbing off it. na = not engaged yet.
 float structBuf = execStructTrailBufTk * syminfo.mintick
 bool  useStructTrail  = execRunnerTrail == "Structure (swing)"
 bool  useSwingRatchet = execRunnerTrail == "Structure + % ratchet"
@@ -4556,7 +4588,16 @@ if strategy.position_size < 0
 // trade logic above must stay BYTE-IDENTICAL to `mpc_strategy.pine` — when your brother
 // re-pastes the strategy, regenerate this file (copy the strategy, re-append this block).
 //
-// REGENERATED 2026-07-26 from `mpc_strategy.pine` (post-SVP-orphan fix). The previous copy
+// REGENERATED 2026-07-30 from `mpc_strategy.pine`, to pick up the MINIMUM STOP DISTANCE
+// filter (`execMinStopMode` / `execMinStopVal`, Pine 423-432 + 3796-3807 + 4167-4172 +
+// 4204/4221) and the block reason code 7 that reports it. The previous copy predated all of
+// it, which was the one KNOWN Pine↔Python divergence on the A+ pair: the parent could refuse
+// a setup on stop distance, this export carried no column saying so, and compare_strategy.py
+// therefore reported GREEN while diffing against a config it could not read. Two new columns
+// close it — `cfg_min_stop` (the mode) and `cfg_min_stop_val` (the floor). Nothing else moved:
+// the body below is byte-identical to the parent's lines 1-4581 apart from line 29's title.
+//
+// Earlier — REGENERATED 2026-07-26 from `mpc_strategy.pine` (post-SVP-orphan fix). The previous copy
 // was from 2026-07-22 and had drifted on FIVE trade-affecting changes, so any diff it
 // produced was July-22 drift, not a bug:
 //   • the whole B LEG setup — tracker, `bLegArmL/S` capture, the two entry blocks, and the
@@ -4574,6 +4615,9 @@ if strategy.position_size < 0
 // then (a) restore `strategy("MPC A+ Strategy Export"` on line 29 — the ONLY intended
 // difference from the parent — and (b) re-check that every identifier this block reads
 // still exists upstream (they are all globals declared before the exits).
+// (As of the 2026-07-30 regen the split was `sed -n '1,4581p'` on the parent and
+//  `sed -n '4550,$p'` on the previous copy of this file. Both move whenever either file
+//  changes length — find them, never reuse these numbers blind.)
 //
 // GAP CLOSED 2026-07-26. The regen above left six toggles with no column, and one of them
 // (`execRunnerTrail`) had ALREADY defaulted to "Structure (swing)" — so an export taken in
@@ -4685,6 +4729,16 @@ plot(execTp2Pct,           "cfg_tp2_pct",     _INV, editable = false)
 plot(execBeBufTk,          "cfg_be_buf",      _INV, editable = false)
 plot(execSlBufTk,          "cfg_sl_buf",      _INV, editable = false)
 plot(execBeBandR,          "cfg_scratch_r",   _INV, editable = false)
+// MINIMUM STOP DISTANCE (2026-07-30) — an ENTRY filter, so it is deliberately NOT folded
+// into cfg_exitmode: that column is the two EXIT dropdowns, and mixing an entry gate into
+// it would make both harder to read and the decoder harder to trust. The mode is a code,
+// the floor is plotted RAW for the same reason the exit numerics are — it is a float, and
+// a packed float that rounds mis-configures the bot silently.
+//   cfg_min_stop = Off?0 : % of price?1 : Fixed $?2 : x ATR(14)?3
+// An export with NO cfg_min_stop column predates this and ran the guard OFF (it did not
+// exist), which is exactly what compare_strategy.py assumes when the column is absent.
+plot((execMinStopMode=="Off"?0:execMinStopMode=="% of price"?1:execMinStopMode=="Fixed $"?2:3), "cfg_min_stop", _INV, editable = false)
+plot(execMinStopVal,       "cfg_min_stop_val", _INV, editable = false)
 
 // DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot at H4/
 // session boundaries; remove once parity is green). Everything the arming block at

@@ -32,6 +32,7 @@ _SRC = {v: k for k, v in cs._HTF_SRC.items()}
 _REQ = {v: k for k, v in cs._HTF_REQ.items()}
 _TRAIL = {v: k for k, v in cs._RUNNER_TRAIL.items()}
 _TP2 = {v: k for k, v in cs._TP2_STOP.items()}
+_MINSTOP = {v: k for k, v in cs._MIN_STOP.items()}
 
 
 def _encode_cfg(cfg: SosFadeConfig) -> dict:
@@ -53,10 +54,13 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             "cfg_window": cfg.aplus_window, "cfg_risk_pct": cfg.exec_risk_pct,
             "cfg_exitmode": em,
             "cfg_struct_buf": cfg.exec_struct_trail_buf_tk,
+            "cfg_trail_pct": cfg.exec_trail_pct,
             "cfg_trail_step": cfg.exec_trail_step,
             "cfg_tp1_pct": cfg.exec_tp1_pct, "cfg_tp2_pct": cfg.exec_tp2_pct,
             "cfg_be_buf": cfg.exec_be_buf_tk, "cfg_sl_buf": cfg.exec_sl_buf_tk,
-            "cfg_scratch_r": cfg.exec_scratch_r}
+            "cfg_scratch_r": cfg.exec_scratch_r,
+            "cfg_min_stop": _MINSTOP[cfg.exec_min_stop_mode],
+            "cfg_min_stop_val": cfg.exec_min_stop_val}
 
 
 def _pack_decision(drow: dict) -> dict:
@@ -129,6 +133,36 @@ def test_roundtrip_parity_under_nondefault_exit_levers(tmp_path):
     p, _ = _write(tmp_path, cfg)
     msgs = cs.run_parity(p, warmup=100)
     assert msgs == [], msgs[:3]
+
+
+def test_roundtrip_parity_with_the_minimum_stop_guard_on(tmp_path):
+    """The guard is an ENTRY filter, so a decode failure shows up as trades the two sides
+    disagree about — the same class of silent drift `cfg_exitmode` had before it existed. A
+    floor big enough to refuse setups is used deliberately: at a floor nothing ever hits, the
+    column could be ignored entirely and this would still pass."""
+    cfg = SosFadeConfig(exec_min_stop_mode="% of price", exec_min_stop_val=2.0)
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_min_stop_columns_decode():
+    cfg = SosFadeConfig(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=0.5)
+    got = cs.config_from_export(pd.DataFrame([_encode_cfg(cfg)]))
+    assert got.exec_min_stop_mode == "x ATR(14)"
+    assert got.exec_min_stop_val == 0.5
+
+
+def test_an_export_without_the_min_stop_column_reads_as_off():
+    """Absent ⇒ Off is a FACT about pre-2026-07-30 exports (the Pine shipped the mode Off from
+    the day it was added), not a guess — so it must NOT fall back to the Python default. If it
+    did, the day that default changes every historical export would silently start refusing
+    setups the Pine actually took."""
+    base = SosFadeConfig(exec_min_stop_mode="Fixed $", exec_min_stop_val=1.5)
+    export = pd.DataFrame([{k: v for k, v in _encode_cfg(SosFadeConfig()).items()
+                            if not k.startswith("cfg_min_stop")}])
+    got = cs.config_from_export(export, base=base)
+    assert got.exec_min_stop_mode == "Off"
 
 
 def test_config_decode_roundtrips():

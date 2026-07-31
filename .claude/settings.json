@@ -104,7 +104,18 @@
       "Bash(git commit -m 'fix\\(chart\\): restore the 15m view and the Blocked toggle *)",
       "Bash(git commit -m 'fix\\(chart\\): open on the run'\\\\''s own timeframe, and give Blocked tags room *)",
       "Bash(git pull *)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(awk 'NR>=4543 && NR<=4553 {printf \"%d:[%s]\\\\n\", NR, $0}' /Users/alwg/trading/indicators/mpc_strategy_export.pine)",
+      "Bash(awk 'NR>=4655 && NR<=4681 {printf \"%d:[%s]\\\\n\", NR, $0}' /Users/alwg/trading/indicators/mpc_strategy.pine)",
+      "Bash(sed -n '1,4581p' mpc_strategy.pine)",
+      "Bash(sed -n '4550,$p' mpc_strategy_export.pine)",
+      "Read(//tmp/**)",
+      "Bash(grep -n \"cfg_sl_buf\\\\|cfg_scratch_r\\\\|cfg_exitnums\\\\|cfg_risk_pct\" /tmp/exp_new.pine)",
+      "Read(//private/tmp/**)",
+      "Bash(awk 'NR>=4694 && NR<=4722 {printf \"%d:%s\\\\n\", NR, $0}' /tmp/exp_new.pine)",
+      "Bash(git mv *)",
+      "Bash(/Users/alwg/trading/command-center/frontend/node_modules/.bin/tsc --noEmit -p /Users/alwg/trading/command-center/frontend/tsconfig.json)",
+      "Bash(/Users/alwg/trading/command-center/frontend/node_modules/.bin/vite build *)"
     ],
     "deny": [
       "Bash(git push --force:*)",
@@ -149,7 +160,9 @@
     "defaultMode": "acceptEdits",
     "additionalDirectories": [
       "/private/tmp/claude-501",
-      "/Users/alwg/.claude"
+      "/Users/alwg/.claude",
+      "/tmp",
+      "/private/tmp"
     ]
   }
 }

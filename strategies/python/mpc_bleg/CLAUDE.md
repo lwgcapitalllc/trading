@@ -13,7 +13,17 @@ on a fresh 21,493-bar `VANTAGE_XAUUSD, 15m` export carrying the ratchet exit lad
 identical decision stream. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-29 — **the stale export is CLEARED: `compare_bleg.py` re-run GREEN on the
+**Last reviewed:** 2026-07-30 — **the parent's new MINIMUM-STOP guard is PINNED OFF here, and is inert
+on this path.** `mpc_sos_fade` gained `exec_min_stop_mode` / `exec_min_stop_val` (refuse a setup whose
+stop lands too close to the entry — `qty = risk / stop_distance`, so a collapsing stop buys an enormous
+position). It does not reach this fork: the floor is enforced in the parent's `_place_entries`, which
+`BLegExecution` overrides, and `mpc_b_leg_strategy.pine` has no matching input to be parity-checked
+against. `BLegConfig` pins the mode to `"Off"` so a future parent default change cannot silently claim a
+guard this fork never runs. The hazard is also structurally absent here — a B leg's stop is the band
+ORIGIN, always a full band away from the 0.5 entry edge, never a fib that can land on top of it. Porting
+it = the Pine input + the floor check in this fork's `_place_entries` + a `cfg_min_stop` export column, in
+one commit, then re-run `compare_bleg.py`. Nothing else changed and the parity run below still stands.
+Earlier: 2026-07-29 — **the stale export is CLEARED: `compare_bleg.py` re-run GREEN on the
 ratchet build.** `compare_bleg.py "VANTAGE_XAUUSD, 15_ab202.csv" --warmup 100` → exit 0, 21,493 bars,
 2025-08-31 → 2026-07-29, still green at warmup 200/500/1000/2000. The export decoded
 `cfg_exitmode = 20` (the new 3-way trail digit reading as "Structure + % ratchet"), `cfg_trail_pct = 1`
@@ -107,6 +117,14 @@ full register is `mpc_sos_fade/CLAUDE.md` → `## The exit ladder`. What is spec
 - **This bot OVERRIDES TP1 / TP2 / SL** with its band prices (SL = band origin, TP1 = the broken
   swing extreme, TP2 = the expansion extreme). Everything from the stop staging down — the floor,
   the trail, both dropdowns — is the parent's, unchanged.
+- **`exec_min_stop_mode` is PINNED `"Off"` (2026-07-30) and is INERT here.** The parent's
+  minimum-stop guard runs inside `_place_entries`, which this fork overrides, so the floor is never
+  applied on this path — and there is no `execMinStopMode` in `mpc_b_leg_strategy.pine` to be
+  parity-checked against. The pin exists so a future parent default change cannot make this config
+  claim a guard the code does not run. Structurally the hazard is absent too: a B leg's stop is the
+  band ORIGIN, a full band away from the 0.5 entry edge, so it cannot collapse onto the entry the
+  way a fib stop can. Porting it is three edits in one commit (Pine input, floor check in this
+  fork's `_place_entries`, `cfg_min_stop` export column) followed by `compare_bleg.py`.
 
 `indicators/mpc_b_leg_strategy.pine` was ported in the same pass and now matches: `execRunnerTrail`,
 `execStructTrailBufTk`, `execTp2StopMode`, `execAplus`, and the `lStage2Floor` / structure-trail

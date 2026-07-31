@@ -188,6 +188,33 @@
       ]
     },
     {
+      "name": "exec_min_stop_mode",
+      "group": "Risk & stop",
+      "core": true,
+      "label": "Minimum stop distance",
+      "desc": "Refuse a setup whose stop lands too close to the entry. Position size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less — it buys an enormous position that ordinary noise takes out, and price can travel straight past the stop inside one bar for a loss far bigger than the 1R you agreed to. '% of price' scales itself as gold runs 1,200 to 3,300. 'Fixed $' is one flat number at both ends of that range. 'x ATR(14)' is the only one that reacts to a quiet vs violent market at the same price. This is an entry filter and has nothing to do with the runner trail. Off is the historical default; turn it on for live trading.",
+      "choices": [
+        "Off",
+        "% of price",
+        "Fixed $",
+        "x ATR(14)"
+      ]
+    },
+    {
+      "name": "exec_min_stop_val",
+      "group": "Risk & stop",
+      "label": "Minimum stop floor",
+      "desc": "The floor value, in the unit of the mode above: a percent in '% of price', dollars of price in 'Fixed $', a multiple in 'x ATR(14)'. Ignored when the mode is Off. Measured over 8 years of gold 15m: mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.",
+      "step": 0.05,
+      "show_if": {
+        "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"]
+      },
+      "guide": [
+        "Almost nothing is refused",
+        "Refuses real trades, not just degenerate ones"
+      ]
+    },
+    {
       "name": "exec_tp1_pct",
       "group": "Exit ladder",
       "label": "TP1 size",

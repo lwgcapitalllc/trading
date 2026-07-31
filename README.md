@@ -10,7 +10,9 @@ new peer dir here. Apps, Tooling, and Docs are fixed.
 trading/
 │
 │  ── APPS (deployables) ──────────────────────────────────────────
-├── algos/               ← Algo trading suite (Windows VPS, PU Prime demo — no live bots, rebuilding backtest-first)
+├── algos/               ← Algo trading suite (Windows VPS demo accounts). No live bots yet; `algos/live/` is the
+│                          new runtime that takes a validated strategies/python/ bot to real MT5 orders
+│                          (docs/LIVE_TRADING_PIPELINE.md)
 ├── smart-money/         ← Crypto/forex trader scanner and copy-trading candidate pool
 ├── command-center/      ← Local ops platform: bot monitor, smart money UI, backtests lab
 ├── strategies/          ← Generic strategy source files organized by runner platform (incl. python/ for the Python runner)
@@ -77,7 +79,7 @@ Read these in order for full context:
 
 | Subsystem | Purpose | Status | Rules |
 |---|---|---|---|
-| `algos/` | Live algo trading on Windows VPS | No live bots — rebuilding backtest-first | `algos/CLAUDE.md` |
+| `algos/` | Live algo trading on Windows VPS | No live bots yet — `algos/live/` runtime built 2026-07-30, awaiting an MT5 account | `algos/CLAUDE.md` |
 | `smart-money/` | Trader scanner for copy-trading candidates | Stages 1–2, 5 live | `smart-money/CLAUDE.md` |
 | `command-center/` | React + FastAPI ops platform | Live | `command-center/CLAUDE.md` |
 | `engines/regime/` | Shared regime classifier for live bots and backtest lab | Production | `engines/regime/CLAUDE.md` |
@@ -106,6 +108,8 @@ Read these in order for full context:
 ## docs/
 
 Cross-subsystem reference documents:
+- `docs/ONBOARDING_NEW_MACHINE.md` — **start here on a fresh machine.** Everything needed to run the Command Center from a bare clone: prerequisites, the per-machine config, the data drop (the DB, run output, bar cache and calendar are all git-ignored, so a clone alone shows an empty app), what works with and without VPS access
+- `docs/LIVE_TRADING_PIPELINE.md` — **the plan that takes a validated `strategies/python/` bot to real MT5 orders**: what already exists, what does not, the design decisions (the strategy stays authoritative and the bridge only mirrors; version isolation is frozen params + a source-hash pin), and the build order. Steps 1–4 done 2026-07-30 (`algos/live/`); read it before touching `algos/live/`, `algos/shared/mt5_ops.py` or the Bots page
 - `docs/BOT_DEVELOPMENT_METHOD.md` — S.Y.S.T.E.M. six-step process for building and validating any trading bot
 - `docs/LWG_Strategy_Framework.md` — Standing reference for how strategies are designed, layered, built, and graded
 - `docs/market_structure_engine_spec.md` — Spec for the BOS/SOS market-structure detection engine

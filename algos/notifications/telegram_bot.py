@@ -39,10 +39,14 @@ except ImportError:
     print("pip install requests")
     sys.exit(1)
 
-TELEGRAM_TOKEN  = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-ADMIN_CHAT      = "429207285"           # Primary admin — always has access even if users.json missing
-GROUP_CHAT      = "-1003977707258"      # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT      = Path("C:/trading/algos")
+# Telegram credentials are resolved from the environment or the git-ignored
+# algos/credentials.json — never pasted here. See algos/shared/credentials.py.
+# ADMIN_CHAT is the primary admin — always has access even if users.json is missing.
+sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+from credentials import telegram_credentials  # noqa: E402
+
+TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
 TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"

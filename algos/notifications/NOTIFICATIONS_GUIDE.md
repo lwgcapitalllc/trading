@@ -2,12 +2,46 @@
 
 ---
 
+## Credentials — where they live (changed 2026-07-30)
+
+**No file in this repo contains a Telegram token, and none may.** The old token was pasted
+into six files and committed; it was revoked, and the constants were replaced by a lookup.
+
+`algos/shared/credentials.py` is the single VPS-side resolver. Order: **environment variable**
+(`LWG_TELEGRAM_TOKEN` / `LWG_TELEGRAM_CHAT_ID` / `LWG_TELEGRAM_ADMIN_CHAT_ID`), then
+**`algos/credentials.json`** — git-ignored, per machine, never travels. Copy
+`algos/credentials.template.json` (which is in git and holds only the shape) and fill it in.
+
+The command center resolves the same values from the same FILE via its own
+`services/notify.py`, deliberately without importing this module — `command-center/` and
+`algos/` are independent by repo rule, so a shared data file is the allowed seam and a shared
+import is not.
+
+**Setup on a new machine or after a token rotation:**
+
+```bash
+cp algos/credentials.template.json algos/credentials.json
+# fill in telegram_token, telegram_chat_id, telegram_admin_chat_id
+```
+
+Getting the two chat ids: add the bot to the group and send a message, then read `chat.id`
+from `https://api.telegram.org/bot<TOKEN>/getUpdates`. The group id is negative, a personal
+id positive.
+
+**Nothing raises when it is missing.** Every sender treats "no credentials" as "drop the
+message and say so once". A bot must not refuse to trade because a notification channel is
+unset — and it must not crash at 2am for it either.
+
+---
+
 ## Telegram Delivery Model
 
 All notifications — scheduled alerts, command replies, and the startup ping — go to the
-**LWG Capital Algos Notifications** group chat (`GROUP_CHAT = "-1003977707258"`).
+**LWG Capital Algos Notifications** group chat (`telegram_chat_id`) **by default**. A live bot
+can override both the destination and the sender identity in its own instance config; see
+*Routing is per bot* below.
 
-`ADMIN_CHAT = "429207285"` is kept in all files as a fallback definition but is no longer
+`telegram_admin_chat_id` is loaded by every notifier as a fallback definition but is no longer
 the send destination for any message.
 
 **Authorization** uses each sender's personal Telegram **user ID** (`message.from.id`), not
@@ -31,7 +65,14 @@ Bot status notifications are event-driven, not polling-based:
 | Bot comes back online after crash | `monitor.py` (same cycle as crash detection) | ≤ 1 min |
 | Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
 
-`shared/notify.py` is *meant* to be the single Telegram helper for all VPS-side components, but today each notification script carries its own inline copy of `send_telegram` (and the token) — nothing imports `notify.py` yet. Refactor the scripts to import it when bots are wired for deploy (Aaron's call, 2026-07-06). Mac-side Telegram calls go through the command-center bots router.
+`shared/notify.py` is the single Telegram helper for VPS-side components. **The token half of the 2026-07-06 refactor note is DONE (2026-07-30)** — no script holds a token any more; the four here resolve theirs through `shared/credentials.py`, and `reporter.py` still has its own thin `send_telegram` body. Mac-side Telegram calls go through the command-center bots router, which delegates to `services/notify.py`.
+
+**Routing is per bot, and the default is shared.** `send_telegram(text, chat_id="", token_key="")`:
+
+- `chat_id` — where this message goes. Empty = the shared group above. A live bot passes its own `telegram_chat_id` from its instance config, so a demo gold bot and a funded FX bot need not share one feed.
+- `token_key` — which Telegram bot it appears to come from. It NAMES a key in `credentials.json` (`telegram_token_bleg`), never the token, so an instance config never holds a secret. Empty = the shared bot.
+
+A named token that is missing falls back to the default one and prints the key once. That is deliberate: the wrong sender identity is recoverable, a silently dropped trade alert is not. Expect the send to then fail at Telegram anyway — **a bot can only post to a chat it has been added to** — but it fails loudly with the reason printed, which is the point.
 
 ### monitor.py (SYS_MONITOR — every 1 min)
 Bot availability and heartbeat monitor. Handles availability alerting and Telegram bot watchdog only.

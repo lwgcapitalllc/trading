@@ -1,0 +1,95 @@
+{
+  "_README": "The MPC SOS Fade bot on the MT5_FFT terminal (PU Prime demo). This file is the ONLY thing that decides which terminal, account, symbol and strategy VERSION this bot trades — nothing is read from strategies/python/mpc_sos_fade/config.py, so lab experiments cannot reach it. No secrets live here: the MT5 password is in algos/credentials.json under mt5_accounts, and Telegram routing falls back to the shared group. Every broker fact below was MEASURED off the running terminal on 2026-07-31, not typed from memory — see _measured.",
+
+  "bot_key": "mpc_sos_fade_demo",
+  "display_name": "MPC SOS Fade",
+
+  "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
+  "account": 700107749,
+  "server": "PUPrime-Demo",
+  "symbol": "XAUUSD.s",
+  "magic": 770115,
+  "timeframe": "M15",
+
+  "strategy_package": "mpc_sos_fade",
+  "strategy_class": "MpcSosFadeStrategy",
+  "strategy_params": {
+    "exec_longs": true,
+    "exec_shorts": true,
+    "exec_aplus": true,
+    "exec_bleg": false,
+    "exec_arm_sweep": true,
+    "exec_arm_div": false,
+    "exec_req_fvg": true,
+    "exec_fvg_deep_only": true,
+    "exec_deep_fib": true,
+    "exec_fvg_50": false,
+    "exec_respect_veto": true,
+    "exec_close_opp_sos": false,
+    "exec_htf_exhaust_only": false,
+    "exec_htf_source": "Weekly",
+    "exec_htf_weekly": "Ignore",
+    "exec_htf_daily": "Ignore",
+    "exec_risk_pct": 10.0,
+    "exec_sl_level": "0.886",
+    "exec_sl_buf_tk": 0.0,
+    "exec_min_stop_mode": "Off",
+    "exec_min_stop_val": 0.1,
+    "exec_tp1_pct": 0.0,
+    "exec_tp2_pct": 0.0,
+    "exec_be_buf_tk": 30.0,
+    "exec_trail_step": 5.0,
+    "exec_runner_trail": "Structure + % ratchet",
+    "exec_struct_trail_buf_tk": 20.0,
+    "exec_trail_pct": 1.0,
+    "exec_tp2_stop_mode": "TP1 price",
+    "exec_no_late_day": true,
+    "exec_conf_sz": false,
+    "exec_secondary": false,
+    "exec_scratch_r": 0.15,
+    "aplus_window": 4320,
+    "show_div": true,
+    "div_rsi_len": 14,
+    "div_pivot_len": 5,
+    "div_valid_bars": 100,
+    "div_veto": true,
+    "div_extreme_ob": 80,
+    "div_extreme_os": 20,
+    "mintick": 0.01,
+    "point_value": 1.0,
+    "flat_by_close": false,
+    "flat_by_close_min": 15,
+    "daily_close_hour_ny": 17,
+    "fill_model": "bar",
+    "account_profile": "puprime_standard",
+    "symbol": "XAUUSD.s"
+  },
+  "strategy_source_hash": "6f78d102bfd9c4e55a0fd327cf581a0a",
+  "promoted_commit": "",
+  "promoted_at": "",
+  "strategy_version": 0,
+
+  "telegram_chat_id": "",
+  "telegram_token_key": "",
+
+  "warmup_bars": 5000,
+  "poll_seconds": 10,
+  "initial_capital": 0,
+  "broker_tz_offsets": "2,3",
+
+  "_measured": "Probed against the live MT5_FFT terminal on 2026-07-31 (it was running, authorized, trading enabled). Account 700107749 / PUPrime-Demo / USD / balance 2000.00 / DEMO / hedging / leverage 500. XAUUSD.s: visible, digits 2, point 0.01, contract 100 oz, tick value $1.00, volume 0.01-100.00 step 0.01, spread 33 points ($0.33), trade_mode FULL, filling IOC (NOT FOK — market orders send IOC, pendings send RETURN, both fine). SYMBOL_TRADE_STOPS_LEVEL = 20 points = $0.20: the broker itself refuses a stop closer than that to the entry.",
+
+  "_broker_tz_offsets": "MEASURED, not assumed: the terminal's tick clock read +3.00h vs UTC on 2026-07-31, which is the DST half of '2,3'. The WINTER half (+2) is inferred from the standard PU Prime schedule and is NOT yet verified — re-measure with backtest/tools/compare_feeds.py after the November changeover, because a wrong offset shifts every session boundary the strategy trades off and nothing downstream can detect it.",
+
+  "_exec_risk_pct": "DECISION PENDING — this is the shipped default, which measured a 54.9% max drawdown over 6.5 years. It is harmless while the bot is in dry run (--dry-run is the default and --live must be typed), and keeping it at the measured value is what makes the step-9 shadow diff against the lab meaningful. Choose it deliberately before arming. On this $2,000 account, 10% = $200 risked per trade.",
+
+  "_exec_min_stop_mode": "Left OFF because the filter has not yet been diffed ON against a real TradingView export — turning it on would ship a config whose Pine parity is unproven. The hazard it guards is still covered live: the broker's own 20-point floor rejects a degenerate stop, and place_pending_limit refuses one before it is ever sent. Turn it on ('% of price', 0.10) once compare_strategy.py has been re-run green with it enabled.",
+
+  "_account_profile": "puprime_standard matches this broker (contract 100, mintick 0.01, no commission, swap modelled). It is INERT live — it only prices fills when fill_model is 'tick', which the bridge refuses. Set correctly anyway so the file never claims Vantage while trading PU Prime.",
+
+  "_strategy_source_hash": "Content hash of strategies/python/mpc_sos_fade at the moment this file was written. The bot re-hashes on startup and REFUSES to run if the code moved. promoted_commit is empty because those strategy files are not committed yet — fill it at promotion. The hash itself is content-addressed, so committing unchanged files does not invalidate it.",
+
+  "_magic": "Unique to this bot. Every order it places carries it and every order it reads back is filtered by it — this is what stops two bots on one terminal cancelling each other's orders. MT5_FFT currently holds 0 positions and 0 orders.",
+
+  "_telegram": "Both empty = the shared token and group from algos/credentials.json. Set telegram_chat_id to give this bot its own feed; set telegram_token_key (a KEY NAME in credentials.json, never a token) to give it its own Telegram identity."
+}

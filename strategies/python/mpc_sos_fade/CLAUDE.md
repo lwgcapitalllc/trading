@@ -22,7 +22,16 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-29 — **Run 12: "can this bot trade more?" is answered NO, and one claim in
+**Last reviewed:** 2026-07-30 — **the MINIMUM-STOP GUARD is ported, closing the one known Pine↔Python
+divergence on this pair.** `exec_min_stop_mode` / `exec_min_stop_val`, the floor applied at order
+placement, block reason code 7, a REGENERATED `mpc_strategy_export.pine` (body byte-identical to the
+parent again) carrying `cfg_min_stop` / `cfg_min_stop_val`, and the decode in `compare_strategy.py`.
+Built as step 1 of the live-trading pipeline (`docs/LIVE_TRADING_PIPELINE.md`) because it is the
+guard for the only hazard in this bot that can lose real money fast: a stop that collapses onto the
+entry does not risk less, it balloons `qty = risk / dist`. **Default `"Off"`, byte-identical to the
+previous build, so no historical result moves** — and equally, nothing here validates the filter ON
+until a fresh export is diffed. Full record: `### The minimum-stop guard`. 111 tests green.
+Earlier: 2026-07-29 — **Run 12: "can this bot trade more?" is answered NO, and one claim in
 this file was measured wrong and is now corrected.** The `## The missed-setup watch` section used to
 call the "No FVG in zone" bucket the layer's *actionable* output; replaying 6.5 years with
 `exec_req_fvg` off shows those setups are a coin flip whose entire positive result is one 2020 trade
@@ -32,9 +41,9 @@ the final-hour rule costs ~0.4R over 6.5 years so it stays on. **No strategy cod
 code change is a Pine UI cap (`aplusWindow` maxval 4320 → 20160, default still 4320, so no result
 moves — `aplus_window` here never had a cap). Earlier the same day: **parity re-run GREEN on a fresh
 export that finally carries the ratchet AND the shipped 0/0 rungs** (`### PARITY GREEN 2026-07-29`).
-Every "the export is stale" warning in this file is cleared, with one exception that is NOT cleared:
-the export still has no `execMinStopMode`/`execMinStopVal` column, so nothing here validates the
-minimum-stop filter.
+Every "the export is stale" warning in this file is cleared, with one exception that was NOT cleared
+then and IS now: the export had no `execMinStopMode`/`execMinStopVal` column — see the 2026-07-30
+entry above.
 Earlier: 2026-07-27 — `exec_sl_level` defaulted **"1.0" → "0.886"** in lockstep with both
 A+ Pine files (Aaron's call — it is what he trades, and Run 6 rode it over the full history). The
 ⚠ block below is AMENDED, not retracted: 0.886 is still inside the entry band and neither Run 4
@@ -288,6 +297,7 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 | **The runner trail** | `exec_runner_trail`: "Fixed step" (a `exec_trail_step` grid ratchet anchored on TP2) / "Structure (swing)" (park the stop at the structure engine's last confirmed swing low/high, offset by `exec_struct_trail_buf_tk`) / **"Structure + % ratchet"** (same anchor, then climb one `exec_trail_pct`-of-price step per step of favourable move). | **Yes** — dropdown |
 | **The ratchet step** | `exec_trail_pct`, default **1.0**. Only read in "Structure + % ratchet" mode. A PERCENT of price, never dollars — see below. | **Yes** |
 | **Early bail-out** | `exec_close_opp_sos` (default OFF) force-closes on an opposite SOS instead of riding to the stop. **Measured INERT** (Run 5): turning it on produced a byte-identical trade list — an opposite SOS never fires before SL/TP has already resolved the position. There is nothing on the other end of this lever. | toggle exists, **does nothing** |
+| **Minimum stop distance** | `exec_min_stop_mode` ∈ {**"Off"**, "% of price", "Fixed $", "x ATR(14)"} + `exec_min_stop_val` (0.10). An ENTRY filter, not an exit lever — it lives in this table only because it is the guard for the `exec_sl_level` hazard two rows up. A setup whose stop lands closer to the entry than the floor places no order and records block code 7. | **Yes** — dropdown + floor; ported 2026-07-30 |
 
 The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten
 it further, never loosen it. With Structure selected and no confirmed swing yet, the trail is
@@ -409,15 +419,18 @@ mode needs the entry to fill at almost exactly 0.886. **It is evidence of absenc
 guarantee:** both defects below are still OPEN at this level, so treat a sudden outsized loss as
 this hazard until proven otherwise, and turn the Pine's "Minimum stop distance" on for live use.
 
-⚠ **But know what turning it on costs: the guard exists ONLY in the Pine.** `mpc_strategy.pine`
-has `execMinStopMode` / `execMinStopVal` and applies them as a real entry filter; `config.py` has
-**no equivalent at all**, `mpc_strategy_export.pine` emits **no `cfg_min_stop*` column**, and
-`compare_strategy.py` therefore cannot see the setting. At the `"Off"` default the two sides agree
-and parity holds. **The moment the filter is switched on in TradingView, the Pine refuses setups the
-Python still takes, and the comparator reports GREEN anyway** — it is diffing against a config it
-cannot read. This is the one known Pine↔Python divergence on the A+ pair. Closing it is Run 7's
-"what adoption requires": `exec_min_stop_mode` / `exec_min_stop_val` in `config.py`, a `cfg_min_stop`
-column in the export, and a `_TOGGLE_COLS` decode — one commit, then re-run parity.
+**The guard is now PORTED (2026-07-30) — it was the one known Pine↔Python divergence on the A+
+pair, and it is closed.** `exec_min_stop_mode` / `exec_min_stop_val` in `config.py` (defaults `"Off"`
+/ 0.10, matching the Pine), the floor applied at order placement in `_place_entries`, block reason
+**code 7** ("Stop too tight") so a setup refused on PRICE is countable in the lab's Blocked layer
+like every toggle refusal, and `cfg_min_stop` / `cfg_min_stop_val` columns in a regenerated
+`mpc_strategy_export.pine` that `compare_strategy.py` decodes. See `### The minimum-stop guard`.
+
+The four modes match the Pine exactly: `"Off"` (floor 0.0 — inert, so every historical result is
+unmoved), `"% of price"` (self-scaling, the one Run 7 recommends at 0.10), `"Fixed $"`, and
+`"x ATR(14)"` — the ATR being Pine's `ta.rma(ta.tr(true), 14)`, updated on every bar at the top of
+`step()` rather than inside the entry branch, because a `ta.*` call that skips bars returns a
+different number. **Turn it on for live trading**; leave it Off to reproduce a past run.
 
 Measured consequence at `0.786` + 20 ticks
 over full history: stop distance collapses to **$0.20** on 15m gold, `qty = risk / stop_distance`
@@ -553,9 +566,36 @@ This clears the 2026-07-28 stale warning. Two things make it the run that was ac
 6.6-year MT5 window the 110.65R baseline and the extension-fib work were measured on — the two
 numbers are not comparable and neither supersedes the other.
 
-⚠ **Not covered by this run:** `mpc_strategy_export.pine` still has no `execMinStopMode` /
-`execMinStopVal` column. The run was taken at the `"Off"` default where the gate is inert, so it
-proves nothing about the minimum-stop filter. Turn that filter on and this green goes meaningless.
+⚠ **Not covered by this run:** it was taken before the minimum-stop guard was ported, at the `"Off"`
+default where the gate is inert. It therefore still describes the CURRENT build exactly (see below —
+Off is byte-identical on both sides), but it says nothing about the filter itself.
+
+### The minimum-stop guard (ported 2026-07-30) — and what is NOT yet proven
+
+The parent Pine had `execMinStopMode` / `execMinStopVal` and the Python did not. That was the one
+known Pine↔Python divergence on this pair, and it was the dangerous kind: the export carried no
+column for it, so `compare_strategy.py` would have gone GREEN while the Pine refused setups the
+Python took. Closed in one pass:
+
+| where | what changed |
+|---|---|
+| `config.py` | `exec_min_stop_mode` (default `"Off"`) + `exec_min_stop_val` (0.10) |
+| `execution.py` | `_update_atr` (Pine `ta.atr(14)`), `_min_stop_floor`, `_stop_clears_floor` / `_stop_is_tight`; the floor gates both `_pend_long` and `_pend_short`; block reason **code 7** |
+| `mpc_strategy_export.pine` | REGENERATED off the parent (body now byte-identical again apart from line 29's title) + `cfg_min_stop` / `cfg_min_stop_val` plots |
+| `compare_strategy.py` | `_MIN_STOP` decode; **absent column ⇒ `"Off"`**, never the Python default |
+| `mpc_sos_fade.meta.json` | both fields, with `show_if` on the mode (which needed `show_if` to accept a LIST of values — one enum, three ON states) |
+| `mpc_bleg/config.py` | `exec_min_stop_mode` PINNED `"Off"` — that fork overrides `_place_entries`, so the floor never runs there and its Pine has no such input |
+
+**At `"Off"` the two sides are byte-identical to what they were**, which is why the 2026-07-29 green
+above still describes this build: the floor is 0.0, so `dist > 0 and dist >= 0.0` is the old
+`dist > 0`, and code 7 cannot fire. 11 new tests pin that, both floor definitions, the ATR against
+Wilder by hand, the precedence of code 7 behind a toggle refusal, and the decode.
+
+⚠ **NOT yet proven: the filter ON, against a real export.** Everything above is unit-tested and
+round-tripped through a synthetic export, which proves the two halves of OUR code agree — never that
+they agree with TradingView (that is exactly the limit the B-LEG harness bug demonstrated). Before
+trusting a run made with the guard on: re-paste `mpc_strategy_export.pine`, export at the mode you
+intend to use, and re-run `compare_strategy.py` to exit 0.
 
 ### PARITY GREEN 2026-07-26 (exit 0) — and the bug the run caught
 

@@ -546,3 +546,122 @@ def test_shipped_sl_level_default_is_the_deep_band_edge():
 
     assert SosFadeConfig().exec_sl_level == "0.886"
     assert BLegConfig().exec_sl_level == "1.0"
+
+
+# ------------------------------------------- minimum stop distance (Pine execMinStop*) --------
+# The fixtures put the long entry edge at fibo_p3 = 103.82 and the stop anchor at fibo_p10 =
+# 100.0, so every test below works against a stop distance of exactly 3.82 (3.68% of the entry
+# price). Bars are parked at 107.5-109.5 so nothing ever fills and the placement decision is the
+# only thing under test; their true range is a flat 2.00, which is what makes the ATR exact.
+
+def _quiet_bars(ex, seq, n, start=0):
+    """`n` bars that never touch the 103.82 entry edge. TR is 2.00 on every one of them
+    (high-low = 2.00 dominates both close-gap terms), so ATR(14) settles at exactly 2.00."""
+    dec = None
+    for i in range(n):
+        dec = ex.step(_sig(start + i, 108.5, 109.5, 107.5, 108.5), seq)
+    return dec
+
+
+def test_min_stop_defaults_off_and_refuses_nothing():
+    """"Off" must stay inert: it is the historical default, so turning this feature on may not
+    move a single past result until someone selects a mode."""
+    assert SosFadeConfig().exec_min_stop_mode == "Off"
+    ex = Execution(_cfg())
+    dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert dec.long_armed is True
+    assert ex._pend_long is not None
+
+
+def test_pct_floor_refuses_a_stop_narrower_than_the_floor():
+    """The stop is 3.68% of price here, so a 1% floor passes and a 5% floor refuses. The setup
+    is still ARMED — the floor is an order-placement filter, not an arm gate, exactly like the
+    Pine, where `longArmed` is unchanged and only `strategy.entry` vs `strategy.cancel` moves."""
+    passes = Execution(_cfg(exec_min_stop_mode="% of price", exec_min_stop_val=1.0))
+    dec = passes.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert dec.long_armed is True and passes._pend_long is not None
+
+    refuses = Execution(_cfg(exec_min_stop_mode="% of price", exec_min_stop_val=5.0))
+    dec = refuses.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert dec.long_armed is True
+    assert refuses._pend_long is None
+
+
+def test_fixed_dollar_floor_refuses_a_stop_narrower_than_the_floor():
+    passes = Execution(_cfg(exec_min_stop_mode="Fixed $", exec_min_stop_val=2.0))
+    passes.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert passes._pend_long is not None
+
+    refuses = Execution(_cfg(exec_min_stop_mode="Fixed $", exec_min_stop_val=5.0))
+    refuses.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert refuses._pend_long is None
+
+
+def test_atr_floor_refuses_nothing_until_the_atr_exists_then_measures_it():
+    """Pine's `ta.rma` is NA until it has 14 values, and `slDist >= na` reads as false — so the
+    warmup REFUSES rather than passes. Reproducing the direction matters: passing during warmup
+    would place exactly the oversized order this guard exists to stop."""
+    ex = Execution(_cfg(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=1.0))
+    _quiet_bars(ex, _seq_long_ready(), 13)
+    assert ex._atr is None
+    assert ex._pend_long is None          # warmup: floor unknown ⇒ refused
+
+    _quiet_bars(ex, _seq_long_ready(), 1, start=13)
+    assert abs(ex._atr - 2.0) < 1e-9      # 14 bars of a flat 2.00 true range
+    assert ex._pend_long is not None      # 1 × ATR = 2.00 < the 3.82 stop ⇒ allowed
+
+
+def test_atr_floor_refuses_when_the_multiple_exceeds_the_stop():
+    ex = Execution(_cfg(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=2.0))
+    _quiet_bars(ex, _seq_long_ready(), 14)
+    assert abs(ex._atr - 2.0) < 1e-9
+    assert ex._pend_long is None          # 2 × ATR = 4.00 > the 3.82 stop ⇒ refused
+
+
+def test_atr_follows_wilder_after_the_sma_seed():
+    """Seed = the SMA of the first 14 true ranges, then `atr += (tr - atr) / 14`. Fed 14 flat
+    2.00 bars and then one 12.00-range bar, Wilder gives 2 + (12 - 2)/14."""
+    ex = Execution(_cfg(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=1.0))
+    _quiet_bars(ex, _seq_long_ready(), 14)
+    ex.step(_sig(14, 108.5, 114.5, 102.5, 108.5), _seq_long_ready())
+    assert abs(ex._atr - (2.0 + (12.0 - 2.0) / 14.0)) < 1e-9
+
+
+def test_a_stop_refused_on_distance_is_recorded_as_blocked_code_7():
+    """Pine reports the floor refusal as block code 7, last in the precedence order, so a
+    setup refused on PRICE is countable in the lab's Blocked layer like every toggle refusal."""
+    ex = Execution(_cfg(exec_min_stop_mode="% of price", exec_min_stop_val=5.0))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert [b.code for b in ex.blocks] == [7]
+    assert ex.blocks[0].labels == ["Stop too tight"]
+    assert ex.blocks[0].dir == 1
+
+
+def test_code_7_sits_last_in_precedence_behind_a_toggle_refusal():
+    """A setup refused by BOTH a toggle and the floor reports the toggle as primary — the Pine's
+    `f_blkCode` returns the first blocker, and `codes[0]` must keep reconciling with it."""
+    ex = Execution(_cfg(exec_longs=False,
+                        exec_min_stop_mode="% of price", exec_min_stop_val=5.0))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    assert ex.blocks[0].codes == [1, 7]
+    assert ex.blocks[0].code == 1
+
+
+def test_warmup_refusal_places_no_order_and_tags_nothing():
+    """The one place the Pine is asymmetric, reproduced deliberately: during the ATR warmup the
+    entry is cancelled (`slDist >= na` is falsy) but `lBlkTight` (`slDist < na`) is falsy too, so
+    no tag is written. Refusing to place while refusing to explain is the Pine's behaviour; the
+    alternative — inventing a code 7 the Pine never emits — would break block-count parity."""
+    ex = Execution(_cfg(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=1.0))
+    _quiet_bars(ex, _seq_long_ready(), 5)
+    assert ex._pend_long is None
+    assert ex.blocks == []
+
+
+def test_the_bleg_fork_pins_the_floor_off_because_it_cannot_enforce_it():
+    """`BLegExecution` overrides `_place_entries`, so the parent's floor check never runs there
+    and its Pine has no such input. The pin stops a future parent default from silently claiming
+    a guard this fork does not have."""
+    from mpc_bleg.config import BLegConfig
+
+    assert BLegConfig().exec_min_stop_mode == "Off"

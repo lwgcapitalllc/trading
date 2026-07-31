@@ -81,8 +81,16 @@ export function ParamEditor(props: Props) {
     const p = params.find(x => x.name === name)
     return values[name] ?? (p?.default as ParamValue)
   }
+  // `show_if: {param: value}` shows the row only when that param equals the value. An ARRAY of
+  // values means "any of these" — needed by any enum whose OFF state is one option and whose ON
+  // states are several (e.g. a minimum-stop mode of Off / % of price / Fixed $ / x ATR). Without
+  // it the dependent row could only be tied to one of the ON values and would stay hidden for
+  // the others, which reads as a missing setting rather than a conditional one.
   const visible = (p: ParamSchemaEntry) =>
-    !p.show_if || Object.entries(p.show_if).every(([k, v]) => String(valueOf(k)) === String(v))
+    !p.show_if || Object.entries(p.show_if).every(([k, v]) => {
+      const actual = String(valueOf(k))
+      return Array.isArray(v) ? v.some(x => String(x) === actual) : actual === String(v)
+    })
 
   const coreParams = params.filter(p => p.core && visible(p))
   const hasCore = coreParams.length > 0

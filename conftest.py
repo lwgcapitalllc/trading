@@ -12,3 +12,11 @@ from pathlib import Path
 _ENGINES = Path(__file__).resolve().parent / "engines"
 if str(_ENGINES) not in sys.path:
     sys.path.insert(0, str(_ENGINES))
+
+# `algos/nt8/test_bt_switch.py` is a VPS DEBUG SCRIPT that happens to be named test_*. It is not
+# a test: it needs pywinauto and a running NinjaTrader, and it calls `sys.exit(1)` at import time
+# when they are absent — which pytest reports as an INTERNALERROR that aborts the entire run
+# before a single test executes. So `pytest algos/` was unusable, and the failure names pytest's
+# own internals rather than the file. Ignored here so the directory is collectable now that
+# `algos/tests/` holds a real suite.
+collect_ignore = ["algos/nt8/test_bt_switch.py"]

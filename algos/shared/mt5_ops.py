@@ -20,13 +20,22 @@ CLASS BotMT5:
         connect()               — Initialize MT5 terminal and login with retry + file lock
 
     Market data:
-        get_candles(tf, count)  — Fetch OHLCV bars
+        get_candles(tf, count)  — Fetch OHLCV bars, timestamped in TRUE UTC (see the method:
+                                  MT5 returns BROKER-server time and labelling it UTC shifts
+                                  every session boundary the time-driven engines depend on)
         get_tick()              — Return (bid, ask)
 
-    Order execution:
+    Order execution — market:
         place_order(dir, lots, sl, tp, comment)
         move_sl(ticket, new_sl, tp)
         partial_close(ticket, lots, direction)
+
+    Order execution — pending / resting limits (the MPC strategies enter this way):
+        place_pending_limit(dir, lots, price, sl, tp, comment)
+        modify_pending(ticket, price, sl, tp)   — price/SL/TP only, NEVER volume
+        cancel_pending(ticket) / cancel_all_pending()
+        get_pending_orders() / get_open_positions()  — both filtered by this bot's MAGIC
+        min_stop_distance() / normalize_volume(lots)
 
     Position lifecycle:
         get_deal_result(ticket) — Fetch (close_price, pnl_usd) from deal history
@@ -59,6 +68,7 @@ Usage in a bot:
     # ... etc.
 """
 
+import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -68,6 +78,13 @@ import MetaTrader5 as mt5
 import pandas as pd
 
 from bot_state import write_bot
+
+# The broker-server-clock → true-UTC rule. It lives under markets/fx/tools/ because the MT5 lab
+# agent (which is not on shared/'s path) was its first consumer; imported here by the repo-wide
+# "put the dir on sys.path, import bare" convention rather than copied, because a second copy of
+# a DST rule is a second thing to get wrong. See get_candles() for what it fixes.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "markets" / "fx" / "tools"))
+import broker_clock as _broker_clock  # noqa: E402
 
 _LOCK_FILE    = Path(r"C:\trading\algos\mt5_connect.lock")
 _LOCK_TIMEOUT = 90   # seconds to wait for the file lock
@@ -274,13 +291,37 @@ class BotMT5:
 
     def get_candles(self, tf: int, count: int,
                     symbol: str = None) -> pd.DataFrame:
-        """Fetch OHLCV bars from MT5. Returns empty DataFrame on failure."""
+        """Fetch OHLCV bars from MT5, timestamped in TRUE UTC.
+
+        **The bug this signature hides, and why the conversion is not optional.** MT5's `time`
+        field is an epoch-looking integer that actually carries the BROKER SERVER's local wall
+        clock. The old implementation did `pd.to_datetime(..., unit="s", utc=True)`, which
+        labels that local time as UTC — every bar 2-3 hours off, with nothing downstream able
+        to notice because the result is a perfectly valid-looking UTC timestamp. That is the
+        exact defect `broker_clock.py` was written for after `compare_feeds.py` found it on the
+        lab agent in 2026-07-15.
+
+        It matters more here than anywhere else: the sessions, liquidity, VWAP and SVP engines
+        are TIME-DRIVEN, and they are precisely the engines the A+ strategy trades off. A
+        three-hour shift moves every session boundary and every daily level, so the live bot
+        would take different trades from the backtest while both looked healthy.
+
+        The offset rule is MEASURED, not assumed (see `broker_clock.py`'s docstring — an
+        earlier EU-rule version passed its own unit tests and was still wrong). Re-measure with
+        `backtest/tools/compare_feeds.py` whenever the broker or terminal changes; override with
+        the `BROKER_TZ_OFFSETS` env var if the offsets (not the rule) differ.
+
+        Returns an empty DataFrame on failure, never None.
+        """
         sym   = symbol or self.symbol
         rates = mt5.copy_rates_from_pos(sym, tf, 0, count)
         if rates is None or len(rates) == 0:
             return pd.DataFrame()
         df = pd.DataFrame(rates)
-        df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+        df["time"] = pd.to_datetime(
+            [_broker_clock.to_utc(_broker_clock.broker_naive_from_epoch(t)) for t in df["time"]],
+            utc=True,
+        )
         return df
 
     def get_tick(self, symbol: str = None) -> tuple[float, float]:
@@ -341,6 +382,197 @@ class BotMT5:
             return result.order, result.price
         self.log.error(f"Order failed: {mt5.last_error()}")
         return None, None
+
+    # ── Pending (resting limit) orders ────────────────────────────────────────
+    #
+    # Added 2026-07-30 for the live runner. `place_order` above sends a MARKET order, which is
+    # all the first bot suite ever needed — but the MPC strategies enter on a RESTING LIMIT at a
+    # fib/FVG edge, and a market order at signal time is a different trade entirely (it pays the
+    # spread at the wrong price and fills where the strategy never wanted to be).
+    #
+    # Three constraints MT5 imposes that a caller must know about, because each one turns into a
+    # silently-missing trade rather than an exception:
+    #
+    #  1. **`TRADE_ACTION_MODIFY` cannot change VOLUME.** It moves price/SL/TP only. The A+ bot
+    #     re-sizes every bar (qty = equity·risk% / stop distance, and equity moves), so a size
+    #     change means CANCEL + RE-PLACE, which is what `algos/live/bridge.py` does. Never
+    #     "fix" a volume drift with a modify — MT5 accepts the call and ignores the volume.
+    #  2. **`SYMBOL_TRADE_STOPS_LEVEL` applies twice** — the pending price must sit at least that
+    #     far from the CURRENT market, and the SL/TP must sit at least that far from the pending
+    #     price. Both are checked here and refused with a log line naming the number, because
+    #     MT5's own rejection reaches you as a bare retcode.
+    #  3. **Volume must land on `volume_step`** and inside `[volume_min, volume_max]`. A strategy
+    #     computing 0.4237 lots gets 0.42; one computing 0.004 gets refused rather than silently
+    #     rounded up to the minimum, which would be a bigger position than the risk allowed.
+
+    def min_stop_distance(self, symbol: str = None) -> float:
+        """The broker's minimum distance (in PRICE) between an order and its stop/limit.
+
+        This is the BROKER's floor and is unrelated to the strategy's own minimum-stop setting
+        (`exec_min_stop_mode`): that one refuses a setup because the position would be
+        oversized; this one refuses an order because the venue will not accept it. Both can
+        fire, for different reasons, and the log must say which.
+        """
+        si = mt5.symbol_info(symbol or self.symbol)
+        if not si or si.trade_stops_level <= 0:
+            return 0.0
+        return si.trade_stops_level * si.point
+
+    def normalize_volume(self, lots: float, symbol: str = None) -> float:
+        """Round `lots` DOWN to the symbol's volume step and clamp to its max.
+
+        Rounds DOWN, never to nearest: rounding up crosses the risk the strategy sized for, and
+        this function is called on every entry. Returns 0.0 when the result is below
+        `volume_min` — the caller must treat that as "too small to trade", not as an error, and
+        must not substitute the minimum (that is a bigger bet than was asked for).
+        """
+        si = mt5.symbol_info(symbol or self.symbol)
+        if not si or si.volume_step <= 0:
+            return round(lots, 2)
+        steps = int(lots / si.volume_step + 1e-9)
+        v = round(steps * si.volume_step, 8)
+        if v < si.volume_min:
+            return 0.0
+        return round(min(v, si.volume_max), 8)
+
+    def get_pending_orders(self, symbol: str = None) -> list:
+        """This bot's resting orders — filtered by MAGIC, so another bot (or a hand-placed
+        order) on the same terminal and symbol is invisible here and can never be cancelled by
+        this bot. Returns [] when there are none or the call fails."""
+        orders = mt5.orders_get(symbol=symbol or self.symbol)
+        return [o for o in (orders or []) if o.magic == self.magic]
+
+    def get_open_positions(self, symbol: str = None) -> list:
+        """This bot's open positions, filtered by MAGIC. Same isolation rule as
+        `get_pending_orders` — one terminal can host several bots and a human."""
+        pos = mt5.positions_get(symbol=symbol or self.symbol)
+        return [p for p in (pos or []) if p.magic == self.magic]
+
+    def place_pending_limit(self, direction: str, lots: float, price: float,
+                            sl: float, tp: float = 0.0, comment: str = "",
+                            symbol: str = None) -> tuple:
+        """Rest a buy-limit (below market) or sell-limit (above market).
+
+        direction: 'bullish' → BUY LIMIT, 'bearish' → SELL LIMIT
+        Returns (ticket, price) or (None, None) — every refusal is logged with its reason.
+        """
+        sym = symbol or self.symbol
+        si  = mt5.symbol_info(sym)
+        if not si:
+            self.log.error(f"Pending refused: no symbol info for {sym}")
+            return None, None
+        digits = si.digits
+        price  = round(price, digits)
+        sl     = round(sl, digits)
+        tp     = round(tp, digits) if tp else 0.0
+
+        vol = self.normalize_volume(lots, sym)
+        if vol <= 0:
+            self.log.warning(
+                f"Pending refused: {lots} lots rounds below the {sym} minimum "
+                f"({si.volume_min}). Position too small to place — NOT rounding up."
+            )
+            return None, None
+
+        bid, ask = self.get_tick(sym)
+        if not bid or not ask:
+            self.log.error(f"Pending refused: no tick for {sym}")
+            return None, None
+
+        is_buy = direction == "bullish"
+        order_type = mt5.ORDER_TYPE_BUY_LIMIT if is_buy else mt5.ORDER_TYPE_SELL_LIMIT
+        market = ask if is_buy else bid
+
+        # A buy-limit must be BELOW the ask, a sell-limit ABOVE the bid. If price has already
+        # traded through the level the order is not a limit any more — refuse rather than let
+        # MT5 reject it as an "invalid price" the caller then has to decode.
+        if (is_buy and price >= market) or ((not is_buy) and price <= market):
+            self.log.warning(
+                f"Pending refused: {direction} limit {price:.{digits}f} is on the wrong side of "
+                f"the market ({market:.{digits}f}) — price already reached the level."
+            )
+            return None, None
+
+        min_dist = self.min_stop_distance(sym)
+        if min_dist > 0:
+            if abs(market - price) < min_dist:
+                self.log.warning(
+                    f"Pending refused: limit {price:.{digits}f} is {abs(market-price):.{digits}f} "
+                    f"from market {market:.{digits}f}, inside the broker stops_level "
+                    f"{min_dist:.{digits}f} ({sym})."
+                )
+                return None, None
+            if abs(price - sl) < min_dist:
+                self.log.warning(
+                    f"Pending refused: SL {sl:.{digits}f} is {abs(price-sl):.{digits}f} from the "
+                    f"limit {price:.{digits}f}, inside the broker stops_level "
+                    f"{min_dist:.{digits}f} ({sym})."
+                )
+                return None, None
+
+        result = mt5.order_send({
+            "action":       mt5.TRADE_ACTION_PENDING,
+            "symbol":       sym,
+            "volume":       vol,
+            "type":         order_type,
+            "price":        price,
+            "sl":           sl,
+            "tp":           tp,
+            "magic":        self.magic,
+            "comment":      comment or f"{self.bot_label}-LIMIT",
+            "type_time":    mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_RETURN,
+        })
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            self.log.info(
+                f"PENDING PLACED | ticket={result.order} | {direction} {vol}L "
+                f"@ {price:.{digits}f} | SL={sl:.{digits}f}"
+            )
+            return result.order, price
+        rc = result.retcode if result else None
+        self.log.error(f"Pending failed ({sym} {direction} {vol}L @ {price}): "
+                       f"retcode={rc} {mt5.last_error()}")
+        return None, None
+
+    def modify_pending(self, ticket: int, price: float, sl: float,
+                       tp: float = 0.0, symbol: str = None) -> bool:
+        """Move a resting order's price / SL / TP. **Cannot change volume** — see the block
+        comment above. Returns True if MT5 accepted it."""
+        sym = symbol or self.symbol
+        si  = mt5.symbol_info(sym)
+        digits = si.digits if si else 2
+        result = mt5.order_send({
+            "action": mt5.TRADE_ACTION_MODIFY,
+            "order":  ticket,
+            "price":  round(price, digits),
+            "sl":     round(sl, digits),
+            "tp":     round(tp, digits) if tp else 0.0,
+        })
+        ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+        if ok:
+            self.log.info(f"PENDING MOVED | T{ticket} → {price:.{digits}f} SL={sl:.{digits}f}")
+        else:
+            rc = result.retcode if result else None
+            self.log.error(f"Pending modify failed T{ticket}: retcode={rc} {mt5.last_error()}")
+        return ok
+
+    def cancel_pending(self, ticket: int) -> bool:
+        """Remove a resting order. A ticket that is already gone (filled or cancelled) counts
+        as SUCCESS — the caller's intent is "there should be no order here", and treating a
+        race with a fill as a failure would make the bridge retry forever."""
+        result = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": ticket})
+        if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+            self.log.info(f"PENDING CANCELLED | T{ticket}")
+            return True
+        if not mt5.orders_get(ticket=ticket):
+            return True     # already gone
+        rc = result.retcode if result else None
+        self.log.error(f"Pending cancel failed T{ticket}: retcode={rc} {mt5.last_error()}")
+        return False
+
+    def cancel_all_pending(self, symbol: str = None) -> int:
+        """Cancel every resting order this bot owns. Returns how many were removed."""
+        return sum(1 for o in self.get_pending_orders(symbol) if self.cancel_pending(o.ticket))
 
     def move_sl(self, ticket: int, new_sl: float, tp: float = None) -> bool:
         """

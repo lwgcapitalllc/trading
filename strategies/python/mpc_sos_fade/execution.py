@@ -159,6 +159,7 @@ _BLOCK_LABEL = {
     4: "Divergence / RSI veto",
     5: "HTF breakout",
     6: "HTF bias",
+    7: "Stop too tight",
 }
 # The hover text, word-for-word from Pine `f_blkWhy` so the chart and TradingView agree.
 _BLOCK_REASON = {
@@ -169,15 +170,21 @@ _BLOCK_REASON = {
     5: "HTF exhaustion filter — the higher timeframe just CLOSED through its prior extreme, so "
        "this is a fresh breakout rather than an exhaustion fade.",
     6: "HTF bias requirement — your Weekly / Daily bias gate is not satisfied.",
+    7: "Minimum stop distance — the stop sits closer to the entry than your floor, so this "
+       "position would be oversized and noise-sensitive.",
 }
 
 
 def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
-                 htf_brk: bool, htf_bias: bool) -> List[int]:
+                 htf_brk: bool, htf_bias: bool, tight: bool = False) -> List[int]:
     """Every rule refusing this side, in the Pine's `f_blkCode` precedence order.
-    Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned."""
+    Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned.
+
+    `tight` (the minimum-stop floor) is LAST in precedence and defaults False because it is
+    the only code that depends on price rather than on a toggle — a caller that has not
+    computed the stop distance yet simply omits it."""
     return [c for c, on in enumerate(
-        (dir_off, arm_off, late, veto, htf_brk, htf_bias), start=1) if on]
+        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight), start=1) if on]
 
 
 @dataclass
@@ -189,7 +196,7 @@ class BlockedSetup:
     dir: int              # +1 long, -1 short
     index: int            # bar index
     time_ms: int
-    codes: List[int]      # 1-6, the Pine reason codes, precedence-ordered
+    codes: List[int]      # 1-7, the Pine reason codes, precedence-ordered
     edge: float
     sos_bar: int
 
@@ -451,6 +458,14 @@ class Execution:
         self.misses: List[MissedSetup] = []
         self._mw: List[_MissWatch] = [_MissWatch(), _MissWatch()]
         self._prev_stage: List[int] = [0, 0]
+        # ATR(14) for the "x ATR(14)" minimum-stop mode. Pine hoists `ta.atr(14)` to the main
+        # body so it runs on EVERY bar — a `ta.*` call inside a conditionally-taken branch
+        # silently skips bars and returns a different number. Same discipline here: updated at
+        # the top of every `step()`, never inside the entry branch, and never on a 1m
+        # `step_secondary` bar (the Pine's ATR is on the chart timeframe).
+        self._atr: Optional[float] = None
+        self._atr_trs: List[float] = []
+        self._atr_prev_close: Optional[float] = None
 
     # ── public equity read ──
     @property
@@ -549,6 +564,9 @@ class Execution:
     # ── main step ───────────────────────────────────────────────────────────────
     def step(self, sig, seq) -> Decision:
         dec = Decision(index=sig.index)
+
+        # Runs before anything can branch — see `_update_atr`.
+        self._update_atr(sig)
 
         # Decision context the Pine computes EVERY bar (not just when flat), so the
         # decision streams line up bar-for-bar: the entry edges, the A+ stage, the veto.
@@ -766,11 +784,24 @@ class Execution:
              and self._pos_dir == 0
              and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)),
         )
+        # The min-stop refusal itself happens at order placement; it is recomputed here so a
+        # setup refused on PRICE gets a record like every other refusal (Pine 4167-4172). A
+        # missing fib leaves the anchor unknown, which reads as "not tight" — the same way na
+        # propagates through the Pine's comparison.
+        anchor = self._sl_anchor(sig)
+        buf = cfg.exec_sl_buf_tk * cfg.mintick
+        tight_l = tight_s = False
+        if anchor is not None:
+            if long_edge is not None:
+                tight_l = self._stop_is_tight(long_edge - (anchor - buf), long_edge)
+            if short_edge is not None:
+                tight_s = self._stop_is_tight((anchor + buf) - short_edge, short_edge)
+
         codes = (
             _block_codes(not cfg.exec_longs, not arm_ok_l, late,
-                         dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l),
+                         dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l, tight_l),
             _block_codes(not cfg.exec_shorts, not arm_ok_s, late,
-                         dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s),
+                         dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s, tight_s),
         )
         for slot, (is_long, ok, cs, edge, sos_bar) in enumerate((
             (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
@@ -806,7 +837,7 @@ class Execution:
             deep = long_edge <= sig.fibo_p3       # at/below 0.618
             tp1 = sig.fibo_p2 if deep else sig.fibo_p1   # deep 0.5 / shallow 0.382
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7   # deep 0.382 / shallow 0.0
-            if dist > 0:
+            if self._stop_clears_floor(dist, long_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 self._pend_long = _Pending(1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar)
             else:
@@ -820,7 +851,7 @@ class Execution:
             deep = short_edge >= sig.fibo_p3
             tp1 = sig.fibo_p2 if deep else sig.fibo_p1
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7
-            if dist > 0:
+            if self._stop_clears_floor(dist, short_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 self._pend_short = _Pending(-1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar)
             else:
@@ -876,6 +907,58 @@ class Execution:
             "0.618": sig.fibo_p3, "0.702": sig.fibo_p4, "0.786": sig.fibo_p5,
             "0.886": sig.fibo_p6,
         }.get(self._cfg.exec_sl_level, sig.fibo_p10)
+
+    # ── minimum stop distance (Pine 3801-3807, execMinStopMode / execMinStopVal) ──
+    def _update_atr(self, sig) -> None:
+        """Pine `ta.atr(14)` = `ta.rma(ta.tr(true), 14)`, reproduced exactly.
+
+        `ta.tr(true)` uses high-low on the first bar (no prior close to reference); `ta.rma`
+        is NA until it has `length` values, then seeds with their SMA and runs Wilder from
+        there. The NA phase matters: with the "x ATR(14)" mode selected, an unknown floor
+        makes Pine's `slDist >= floor` comparison NA, which reads as false — so the first 13
+        bars refuse every entry rather than pass them. `_min_stop_floor` returns None for
+        exactly that case so the caller can reproduce it."""
+        c_prev = self._atr_prev_close
+        tr = (sig.high - sig.low) if c_prev is None else max(
+            sig.high - sig.low, abs(sig.high - c_prev), abs(sig.low - c_prev))
+        self._atr_prev_close = sig.close
+        if self._atr is None:
+            self._atr_trs.append(tr)
+            if len(self._atr_trs) == 14:
+                self._atr = sum(self._atr_trs) / 14.0     # the SMA seed
+        else:
+            self._atr += (tr - self._atr) / 14.0          # Wilder: alpha = 1/length
+
+    def _min_stop_floor(self, px: float) -> Optional[float]:
+        """The floor in PRICE for the selected mode, or None when it cannot be known yet
+        (ATR mode before the ATR has 14 bars). `0.0` — the "Off" answer — is a real floor
+        that every positive stop distance clears, so the default stays inert."""
+        cfg = self._cfg
+        mode = cfg.exec_min_stop_mode
+        if mode == "% of price":
+            return px * cfg.exec_min_stop_val / 100.0
+        if mode == "Fixed $":
+            return cfg.exec_min_stop_val
+        if mode == "x ATR(14)":
+            return None if self._atr is None else cfg.exec_min_stop_val * self._atr
+        return 0.0
+
+    def _stop_clears_floor(self, dist: float, edge: float) -> bool:
+        """Pine's `slDist > 0 and slDist >= f_minStopFloor(edge)`, with NA reading as false."""
+        if dist <= 0:
+            return False
+        floor = self._min_stop_floor(edge)
+        return floor is not None and dist >= floor
+
+    def _stop_is_tight(self, dist: float, edge: float) -> bool:
+        """Pine's `lBlkTight` — a POSITIVE stop distance that fails the floor, which is what
+        distinguishes a floor refusal from an inverted stop (that has its own cancel path).
+        NA reads as false here too, so the ATR warmup refuses entries WITHOUT tagging them —
+        matching the Pine, whose `<` against NA is equally falsy."""
+        if dist <= 0:
+            return False
+        floor = self._min_stop_floor(edge)
+        return floor is not None and dist < floor
 
     # ── entry fill (Phase A) ─────────────────────────────────────────────────────
     def _try_entry_fill(self, sig, dec) -> bool:

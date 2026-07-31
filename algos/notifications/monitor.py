@@ -33,9 +33,6 @@ except ImportError:
     print("pip install requests")
     sys.exit(1)
 
-TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-ADMIN_CHAT     = "429207285"
-GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
 ALGOS_ROOT     = Path("C:/trading/algos")
 STATE_FILE     = ALGOS_ROOT / "monitor_state.json"
 SUPPRESS_FILE  = ALGOS_ROOT / "stop_suppress.json"
@@ -43,6 +40,12 @@ TEXAS          = ZoneInfo("America/Chicago")
 
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 import bot_state as _bot_state
+
+# Telegram credentials are resolved from the environment or the git-ignored
+# algos/credentials.json — never pasted here. See algos/shared/credentials.py.
+from credentials import telegram_credentials  # noqa: E402
+
+TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 
 # Bots emit a log line roughly every ~60s. Some branches (SMC outside kill zone,
 # "manage trades only") can sleep up to ~2-3 min. 5 min is a safe floor.

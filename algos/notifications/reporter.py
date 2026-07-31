@@ -33,10 +33,13 @@ except ImportError:
     sys.exit(1)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-TELEGRAM_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-ADMIN_CHAT     = "429207285"
-GROUP_CHAT     = "-1003977707258"   # LWG Capital Algos Notifications — broadcast destination
+# Telegram credentials are resolved at import from the environment or the git-ignored
+# algos/credentials.json — never pasted here. See algos/shared/credentials.py.
 ALGOS_ROOT     = Path("C:/trading/algos")
+sys.path.insert(0, str(ALGOS_ROOT / "shared"))
+from credentials import telegram_credentials  # noqa: E402
+
+TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 TEXAS          = ZoneInfo("America/Chicago")
 
 # All first-attempt bots deleted 2026-06-22 (see algos/docs/BOT_DEPLOYMENT_INFRA.md).

@@ -28,9 +28,11 @@ from bot_state import (
     read_bot, set_pnl, write_bot
 )
 
-TELEGRAM_TOKEN  = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-ADMIN_CHAT      = "429207285"
-GROUP_CHAT      = "-1003977707258"
+# Telegram credentials are resolved from the environment or the git-ignored
+# algos/credentials.json — never pasted here. See algos/shared/credentials.py.
+from credentials import telegram_credentials  # noqa: E402
+
+TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 ALGOS_ROOT      = Path("C:/trading/algos")
 TEXAS           = ZoneInfo("America/Chicago")
 BOT_LIVE_WINDOW = 300  # seconds — treat bot as live if last_write is within this

@@ -124,5 +124,5 @@ NT8 and NinjaTrader were merged into one dot. Red = agent down (clickable); yell
 - Touch `algos/` or `smart-money/` source code — read their output files only
 - Commit secrets (`.env`, credentials, tokens)
 - Add a frontend route without a corresponding `NavItem` in `Sidebar.tsx`
-- Change Telegram token/chat constants in `routers/bots.py` independently of `algos/shared/notify.py` — they must stay in sync
+- Put a Telegram token (or any credential) in a source file. Since 2026-07-30 both sides resolve them at runtime — env var, else the git-ignored `algos/credentials.json` — through `services/notify.py` here and `algos/shared/credentials.py` there. `routers/bots.py` delegates to `services/notify.py` and must never grow its own sender again: a private copy of the token in that router is exactly how the old one ended up committed in six places. The former "keep the two constants in sync" rule is retired — there are no constants left
 - SSH synchronously from a request handler that could take > 2s — background it

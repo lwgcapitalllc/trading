@@ -23,8 +23,6 @@ import base64
 import json
 import subprocess
 import time as _time
-import urllib.parse
-import urllib.request
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -33,6 +31,7 @@ from fastapi.responses import PlainTextResponse
 
 import config as cfg
 from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from services.notify import send_telegram
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -65,10 +64,6 @@ _SUPPRESS_KEYS: dict[str, str] = {}
 # Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
 # Update here whenever thresholds change in the algo.
 _BOT_THRESHOLDS: dict[str, dict[str, float]] = {}
-
-# Telegram — same credentials as notify.py / algo.py
-_TG_TOKEN = "8888123776:AAFuWpPoKnHSmGwxNxRB9Qo61kDSk7w0YD8"
-_TG_CHAT  = "-1003977707258"
 
 # bot_key → display name for notifications
 _KEY_DISPLAY: dict[str, str] = {v: _DISPLAY_NAMES[k] for k, v in _TASK_BOT_KEYS.items()}
@@ -140,17 +135,13 @@ def _git_commit_push(file_paths: list[Path] | Path, message: str) -> str:
 
 
 def _notify_telegram(text: str) -> None:
-    """Send a Telegram notification.  Mirrors algo.py notify_telegram().  Never raises."""
-    try:
-        url  = f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage"
-        data = urllib.parse.urlencode({
-            "chat_id": _TG_CHAT,
-            "text":    text,
-            "parse_mode": "Markdown",
-        }).encode()
-        urllib.request.urlopen(url, data=data, timeout=5)
-    except Exception:
-        pass
+    """Send a Telegram notification. Never raises.
+
+    Delegates to `services/notify.py` — this router used to carry its own copy of the token,
+    chat id and urllib call, which is how the credential ended up committed in six places at
+    once. One sender, one credential lookup.
+    """
+    send_telegram(text)
 
 
 def _suppress_stop_alert(bot_key: str) -> None:
