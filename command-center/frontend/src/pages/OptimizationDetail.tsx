@@ -9,8 +9,10 @@ import StickyHeader from '@/components/StickyHeader'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
+// Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
+// Greenwich. Same fix in BacktestDetail/SweepDetail/StackDetail/StressTestDetail.
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function fmtDuration(seconds: number): string {

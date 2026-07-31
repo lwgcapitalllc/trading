@@ -3,7 +3,7 @@
 **Purpose:** React + Vite + TypeScript app (`:5173`) — the UI for the command center; all server state via TanStack Query against the FastAPI backend.
 **Scope:** This covers frontend hook/component/page conventions, the theme system, and routing. It does NOT cover the backend (see `../backend/CLAUDE.md`) or `algos/`/`smart-money/`.
 **Status:** Live — all pages shipped (Overview, Smart Money, Bots, Strategies, Rulesets, Backtests lab, Optimizations, Tuning workbench, Stress Tests, Settings).
-**Last reviewed:** 2026-07-31 — **the Evaluation + Performance panel was rebuilt as `PerformancePanel`: a verdict ribbon over three question cards** (Made / Risked / Trusted), replacing the 6+6 `KpiGrid` and its evaluation card. That layout caused all three standing complaints at once — cropped values (a fixed `KPI_ROW_H` on variable content), visibly uneven cards (`KPI_COLS` widened for one long money value), and an empty evaluation box on `unconstrained` — and none was fixable by resizing. Metrics group by the question they answer, so every one fits at once: **the expand toggle and both fixed heights are deleted**, `StackDetail` included. Two rules landed with it: **colour marks the exception, not the sign** (a wall of green ranks nothing, Worst Day can only be negative, and Sharpe 0.91 is positive AND weak — soft numbers say so in words), and the new **`DrawdownMeter` may never invent its references** — the gold limit tick only when the ruleset states a peak-% limit, the hatched tail only from a `dd_basis === 'percent'` stress test, otherwise it says the tail is *unknown, not zero*. The trade count became the ribbon's anchor with its `≈2/month` cadence. See `## Backtest detail — chart and KPI conventions`. Earlier: 2026-07-30 — **Max Drawdown and Calmar were measuring against a static account balance and both were wrong on any compounding run** (1096.7% and a red 0.11 on a run whose true figures are 54.9% and 2.25). Both now divide by the running PEAK — see `## Backtest detail — chart and KPI conventions` → *Drawdown is peak-relative*. Same day: the price chart's **scroll-left paging shows itself** (the blank strip you scroll into is shaded from the oldest loaded bar back, with a `Loading earlier bars…` chip — see `ChartPanel/CLAUDE.md` → *Paging older history*), and the News & Holiday filter **stopped duplicating the KPIs and now reshapes the real ones**. It has no section of its own: it is a pill on the empty half of the **Performance** header, driving the actual `PerformancePanel` (via a synthesized filtered `Run`) plus the Equity chart, with each card's caption swapped for its delta vs unfiltered. Bank holidays became a real checkbox (ticked by default) instead of a hidden always-on rule, every label became a COUNT rather than a state word, and `exit_ms` on `EquityPoint` made **Avg Trade** computable over a subset. See `## The News & Holiday filter` below — especially the four things that deliberately do NOT follow the filter. Earlier: 2026-07-29 — the price chart's **fib levels are configurable** (add / remove / retune / recolour / hide, per drawing or as the tool's persisted default), and the News & Holiday filter became a collapsed-by-default accordion whose state lives in a page-level `useNewsFilter` hook, so the MAIN Equity chart redraws on the kept trades (its own duplicate mini-curve is gone); 2026-07-28 — price chart: a **Go to date** pill that jumps the view to a typed date (paging history in on the way); earlier, the Analysis dropdown (Trades + Winners/Losers, Blocked and **Missed** + per-reason filters), and it now ships/opens on the run's own timeframe with older history paged in on scroll-left
+**Last reviewed:** 2026-07-31 — **the Performance panel's rows became label + ⓘ + number, and validating its numbers turned up three that were saying the wrong thing.** Every explanation moved onto the label's tooltip, which deleted the ragged right column and the re-explaining suffixes in one move (`4 days · consecutive losing`); the panel now collapses to its three heroes + the drawdown meter, default ON, so the equity curve shares the fold. The three metric bugs: `worst_losing_streak` counts **trades**, not days (the real worst run of losing calendar days was 2, not 4); time underwater is weighted by the **calendar**, not by row count (`daily_pnl` omits flat days, so 67% "of days" was 67% of ACTIVE days — 71% by the clock); and profit concentration was measured in **dollars**, which on a compounding account reports the compounding — 89% ("edge clustered — overfit risk", the page's only warning colour) against an honest 40%. Plus `fmtDate` parsed dates as UTC midnight and printed a day early in five separate copies. See `## Backtest detail — chart and KPI conventions`. Earlier the same day: **the Evaluation + Performance panel was rebuilt as `PerformancePanel`: a verdict ribbon over three question cards** (Made / Risked / Trusted), replacing the 6+6 `KpiGrid` and its evaluation card. That layout caused all three standing complaints at once — cropped values (a fixed `KPI_ROW_H` on variable content), visibly uneven cards (`KPI_COLS` widened for one long money value), and an empty evaluation box on `unconstrained` — and none was fixable by resizing. Metrics group by the question they answer, so every one fits at once: **the expand toggle and both fixed heights are deleted**, `StackDetail` included. Two rules landed with it: **colour marks the exception, not the sign** (a wall of green ranks nothing, Worst Day can only be negative, and Sharpe 0.91 is positive AND weak — soft numbers say so in words), and the new **`DrawdownMeter` may never invent its references** — the gold limit tick only when the ruleset states a peak-% limit, the hatched tail only from a `dd_basis === 'percent'` stress test, otherwise it says the tail is *unknown, not zero*. The trade count became the ribbon's anchor with its `≈2/month` cadence. See `## Backtest detail — chart and KPI conventions`. Earlier: 2026-07-30 — **Max Drawdown and Calmar were measuring against a static account balance and both were wrong on any compounding run** (1096.7% and a red 0.11 on a run whose true figures are 54.9% and 2.25). Both now divide by the running PEAK — see `## Backtest detail — chart and KPI conventions` → *Drawdown is peak-relative*. Same day: the price chart's **scroll-left paging shows itself** (the blank strip you scroll into is shaded from the oldest loaded bar back, with a `Loading earlier bars…` chip — see `ChartPanel/CLAUDE.md` → *Paging older history*), and the News & Holiday filter **stopped duplicating the KPIs and now reshapes the real ones**. It has no section of its own: it is a pill on the empty half of the **Performance** header, driving the actual `PerformancePanel` (via a synthesized filtered `Run`) plus the Equity chart, with each card's caption swapped for its delta vs unfiltered. Bank holidays became a real checkbox (ticked by default) instead of a hidden always-on rule, every label became a COUNT rather than a state word, and `exit_ms` on `EquityPoint` made **Avg Trade** computable over a subset. See `## The News & Holiday filter` below — especially the four things that deliberately do NOT follow the filter. Earlier: 2026-07-29 — the price chart's **fib levels are configurable** (add / remove / retune / recolour / hide, per drawing or as the tool's persisted default), and the News & Holiday filter became a collapsed-by-default accordion whose state lives in a page-level `useNewsFilter` hook, so the MAIN Equity chart redraws on the kept trades (its own duplicate mini-curve is gone); 2026-07-28 — price chart: a **Go to date** pill that jumps the view to a typed date (paging history in on the way); earlier, the Analysis dropdown (Trades + Winners/Losers, Blocked and **Missed** + per-reason filters), and it now ships/opens on the run's own timeframe with older history paged in on scroll-left
 
 Auto-loaded by Claude Code when editing any file inside `frontend/`.
 
@@ -361,6 +361,32 @@ worth knowing before you change it:
   Trading Philosophy states the design target in.
 - **`deriveKpis` is unchanged and still the single derivation**, so the news filter's `compare`
   mechanism works exactly as before. Add a metric there first, then to a card's row list.
+- **The whole panel collapses to its heroes** (`collapsed`, persisted under
+  `performance_panel_collapsed`, **default ON** — hence `getPerfCollapsed`, since `getBoolPref`
+  defaults off). Expanded, the panel plus its header fills the fold on a laptop and pushes the
+  equity curve entirely off screen, and the headline and the curve are read together. The three
+  heroes and the drawdown meter survive the collapse, so the default still answers "how did this
+  run do" without a click. `StackDetail` passes nothing and stays expanded.
+
+#### A row is a label, a ⓘ and a number — nothing else
+
+**2026-07-31.** Every row's explanation lives on the label's `InfoTip`, never beside the value.
+Suffixes carried both a definition and a judgement (`4 days · consecutive losing`,
+`3.63 · strong — wins 2× losses`) and cost twice for it: they re-explain a term the reader learned
+on first read, and they make the value column ragged, because a column of numbers is only as tidy as
+its longest sentence. Rules if you add a row:
+
+- `PanelRow.tip` is **required**. Write what the metric IS, then what THIS value means — the
+  `*Label` helpers (`sharpeLabel`, `pfLabel`, `concentrationLabel`, `zScoreLabel`, `winRateLabel`)
+  are still the single definition of the words and now end their tip rather than the row.
+- `PanelRow.value` is a **string**, short enough to keep the right edge aligned. Do not use
+  `FitMoney` here — it measures a flex cell that shrinks to its content, decides the number doesn't
+  fit and abbreviates a value with room to spare (that is why Net read `+$846.3k` in a card wide
+  enough for `+$846,257` twice over). `FitMoney` is for the fixed-width hero only.
+- The **delta** is the one thing allowed beside a value, because it is what the news filter was
+  opened to ask. Unmoved rows print nothing.
+- **Units get converted, not printed raw.** `1365 min` is a number the reader has to divide before
+  it means anything; `fmtHold` gives `22.8 h`.
 
 #### Colour marks the exception, not the sign
 
@@ -376,10 +402,48 @@ filter moves it 0.91 → 2.98 by removing 3 of 142 trades. The rule instead:
 - a **row** stays neutral unless it is an exception: an unexpected sign (a negative Net inside
   *Made*), or a value past a threshold (concentration ≥60%, PF <1, a ≥6-day losing streak)
 
-Where a number is soft the row says so **in words** (`· weak`, `· random`) rather than lying with a
-colour. `sharpeCls` was deleted for this reason; `exceptionCls(cls)` maps a value-colour helper to
-"no colour" for ordinary values, so the `*Cls` helpers stay the single definition of what counts as
-bad while only the crossings get painted.
+Where a number is soft its **tooltip** says so in words rather than the value lying with a colour.
+`exceptionCls(cls)` maps a value-colour helper to "no colour" for ordinary values, so the `*Cls`
+helpers stay the single definition of what counts as bad while only the crossings get painted.
+Sharpe is the one that moved (2026-07-31): it now goes **amber below 1.0**, which is not a sign
+colour but the same exception rule as every other row — green-for-positive would have called 0.91
+good, amber-for-weak is the threshold that should stop you.
+
+#### Three metrics were saying the wrong thing — fixed 2026-07-31
+
+All three were unit or basis errors, not display bugs, and each looked plausible enough to survive a
+redesign. Worth reading before trusting a fourth.
+
+- **`worst_losing_streak` is counted in TRADES.** `backtest/output.py:_worst_losing_streak` walks
+  the trade list, not the day list; the row said "4 days". On a strategy that trades twice a month
+  that reads as a far worse run of luck than it was — the real worst run of consecutive losing
+  *calendar* days on that run is 2.
+- **Time underwater is weighted by the CALENDAR, not by row count.** `daily_pnl` holds only days
+  that closed a trade (flat days are deliberately absent), so counting rows answered "what share of
+  ACTIVE days" while the label said "of days". 67% by rows, 71% by the clock.
+- **Profit concentration is measured in RETURNS.** See below — this one was printing a false amber.
+
+#### Profit concentration measures the edge, not the account
+
+**`computeProfitConcentration` weights each trade by its RETURN on the equity it was taken with,
+not by its dollars, whenever the run compounded.** In dollars the metric reports the compounding
+rather than the clustering it exists to detect: on an account that grows 85x the final quarter must
+hold nearly all the dollars however evenly the edge is spread. Measured on run `d2ab68f9e884` —
+dollar quarters of $9k / $49k / $71k / $1,039k read **89%** and printed the panel's only warning
+colour ("edge clustered — overfit risk"); the same trades as returns read **40%** ("spread across
+the test"). The amber was describing the account.
+
+The switch is `equityBase(equity) > 0` — whether the curve carries a real account balance. A
+%-of-equity strategy compounds and must be normalized; an NT8-shaped cum-P&L-from-zero curve is a
+unit-size run whose dollars already ARE comparable across periods, and dividing those by a
+fictitious balance would introduce the opposite bias. `StackDetail` already used the same
+`equity[0].equity - equity[0].profit` idiom to find a stack's opening balance.
+
+The panel **computes this client-side instead of reading `run.profit_concentration_pct`**. The
+stored column is whatever basis was current when a run FINISHED, so preferring it would show a mix
+of old and new figures depending on a run's age. `services/metrics.profit_concentration_pct` applies
+the identical rule and `init_db` re-stamps history, so a stored row agrees — but the page does not
+depend on that having happened.
 
 #### The drawdown meter, and the two things it may never invent
 

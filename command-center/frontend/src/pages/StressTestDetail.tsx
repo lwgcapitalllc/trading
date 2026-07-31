@@ -203,8 +203,10 @@ export default function StressTestDetail() {
   const ddOverLimit  = ddLimit != null && st.pct5_max_dd != null && st.pct5_max_dd > ddLimit
   const dd1OverLimit = ddLimit != null && st.pct1_max_dd != null && st.pct1_max_dd > ddLimit
 
+  // Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
+  // Greenwich. Same fix in BacktestDetail/SweepDetail/OptimizationDetail/StackDetail.
   function fmtDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
+    return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
   }
   function dollar(n: number | null | undefined) {
     if (n == null) return '—'

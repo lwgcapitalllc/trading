@@ -51,6 +51,16 @@ function pct(n: number | null | undefined): string {
   return `${(n * 100).toFixed(1)}%`
 }
 
+// Trade duration in the largest unit that still reads as a quantity. "1365 min" is a number the
+// reader has to divide before it means anything; 22.8 h is the same fact already divided.
+function fmtHold(min: number | null | undefined): string {
+  if (min == null) return '—'
+  const a = Math.abs(min)
+  if (a < 90) return `${min.toFixed(0)} min`
+  if (a < 2880) return `${(min / 60).toFixed(1)} h`
+  return `${(min / 1440).toFixed(1)} d`
+}
+
 function dollarShort(n: number | null | undefined, signed = false): string {
   if (n == null) return '—'
   const abs = Math.abs(n)
@@ -99,8 +109,12 @@ function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?
   )
 }
 
+// A bare 'YYYY-MM-DD' parses as UTC midnight and then prints in the VIEWER's timezone, which
+// lands a day early anywhere west of Greenwich: the run header read "Jan 1, 2021 → Jul 27, 2026"
+// for a run whose stored window is 2021-01-02 → 2026-07-28. Pin it to local midnight — the same
+// guard chartDateLabel below already carried. The slice also tolerates a full ISO datetime.
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+  return new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
   })
 }
@@ -389,25 +403,53 @@ function zScoreLabel(z: number | null): string {
 }
 
 // ── Profit concentration over time ───────────────────────────────────────────
-// Share of total gross profit (sum of positive daily P&L) earned in the single most
-// profitable calendar quarter of the test span. The span (first→last date) is split into
-// 4 equal slices. High = the edge is clustered in one period — a classic curve-fit signal.
-function computeProfitConcentration(daily: DailyPnlPoint[]): number | null {
-  const dated = daily.filter(d => d.date)
-  if (dated.length < 2) return null
-  const t0 = new Date(dated[0].date.slice(0, 10)).getTime()
-  const t1 = new Date(dated[dated.length - 1].date.slice(0, 10)).getTime()
+// Share of total gross profit earned in the single most profitable quarter of the test span.
+// The span (first→last date) is split into 4 equal slices. High = the edge is clustered in one
+// period — a classic curve-fit signal.
+//
+// MEASURED IN RETURNS, NOT DOLLARS, whenever the run compounded (fixed 2026-07-31). In dollars
+// this metric reports the COMPOUNDING, not the clustering: on a run whose account grows 85x the
+// final quarter must hold nearly all the dollars however evenly the edge is spread. Measured on
+// mpc_sos_fade d2ab68f9e884 — dollar quarters $9k / $49k / $71k / $1,039k read 89% ("edge
+// clustered — overfit risk"); the same trades as returns on the equity each was taken with read
+// 40% ("spread across the test"). The amber was the metric describing the account, not the edge.
+//
+// The switch is whether the curve carries a real account base: a %-of-equity strategy compounds
+// and must be normalized, while a cum-P&L-from-zero curve (the NT8 shape) is a unit-size run
+// whose dollars already ARE comparable across periods. `equityBase` decides, and the backend's
+// services/metrics.profit_concentration_pct applies the identical rule so the stored value and
+// this one never disagree.
+//
+// Falls back to the daily dollar series when there is no curve at all (stack legs, old runs).
+function equityBase(equity: EquityPoint[]): number {
+  if (equity.length === 0) return 0
+  return (equity[0].equity ?? 0) - (equity[0].profit ?? 0)
+}
+
+function computeProfitConcentration(daily: DailyPnlPoint[], equity: EquityPoint[] = []): number | null {
+  // Each entry contributes a WEIGHT: a return when the run compounded, else a dollar amount.
+  const base = equityBase(equity)
+  const points: Array<{ date: string; weight: number }> = base > 0
+    ? equity.flatMap(e => {
+        const before = (e.equity ?? 0) - (e.profit ?? 0)
+        return (e.date && before > 0) ? [{ date: e.date, weight: (e.profit ?? 0) / before }] : []
+      })
+    : daily.filter(d => d.date).map(d => ({ date: d.date, weight: d.pnl }))
+
+  if (points.length < 2) return null
+  const t0 = new Date(points[0].date.slice(0, 10)).getTime()
+  const t1 = new Date(points[points.length - 1].date.slice(0, 10)).getTime()
   const span = t1 - t0
   if (!(span > 0)) return null
   const q = [0, 0, 0, 0]
   let gross = 0
-  for (const d of dated) {
-    if (d.pnl <= 0) continue
-    gross += d.pnl
-    let idx = Math.floor(((new Date(d.date.slice(0, 10)).getTime() - t0) / span) * 4)
+  for (const p of points) {
+    if (p.weight <= 0) continue
+    gross += p.weight
+    let idx = Math.floor(((new Date(p.date.slice(0, 10)).getTime() - t0) / span) * 4)
     if (idx > 3) idx = 3
     if (idx < 0) idx = 0
-    q[idx] += d.pnl
+    q[idx] += p.weight
   }
   if (!(gross > 0)) return null
   return (Math.max(...q) / gross) * 100
@@ -486,10 +528,12 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   const grossLoss = tradeProfits.filter(p => p < 0).reduce((a, b) => a + Math.abs(b), 0)
   const pfValue = run.profit_factor
     ?? (tradeProfits.length > 0 && grossLoss === 0 ? Infinity : null)
-  // Profit concentration: largest quarter's share of gross profit. Prefer the backend-persisted
-  // value (authoritative, feeds grading); fall back to the client calc for older runs predating
-  // the column. Both use the identical formula, so they agree.
-  const profitConc = run.profit_concentration_pct ?? computeProfitConcentration(run.daily_pnl ?? [])
+  // Profit concentration: largest quarter's share of gross profit, in RETURNS on a compounding
+  // run. Computed here rather than read from run.profit_concentration_pct: the stored column is
+  // whatever basis was current when the run FINISHED, so preferring it would show a mix of the
+  // old dollar figure and the new one depending on a run's age. Same formula both sides
+  // (services/metrics.profit_concentration_pct), so a re-stamped row agrees with this.
+  const profitConc = computeProfitConcentration(run.daily_pnl ?? [], equity)
   // Max drawdown as a % of the equity it fell FROM (peak-relative), which is the drawdown that
   // would actually have ended the account. NOT the dollar drawdown over a static account_size:
   // that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak, because the
@@ -509,27 +553,44 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   const tradeDd  = equity.length >= 2 ? maxDrawdownOf(rebaseEquity(equity, 0)) : null
   const ddDollar = tradeDd ?? (run.max_drawdown != null ? Math.abs(run.max_drawdown) : null)
 
+  const rrRatio = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
+    ? run.avg_win / Math.abs(run.avg_loss) : null
+
   return {
     netPnl: run.net_pnl, winRate: run.win_rate, avgDur: run.avg_trade_duration_min,
     sharpe, worstDay, worstStreak, recoveryFactor, calmar, expectancyUsd, zScore,
-    pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak,
+    pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak, rrRatio,
   }
 }
 type DerivedKpis = ReturnType<typeof deriveKpis>
 
 // ── Time underwater ──────────────────────────────────────────────────────────
-// Share of trading days spent below the previous equity high. Max drawdown says how DEEP
-// the hole was; this says how long you sat in it, which is the half that decides whether a
+// Share of the test's CALENDAR span spent below the previous equity high. Max drawdown says how
+// DEEP the hole was; this says how long you sat in it, which is the half that decides whether a
 // strategy is holdable. Rebased to 0 so it never depends on the account balance.
+//
+// Weighted by elapsed days, not by row count (fixed 2026-07-31). `daily_pnl` holds only the days
+// that closed a trade — flat days are deliberately absent (backtest/output.py) — so counting rows
+// answered "what share of ACTIVE days were underwater" while the label said "of days". The gap is
+// not cosmetic on a selective strategy: mpc_sos_fade trades ~2x a month, so a row is worth two
+// weeks of calendar. It read 67% by rows and 70% by the clock. Equity between two closes sits at
+// the earlier close's level, which is what each day of that gap is judged against.
 function computeTimeUnderwater(daily: DailyPnlPoint[]): number | null {
-  if (daily.length < 2) return null
-  let bal = 0, peak = 0, under = 0
-  for (const d of daily) {
+  const dated = daily.filter(d => d.date)
+  if (dated.length < 2) return null
+  const dayOf = (d: string) => new Date(`${d.slice(0, 10)}T00:00:00`).getTime()
+  const total = (dayOf(dated[dated.length - 1].date) - dayOf(dated[0].date)) / DAY_MS
+  if (!(total > 0)) return null
+  let bal = 0, peak = 0, under = 0, prev = dayOf(dated[0].date)
+  for (const d of dated) {
+    const t = dayOf(d.date)
+    // The span ENDING at this close was held at the previous close's level.
+    if (bal < peak) under += (t - prev) / DAY_MS
     bal += d.pnl ?? 0
     if (bal > peak) peak = bal
-    else if (bal < peak) under++
+    prev = t
   }
-  return under / daily.length
+  return under / total
 }
 
 // ── Performance panel — three questions ──────────────────────────────────────
@@ -618,9 +679,17 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
 type PanelRow = {
   key: string
   label: string
-  value: React.ReactNode
-  /** Dim suffix. Where a number is soft, this says so in words instead of via colour. */
-  note?: string
+  value: string
+  /**
+   * What the metric IS, and what this run's value means — on the label's ⓘ, never beside the
+   * value. Row suffixes used to carry both ("4 days · consecutive losing", "3.63 · strong —
+   * wins 2× losses") and they cost twice: they define a term the reader already knows after the
+   * first read, and they make the right column ragged, since the value column is only as tidy as
+   * its longest sentence. With the definition on hover the right column holds numbers only and
+   * lines up. The soft-value warnings the suffixes carried are not lost — they end each tip, and
+   * the one that must stop you (a weak Sharpe, a clustered edge) also colours the value.
+   */
+  tip: string
   /** Exception colour ONLY — omit and the row stays neutral. See the colour policy above. */
   cls?: string
   cmp?: (k: DerivedKpis) => number | null | undefined
@@ -632,7 +701,7 @@ type PanelRow = {
 
 export function PerformancePanel({
   run, fallback, equity = [], balance = null, compare = null, filtered = false,
-  tailPct = null, limitPct = null, ribbon = null,
+  tailPct = null, limitPct = null, ribbon = null, collapsed = false,
 }: {
   run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
   // When set, every row's delta is measured against this run instead of showing its caption.
@@ -645,6 +714,12 @@ export function PerformancePanel({
   limitPct?: number | null
   /** Verdict ribbon (backtests) or strategy legend (stacks). Rendered above the three cards. */
   ribbon?: React.ReactNode
+  /**
+   * Hero numbers + the drawdown meter only — the supporting rows and the meter's caption fold
+   * away. Roughly halves the panel, which is what puts the equity curve on the same screen as
+   * the headline. The three heroes ARE the summary, so nothing load-bearing hides here.
+   */
+  collapsed?: boolean
 }) {
   const d  = deriveKpis(run, fallback, equity, balance)
   const dc = compare ? deriveKpis(compare.run, compare.fallback, compare.equity, balance) : null
@@ -667,42 +742,60 @@ export function PerformancePanel({
   const fmtPctPt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`
   const fmtCount = (x: number) => `${x >= 0 ? '+' : ''}${x}`
 
+  // W/L counts: the backend stores win_count, so use it. Deriving them from the rate (which this
+  // did) re-rounds a number that was rounded once already — 0.6338 × 142 lands on 90 here only
+  // because the rate happens to carry 4 decimals.
+  const wins = run.win_count ?? (run.win_rate != null && run.trade_count != null
+    ? Math.round(run.win_rate * run.trade_count) : null)
+  const losses = (wins != null && run.trade_count != null) ? run.trade_count - wins : null
+  const rr = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
+    ? run.avg_win / Math.abs(run.avg_loss) : null
+
   const madeRows: PanelRow[] = [
-    { key: 'net', label: 'Net', value: <FitMoney n={run.net_pnl} signed />,
+    { key: 'net', label: 'Net', value: dollar(run.net_pnl, true),
       // Exception: a NEGATIVE net inside a card labelled "Made" is the unexpected sign.
       cls: run.net_pnl != null && run.net_pnl < 0 ? 'text-neg-text' : undefined,
+      tip: 'Total profit and loss in dollars across every closed trade, after the run\'s commission and slippage settings.',
       cmp: k => k.netPnl, fmt: fmtMoney },
     { key: 'per', label: 'Per trade', value: expectancyUsd != null ? dollar(expectancyUsd, true) : '—',
       cls: expectancyUsd != null && expectancyUsd < 0 ? 'text-neg-text' : undefined,
-      note: (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
-        ? `${(run.avg_win / Math.abs(run.avg_loss)).toFixed(2)}:1 R:R` : undefined,
+      tip: 'Expectancy: net P&L ÷ trade count — what one average trade was worth. Dollars only; expectancy in R needs the risk taken per trade, which stored trades do not carry.',
       cmp: k => k.expectancyUsd, fmt: fmtMoney },
+    { key: 'rr', label: 'Avg win / loss', value: rr != null ? `${rr.toFixed(2)}:1` : '—',
+      tip: `Average winning trade ÷ average losing trade. Together with the win rate this is the whole edge${
+        run.avg_win != null && run.avg_loss != null ? `: ${dollar(run.avg_win, true)} per win against ${dollar(run.avg_loss)} per loss` : ''}.`,
+      cmp: k => k.rrRatio, fmt: fmtRatio, goodWhen: 'higher' },
     { key: 'wr', label: 'Win rate', value: pct(run.win_rate),
-      // W/L counts aren't stored; derived from the rate so the note can't drift from the value.
-      note: (run.win_rate != null && run.trade_count != null)
-        ? `${Math.round(run.win_rate * run.trade_count)}W / ${run.trade_count - Math.round(run.win_rate * run.trade_count)}L`
-        : winRateLabel(run.win_rate),
+      tip: `Share of trades that closed profitable${wins != null && losses != null ? ` — ${wins} wins, ${losses} losses` : ''}. A low win rate is not a fault on its own; read it against the average win/loss above. This run: ${winRateLabel(run.win_rate)}.`,
       cmp: k => k.winRate, fmt: fmtPct01 },
     { key: 'pf', label: 'Profit factor', value: kpiNum(pfValue),
       // Exception: below 1.0 the strategy loses money — the one PF value that must shout.
       cls: pfValue != null && isFinite(pfValue) && pfValue < 1 ? 'text-neg-text' : undefined,
-      note: pfLabel(pfValue),
+      tip: `Gross wins ÷ gross losses. Above 2.0 is strong, 1.5 good, below 1.0 loses money. This run: ${pfLabel(pfValue)}.`,
       cmp: k => k.pfValue, fmt: fmtRatio },
   ]
 
   const riskedRows: PanelRow[] = [
-    { key: 'dd$', label: 'Deepest in $', value: ddDollar != null ? `−${dollar(ddDollar)}` : '—',
-      note: 'prop-firm view', cmp: k => k.ddDollar, fmt: fmtMoney, goodWhen: 'lower' },
-    { key: 'wd', label: 'Worst day', value: <FitMoney n={worstDay} />,
+    { key: 'dd$', label: 'Deepest drop', value: ddDollar != null ? `−${dollar(ddDollar)}` : '—',
+      tip: `The largest peak-to-trough fall measured in dollars. On a compounding run this is usually a DIFFERENT episode from the percentage above — a later, shallower fall off a much bigger account${
+        ddDollar != null && maxDdPct != null && ddAtWorstPct != null && ddDollar > ddAtWorstPct
+          ? `. Here the worst percentage cost ${dollar(ddAtWorstPct)} while the worst dollar figure is ${dollar(ddDollar)}` : ''}. The percentage is what would have ended the account; this is what it would have felt like.`,
+      cmp: k => k.ddDollar, fmt: fmtMoney, goodWhen: 'lower' },
+    { key: 'wd', label: 'Worst day', value: dollar(worstDay),
+      tip: 'The single worst calendar day, summing every trade that closed on it.',
       cmp: k => k.worstDay, fmt: fmtMoney },
-    // Exception at ≥6 only. worstStreakCls also ambers at 3, which is an ordinary run of bad
-    // days on a selective strategy — colouring it would make the amber mean nothing by the
-    // time a real 6-day streak showed up.
-    { key: 'ws', label: 'Worst streak', value: worstStreak != null ? `${worstStreak} days` : '—',
+    // The unit is TRADES. backtest/output.py:_worst_losing_streak walks the trade list, not the
+    // day list — it was labelled "days" here, which on a strategy trading twice a month reads as
+    // a far worse run of luck than it was (4 losing trades spanned 2 consecutive losing days).
+    // Exception at ≥6 only: 3 losses in a row is ordinary on a selective strategy, and colouring
+    // it would make the amber mean nothing by the time a real streak showed up.
+    { key: 'ws', label: 'Worst streak', value: worstStreak != null ? `${worstStreak} trades` : '—',
       cls: worstStreak != null && worstStreak >= 6 ? 'text-neg-text' : undefined,
-      note: 'consecutive losing', cmp: k => k.worstStreak, fmt: fmtCount, goodWhen: 'lower' },
+      tip: 'The longest run of consecutive losing trades. Counted in trades, not days — a selective strategy can take weeks to produce four of them.',
+      cmp: k => k.worstStreak, fmt: fmtCount, goodWhen: 'lower' },
     { key: 'uw', label: 'Time underwater', value: underwater != null ? `${(underwater * 100).toFixed(0)}%` : '—',
-      note: 'of days', goodWhen: 'lower' },
+      tip: 'Share of the test\'s calendar span spent below the previous equity high. Max drawdown says how deep the hole was; this says how long you sat in it — the half that decides whether a strategy is holdable.',
+      goodWhen: 'lower' },
   ]
 
   const trustedRows: PanelRow[] = [
@@ -710,30 +803,29 @@ export function PerformancePanel({
       value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
       // Exception: ≥60% in one quarter is the classic curve-fit signal.
       cls: exceptionCls(concentrationCls(profitConc)),
-      note: profitConc != null ? concentrationLabel(profitConc) : undefined,
+      tip: `Share of gross profit earned in the single best quarter of the test span. Above 60% the edge is clustered in one window rather than repeatable — the classic curve-fit signal. Measured in returns, not dollars: on a compounding account the last quarter holds most of the dollars however evenly the edge is spread.${profitConc != null ? ` This run: ${concentrationLabel(profitConc)}.` : ''}`,
       cmp: k => k.profitConc, fmt: fmtPctPt, goodWhen: 'lower' },
     { key: 'sharpe', label: 'Sharpe', value: sharpe != null ? sharpe.toFixed(2) : '—',
-      // NOT coloured by sign — 0.91 is positive AND weak, so a green would call it good.
-      // sharpeLabel carries the quality, and the estimated / low-sample caveats with it.
-      note: sharpe != null ? sharpeLabel(sharpe, sharpeEst) : undefined,
+      // Amber below 1.0 — an EXCEPTION colour, not a sign colour. Green for "positive" would
+      // call 0.91 good; amber for "weak" is the threshold that should stop you, which is the
+      // policy every other coloured row here follows.
+      cls: sharpe != null && sharpe < 1 ? 'text-warn-text' : undefined,
+      tip: `Return per unit of volatility, annualized from daily P&L. Above 2 is excellent, 1 is good, below 0.5 is poor. Compare it only between runs in this lab — flat days are absent from the daily series, which inflates every runner's figure against an outside number. This run: ${sharpe != null ? sharpeLabel(sharpe, sharpeEst) : 'not computed'}.`,
       cmp: k => k.sharpe, fmt: fmtRatio },
     { key: 'z', label: 'Z-score', value: zScore != null ? zScore.toFixed(2) : '—',
       cls: exceptionCls(zScoreCls(zScore)),
-      // When it can't be computed the note says WHY, rather than leaving a bare dash.
-      note: zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity),
+      tip: `Wald–Wolfowitz runs test on the win/loss sequence: does it streak more than chance? Near 0 means the order looks random, which is what an honest edge produces. Past ±2 the wins and losses clump, and an equity curve built on clumps is fragile. This run: ${zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity)}.`,
       cmp: k => k.zScore, fmt: fmtRatio, goodWhen: 'none' },
-    { key: 'dur', label: 'Avg hold',
-      value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
-      cmp: k => k.avgDur, fmt: (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(0)} min`, goodWhen: 'none' },
+    { key: 'dur', label: 'Avg hold', value: fmtHold(run.avg_trade_duration_min),
+      tip: 'Average time a position was open, entry to exit. Read it against the bar size — a hold of a few bars is a different strategy from one that carries overnight.',
+      cmp: k => k.avgDur, fmt: (x: number) => `${x >= 0 ? '+' : ''}${fmtHold(Math.abs(x))}`, goodWhen: 'none' },
   ]
 
-  // While comparing, the delta REPLACES the note. The note is a standing explanation you
-  // read once; the delta answers the question the filter was opened to ask. Rows that did
-  // not move say nothing — printing "unchanged vs unfiltered" on every row was eight lines
-  // of text to communicate that nothing happened.
-  const rowSuffix = (r: PanelRow): React.ReactNode => {
-    if (!dc) return r.note ? <span className="text-text-tertiary"> · {r.note}</span> : null
-    if (!r.cmp) return null
+  // The delta answers the question the news filter was opened to ask, so it is the one thing
+  // allowed to sit beside a value. Rows that did not move say nothing — printing "unchanged vs
+  // unfiltered" on every row was eight lines of text to communicate that nothing happened.
+  const rowDelta = (r: PanelRow): React.ReactNode => {
+    if (!dc || !r.cmp) return null
     const to = r.cmp(d), from = r.cmp(dc)
     if (to == null || from == null || !isFinite(to) || !isFinite(from)) return null
     const delta = to - from
@@ -743,14 +835,17 @@ export function PerformancePanel({
     return <span className={`${cls} tabular-nums`}> {(r.fmt ?? fmtRatio)(delta)}</span>
   }
 
+  // Label + ⓘ on the left, number on the right, nothing else. See PanelRow.tip for why.
   const rows = (list: PanelRow[]) => (
     <div className="mt-auto pt-3 border-t border-border-subtle">
       {list.map((r, i) => (
         <div key={r.key}
           className={`flex items-baseline justify-between gap-3 py-[7px] text-[12px] ${i < list.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
-          <span className="text-text-tertiary">{r.label}</span>
-          <span className={`font-mono tabular-nums text-right ${r.cls ?? 'text-text-primary'}`}>
-            {r.value}{rowSuffix(r)}
+          <span className="flex items-center text-text-tertiary min-w-0">
+            <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
+          </span>
+          <span className={`font-mono tabular-nums text-right whitespace-nowrap ${r.cls ?? 'text-text-primary'}`}>
+            {r.value}{rowDelta(r)}
           </span>
         </div>
       ))}
@@ -768,7 +863,9 @@ export function PerformancePanel({
     return <span className={`text-[12px] tabular-nums ${good ? 'text-pos-text' : 'text-neg-text'}`}>{fmt(delta)}</span>
   }
 
-  const cardCls = `flex flex-col rounded-xl border border-border-subtle px-[17px] pt-[15px] pb-[7px] ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'}`
+  // Expanded, the last row's own padding is the card's bottom margin; collapsed, the meter's
+  // scale labels would otherwise sit on the border.
+  const cardCls = `flex flex-col rounded-xl border border-border-subtle px-[17px] pt-[15px] ${collapsed ? 'pb-[14px]' : 'pb-[7px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'}`
 
   const head = (title: string, question: string, aside?: React.ReactNode) => (
     <>
@@ -805,7 +902,11 @@ export function PerformancePanel({
             madeTip,
           )}
           {dc && <div className="mb-1">{heroDelta(d.netPnl, dc.netPnl, fmtMoney, 'higher')}</div>}
-          {rows(madeRows)}
+          {/* Collapsed, the multiple has no dollars beside it — so the hero keeps its own
+              caption here rather than losing the figure entirely. */}
+          {collapsed
+            ? (multiple != null && <div className="mt-2 mb-1 font-mono text-[11px] text-text-tertiary">{dollar(run.net_pnl, true)} net</div>)
+            : rows(madeRows)}
         </div>
 
         <div className={`${cardCls} border-t-2 border-t-neg-text/50`}>
@@ -817,33 +918,36 @@ export function PerformancePanel({
             maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
             'worst drawdown', maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', riskedTip,
           )}
+          {/* The meter survives the collapse — it is the only thing on the page that says
+              whether a drawdown number is acceptable, and it costs ~40px. */}
           {maxDdPct != null
             ? <DrawdownMeter pct={maxDdPct} limitPct={limitPct} tailPct={tailPct} />
             : <div className="mt-3.5 text-[11px] text-text-tertiary">Set an account balance to measure drawdown as a percentage.</div>}
-          <div className="text-[11px] text-text-tertiary leading-snug mt-2">
-            {maxDdPct != null && ddAtWorstPct != null && ddPeak != null
-              ? <>−{dollar(ddAtWorstPct)} from a {dollar(ddPeak)} peak.{' '}</>
-              : null}
-            {limitPct != null && maxDdPct != null && (maxDdPct >= limitPct
-              ? <span className="text-neg-text">Breaches the {limitPct.toFixed(0)}% limit.{' '}</span>
-              : <>Clears by {(limitPct - maxDdPct).toFixed(1)} points.{' '}</>)}
-            {tailPct != null
-              ? <>Worst-1% simulated: {tailPct.toFixed(1)}%.</>
-              : <>No stress test — the simulated tail is unknown, not zero.</>}
-          </div>
-          {rows(riskedRows)}
+          {!collapsed && (
+            <div className="text-[11px] text-text-tertiary leading-snug mt-2">
+              {maxDdPct != null && ddAtWorstPct != null && ddPeak != null
+                ? <>−{dollar(ddAtWorstPct)} from a {dollar(ddPeak)} peak.{' '}</>
+                : null}
+              {limitPct != null && maxDdPct != null && (maxDdPct >= limitPct
+                ? <span className="text-neg-text">Breaches the {limitPct.toFixed(0)}% limit.{' '}</span>
+                : <>Clears by {(limitPct - maxDdPct).toFixed(1)} points.{' '}</>)}
+              {tailPct != null
+                ? <>Worst-1% simulated: {tailPct.toFixed(1)}%.</>
+                : <>No stress test — the simulated tail is unknown, not zero.</>}
+            </div>
+          )}
+          {!collapsed && rows(riskedRows)}
         </div>
 
         <div className={`${cardCls} border-t-2 border-t-accent/45`}>
-          {head('Trusted', 'Whether to believe it',
-            run.trade_count != null
-              ? <span className="font-mono text-[10px] text-text-tertiary">{run.trade_count} trades</span>
-              : undefined)}
+          {/* No trade count here — it is the ribbon's anchor directly above, at 29px. Printing
+              it twice within 60px made the second copy read as a different number. */}
+          {head('Trusted', 'Whether to believe it')}
           {hero(kpiNum(calmar), 'Calmar', calmarCls(calmar), trustedTip)}
           {dc
             ? <div className="mb-1">{heroDelta(d.calmar, dc.calmar, fmtRatio, 'higher')}</div>
             : <div className="text-[11px] text-text-tertiary leading-snug mt-2">{calmarLabel(calmar)}</div>}
-          {rows(trustedRows)}
+          {!collapsed && rows(trustedRows)}
         </div>
 
       </div>
@@ -870,6 +974,16 @@ function setBoolPref(key: string, v: boolean) {
 }
 const _HIST_KEY = 'equity_histogram_enabled'
 const _RUD_KEY  = 'equity_runup_drawdown_enabled'
+
+// Performance panel collapse. Defaults COLLAPSED (hence its own getter — getBoolPref defaults
+// off): expanded, the panel plus its header fills the fold on a laptop and pushes the equity
+// curve entirely off screen, and the headline and the curve are read together. The three hero
+// numbers and the drawdown meter survive the collapse, so the default still answers "how did
+// this run do" without a click.
+const _PERF_COLLAPSED_KEY = 'performance_panel_collapsed'
+function getPerfCollapsed(): boolean {
+  try { return localStorage.getItem(_PERF_COLLAPSED_KEY) !== 'false' } catch { return true }
+}
 
 interface RegimeBand { x1: number; x2: number; regime: string }
 
@@ -3146,22 +3260,28 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
 // already spanned the column with nothing in it, so the whole control costs zero vertical space —
 // and putting it HERE rather than in a section of its own is what removed the duplicated KPI tiles:
 // the filter reshapes these numbers, so it belongs on their header.
-function PerformanceHeader({ news, blocked, filtered }: {
+function PerformanceHeader({ news, blocked, filtered, collapsed, onToggle }: {
   news: NewsFilter; blocked: string | null; filtered: boolean
+  collapsed: boolean; onToggle: () => void
 }) {
   return (
     <div className="flex items-center justify-between gap-3 mb-3">
       {/* The suffix names the SIZE of the exclusion, not the fact of it. "news filtered" told you a
           filter existed without saying what it did or how much it moved — and it was wrong half the
           time, since holidays are excluded whether or not the news rule is on. */}
-      <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
+      <button
+        onClick={onToggle}
+        title={collapsed ? 'Show the supporting metrics' : 'Hero numbers only'}
+        className="flex items-center gap-1.5 text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] transition-colors hover:text-text-primary"
+      >
+        <ChevronDown size={13} className={`transition-transform ${collapsed ? '-rotate-90' : ''}`} />
         Performance
         {filtered && (
           <span className="text-accent normal-case tracking-normal font-medium">
-            {' '}· {news.totalTrades - news.excluded} of {news.totalTrades} trades
+            · {news.totalTrades - news.excluded} of {news.totalTrades} trades
           </span>
         )}
-      </h2>
+      </button>
       {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
     </div>
   )
@@ -3280,6 +3400,15 @@ export function BacktestDetail() {
   const stressTailPct = (latestStress?.dd_basis === 'percent' && latestStress.pct1_max_dd_pct != null)
     ? latestStress.pct1_max_dd_pct
     : null
+
+  const [perfCollapsed, setPerfCollapsed] = useState(getPerfCollapsed)
+  const togglePerfCollapsed = useCallback(() => {
+    setPerfCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(_PERF_COLLAPSED_KEY, String(next)) } catch { /* quota */ }
+      return next
+    })
+  }, [])
 
   // Calendar span of the run, for the ribbon's trades-per-month cadence.
   const runSpanDays = useMemo(() => {
@@ -3694,12 +3823,16 @@ export function BacktestDetail() {
               count. Every path renders the same three cards below. */}
           {isComplete && (
             <div className="space-y-3">
-              <PerformanceHeader news={news} blocked={newsBlocked} filtered={newsOnKpis} />
+              <PerformanceHeader
+                news={news} blocked={newsBlocked} filtered={newsOnKpis}
+                collapsed={perfCollapsed} onToggle={togglePerfCollapsed}
+              />
               <PerformancePanel
                 run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
                 balance={balance} compare={kpiCompare} filtered={newsOnKpis}
                 limitPct={selectedEval?.personal_max_drawdown_from_peak_pct ?? null}
                 tailPct={stressTailPct}
+                collapsed={perfCollapsed}
                 ribbon={isOptCombo ? (
                   <UnscoredRibbon
                     tradeCount={run.trade_count}

@@ -40,7 +40,10 @@ export default function InfoTip({ text }: { text: string }) {
       onMouseLeave={() => setAnchor(null)}
       className="relative inline-flex items-center ml-[5px] cursor-help flex-shrink-0"
     >
-      <Info size={9} className="text-text-tertiary/50 hover:text-accent transition-colors" />
+      {/* Was 9px at half opacity, which read as a rendering artefact rather than a control —
+          nobody hovers what they can't see. 11px at full tertiary is legible without competing
+          with the value beside it. */}
+      <Info size={11} className="text-text-tertiary hover:text-accent transition-colors" />
       {anchor && createPortal(
         <span
           ref={tipRef}
