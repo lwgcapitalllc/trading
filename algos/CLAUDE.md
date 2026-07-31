@@ -133,6 +133,43 @@ n/a — no live bots.
 
 **Phase:** No live bots. All four first-attempt bots were deleted 2026-06-22. The suite is being rebuilt backtest-first per the S.Y.S.T.E.M. method (`docs/BOT_DEVELOPMENT_METHOD.md`) — strategies are validated through the command-center backtest lab before any return to live demo trading. The reusable deployment infrastructure is preserved in `docs/BOT_DEPLOYMENT_INFRA.md`.
 
+### Scheduled tasks — the stored-password trap (found 2026-07-31)
+
+**Every `SYS_*` task on the VPS had been silently dead since 30 May.** They were registered with
+`LogonType: Password` against the machine's Administrator SID, the provider rotates that password
+(there is a `CheckAndPromptPasswordChange` task on the box), and once it changed Windows refused to
+launch them. The symptom is the nasty part: **`schtasks /run` still reports SUCCESS** and the task
+still shows `Ready` — only `Last Run Time` gives it away by never advancing.
+
+`MT5AgentRDP` and `NT8Agent` kept working because they use `InteractiveToken` (the logged-in desktop
+session), which is why the platform looked healthy while its whole scheduled layer was off.
+
+What that cost: crash alerts were off for two months, and **`SYS_STARTUP` would not have restarted
+anything after a reboot.**
+
+All five are now `LogonType: ServiceAccount` running as **SYSTEM** — no password to go stale, and it
+survives the next rotation. `algos/scheduler/*.xml` were rewritten to match, because they also
+hardcoded this machine's SID and would have re-created dead tasks on any rebuild or new VPS.
+
+**Standing rule: a scheduled task that must run unattended runs as SYSTEM.** Never register one with
+a stored password, and never trust `schtasks /run`'s exit code — verify `Last Run Time` moved.
+
+### On hold, by Aaron's call (2026-07-31) — do not delete, do not switch on yet
+
+Only the Telegram bot is maintained from the original suite: **trade ENTRY and EXIT alerts, nothing
+else.** These three are FIXED (they will run when enabled) but deliberately **disabled**, because
+their bot registries are empty and switching them on would push empty reports into the group:
+
+| Task | Script | Why it waits |
+|---|---|---|
+| `SYS_MONITOR` | `notifications/monitor.py` | Crash / liveness alerts — wants a registered live bot |
+| `SYS_PNLTRACKER` | `notifications/pnl_tracker.py` | Same |
+| `SYS_REPORTER` | `notifications/reporter.py` | Daily report at 21:00 — would send an empty one |
+
+Re-enable with `schtasks /change /tn <NAME> /enable` once the live bot is registered (step 5 of
+`docs/LIVE_TRADING_PIPELINE.md`). **Crash alerting should come back before real money does** — a
+live bot nobody is watching is the thing this whole layer exists to prevent.
+
 Update this section when the phase changes or a new open question arises.
 
 ---

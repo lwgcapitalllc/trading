@@ -6,8 +6,8 @@
   </RegistrationInfo>
   <Principals>
     <Principal id="Author">
-      <UserId>S-1-5-21-2508874938-2127451207-3202057581-500</UserId>
-      <LogonType>Password</LogonType>
+      <UserId>S-1-5-18</UserId>
+      <LogonType>ServiceAccount</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
   </Principals>
