@@ -367,6 +367,16 @@ worth knowing before you change it:
   equity curve entirely off screen, and the headline and the curve are read together. The three
   heroes and the drawdown meter survive the collapse, so the default still answers "how did this
   run do" without a click. `StackDetail` passes nothing and stays expanded.
+- **Height is measured, not eyeballed.** At 1670×900 with the params panel collapsed, the section
+  (header + ribbon + cards) is **234px collapsed / 359px expanded** — down from 318 / 496 on the
+  first build of this panel, ~27% in both states. Four things carried that, and each is worth
+  knowing before you add height back: the card's **question shares the title's line** (its own row
+  charged ~16px per card, forever, for a sentence nobody re-reads); the meter's **limit-label
+  padding is charged only when a limit exists** (15px of blank card on every ruleset stating
+  none); the **ungraded ribbon sentence is short enough to share line one with the chips** (the
+  long form wrapped and pushed `TradeCountAnchor` to a second row, ~35px in BOTH states); and rows
+  are `py-[4px] leading-[1.3]` at 24px each. Re-measure rather than estimate — the ribbon cost was
+  invisible in the source and only showed up on a real render.
 
 #### A row is a label, a ⓘ and a number — nothing else
 

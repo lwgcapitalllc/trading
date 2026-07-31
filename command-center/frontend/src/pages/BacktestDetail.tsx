@@ -641,10 +641,12 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
   const breached = limitPct != null && pct >= limitPct
   const hasTail = tailPct != null && tailPct > pct
   return (
-    <div className="mt-3.5">
-      {/* padding-top leaves room for the limit label; the track clips its own fill, so the
-          tick and label are siblings OUTSIDE it or they'd be cut off at the rounded edge. */}
-      <div className="relative pt-[15px]">
+    <div className="mt-2.5">
+      {/* The padding-top reserves room for the limit LABEL, so it is charged only when there is
+          a limit to label — on a ruleset stating none it was 15px of blank card. The track clips
+          its own fill, so the tick and label are siblings OUTSIDE it or they'd be cut off at the
+          rounded edge. */}
+      <div className={`relative ${limitPct != null ? 'pt-[14px]' : ''}`}>
         {limitPct != null && (
           <span
             className="absolute top-0 -translate-x-1/2 font-mono text-[9.5px] text-gold-text whitespace-nowrap"
@@ -653,7 +655,7 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
             limit {limitPct.toFixed(0)}%
           </span>
         )}
-        <div className="relative h-5 rounded-[5px] bg-bg-sunken border border-border-subtle overflow-hidden">
+        <div className="relative h-4 rounded-[4px] bg-bg-sunken border border-border-subtle overflow-hidden">
           <div
             className={`absolute inset-y-0 left-0 border-r-2 border-neg-text ${breached ? 'bg-neg-text/40' : 'bg-neg-text/20'}`}
             style={{ width: x(pct) }}
@@ -666,10 +668,10 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
           )}
         </div>
         {limitPct != null && (
-          <span className="absolute w-[2px] bg-gold-text" style={{ left: x(limitPct), top: 11, bottom: -4 }} />
+          <span className="absolute w-[2px] bg-gold-text" style={{ left: x(limitPct), top: 10, bottom: -3 }} />
         )}
       </div>
-      <div className="flex justify-between mt-1 font-mono text-[9.5px] text-text-tertiary tabular-nums">
+      <div className="flex justify-between mt-[3px] font-mono text-[9.5px] leading-none text-text-tertiary tabular-nums">
         <span>0%</span><span>{(ceiling / 2).toFixed(0)}%</span><span>{ceiling}%</span>
       </div>
     </div>
@@ -837,10 +839,10 @@ export function PerformancePanel({
 
   // Label + ⓘ on the left, number on the right, nothing else. See PanelRow.tip for why.
   const rows = (list: PanelRow[]) => (
-    <div className="mt-auto pt-3 border-t border-border-subtle">
+    <div className="mt-auto pt-2.5 border-t border-border-subtle">
       {list.map((r, i) => (
         <div key={r.key}
-          className={`flex items-baseline justify-between gap-3 py-[7px] text-[12px] ${i < list.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
+          className={`flex items-baseline justify-between gap-3 py-[4px] text-[12px] leading-[1.3] ${i < list.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
           <span className="flex items-center text-text-tertiary min-w-0">
             <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
           </span>
@@ -865,21 +867,23 @@ export function PerformancePanel({
 
   // Expanded, the last row's own padding is the card's bottom margin; collapsed, the meter's
   // scale labels would otherwise sit on the border.
-  const cardCls = `flex flex-col rounded-xl border border-border-subtle px-[17px] pt-[15px] ${collapsed ? 'pb-[14px]' : 'pb-[7px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'}`
+  const cardCls = `flex flex-col rounded-xl border border-border-subtle px-4 pt-[13px] ${collapsed ? 'pb-[12px]' : 'pb-[6px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'}`
 
+  // Title and question share ONE line. The question is orientation you read once; on its own
+  // row it charged ~16px of card height per card, forever, for a sentence nobody re-reads.
   const head = (title: string, question: string, aside?: React.ReactNode) => (
-    <>
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary">{title}</span>
-        {aside}
-      </div>
-      <div className="text-[11px] text-text-tertiary mt-[2px]">{question}</div>
-    </>
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="flex items-baseline gap-2 min-w-0">
+        <span className="text-[10px] font-bold uppercase tracking-[0.9px] text-text-secondary shrink-0">{title}</span>
+        <span className="text-[10.5px] text-text-tertiary truncate">{question}</span>
+      </span>
+      {aside}
+    </div>
   )
 
   const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) => (
-    <div className="flex items-baseline gap-2.5 flex-wrap mt-2.5 mb-0.5">
-      <span className={`text-[38px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
+    <div className="flex items-baseline gap-2.5 flex-wrap mt-2 mb-0.5">
+      <span className={`text-[34px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
       <span className="text-[12px] text-text-tertiary">{unit}<InfoTip text={tip} /></span>
     </div>
   )
@@ -889,9 +893,9 @@ export function PerformancePanel({
   const trustedTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown — return earned per unit of pain. Both halves compound, so this DOES move with the Account balance slider; they do not cancel. Above 2 is strong, below 0.5 weak.${d.recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${d.recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The rows beneath are the reasons to distrust the number above them: profit clustered in one quarter, a soft Sharpe, or streaking that isn't random.`
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       {ribbon}
-      <div className="grid gap-3 md:grid-cols-3 items-stretch">
+      <div className="grid gap-2.5 md:grid-cols-3 items-stretch">
 
         <div className={`${cardCls} border-t-2 border-t-pos-text/50`}>
           {head('Made', 'What came out of it')}
@@ -924,16 +928,16 @@ export function PerformancePanel({
             ? <DrawdownMeter pct={maxDdPct} limitPct={limitPct} tailPct={tailPct} />
             : <div className="mt-3.5 text-[11px] text-text-tertiary">Set an account balance to measure drawdown as a percentage.</div>}
           {!collapsed && (
-            <div className="text-[11px] text-text-tertiary leading-snug mt-2">
+            <div className="text-[10.5px] text-text-tertiary leading-[1.35] mt-1.5">
               {maxDdPct != null && ddAtWorstPct != null && ddPeak != null
-                ? <>−{dollar(ddAtWorstPct)} from a {dollar(ddPeak)} peak.{' '}</>
+                ? <>−{dollar(ddAtWorstPct)} off a {dollar(ddPeak)} peak.{' '}</>
                 : null}
               {limitPct != null && maxDdPct != null && (maxDdPct >= limitPct
                 ? <span className="text-neg-text">Breaches the {limitPct.toFixed(0)}% limit.{' '}</span>
-                : <>Clears by {(limitPct - maxDdPct).toFixed(1)} points.{' '}</>)}
+                : <>Clears by {(limitPct - maxDdPct).toFixed(1)} pts.{' '}</>)}
               {tailPct != null
                 ? <>Worst-1% simulated: {tailPct.toFixed(1)}%.</>
-                : <>No stress test — the simulated tail is unknown, not zero.</>}
+                : <>No stress test — the tail is unknown, not zero.</>}
             </div>
           )}
           {!collapsed && rows(riskedRows)}
@@ -1851,7 +1855,7 @@ function TradeCountAnchor({ count, of, spanDays }: {
   const years = months != null ? months / 12 : null
   return (
     <div className="ml-auto flex items-center gap-2.5 pl-4 border-l border-border-subtle shrink-0">
-      <span className="text-[29px] font-bold font-mono leading-none text-accent tabular-nums">{count}</span>
+      <span className="text-[25px] font-bold font-mono leading-none text-accent tabular-nums">{count}</span>
       <span className="flex flex-col leading-[1.25]">
         <span className="text-[11px] font-bold uppercase tracking-[0.9px] text-text-secondary">
           {of != null && of !== count ? `of ${of} trades` : 'Trades'}
@@ -1910,7 +1914,7 @@ function VerdictRibbon({ ev, tradeCount, totalTrades, spanDays, filtered }: {
   }
 
   return (
-    <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-border-subtle border-l-[3px] ${rail} bg-bg-surface pl-4 pr-2.5 py-2.5`}>
+    <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-1.5 rounded-lg border border-border-subtle border-l-[3px] ${rail} bg-bg-surface pl-4 pr-2.5 py-2`}>
       {cfg && (
         <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-[4px] text-[11px] font-bold uppercase tracking-[0.4px] shrink-0 ${cfg.cls}`}>
           <cfg.Icon size={11} />{cfg.label}
@@ -1918,10 +1922,13 @@ function VerdictRibbon({ ev, tradeCount, totalTrades, spanDays, filtered }: {
       )}
       {ev && <span className="text-[12.5px] text-text-primary">{ev.ruleset_name}</span>}
       {chips}
+      {/* Short enough to share the ribbon's FIRST line with the chips — the long form pushed the
+          trade-count anchor onto a second row, which cost the panel ~35px in both states. The
+          reasoning it used to spell out is in the tooltip, where a standing explanation belongs. */}
       {ungraded && (
         <span className="text-[11.5px] text-text-tertiary">
-          · states no limit, so nothing was checked — pick a ruleset with a stated limit to grade this run
-          <InfoTip text="Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. `personal_forex_risk` is its gradeable twin: the same raw behaviour with one stated bar." />
+          · no limits stated, so nothing was checked
+          <InfoTip text="Every grade is a statement about drawdown against a limit. This ruleset deliberately sets none — no daily cap, no drawdown floor — so zero checks ran and there is nothing to pass or fail. It reports the strategy's raw behaviour instead. Pick a ruleset with a stated limit to grade this run: `personal_forex_risk` is this one's gradeable twin, the same raw behaviour with one stated bar." />
         </span>
       )}
       {!ev && <span className="text-[12.5px] text-text-secondary">No ruleset evaluated</span>}
@@ -3265,7 +3272,7 @@ function PerformanceHeader({ news, blocked, filtered, collapsed, onToggle }: {
   collapsed: boolean; onToggle: () => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 mb-3">
+    <div className="flex items-center justify-between gap-3 mb-2">
       {/* The suffix names the SIZE of the exclusion, not the fact of it. "news filtered" told you a
           filter existed without saying what it did or how much it moved — and it was wrong half the
           time, since holidays are excluded whether or not the news rule is on. */}
@@ -3822,7 +3829,7 @@ export function BacktestDetail() {
               instead; a run with no evaluations at all gets a ribbon carrying only the trade
               count. Every path renders the same three cards below. */}
           {isComplete && (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               <PerformanceHeader
                 news={news} blocked={newsBlocked} filtered={newsOnKpis}
                 collapsed={perfCollapsed} onToggle={togglePerfCollapsed}
