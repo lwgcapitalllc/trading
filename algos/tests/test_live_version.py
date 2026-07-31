@@ -30,6 +30,39 @@ def test_hash_matches_the_labs_scanner():
     assert live_version.python_source_hash(pkg) == _python_source_hash(pkg)
 
 
+def test_hash_survives_a_windows_checkout(tmp_path):
+    """A CRLF checkout of the same source must hash the SAME.
+
+    This is not tidiness — it is the bug that made the pin useless. Promotion happens on the
+    Mac; the bot runs on the Windows VPS, where `core.autocrlf = true` rewrites every newline
+    on checkout. Hashing raw bytes therefore produced two different numbers for one commit
+    (measured 2026-07-31: `6f78d1…` on the Mac, `868af5…` on the VPS), so the bot refused to
+    start on code that was genuinely correct. A pin that always fires gets switched off, which
+    would leave nothing at all guarding what trades.
+    """
+    lf, crlf = tmp_path / "lf", tmp_path / "crlf"
+    lf.mkdir(), crlf.mkdir()
+    body = "A = 1\nB = 2\n"
+    (lf / "__init__.py").write_bytes(body.encode())
+    (crlf / "__init__.py").write_bytes(body.replace("\n", "\r\n").encode())
+    assert live_version.python_source_hash(lf) == live_version.python_source_hash(crlf)
+
+
+def test_the_labs_scanner_survives_it_too():
+    """Both implementations must normalise, or they agree on the Mac (where every test runs)
+    and disagree on the VPS — a green suite hiding a bot that cannot start."""
+    sys.path.insert(0, str(_REPO / "command-center" / "backend"))
+    from services.strategy_scanner import _python_source_hash
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        lf, crlf = Path(d) / "lf", Path(d) / "crlf"
+        lf.mkdir(), crlf.mkdir()
+        (lf / "__init__.py").write_bytes(b"A = 1\nB = 2\n")
+        (crlf / "__init__.py").write_bytes(b"A = 1\r\nB = 2\r\n")
+        assert _python_source_hash(lf) == _python_source_hash(crlf)
+
+
 def test_hash_changes_when_a_module_changes(tmp_path):
     pkg = tmp_path / "pkg"
     pkg.mkdir()

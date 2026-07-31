@@ -18,11 +18,19 @@ version of the strategy is trading."*
 Refusing is the right failure direction. The alternative is a bot that keeps running while
 nobody can say what it is running, which is the state this module exists to make impossible.
 
-The hash is byte-for-byte the one `command-center`'s scanner computes
+The hash is the one `command-center`'s scanner computes
 (`strategy_scanner._python_source_hash`): every `.py` in the package except tests, sorted, with
-each file's NAME hashed alongside its bytes so a rename registers. Reimplemented here rather
+each file's NAME hashed alongside its body so a rename registers. Reimplemented here rather
 than imported because `algos/` and `command-center/` are independent — but it must stay
 identical, or a version promoted from the lab would never match on the VPS.
+
+**Line endings are normalised before hashing, and that is not cosmetic.** Promotion happens on
+the Mac; the bot runs on the Windows VPS, which has `core.autocrlf = true`, so git REWRITES
+every newline on checkout. A byte-exact hash therefore never matched across the two machines —
+measured 2026-07-31, every one of `config.py`'s 185 newlines differed — and the pin would have
+refused to start every single time, on identical code. A pin that always fires is a pin that
+gets switched off. The hash must describe the CODE, not the line-ending policy of the machine
+that checked it out, so `\r\n` and a lone `\r` both fold to `\n` first.
 """
 
 from __future__ import annotations
@@ -39,13 +47,18 @@ class VersionMismatch(RuntimeError):
 
 def python_source_hash(pkg_dir: Path) -> str:
     """Content hash of a strategy package. MUST match
-    `command-center/backend/services/strategy_scanner._python_source_hash` exactly."""
+    `command-center/backend/services/strategy_scanner._python_source_hash` exactly.
+
+    Newlines are normalised to `\\n` so the same source hashes the same on the Mac the code is
+    promoted from and the Windows VPS it runs on — see the module docstring for why that is a
+    correctness requirement and not a tidy-up.
+    """
     h = hashlib.md5()
     for py in sorted(Path(pkg_dir).rglob("*.py")):
         if "tests" in py.parts:          # test edits don't change what the strategy DOES
             continue
         h.update(py.name.encode("utf-8"))
-        h.update(py.read_bytes())
+        h.update(py.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
     return h.hexdigest()
 
 

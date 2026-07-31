@@ -65,8 +65,8 @@
     "symbol": "XAUUSD.s"
   },
   "strategy_source_hash": "6f78d102bfd9c4e55a0fd327cf581a0a",
-  "promoted_commit": "",
-  "promoted_at": "",
+  "promoted_commit": "8fb2986",
+  "promoted_at": "2026-07-31",
   "strategy_version": 0,
 
   "telegram_chat_id": "",
@@ -87,7 +87,7 @@
 
   "_account_profile": "puprime_standard matches this broker (contract 100, mintick 0.01, no commission, swap modelled). It is INERT live — it only prices fills when fill_model is 'tick', which the bridge refuses. Set correctly anyway so the file never claims Vantage while trading PU Prime.",
 
-  "_strategy_source_hash": "Content hash of strategies/python/mpc_sos_fade at the moment this file was written. The bot re-hashes on startup and REFUSES to run if the code moved. promoted_commit is empty because those strategy files are not committed yet — fill it at promotion. The hash itself is content-addressed, so committing unchanged files does not invalidate it.",
+  "_strategy_source_hash": "Content hash of strategies/python/mpc_sos_fade as promoted in commit 8fb2986. The bot re-hashes on startup and REFUSES to run if the code moved. Newlines are normalised before hashing — without that the Windows VPS (core.autocrlf=true rewrites every newline on checkout) computed a different number for identical code and the pin refused to start every time; verified matching on both machines 2026-07-31.",
 
   "_magic": "Unique to this bot. Every order it places carries it and every order it reads back is filtered by it — this is what stops two bots on one terminal cancelling each other's orders. MT5_FFT currently holds 0 positions and 0 orders.",
 

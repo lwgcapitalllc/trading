@@ -634,13 +634,20 @@ def _python_source_hash(pkg_dir: Path) -> str:
     A package is many files — hashing only __init__.py would miss a config field added in
     config.py, which is exactly the change the param form needs to pick up. Sorted for stability;
     the name is hashed alongside the body so a rename registers as a change.
+
+    **Newlines are normalised before hashing.** This number is not only a re-scan trigger: it is
+    also the version PIN a live bot is promoted to (`algos/live/version.py`, which must compute
+    the identical value). Promotion happens here on the Mac and the bot runs on the Windows VPS,
+    where `core.autocrlf = true` rewrites every newline on checkout — so hashing raw bytes made
+    the same source hash differently on the two machines and the pin could never match. Keep the
+    two implementations in step; a divergence surfaces as a live bot that refuses to start.
     """
     h = hashlib.md5()
     for py in sorted(pkg_dir.rglob("*.py")):
         if "tests" in py.parts:          # test edits don't change what the strategy DOES
             continue
         h.update(py.name.encode("utf-8"))
-        h.update(py.read_bytes())
+        h.update(py.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n"))
     return h.hexdigest()
 
 
