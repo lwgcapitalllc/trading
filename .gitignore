@@ -87,6 +87,13 @@ command-center/backend/reports/lab/
 # Live bot state
 algos/markets/fx/instances/*/bot_state.json
 
+# Watchdog + process runtime state. Written by SYS_MONITOR and the Telegram bot on the
+# VPS, so they show up as untracked in the VPS working tree — which is the tree the daily
+# log-backup job commits from. They are per-machine runtime, never source.
+algos/monitor_state.json
+algos/stop_suppress.json
+algos/*.pid
+
 # Telegram runtime
 algos/users.json
 algos/telegram_offset.json
