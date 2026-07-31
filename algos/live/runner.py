@@ -43,11 +43,8 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parent.parent
-# `algos/bots` is here for bot_utils (shared logging). It is easy to leave out — the suite never
-# constructed a LiveRunner, so a missing entry surfaced only on the VPS, at __init__, before the
-# bot could log or notify anything about why it died.
-for _p in (str(_REPO), str(_REPO / "algos" / "shared"), str(_REPO / "algos" / "bots"),
-           str(_REPO / "strategies" / "python"), str(_HERE)):
+for _p in (str(_REPO), str(_REPO / "algos" / "shared"), str(_REPO / "strategies" / "python"),
+           str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -80,27 +77,44 @@ class LiveRunner:
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _make_logger(self):
-        """Shared bot logging if it is importable, plain file+stdout logging if it is not.
+        """This bot's own logger: a UTF-8 file in its instance dir, plus stdout.
 
-        The import lives INSIDE the try on purpose. It sat outside once, so a `bot_utils` that
-        could not be imported killed the runner in `__init__` — before it had a logger to say so
-        with, before the version pin, before anything. A logging dependency must never be able to
-        stop a bot; the fallback below writes the same file to the same place.
+        **Both streams are forced to UTF-8, and that is a correctness fix.** A Windows console
+        is cp1252 and cannot encode the arrows and dashes these messages are written with. When
+        that happens `logging` does not raise — it DISCARDS the message and prints a
+        UnicodeEncodeError traceback where the line should have been (seen on the VPS,
+        2026-07-31, on the "Warmed N bars" line). The log is the audit trail behind "why did
+        this trade not work", so a character it cannot encode has to degrade to a replacement
+        glyph, never take the whole line with it.
+
+        It deliberately does NOT use `bots/bot_utils.setup_logging`. That helper keys off
+        `_instance_dir` and `_config_path`, which this package has no reason to invent — the
+        call here passed neither, so it raised and fell through to the fallback on every single
+        run, meaning the "shared logging" it advertised never once happened. It also clears the
+        ROOT handlers for the whole process. Logging is a dozen lines; a shared helper you have
+        to lie to is not sharing.
         """
-        cfg_dict = {"instance_dir": str(self.cfg.instance_dir)}
-        try:
-            import bot_utils
-            return bot_utils.setup_logging(self.cfg.bot_key, cfg_dict)
-        except Exception:
-            import logging
-            self.cfg.instance_dir.mkdir(parents=True, exist_ok=True)
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s [%(levelname)s] %(message)s",
-                handlers=[logging.FileHandler(self.cfg.instance_dir / f"{self.cfg.bot_key}.log",
-                                              encoding="utf-8"),
-                          logging.StreamHandler(sys.stdout)])
-            return logging.getLogger(self.cfg.bot_key)
+        import logging
+
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError):
+                pass          # already wrapped, or redirected to something without reconfigure
+
+        self.cfg.instance_dir.mkdir(parents=True, exist_ok=True)
+        log = logging.getLogger(self.cfg.bot_key)
+        if log.handlers:      # constructing a second runner must not double every line
+            return log
+        log.setLevel(logging.INFO)
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+        for h in (logging.FileHandler(self.cfg.instance_dir / f"{self.cfg.bot_key}.log",
+                                      encoding="utf-8"),
+                  logging.StreamHandler(sys.stdout)):
+            h.setFormatter(fmt)
+            log.addHandler(h)
+        log.propagate = False          # the root logger is not this package's to write through
+        return log
 
     def _notify(self, text: str) -> None:
         """Every message this bot sends goes to ITS OWN configured destination — the routing is

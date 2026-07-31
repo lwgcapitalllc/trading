@@ -27,6 +27,20 @@ import live_config  # noqa: E402
 import runner  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _fresh_logger():
+    """`logging.getLogger(name)` is process-global, so a logger built in one test keeps handlers
+    pointing at that test's tmp_path and the next test silently writes to a stale file. Harmless
+    in production (one process runs one bot) but it makes these tests pass alone and fail
+    together, which is worse than failing outright."""
+    import logging
+    yield
+    log = logging.getLogger("smoke")
+    for h in list(log.handlers):
+        h.close()
+        log.removeHandler(h)
+
+
 def _cfg(tmp_path, monkeypatch, **overrides):
     body = {"bot_key": "smoke", "mt5_path": "C:/MT5/terminal64.exe", "account": 1,
             "server": "Demo", "symbol": "XAUUSD", "magic": 1}
@@ -46,21 +60,30 @@ def test_the_runner_can_be_constructed(tmp_path, monkeypatch):
     assert r.dry_run is True          # sending orders is never the default
 
 
-def test_a_broken_logging_dependency_does_not_stop_the_bot(tmp_path, monkeypatch):
-    """`bot_utils` is a convenience, not a requirement. If it cannot be imported the runner
-    falls back to plain file+stdout logging rather than refusing to run — a logging dependency
-    must never be the reason a bot is not trading."""
-    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
+def test_a_line_the_console_cannot_encode_is_still_written(tmp_path, monkeypatch):
+    """The messages here contain arrows and em-dashes. A Windows console is cp1252 and cannot
+    encode them, and `logging` responds by DISCARDING the record and printing a
+    UnicodeEncodeError where it should have been — which is how the VPS lost its "Warmed N
+    bars" line on 2026-07-31. The log is the audit trail, so an unencodable character must cost
+    a glyph, never the line."""
+    cfg = _cfg(tmp_path, monkeypatch)
+    r = runner.LiveRunner(cfg)
+    r.log.info("Warmed 5000 bars (2026-05-15 → 2026-07-31) — holding a position")
+    for h in r.log.handlers:
+        h.flush()
 
-    def _refuse(name, *a, **k):
-        if name == "bot_utils":
-            raise ImportError("simulated: not on the path")
-        return real_import(name, *a, **k)
+    written = (cfg.instance_dir / f"{cfg.bot_key}.log").read_text(encoding="utf-8")
+    assert "Warmed 5000 bars" in written
+    assert "holding a position" in written      # the END of the line survived, not just the start
 
-    monkeypatch.setattr("builtins.__import__", _refuse)
-    r = runner.LiveRunner(_cfg(tmp_path, monkeypatch))
-    assert r.log is not None
-    r.log.info("the fallback logger works")
+
+def test_constructing_twice_does_not_double_every_log_line(tmp_path, monkeypatch):
+    """A duplicated handler turns one trade into two ledger-adjacent log entries, which is the
+    kind of thing that makes a post-mortem argue with itself."""
+    cfg = _cfg(tmp_path, monkeypatch)
+    first = runner.LiveRunner(cfg)
+    runner.LiveRunner(cfg)
+    assert len(first.log.handlers) == 2         # one file, one stdout
 
 
 def test_logs_land_in_the_bots_own_instance_dir(tmp_path, monkeypatch):
