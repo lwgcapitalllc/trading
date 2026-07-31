@@ -1769,14 +1769,17 @@ f_rev15() =>
     var bool  L_half = false, var bool L_618 = false
     var int   L_deep = 0
     var bool  L_tp50 = false, var bool L_tp382 = false, var bool L_tp0 = false
-    var int   L_deepSeen = 0
+    var bool  L_leftZone = false
     // SHORT state
     var int   S_arm = na, var int S_sos = na
     var float S_low = na, var float S_high = na
     var bool  S_half = false, var bool S_618 = false
     var int   S_deep = 0
     var bool  S_tp50 = false, var bool S_tp382 = false, var bool S_tp0 = false
-    var int   S_deepSeen = 0
+    var bool  S_leftZone = false
+    // Fires on the single bar a re-entry resets the leg. Returned to the chart side, which
+    // owns the 1m confirmation flags this function cannot reach.
+    bool L_reentryNow = false, bool S_reentryNow = false
 
     // ── LONG ── death first: opposite SOS, a same-dir continuation BOS once the SOS
     // leg exists (hand off to CONT — a BOS pullback is NOT a reversal entry), or a close
@@ -1786,7 +1789,7 @@ f_rev15() =>
         L_arm := na, L_sos := na, L_low := na, L_high := na
         L_half := false, L_618 := false, L_deep := 0
         L_tp50 := false, L_tp382 := false, L_tp0 := false
-        L_deepSeen := 0
+        L_leftZone := false
     if newBullDiv and na(L_arm) and na(L_sos)
         L_arm := bullDivBar
     if mtf.bull_sos and not na(L_arm) and na(L_sos)
@@ -1822,6 +1825,17 @@ f_rev15() =>
                 L_tp382 := true
             if high >= p0 and L_tp382[1]
                 L_tp0 := true
+        // ── RE-ENTRY, round trip ── mirror of the chart-side aplus rule; the full
+        // reasoning lives there. ARM once a TP is banked and price is OUTSIDE 0.618,
+        // FIRE when it trades back inside. This lives inside the fib block because p618
+        // is only in scope here.
+        bool L_inZone = low <= p618
+        if (L_tp50 or L_tp382 or L_tp0) and not L_inZone
+            L_leftZone := true
+        else if L_leftZone and L_inZone
+            L_leftZone := false
+            L_tp50 := false, L_tp382 := false, L_tp0 := false
+            L_reentryNow := true
 
     // ── SHORT ── death first: opposite SOS, a same-dir continuation BOS once the SOS
     // leg exists (hand off to CONT), or a close above the leg high (fib 1.0). A stage-1
@@ -1830,7 +1844,7 @@ f_rev15() =>
         S_arm := na, S_sos := na, S_low := na, S_high := na
         S_half := false, S_618 := false, S_deep := 0
         S_tp50 := false, S_tp382 := false, S_tp0 := false
-        S_deepSeen := 0
+        S_leftZone := false
     if newBearDiv and na(S_arm) and na(S_sos)
         S_arm := bearDivBar
     if mtf.bear_sos and not na(S_arm) and na(S_sos)
@@ -1862,21 +1876,14 @@ f_rev15() =>
                 S_tp382 := true
             if low <= p0 and S_tp382[1]
                 S_tp0 := true
-
-    // RE-ENTRY reset, mirroring the chart-side rule (see the aplus block): a retrace
-    // DEEPER than any tier this leg has reached, while a TP is banked, clears the TPs so
-    // the row stops reading SCALE and goes back to awaiting entry. deepNow: 1 = 0.5,
-    // 2 = 0.618, 3 = 0.702, 4 = 0.786, 5 = 0.886 (L_deep is 1-based from 0.618).
-    int L_deepNow = L_618 ? L_deep + 1 : L_half ? 1 : 0
-    if not na(L_sos) and L_deepNow > L_deepSeen
-        if L_tp50 or L_tp382 or L_tp0
-            L_tp50 := false, L_tp382 := false, L_tp0 := false
-        L_deepSeen := L_deepNow
-    int S_deepNow = S_618 ? S_deep + 1 : S_half ? 1 : 0
-    if not na(S_sos) and S_deepNow > S_deepSeen
-        if S_tp50 or S_tp382 or S_tp0
+        // ── RE-ENTRY, round trip ── mirror of LONG, above.
+        bool S_inZone = high >= p618
+        if (S_tp50 or S_tp382 or S_tp0) and not S_inZone
+            S_leftZone := true
+        else if S_leftZone and S_inZone
+            S_leftZone := false
             S_tp50 := false, S_tp382 := false, S_tp0 := false
-        S_deepSeen := S_deepNow
+            S_reentryNow := true
 
     int L_stage = not na(L_sos) ? (L_618 ? 4 : L_half ? 3 : 2) : not na(L_arm) ? 1 : 0
     int S_stage = not na(S_sos) ? (S_618 ? 4 : S_half ? 3 : 2) : not na(S_arm) ? 1 : 0
@@ -1885,16 +1892,21 @@ f_rev15() =>
     int   rStage = 0, int rDir = 0, int rDeep = 0
     bool  rTp50 = false, bool rTp382 = false, bool rTp0 = false
     float rZoneLo = na, float rZoneHi = na
+    // Only the side that OWNS the row is reported — the other side's reset is not this
+    // row's event.
+    bool  rReentryNow = false
     if L_ok or S_ok
         if isLong
             rStage := L_stage, rDir := 1, rDeep := L_deep
             rTp50 := L_tp50, rTp382 := L_tp382, rTp0 := L_tp0
+            rReentryNow := L_reentryNow
             if not na(L_high) and not na(L_low) and L_high > L_low
                 float rng = L_high - L_low
                 rZoneLo := L_high - rng*0.886, rZoneHi := L_high - rng*0.5
         else
             rStage := S_stage, rDir := -1, rDeep := S_deep
             rTp50 := S_tp50, rTp382 := S_tp382, rTp0 := S_tp0
+            rReentryNow := S_reentryNow
             if not na(S_high) and not na(S_low) and S_high > S_low
                 float rng = S_high - S_low
                 rZoneLo := S_low + rng*0.5, rZoneHi := S_low + rng*0.886
@@ -1955,9 +1967,9 @@ f_rev15() =>
         // if not na(cS_hi) and not na(cS_lo) and cS_hi > cS_lo
             // float czRngS = cS_hi - cS_lo
             // rContZoneLo := cS_lo + czRngS * 0.5, rContZoneHi := cS_lo + czRngS * 0.886
-    [rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeep, lastSosCloseT]
+    [rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeep, lastSosCloseT, rReentryNow]
 
-[rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeepCode, m15SosCloseT] = request.security(syminfo.tickerid, "15", f_rev15())
+[rStage, rDir, rTp50, rTp382, rTp0, rZoneLo, rZoneHi, rDeepCode, m15SosCloseT, revReentryNow] = request.security(syminfo.tickerid, "15", f_rev15())
 
 // ── Chart-side 1m confirmation for the 15m REV SETUP (works on any timeframe) ──
 // The 15m engine gives the setup skeleton; the entry trigger is combined here from the 1m
@@ -1968,9 +1980,23 @@ var bool revDeepFvg  = false
 var bool revEarlyFvg = false
 // 1m FVG tapping the 15m entry zone right now (chart price taps the 1m gap in-zone)
 bool _revFvgTapNow = rDir == 1 ? (not na(fvg1BullTop) and not na(rZoneLo) and fvg1BullBot <= rZoneHi and fvg1BullTop >= rZoneLo and low <= fvg1BullTop and high >= fvg1BullBot) : rDir == -1 ? (not na(fvg1BearTop) and not na(rZoneLo) and fvg1BearBot <= rZoneHi and fvg1BearTop >= rZoneLo and low <= fvg1BearTop and high >= fvg1BearBot) : false
+// Latched for the row's wording once the 15m reports a re-entry; cleared with the rest
+// of the deep state when the leg leaves stage 4.
+var bool revReentry = false
 // Reset deep confirmations when out of the deep stage.
 if rStage < 4
     rev1mSawOpp := false, rev1mShift := false, revDeepFvg := false
+    revReentry := false
+// ── RE-ENTRY, chart side ── these three flags live HERE, not in f_rev15, so the 15m
+// engine's own reset could never touch them. rStage is the only thing it clears them on,
+// and rStage is 4 for the whole life of a deep leg — so on a 1m chart the deep-entry
+// confirmation stayed latched from the FIRST entry to the end of the leg, and the row
+// never asked for a fresh 1m SOS again. Not even once. The 15m now hands the reset edge
+// across the security boundary and it is applied here (Aaron, 2026-07-31).
+if revReentryNow
+    rev1mSawOpp := false, rev1mShift := false, revDeepFvg := false
+    revEarlyFvg := false
+    revReentry  := true
 if rStage == 4
     if rDir == 1
         if m1Dir == -1
@@ -5236,12 +5262,21 @@ var bool aplusS_tp50      = false
 var bool aplusS_tp382     = false
 var bool aplusS_tp0       = false
 
-// RE-ENTRY state. _deepSeen = the deepest entry tier reached SO FAR on this leg
-// (0 none, 1 = 0.5, 2 = 0.618, 3 = 0.702, 4 = 0.786, 5 = 0.886). _reentry = the leg
-// has been reset by a deeper retrace and is waiting for a fresh 1m SOS. See the
-// reset block below the TP tracking for the rule.
-var int  aplusL_deepSeen = 0, var bool aplusL_reentry = false
-var int  aplusS_deepSeen = 0, var bool aplusS_reentry = false
+// RE-ENTRY state. _leftZone = a TP is banked AND price is currently outside the deep
+// entry zone — the return-detector is armed. _reentry = the leg has been reset by a
+// return to the zone and is waiting for a fresh 1m SOS. See the reset block below the
+// TP tracking for the rule.
+//
+// This was an int high-water mark (_deepSeen, "the deepest tier reached so far") until
+// 2026-07-31. It could only ever fire on a tier price had NEVER visited, and the tier
+// latches it read are sticky, so the depth it compared against never fell. A second
+// visit to a zone already reached scored equal, not greater, and the reset was skipped:
+// the row stayed on TAKE PROFIT with the previous entry's 1m confirmation still latched,
+// and never went back to asking for a 1m SOS. A leg could re-enter at most four times,
+// each one strictly deeper than the last. A ROUND TRIP is the real event, so that is
+// what it detects now — leave the zone, come back, reset. Every time, at any depth.
+var bool aplusL_leftZone = false, var bool aplusL_reentry = false
+var bool aplusS_leftZone = false, var bool aplusS_reentry = false
 
 // (HTF-POI latch removed to save compile tokens — it was computed but never displayed.)
 
@@ -5565,7 +5600,7 @@ if not na(aplusL_sosBar)
 else
     aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
     aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
-    aplusL_deepSeen := 0, aplusL_reentry := false
+    aplusL_leftZone := false, aplusL_reentry := false
 if not na(aplusS_sosBar)
     // One-directional, mirror of LONG — banked TPs never clear on a pullback.
     if aplusS_618
@@ -5585,35 +5620,53 @@ if not na(aplusS_sosBar)
 else
     aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
     aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
-    aplusS_deepSeen := 0, aplusS_reentry := false
+    aplusS_leftZone := false, aplusS_reentry := false
 
 // ── RE-ENTRY reset ──
-// The case: an EARLY 0.5 entry banks its TP at 0.382, and then price comes back and
-// goes DEEPER than it has ever been on this leg — into 0.618 / 0.702 / 0.786 / 0.886.
-// That is NOT the shallow pullback the one-directional TP rule exists to ignore; it is
-// the market handing back a better entry than the one already taken. So the leg RESETS:
-// the banked TPs and the 1m entry confirmations clear, and the row goes back to waiting
-// for a fresh 1m SOS — tagged RE-ENTRY so it reads as a second bite, not a first one.
-// When price then works back out to 0.5 it prints "0.5 scale+stop" again, exactly as a
-// normal deep entry would. Fires on EVERY new deepest tier, so 0.618 → TP → 0.786 resets
-// a second time. The trigger is the tier DEEPENING, which is why a plain pullback to a
-// tier already visited can never trip it.
-int aplusL_deepNow = aplusL_886 ? 5 : aplusL_786 ? 4 : aplusL_702 ? 3 : aplusL_618 ? 2 : aplusL_half ? 1 : 0
-int aplusS_deepNow = aplusS_886 ? 5 : aplusS_786 ? 4 : aplusS_702 ? 3 : aplusS_618 ? 2 : aplusS_half ? 1 : 0
-if not na(aplusL_sosBar) and aplusL_deepNow > aplusL_deepSeen
-    if aplusL_tp50 or aplusL_tp382 or aplusL_tp0
-        aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
-        aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
-        aplusL_fvgTap := false, aplusL_szTap := false, aplusL_fvgZone := false
-        aplusL_reentry := true
-    aplusL_deepSeen := aplusL_deepNow
-if not na(aplusS_sosBar) and aplusS_deepNow > aplusS_deepSeen
-    if aplusS_tp50 or aplusS_tp382 or aplusS_tp0
-        aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
-        aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
-        aplusS_fvgTap := false, aplusS_szTap := false, aplusS_fvgZone := false
-        aplusS_reentry := true
-    aplusS_deepSeen := aplusS_deepNow
+// The case: an entry banks a TP, price runs away, and then price comes BACK into the
+// deep entry zone. That is not the shallow pullback the one-directional TP rule exists
+// to ignore; it is the market handing the zone back. So the leg RESETS: the banked TPs
+// and the 1m entry confirmations clear, and the row goes back to waiting for a fresh 1m
+// SOS — tagged RE-ENTRY so it reads as a second bite, not a first one. When price then
+// works back out to 0.5 it prints its partial again, exactly as a normal deep entry
+// would.
+//
+// A ROUND TRIP, not a new depth record (Aaron, 2026-07-31). It takes two bars to fire
+// and they must be on opposite sides of 0.618:
+//   ARM   — a TP is banked and price is OUTSIDE the zone. The trade left.
+//   FIRE  — price trades back INSIDE. The zone is available again.
+// The out-of-zone half of the arm is what stops a single wide bar that both banks a TP
+// and dips to 0.618 from resetting the row, and what stops the two rules ping-ponging
+// bar to bar while price sits on the boundary.
+//
+// This replaces a high-water-mark test (deepest tier ever reached > deepest tier seen).
+// That version could only fire on a tier price had never visited, so the SECOND return
+// to a zone scored equal, not greater, and was ignored — the row stayed on TAKE PROFIT
+// carrying the first entry's 1m confirmation and never asked for a fresh 1m SOS again.
+// Round trips have no such ceiling: the zone can be handed back any number of times, at
+// any depth, and each one resets.
+bool aplusL_inZoneNow = fibo_dir == 1  and not na(fiboP3) and low  <= fiboP3
+bool aplusS_inZoneNow = fibo_dir == -1 and not na(fiboP3) and high >= fiboP3
+// Set only on the bar the reset fires — the one-way inTrade latch reads it further down,
+// where it is declared. It cannot be cleared from here.
+bool aplusL_reentryNow = false
+bool aplusS_reentryNow = false
+if not na(aplusL_sosBar) and (aplusL_tp50 or aplusL_tp382 or aplusL_tp0) and not aplusL_inZoneNow
+    aplusL_leftZone := true
+else if not na(aplusL_sosBar) and aplusL_leftZone and aplusL_inZoneNow
+    aplusL_leftZone := false
+    aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
+    aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
+    aplusL_fvgTap := false, aplusL_szTap := false, aplusL_fvgZone := false
+    aplusL_reentry := true, aplusL_reentryNow := true
+if not na(aplusS_sosBar) and (aplusS_tp50 or aplusS_tp382 or aplusS_tp0) and not aplusS_inZoneNow
+    aplusS_leftZone := true
+else if not na(aplusS_sosBar) and aplusS_leftZone and aplusS_inZoneNow
+    aplusS_leftZone := false
+    aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
+    aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
+    aplusS_fvgTap := false, aplusS_szTap := false, aplusS_fvgZone := false
+    aplusS_reentry := true, aplusS_reentryNow := true
 
 // Stage 2+ is defined by SOS presence alone (not fibo_dir, which flickers at
 // the daily rollover and was resetting live setups back to 1/3 at the gap).
@@ -5886,6 +5939,22 @@ var bool aplusS_inTrade = false, var int aplusS_inSos = na
 if na(aplusS_sosBar) or aplusS_sosBar != aplusS_inSos
     aplusS_inTrade := false
     aplusS_inSos   := aplusS_sosBar
+// THE ONE EXCEPTION to "monotonic per SOS leg" (Aaron, 2026-07-31). A re-entry reset
+// clears aplusX_deepFvg and aplusX_fvgTap, but this latch used to survive it — and the
+// table's deep branch reads `uIn = uInLatch or uDeepFvg or uEarlyFvg`, so the row went
+// on printing ENTRY and the RE-ENTRY / "wait 1m SOS" branches were unreachable on any
+// leg that had ever confirmed an entry. The reset was doing its work invisibly.
+//
+// Clearing it here does not weaken what the latch is for. It exists to stop the row
+// regressing ENTRY → AWAIT while a position is UNREALISED and going against you — the
+// case where being told to wait costs money. A reset only fires after a TP is banked and
+// price has made a full round trip out of the zone and back, so by then you are flat or
+// on a runner with the stop in profit. That is a different situation and it does not
+// need the same guard.
+if aplusL_reentryNow
+    aplusL_inTrade := false
+if aplusS_reentryNow
+    aplusS_inTrade := false
 if barstate.isconfirmed
     aplusL_inTrade := aplusL_inTrade or aplusL_ready
     aplusS_inTrade := aplusS_inTrade or aplusS_ready
@@ -6062,6 +6131,7 @@ if showConfTable and barstate.islast
             // own tap latches rather than the 15m A+ ones, which aren't computed here.
             uSz       := rev1mEntrySz
             uFvgZone  := rev1mEntryFvg
+            uReentry  := revReentry
         // HAND-OFF — once a REV finishes, the FIRST continuation BOS owns the table for its
         // WHOLE lifetime. While a CONT is live the REV row is hard-suppressed at every
         // stage: exactly one setup tracks at a time. The REV row shows Pass and returns
