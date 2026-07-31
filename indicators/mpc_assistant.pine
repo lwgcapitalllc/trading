@@ -59,8 +59,8 @@ bool   marketStructureOnly = not showTradeTools and not showFibTool
 string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
 bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, tooltip = "The major swing structure. ASH/ASL = Active Swing High/Low, the live level being watched. HH/HL = Higher High/Higher Low, LH/LL = Lower High/Lower Low. BOS = Break of Structure, a break that continues the trend. SOS = Shift of Structure, a break that reverses it (also called CHoCH, Change of Character).", display = display.none)
 bool   showInternal     = input.bool(true,      "Show Internal Structure", group = GRP_STRUCT, tooltip = "The smaller structure inside the current major swing. Same names with an i prefix: iSH/iSL = internal Swing High/Low, iHH/iHL/iLH/iLL, iBOS = internal Break of Structure, iSOS = internal Shift of Structure.", display = display.none)
-bool   showSwingLabels  = input.bool(false, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart.", display = display.none)
-bool   showHistoricalInternal = input.bool(false, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "Off (default) wipes the internal structure each time the external structure breaks, so only the current swing's internals are drawn. On keeps every past swing's internal labels and lines on the chart.", display = display.none)
+bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off hides the swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart.", display = display.none)
+bool   showHistoricalInternal = input.bool(true, "Show Internal Structure History", group = GRP_STRUCT, active = showInternal, tooltip = "On (default) keeps every past swing's internal labels and lines on the chart. Off wipes the internal structure each time the external structure breaks, so only the current swing's internals are drawn.", display = display.none)
 int    internalLength   = 5
 float  pbBuffer         = 0.0
 
@@ -83,57 +83,313 @@ f_swingCol(color c) =>
 //============================================================
 var GRP_TOOLS = "Chart Tools"
 bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, tooltip = "FVG on the chart. A fair value gap is the price void left by a 3-candle imbalance, where the first and third candles do not overlap.", display = display.none)
-bool showOBsInput        = input.bool(false, "Order Blocks",      group = GRP_TOOLS, tooltip = "OB on the chart. An order block is the last opposing candle before the move that broke structure.", display = display.none)
+bool showOBsInput        = input.bool(true,  "Order Blocks",      group = GRP_TOOLS, tooltip = "OB on the chart. An order block is the last opposing candle before the move that broke structure.", display = display.none)
+// ── THE COUNT IS LOCKED TOO NOW (Aaron, 2026-07-31) ──
+// It was the one order-block setting left on the panel, exposed on 2026-07-30 so the
+// number could be tested against a real chart. That test is done: TEN blocks per
+// direction, and with the count settled there is nothing left for the input to do
+// except let a student set it wrong. Every other OB property (what qualifies as one,
+// its colour, body-vs-wick) was already locked, so this closes the last hole — nothing
+// about the tool can now be altered from the panel.
+// Ten is deliberately the OLD MAXIMUM, not a middle value: the FIFO drops from the
+// front, so a bigger cap only ever keeps MORE history behind price. It never changes
+// which blocks are nearest.
+int   maxActiveOB        = 10
+// ── ONE direction filter, shared by BOTH zone tools (Aaron, 2026-07-30) ──
+// Fair value gaps and order blocks are both drawn in BOTH directions by default: a
+// bullish gap and a bearish gap, a bullish block and a bearish block, each capped on
+// its own side. This is the switch that narrows them to the way the market is going.
+// Deliberately ONE control, not two. The question it answers — "do I want to see the
+// zones price is trading AWAY from?" — has one answer per trader, not one per tool, and
+// two toggles that are always set the same way are just one toggle with extra clicks.
+// HIDES, never deletes. A hidden zone keeps living and mitigating underneath, so when
+// structure flips back it is still there, still accurate. Deleting would mean a
+// counter-trend zone is destroyed the moment it prints, and the flip back would leave a
+// hole where a valid level used to be.
+bool dirOnlyInput        = input.bool(false, "Trend-Aligned Zones Only", group = GRP_TOOLS, tooltip = "Off (default) shows every fair value gap and order block, both directions. On hides the ones that oppose the current external structure — in an uptrend only bullish gaps and bullish blocks are drawn, in a downtrend only bearish. Hidden, not deleted: they come back if structure turns. Applies to Fair Value Gaps and Order Blocks together.", display = display.none)
 bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, tooltip = "Tagged EQH and EQL. EQH = Equal Highs, a pair of highs at the same price with buy-side liquidity resting above. EQL = Equal Lows, the mirror below.", display = display.none)
 var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, tooltip = "The tags down the right edge. PDH/PDL = Previous Day High/Low. PWH/PWL = Previous Week High/Low. PWC = Previous Week Close. H4 H/L = the previous 4-hour candle High/Low. Asia/Ldn/NY H and L = that session High and Low. BSL = Buy-Side Liquidity (above a high), SSL = Sell-Side Liquidity (below a low).", display = display.none)
 bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
-bool showHistoricSessions = input.bool(false, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "Off (default) draws only the current week's session boxes, from Sunday 00:00 New York. On draws every session in the chart's history.", display = display.none)
+bool showHistoricSessions = input.bool(true, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "On (default) draws every session in the chart's history. Off draws only the current week's session boxes, from Sunday 00:00 New York.", display = display.none)
 bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, tooltip = "KZ = Kill Zone, the high-activity window at a session open. NY = New York. NY Range = the opening range of the New York session.", display = display.none)
-bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off (default) draws the kill zones and NY range for the current New York day only. On draws them for every day in the chart's history.", display = display.none)
 bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "The MV line — where the highest volume of trades occurred during the Asian session.", display = display.none)
-bool showVwapInput       = input.bool(false, "VWAP",              group = GRP_TOOLS, tooltip = "VWAP = Volume Weighted Average Price. The average price paid so far in the session, weighted by how much traded at each price.", display = display.none)
+bool showVwapInput       = input.bool(true,  "VWAP",              group = GRP_TOOLS, tooltip = "VWAP = Volume Weighted Average Price. The average price paid so far in the session, weighted by how much traded at each price.", display = display.none)
 bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, tooltip = "RSI = Relative Strength Index, a momentum oscillator. Divergence = price and RSI disagreeing, one making a new extreme while the other does not. Tagged Bull Div / Bear Div.", display = display.none)
 
 //============================================================
   // ORDER BLOCKS — appearance + cap locked, no panel inputs
 //============================================================
 bool showOBs = showTradeTools and showOBsInput
+// ── OB APPEARANCE — an OUTLINE, in a colour no other box uses (Aaron, 2026-07-30) ──
+// The blocks were a pale-blue and pale-red FILL, and on a live chart that was a fifth
+// pale rectangle sitting on top of four others: London is a blue wash, Tokyo is a red
+// wash, New York yellow, the kill zones green, FVGs grey, the Sniper Zone green/red.
+// A bullish OB was visually the same object as a London session box. Directional
+// colouring made it worse, not better — it spent the two colours that are ALREADY
+// spoken for by the session boxes underneath it.
+// Two changes fix that, and the second is the one doing the work:
+//   1. ONE colour for both directions — deep orange, the only hue no box on this chart
+//      claims. Direction is not what an order block is FOR; where it sits relative to
+//      price already says that, and the structure labels say it in words.
+//   2. It is drawn as an OUTLINE, not a wash — the fill is a whisper (94) and the
+//      BORDER carries the shape (25). Every other zone here is a filled block, so an
+//      outlined one is told apart by SHAPE before colour is even processed. That
+//      survives what a colour change alone cannot: overlapping zones, a dark theme,
+//      and a colour-blind reader.
+// The blue/red directional experiment (2026-07-30, to match the OrthosLabs overlay) is
+// REVERTED — Aaron kept the orange outline. So the two notes above stand as written and
+// this is the live appearance: one deep-orange hue for both directions, drawn as an
+// outline. Only the BEHAVIOUR fixes from that pass were kept (see f_obMake and extendOBs).
 bool  showBullOB  = true
-color colBullOB   = color.new(color.blue, 85)
+color OB_ACCENT   = #E65100
+color colBullOB   = color.new(OB_ACCENT, 94)
 bool  showBearOB  = true
-color colBearOB   = color.new(color.red, 85)
-int   maxActiveOB = 2
+color colBearOB   = color.new(OB_ACCENT, 94)
+color OB_EDGE     = color.new(OB_ACCENT, 25)
+// The "OB" tag comes back with the outline — at 94% transparency the fill is a whisper,
+// so the label is what NAMES the thing. Right-aligned, so it rides beside price in the
+// empty space rather than sitting on the candles at the box's left edge.
+color obTextBull  = color.new(OB_ACCENT, 0)
+color obTextBear  = color.new(OB_ACCENT, 0)
 bool  obBodyOnly  = false
+// ── THE THREE BOUNDS (Aaron, 2026-07-30) — off the screenshot where the blocks sat
+// hundreds of dollars above price and stretched the entire chart width ──
+// OB_SCAN_MAX — how far BEFORE the break the leg is searched. This is the big one. The
+//   scan was bounded only by the leg itself, and a leg on an hourly chart runs hundreds
+//   of bars, so with every engulfing now qualifying it was drawing blocks from the leg's
+//   ORIGIN — candles from weeks ago, which is exactly "tracking too far back". An order
+//   block belongs to the IMPULSE that broke structure, and an impulse is a handful of
+//   candles. Set to 20 at first; raised to 40 the same day because blocks were missing
+//   at the deeper pushes of a longer leg — 20 bars cut the scan off before it reached
+//   them. 40 still keeps it near the break rather than back at the leg origin.
+// OB_MAX_AGE — a block price has walked away from and never returned to. Mitigation
+//   freezes rather than deletes now, so without an age cap a block far above price is
+//   drawn forever. That is what those four boxes at the top of the chart were.
+// (OB_MERGE_BARS is gone with merge itself — see the mergeOBs note.)
+// OB_STUB — the box's width while price is AWAY from it. A block used to be redrawn
+//   to the live bar on every single bar, so a level from this morning was a rectangle
+//   spanning the whole session — five of them and the chart is a wall of boxes. It only
+//   needs to be long enough to read as a zone.
+// ── 6 → 30 (Aaron, 2026-07-31): "make my boxes the same length as the blue and red
+// ones, they are too short." Measured off the reference overlay — every one of its zones
+// is about the same width, roughly thirty bars, and the newest ones run PAST the live bar
+// into the empty space on the right. Six bars read as a dash next to that.
+// Worth noting the width is now uniform by construction, which is what makes a set of
+// them scan as one family of levels rather than a ragged row. The reference does the same
+// thing: its boxes do not grow or shrink with age or with where price is.
+int OB_SCAN_MAX   = 40
+int OB_MAX_AGE    = 500
+int OB_STUB       = 30
+// Wired to the shared filter above. The OB side of it only ever bites on INTERNAL
+// blocks, and that is worth knowing before switching it on: an external block is born
+// on the break that SETS st.dir, so it is aligned by construction, and an SOS wipes both
+// sides anyway. An internal block is born on an iBOS/iSOS, which can fire against the
+// external trend — so those are the counter-trend blocks this hides.
+bool  obDirOnly   = dirOnlyInput
 
 type OrderBlock
     box   bg
     float top
     float bottom
     bool  isBullish
+    // WHICH SOURCE made this block — the two now run side by side (Aaron, 2026-07-30).
+    //   true  = a STRUCTURE block, born on a BOS/SOS/iBOS/iSOS. The method's own kind.
+    //   false = a DISPLACEMENT block, born on any candle that took out the one before it,
+    //           with no structure break required. This is the one that fills the gaps
+    //           where the engine has not printed a break yet.
+    // Defaulted true so the existing positional OrderBlock.new calls keep their meaning.
+    bool  fromBreak = true
+    // Has price CLOSED INSIDE this zone yet — the first half of mitigation (Aaron,
+    // 2026-07-30). Tracked as state rather than tested per bar because entering and
+    // leaving happen on DIFFERENT bars: price closes into the block today and closes
+    // back out an hour later, and nothing on that later bar can tell you it was ever
+    // in there. Latched once, never cleared.
+    bool  entered   = false
 
 var array<OrderBlock> activeBullOBs = array.new<OrderBlock>()
 var array<OrderBlock> activeBearOBs = array.new<OrderBlock>()
 
+// PLAIN OLDEST-OUT AT THE CAP. The newest blocks are the ones nearest price, so dropping
+// from the front always keeps the levels in play and retires the ones behind the move.
+// This USED to protect structure blocks — at the cap it hunted for the oldest push block
+// and only dropped a structure block when none was left. That made sense while the push
+// source was the supporting cast. It is the MAIN source now (Aaron, 2026-07-31: "capture
+// every impulsive engulfing push"), so protecting the rarer kind would spend the cap on
+// old structure levels and evict exactly the push zones the chart is meant to show.
+// Both kinds queue by AGE, nothing else.
 method manageOBs(array<OrderBlock> arr, OrderBlock newOB) =>
     array.push(arr, newOB)
     if array.size(arr) > maxActiveOB
-        OrderBlock oldest = array.shift(arr)
+        OrderBlock oldest = array.remove(arr, 0)
         box.delete(oldest.bg)
 
-method extendOBs(array<OrderBlock> arr) =>
+// Wipe every block on this side. COMMENTED OUT with its only caller, the SOS wipe —
+// see the note at the creation site for why that rule went. Kept as a comment rather
+// than deleted because Pine does not compile comments, so this costs no tokens and
+// restoring it is uncommenting both halves.
+// method wipeOBs(array<OrderBlock> arr) =>
+//     if array.size(arr) > 0
+//         for i = 0 to array.size(arr) - 1
+//             box.delete(array.get(arr, i).bg)
+//         array.clear(arr)
+//     int _r = 0
+
+// ── MERGE OVERLAPPING BLOCKS (Aaron, 2026-07-30) ──
+// Absorbs a candidate block into a live one it overlaps, and returns true if it was
+// taken. Needed because every engulfing in the leg now makes a block (see f_obMake), so
+// a consolidation stretch produced three or four boxes on nearly the same prices —
+// stacked 94%-transparent fills compound into a solid wash and the crossing outlines are
+// worse than the fill.
+// Three overlapping blocks are not three levels. They are ONE area where orders sat, and
+// that is how it is read anyway — so the boxes become one zone and the Max Order Blocks
+// cap ends up counting ZONES rather than candles, which is the number that matters.
+// THE TRADE-OFF, stated because it is real: mitigation is a TAP, so a merged zone is
+// tapped at its SHALLOWEST edge. Merging a shallow block into a deep one means the
+// shallow edge now kills both. Accepted because heavy overlap is itself evidence that
+// stretch was chop rather than impulse, and one zone is the honest reading of chop — in a
+// clean impulse the blocks step apart and rarely overlap at all.
+// Merges into the FIRST overlapping block found, scanning oldest first. That accretes
+// naturally: a later candidate overlapping the now-wider zone merges into the same one.
+// Not handled, and accepted: a candidate that BRIDGES two previously separate zones
+// merges into the older one and can leave the two touching. That is two boxes instead of
+// one — the pre-merge behaviour — never a wrong level.
+// ── MERGE IS GONE (Aaron, 2026-07-30) — it was the reason the boxes were oversized ──
+// Every merge grew a zone in BOTH axes: the price bounds widened to cover both blocks,
+// and the left edge moved back to the earlier origin. Compared side by side with the
+// reference overlay that is exactly the difference — theirs draws several SMALL separate
+// rectangles where mine drew one tall wide one covering the same stretch.
+// Two blocks on nearly the same price are TWO blocks. Merging them was a decluttering
+// idea, and the clutter it was solving (stacked near-identical boxes) is better solved by
+// the FIFO cap, which drops the oldest and leaves the survivors at their true size.
+// Commented rather than deleted — Pine does not compile comments, so this costs nothing
+// and restoring it is uncommenting this and its one call site in f_obMake.
+// method mergeOBs(array<OrderBlock> arr, float top, float bot, int leftBar) =>
+//     bool merged = false
+//     if array.size(arr) > 0
+//         for i = 0 to array.size(arr) - 1
+//             OrderBlock ob = array.get(arr, i)
+//             if bot <= ob.top and top >= ob.bottom and math.abs(leftBar - box.get_left(ob.bg)) <= OB_MERGE_BARS
+//                 ob.top    := math.max(ob.top, top)
+//                 ob.bottom := math.min(ob.bottom, bot)
+//                 box.set_top(ob.bg, ob.top)
+//                 box.set_bottom(ob.bg, ob.bottom)
+//                 box.set_left(ob.bg, math.min(box.get_left(ob.bg), leftBar))
+//                 merged := true
+//                 break
+//     merged
+
+// dir = the external structure direction (st.dir), passed in because st is declared
+// hundreds of lines below this method. Only used for the trend-aligned filter.
+method extendOBs(array<OrderBlock> arr, int dir) =>
     if array.size(arr) > 0
         for i = array.size(arr) - 1 to 0
             OrderBlock ob = array.get(arr, i)
-            box.set_right(ob.bg, bar_index + 1)
-            // Mitigation check
-            if ob.isBullish
-                if close < ob.bottom
-                    box.delete(ob.bg)
-                    array.remove(arr, i)
-            else
-                if close > ob.top
-                    box.delete(ob.bg)
-                    array.remove(arr, i)
+            // ── SHORT STUB, GROWING ONLY WHEN PRICE COMES BACK (Aaron, 2026-07-30) ──
+            // A block sits as a SHORT box at its own candle for as long as price is
+            // somewhere else. It stretches out to the live bar only once price has
+            // travelled back to within one block-height of it — near enough that the
+            // zone is in play and the reader wants to see it connect to the candles.
+            // The old rule redrew every live block to the live bar on every bar, so a
+            // level from this morning was a rectangle spanning the whole session.
+            // The proximity tolerance is the BLOCK'S OWN HEIGHT rather than a fixed
+            // number of points, so it scales with the instrument and the timeframe and
+            // there is no magic constant to retune per chart.
+            int   obLeft = box.get_left(ob.bg)
+            float obH    = ob.top - ob.bottom
+            bool  obNear = ob.isBullish ? low <= ob.top + obH : high >= ob.bottom - obH
+            // The OB_STUB width is a FLOOR now, not a ceiling (Aaron, 2026-07-31). Both
+            // old branches clamped to the live bar — `bar_index + 1` when near, and
+            // math.min against it when away — so a block born ten bars ago was eleven bars
+            // wide no matter what OB_STUB said, and raising the constant would have changed
+            // nothing for exactly the newest blocks, the ones being looked at.
+            // So the box is always at least OB_STUB bars long, running past the live bar
+            // into the empty space on the right if it is young. Price coming back only
+            // ever EXTENDS it further, never trims it.
+            int obRight = obLeft + OB_STUB
+            box.set_right(ob.bg, obNear ? math.max(bar_index + 1, obRight) : obRight)
+            // Trend-aligned filter — recoloured every bar rather than latched, so a
+            // block reappears the moment structure turns back to it. dir 0 = structure
+            // undecided, show everything.
+            bool obVis = not obDirOnly or dir == 0 or (ob.isBullish ? dir == 1 : dir == -1)
+            box.set_bgcolor(ob.bg, obVis ? (ob.isBullish ? colBullOB : colBearOB) : color(na))
+            box.set_border_color(ob.bg, obVis ? OB_EDGE : color(na))
+            box.set_text_color(ob.bg, obVis ? (ob.isBullish ? obTextBull : obTextBear) : color(na))
+            // ── MITIGATION = ENTER, THEN LEAVE (Aaron, 2026-07-30) ──
+            // Two events, both measured on the CLOSE, and the block lives until both have
+            // happened:
+            //   1. ENTER — a candle closes INSIDE the zone. Price is in there, working
+            //      the orders.
+            //   2. LEAVE — a later candle closes OUTSIDE it. EITHER SIDE. Straight down
+            //      through the far edge, or back out the way it came in.
+            // WHILE PRICE SITS INSIDE, THE BLOCK STAYS. That is the whole rule, and it is
+            // why the exit is not "closed past the far edge": a zone price is parked in is
+            // being worked right now, and a zone price entered and then left is finished
+            // with — whichever side it left by. A rejection back out of the top of a
+            // bullish block mitigates it exactly as a break down through its bottom does.
+            // The orders were reached either way.
+            // BOTH HALVES ARE CLOSES, and the ENTRY one is the load-bearing choice. If a
+            // WICK counted as entering, a single candle that pokes the zone and closes
+            // back out would satisfy enter-and-leave on its own bar — which IS the tap
+            // rule, the one that was deleting blocks the moment price touched them.
+            // Requiring a close in means price genuinely traded there rather than grazing
+            // it, so a wick rejection off the zone leaves it alive and untouched.
+            // The day's other two rules were each half of this one. Close-through-the-far-
+            // edge (the FVG rule) let a zone price entered and rejected out of live for
+            // ever. Tap-only killed every block on the touch, deleting exactly the ones
+            // that were WORKING — the level held, and the indicator rubbed it off the
+            // chart for holding.
+            // `entered` is latched on the OB object, so the two halves can land bars or
+            // hours apart. Field writes on an array element persist — Pine UDTs are
+            // references — which is what makes a per-block latch possible at all.
+            // No creation-bar guard is needed: extendOBs runs BEFORE the creation blocks
+            // each bar, so a block is never mitigation-checked on the bar it is born.
+            // AGE is the other way out, and it carries more weight under this rule than
+            // under the tap one. A block price never returns to can never be mitigated —
+            // BOTH halves need price at the zone — so the age cap is now the only thing
+            // retiring those. Read before any delete, since get_left on a deleted box is
+            // not available.
+            // THE THIRD WAY OUT, and it is the one that was missing (Aaron, 2026-07-31 —
+            // "don't leave any OBs that have been mitigated on the chart"). Enter-then-
+            // leave needs a candle to CLOSE INSIDE the zone at some point, and a block is
+            // often only a few dollars tall — so price runs clean THROUGH it in one bar,
+            // never closing in it, and `entered` stays false for ever. The block is then
+            // immortal: fully worked through, still drawn, waiting on a condition that
+            // can no longer happen. That is the wide box left sitting under price.
+            // So a close fully PAST THE FAR EDGE kills it outright, entered or not. A
+            // bullish block sits below price, so its far edge is the bottom; bearish is
+            // the mirror. Price closing beyond the whole zone has been through every order
+            // in it — there is nothing left there to come back for.
+            // ── A WICK COUNTS. A CLOSE INSIDE BUYS TIME. (Aaron, 2026-07-31) ──
+            // "If an OB is wicked and the candle pulls back it's mitigated. If the candle
+            // enters the OB it stays visible till it exits."
+            // Two different events, and the CLOSE is what tells them apart:
+            //   WICKED — the bar's range reached into the zone but it CLOSED back outside.
+            //     Price went in, took what was there, and left inside one candle. That is
+            //     mitigation, and the block goes. This REVERSES the rule written above: a
+            //     wick rejection used to leave the zone alive and untouched.
+            //   ENTERED — the bar CLOSED inside. Price is parked in there working the
+            //     orders, so the block stays visible for as long as that lasts, and dies
+            //     on the first later close outside — either side.
+            // So the zone survives exactly one thing: price still being in it. Anything
+            // that reaches in and is not in it at the close has finished with it.
+            // THE COST, stated because the earlier note was written about it: this is the
+            // tap rule, and a tap rule kills the blocks that HELD — a level that rejects
+            // price cleanly is wicked and closed out of, which is now its death. That is
+            // the trade for a chart with no worked-through zones left on it.
+            // The catch-up replay in f_obAdd does NOT apply this. It carries `entered`
+            // and refuses a block price closed clean past, nothing more — so a wick during
+            // the few bars before a block is born will not kill it at birth. Mitigation
+            // still starts counting from the bar after creation.
+            bool obInside = close <= ob.top and close >= ob.bottom
+            bool obTouch  = low <= ob.top and high >= ob.bottom
+            if not ob.entered and obInside
+                ob.entered := true
+            bool obStale   = bar_index - obLeft > OB_MAX_AGE
+            bool obThrough = ob.isBullish ? close < ob.bottom : close > ob.top
+            bool obMitigated = obThrough or (not obInside and (obTouch or ob.entered))
+            if obStale or obMitigated
+                box.delete(ob.bg)
+                array.remove(arr, i)
 
 //============================================================
   // FAIR VALUE GAPS (FVG) INPUTS
@@ -143,7 +399,11 @@ bool showFVG = true
 bool drawFVG = showTradeTools and showFVGInput
 // Detection, appearance and cap are LOCKED to the tuned defaults — no panel inputs,
 // so nothing about what a gap is or how many are kept can be altered.
-bool  fvgDirOnly   = false
+// Same shared filter the order blocks use — see dirOnlyInput. The FVG side already had
+// this rule wired all the way through; it was just hardcoded off with no way to reach
+// it. One exception survives on purpose: a gap sitting behind an EQH/EQL stays visible
+// either way, because there it is liquidity confluence rather than a directional read.
+bool  fvgDirOnly   = dirOnlyInput
 color fvgBullColor = color.new(color.gray, 80)
 color fvgBearColor = color.new(color.gray, 80)
 float fvgThreshLTF = 0.0
@@ -220,7 +480,18 @@ color  thirdSessionColor = color.new(#FFEB3B, 90)
 //============================================================
   // KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
-// showKZHistoric is declared with the Chart Tools toggles, next to its parent.
+// ── KILL ZONE HISTORY IS OFF, AND NO LONGER A CHOICE (Aaron, 2026-07-31) ──
+// It used to be a "↳ Kill Zone History" toggle under the parent, defaulting off. The
+// input is gone and the value is hardcoded false, so the kill zones and NY range draw
+// for the CURRENT New York day only.
+// It is the one history switch that had nothing to offer. A session box marks a window
+// price traded in and stays readable weeks later; a kill zone is a 15-to-60 minute band
+// stamped at the SAME clock time every single day, so switching its history on paints
+// three green stripes per day across the whole chart and buries the candles. The zone
+// only ever means something while you are in it or just past it.
+// Everything downstream still reads showKZHistoric, so restoring is putting the input
+// back on this one line.
+bool showKZHistoric = false
 bool showKZandNYR = showTradeTools and showKZandNYRInput
 
 bool showKillZones = showKZandNYR
@@ -243,11 +514,23 @@ int   vwapWidth = 1
 bool i_showLiquidity = true
 bool drawLiq = showTradeTools and i_showLiquidityInput
 bool i_showLabels      = true
-string liqLabelSize    = input.string("Tiny", "Level tag size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = GRP_TOOLS, tooltip = "One size for every price-level tag down the right-hand side: the Liquidity Levels (PDH/PDL, PWH/PWL, PWC, H4 H/L, session highs and lows), the MV line, and the EQH/EQL pools. Deliberately ONE control — sizing them separately is what makes the right edge look ragged.", display = display.none)
+// ── ONE SIZE: TINY. NO INPUT. (Aaron, 2026-07-31) ──
+// The history explains why there is nothing left to choose. Normal / Large / Huge were
+// dropped on 2026-07-30: up to fifteen of these tags stack down the right edge, and past
+// Small they collide with each other and with the price scale — the collision-avoidance
+// pass below can only push labels apart VERTICALLY, it cannot make them narrower, so the
+// big sizes produced a wall of text over the candles. That left Tiny and Small, framed
+// as "tiny for a laptop, small for a large monitor".
+// Tiny is what gets used on both. Small buys a barely perceptible amount of legibility
+// and spends it on width, which is the one dimension that was already the problem — and
+// a two-option dropdown whose second option is never the right answer is not a choice,
+// it is a way to make the chart worse by accident.
+// Restoring is putting the input back on this one line; every call site already goes
+// through f_liqSize().
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 
 f_liqSize() =>
-    liqLabelSize == "Tiny" ? size.tiny : liqLabelSize == "Normal" ? size.normal : liqLabelSize == "Large" ? size.large : liqLabelSize == "Huge" ? size.huge : size.small
+    size.tiny
 
 bool i_isDailyEnabled   = true
 bool i_isWeeklyEnabled  = true
@@ -282,7 +565,14 @@ color i_nyHLColor     = drawLiq ? color.black : color(na)
 var GRP_FIBO = "Fibs"
 bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, tooltip = "The retracement drawn on the current major swing leg. Its lines are tagged TP1/TP2/TP3 (Take Profit) and E1-E4 (Entry levels). FFT = the 0.5 line once price has traded back through it.", display = display.none)
 int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the External Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
-bool   showMacroFibInput = input.bool(true, "Show Cycle Fib", group = GRP_FIBO, tooltip = "The same retracement drawn on the whole cycle rather than one leg — the move from the last major low to the last major high. Same TP and E tags.", display = display.none)
+// Cycle Fib defaults OFF (Aaron, 2026-07-31). It draws EIGHT more horizontal lines,
+// each with its own price tag, over the eight the External Fib is already drawing — the
+// same ratios on a bigger leg, so the two ladders interleave and the labels stack down
+// the right edge. Everything else on the panel is now on by default, which is exactly
+// why this one has to come off: with the full chart showing, it is the tool that makes
+// the other tools harder to read. The toggle stays — it is a real read on the bigger
+// move — and the engine still tracks either way, so switching it on costs nothing.
+bool   showMacroFibInput = input.bool(false, "Show Cycle Fib", group = GRP_FIBO, tooltip = "Off by default — it draws a second full ladder over the External Fib's. The same retracement drawn on the whole cycle rather than one leg — the move from the last major low to the last major high. Same TP and E tags.", display = display.none)
 int    macroLineExtend = input.int(180, "Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = showMacroFibInput, tooltip = "How far the Cycle Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
 bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "SZ = Sniper Zone. A significant area that institutions come back to after a displacement.", display = display.none)
 bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "BLEG = B-Leg, a setup whose retrace arrives late. Shows the area it is waiting for price to come back to. 15m only.", display = display.none)
@@ -1697,10 +1987,15 @@ if rStage == 4
             rev1mShift := true
     if rev1mShift and _revFvgTapNow
         revDeepFvg := true
-// Early (0.5) entry: a 1m FVG tap in the zone, no shift required.
-if rStage == 3 or rStage == 4
+// Early (0.5) entry: a gap tap in the zone, no shift required.
+// ARMS at stage 3 only, then HOLDS through stage 4 — the same split the chart-side
+// aplusX_fvgTap gate enforces, and for the same two reasons: a gap tapped once price
+// is already past 0.618 belongs to the deep tier (which must prove a 1m shift first),
+// and an early entry that IS open has to survive price retracing deeper, or the row
+// flips back to AWAIT and tells you to wait while you hold the position.
+if rStage == 3
     revEarlyFvg := revEarlyFvg or _revFvgTapNow
-else
+else if rStage != 4
     revEarlyFvg := false
 
 // ── 1m CONT FVG mirror — DISABLED with the rest of CONT (2026-07-22). Depends on
@@ -1864,45 +2159,729 @@ if not na(st.asl_lbl)
 
 // Extend and clean OBs every bar
 if showOBs
-    activeBullOBs.extendOBs()
-    activeBearOBs.extendOBs()
+    activeBullOBs.extendOBs(st.dir)
+    activeBearOBs.extendOBs(st.dir)
 
-// Order-block candle finder — the last OPPOSING candle at the swing that the very
-// next bar ENGULFS. Scanning from the swing extreme back toward older bars, it takes
-// the first opposing candle (nearest the swing / the impulse origin) whose following
-// bar is an engulfing candle: for a bullish OB (dir 1) the last down candle that a
-// bullish candle engulfs; for a bearish OB (dir -1) the last up candle a bearish
-// candle engulfs. The engulf test is body-based (the next bar's body fully covers the
-// opposing bar's body). Returns the bars-back offset of that OB candle, or na — an
-// unengulfed opposing candle no longer qualifies, so no box is drawn.
-f_obCandle(int swingLoc, int dir) =>
-    int found = na
-    int startBack = bar_index - swingLoc
-    if startBack >= 1 and startBack < 500
-        for i = startBack to math.min(startBack + 20, bar_index)
-            bool opp = dir == 1 ? close[i] < open[i] : close[i] > open[i]
-            bool eng = dir == 1 ? (close[i - 1] > open[i - 1] and close[i - 1] >= open[i] and open[i - 1] <= close[i]) : (close[i - 1] < open[i - 1] and close[i - 1] <= open[i] and open[i - 1] >= close[i])
-            if opp and eng
-                found := i
+// ── THE SOS WIPE IS GONE (Aaron, 2026-07-30) — it was fixing the wrong problem ──
+// It wiped BOTH sides on every change of character, on the reasoning that an SOS makes
+// the old leg's blocks history. It was added this morning for the complaint that the
+// blocks were "tracking too far back".
+// That complaint's real cause turned out to be the OB DEFINITION — the engulf test plus
+// an oldest-first scan meant the box was landing on the wrong candle, often back in the
+// PREVIOUS leg. That is why they looked far away. The definition is fixed now (see
+// f_obMake), so the wipe is no longer treating anything; it is just deleting the history
+// that is wanted.
+// It is also the reason Max Order Blocks could never get near its setting: the per-
+// direction count RESET TO ZERO on every SOS, and on a 15m chart that is often, so the
+// cap of 6 or 10 was never the binding constraint — the wipe was.
+// Blocks now persist across structure changes and are removed only by being TAPPED
+// (extendOBs) or by the FIFO cap. Restore by uncommenting this and the wipeOBs method.
+// if showOBs and (st.bull_sos or st.bear_sos)
+//     activeBullOBs.wipeOBs()
+//     activeBearOBs.wipeOBs()
+
+// ── Order-block builder — THE KELLY LEWIS / ORTHOSLABS RULE (Aaron, 2026-07-30) ──
+// The block is THE LAST OPPOSING CANDLE BEFORE THE IMPULSE that broke structure, inside
+// that same break leg — PLUS every engulfed opposing candle deeper in it (see the
+// ENGULFED CANDLES COUNT TOO note at the function itself). Several zones per break.
+// WHY THIS CHANGED, because it is the whole reason the boxes never lined up with the
+// OrthosLabs overlay: the old rule required the opposing candle to be ENGULFED body-for-
+// body by the very next bar. That is the makuchaku "Super OrderBlock" definition — the
+// purple many-small-boxes indicator — and it is NOT the method being traded. The last
+// opposing candle at a swing usually is NOT engulfed, so the leg scan found nothing and
+// drew NO BOX AT ALL. That is why whole swings had no order block on them; the zones that
+// did print were the minority that happened to satisfy a rule that was never wanted.
+// HOW IT SCANS, and this is the other half of the fix. It walks BACKWARD from the break
+// bar (i = 1) toward the swing extreme and takes the FIRST opposing candle it meets. The
+// impulse is several same-direction candles, so walking back skips straight over them and
+// lands on the last opposing one — which is the definition, stated directly.
+// The old loop ran the other way, oldest-first from the swing extreme, so even when it
+// did find something it took the candle nearest the leg ORIGIN, not the one before the
+// impulse. Both halves were wrong; both are fixed here.
+// STILL CONFINED TO THE LEG — [swingLoc … bar_index], the swing extreme through the break
+// bar. No overshoot into the previous leg, and no box if the leg holds no opposing candle
+// at all (a one-way impulse straight off the swing).
+// EXPECT TO ITERATE. OrthosLabs is invite-only with no public Pine source, so this is
+// match-by-observation, not a port. An attempt on 2026-07-18 (swing-extreme anchoring, a
+// size guard against the shift candle's range, pure makuchaku engulf) was reverted because
+// none of it matched by eye. Only this ONE rule changed here — tap-mitigation, the SOS
+// wipe and merge are all left as they are, so if the zones now sit in the right PLACE but
+// disappear too fast, mitigation is the next thing to relax and we will know it was that.
+// ── ENGULFED CANDLES COUNT TOO (Aaron, 2026-07-30) ──
+// Second half of the same fix, off the OrthosLabs overlay: their red zones were still
+// catching MORE blocks than this, because a leg does not hold one order block, it holds
+// SEVERAL — the last opposing candle before the impulse, plus every opposing candle
+// deeper in the leg that the very next bar ENGULFED.
+// The two rules are different things and the leg needs both:
+//   ANCHOR  — the last opposing candle before the break impulse. Kelly Lewis's rule.
+//             Always qualifies, engulfed or not; it is the block the break was built on.
+//   ENGULFED — an opposing candle the next bar swallowed body-for-body. That swallow IS
+//             the evidence orders sat there and were taken, which is why it qualifies on
+//             its own without needing to be the last one.
+// The engulf test alone is the makuchaku rule that was thrown out earlier today, and it
+// is still wrong ALONE — the anchor candle usually is not engulfed, so on its own it
+// misses the most important block in the leg. As an ADDITION it is exactly right.
+// ORDER MATTERS: the scan now runs DEEPEST-FIRST (i = startBack down to 1) so the blocks
+// are pushed oldest to newest. manageOBs drops from the FRONT at the cap, so the newest —
+// the ones nearest price — are the ones that survive. Scanning the other way would have
+// the cap throw away the block closest to price.
+// Shared by BOTH creation paths — the structure scan below and the displacement trigger
+// after it. `off` is the bar offset of the block's candle, so 1 = the bar before this one.
+// The "OB" tag is printed on STRUCTURE blocks only. Displacement blocks are the same
+// colour and shape but carry no text, which is the one free way to tell the two apart
+// without spending a second hue on a chart that has none to spare.
+// ── ONE CANDLE. THE LAST OPPOSING ONE. (Aaron, 2026-07-31) ──
+// The BASE-GROUPING experiment from earlier today is REVERTED, and the note is kept
+// because the reasoning sounded right and the chart said otherwise.
+// The idea was that the zone should cover the whole consolidation price sat in before
+// it left — walk back from the anchor collecting every candle that closed inside the
+// zone so far, capped at 8. It came off a screenshot where the reference's zones looked
+// taller than these.
+// On a real chart it was FAR too big: boxes forty dollars deep, spanning a dozen
+// candles, because the "closed inside the zone" test is self-feeding — every candle
+// added widens the zone, which makes the next candle easier to include, and the walk
+// runs to its cap almost every time. A rule that nearly always hits its limit is not
+// measuring anything.
+// So the block is ONE CANDLE, the last opposing one, and that is the definition as it
+// was always stated. If the zones still read small next to the reference, the fix is a
+// better ANCHOR — a different candle — not a wider box around the same one.
+// ── A BLOCK HAS A CEILING AS WELL AS A FLOOR (Aaron, 2026-07-31) ──
+// Measured: a thirty-dollar box across the top of the chart with price ranging INSIDE
+// it — "it should not have that big order block where price is currently moving."
+// TWO faults compounding, and it is worth separating them because only one is a bug.
+//   1. THE SIZE. obBodyOnly is false, so a block is its anchor candle's full WICK-TO-
+//      WICK range. The doji filter put a FLOOR under that — the consumed candle must be
+//      a real one — but nothing capped the other end. When the anchor happens to be a
+//      big impulse candle, its range IS the move, and the "level" spans the whole thing.
+//      An order block is the small base BEFORE the impulse; a box the size of the
+//      impulse is not a level, it is a redrawing of the move.
+//   2. THE PERMANENCE, which is the size fault wearing a disguise. "Closes inside →
+//      stays visible until it exits" is the rule as asked for, and it is right for a
+//      normal zone. But a thirty-dollar zone is one price can RANGE INSIDE for hours,
+//      so it never exits and never dies. Oversized zones are precisely the ones that
+//      become immortal — the two faults feed each other.
+// So the cure is at the size end, not the mitigation end. A block taller than
+// OB_MAX_ATR × ATR(14) is refused outright. Measured against ATR for the same reason
+// the push floor is — it travels across instruments and timeframes with no retuning —
+// and 2.0 is deliberately loose: it is not trying to pick the best block, only to
+// refuse the ones that are plainly the impulse rather than its base.
+// ta.atr is read HERE, in global scope, not inside f_obAdd. The function is called
+// conditionally (only when a push or turn fires), and a ta.* call on a conditional path
+// gets an inconsistent history — the value would be wrong on exactly the bars it is
+// asked for. A global series is evaluated every bar and is safe to read from inside.
+float obAtr = ta.atr(14)
+float OB_MAX_ATR = 2.0
+// How much a candidate must overlap a LIVE block before it counts as the same zone
+// and is refused — see the dedupe note in f_obAdd. 0.5 = half the candidate's own
+// height. Raise it toward 1.0 for more boxes (only near-identical ones collapse),
+// lower it for fewer (a graze is enough to be called a duplicate).
+float OB_DUPE_OVERLAP = 0.5
+// How far price must travel AWAY from a candidate zone before it counts as a level —
+// see the displacement note in f_obAdd. 1.0 = a full ATR(14) of departure, measured on
+// closes. Raise it for fewer, cleaner blocks (only real impulses qualify); lower it if
+// genuine turns are being refused.
+float OB_DISP_MULT = 1.0
+
+f_obAdd(array<OrderBlock> arr, int off, int dir, bool vis, bool isBrk) =>
+    // ── THE EXTREME-WINDOW SEARCH IS GONE (Aaron, 2026-07-31) ──
+    // "It's not capturing the last candle from the turning point accurately."
+    // The search walked three bars either side of the nominated candle and moved the
+    // anchor onto whichever printed the lowest low (or highest high). It came off the
+    // blue-box measurement and it over-fitted that one sample: the box he wanted just
+    // happened to be the extreme, so "snap to the extreme" looked like the rule.
+    // On a real chart it drags the anchor OFF the turn. The deepest wick in a six-bar
+    // window is frequently NOT the candle price turned on — a spike two bars earlier in
+    // the consolidation wins the comparison, and the box lands on a bar that has nothing
+    // to do with the turn. That is exactly "not accurate".
+    // So the anchor is the NOMINATED candle, full stop. The turn source hands over the
+    // pivot bar, the push source hands over the candle it consumed, and neither is
+    // second-guessed here. "Simply the last candle from every turn" is the rule.
+    int OB_MIN_BACK = 3
+    float obTop = obBodyOnly ? math.max(open[off], close[off]) : high[off]
+    float obBot = obBodyOnly ? math.min(open[off], close[off]) : low[off]
+    // The height ceiling — see the note above. na-guarded so the first bars of a chart,
+    // where ATR has not warmed up, do not refuse everything.
+    bool obHuge = not na(obAtr) and (obTop - obBot) > obAtr * OB_MAX_ATR
+    // ── THE TWO-CANDLE ZONE IS REVERTED (Aaron, 2026-07-31) — one sample is not evidence ──
+    // It extended the box into the bar that consumed the anchor, taking the combined
+    // high/low of the two. It came off ONE measured pair where the reference and this
+    // agreed on the left edge and the bottom and differed only at the top, which reads as
+    // "right candle, short box".
+    // A SECOND measured instance disagreed outright: there the reference's left edge sat
+    // TWO BARS EARLIER and a whole zone higher (4083.84–4090.98 against 4079.9–4083.7
+    // here), so the two barely overlapped. Widening this box cannot close that gap — it
+    // moves the wrong way. Two samples pointing at different fixes means neither is the
+    // rule, and stacking a change on the weaker one just buries the real difference.
+    // WHAT BOTH INSTANCES DID AGREE ON, and it is the thread worth pulling: the
+    // reference's zone sits up at the LEG'S SWING EXTREME, while this one anchors on the
+    // last opposing candle immediately before the drop — lower, and later. That points at
+    // the ANCHOR rule, not the bounds. Swing-extreme anchoring was tried on 2026-07-18 and
+    // reverted for not matching by eye, so it may have been right and thrown out for the
+    // wrong reason.
+    // ── CATCH-UP: REPLAY THE BARS THIS BLOCK MISSED (Aaron, 2026-07-30) ──
+    // A structure block is born LATE. The scan runs on the break bar and reaches back up
+    // to OB_SCAN_MAX candles, so several boxes appear at once, all of them anchored to
+    // candles that are already history. extendOBs — the thing that watches for enter and
+    // leave — only sees a block from the bar AFTER it exists.
+    // So every bar between the block's own candle and the break bar was never checked,
+    // and that is exactly the stretch where price was busy: the impulse that broke
+    // structure ran right through those candles. A block price had ALREADY entered and
+    // left was drawn as if it were fresh and untouched. Missed mitigations, every time.
+    // The cure is to walk those bars here, at birth, and carry forward WHETHER PRICE HAS
+    // BEEN INSIDE — so the block arrives already knowing its own history, and the very
+    // next close outside finishes it, exactly as if it had been watched all along.
+    // IT DOES NOT CANCEL THE BLOCK, and that limit is deliberate (Aaron, 2026-07-31 —
+    // "it messed things up"). The first version suppressed creation outright when the
+    // replay found an enter-and-leave in that window, and it wiped out most of the chart:
+    // a leg is not a straight line, so price wanders in and out of nearly every candle
+    // in it, and the rule read that as "already mitigated" on blocks that had never been
+    // in play. Three boxes survived where there should have been a dozen.
+    // The honest reading is that a block cannot be mitigated by the move that CREATED it.
+    // Its own impulse running back over it is not price returning to a level — the level
+    // did not exist yet. Mitigation only starts counting once the block is on the chart.
+    // So the replay's job is narrower than it first was: carry the `entered` half, let
+    // extendOBs decide the rest from the next bar on.
+    // NOTE the impulse bar right after the block does not set it either: for a bullish
+    // block (the last bearish candle) the next bar CLOSES above the top — outside.
+    // The replay carries the `entered` half, and it ALSO refuses to draw a block that
+    // price has already closed clean past the far edge of (Aaron, 2026-07-31). That is
+    // the one cancel worth keeping: extendOBs now deletes such a block on the very next
+    // bar anyway, so creating it would just flicker one box onto the chart and take it
+    // straight back. Deliberately NARROW — only a close beyond the WHOLE zone counts,
+    // never the wandering in and out that killed most of the chart when the cancel was
+    // wider. A bullish block dies on a close below its bottom, bearish above its top.
+    // ── PRICE MUST HAVE LEFT (Aaron, 2026-07-31) — "it's a looking back process" ──
+    // A block is not made at the turn. It is made AFTER price has gone, by looking back
+    // at where it went from. Until price leaves, that base is not an order block — it is
+    // just the candles price is currently standing in, and calling it a level while price
+    // is still inside it is drawing a zone around the present.
+    // obGone is that test: some bar since the anchor CLOSED clean outside the zone in the
+    // direction of the move away — above the base for a bullish block, below it for a
+    // bearish one. A close, not a wick, so a poke out and back does not count as leaving.
+    // This is what makes the departure the trigger. The turn, the push and the structure
+    // break only nominate a candidate; the move away is what confirms it, and no block is
+    // ever drawn around price where it currently stands.
+    // ── AND IT MUST BE BEHIND, NOT BESIDE (Aaron, 2026-07-31) ──
+    // "I don't want clutter on the current candle — make sure it's a look back after
+    // price moves away." The departure gate above proved price LEFT, but it did not
+    // stop a block being BORN next to the live bar: the push source fires on the push
+    // candle itself with its anchor one or two bars behind, so a fresh box could appear
+    // right where price is standing. That is not looking back, it is drawing on the now.
+    // Two guards, and they are different things:
+    //   OB_MIN_BACK — the anchor must be at least this many bars behind the live bar.
+    //     Distance in TIME, so the box lands in history where a level belongs and never
+    //     crowds the candle being formed.
+    //   The departure loop stops at bar 1, NOT bar 0 — the live bar can never be the
+    //     close that proves price left. That close has to be on a bar already finished,
+    //     which is what makes this a look-BACK rather than a live read.
+    // The push source gets its own WAIT below so this guard does not silently starve it:
+    // a push anchored one bar back is not refused for ever, it is simply looked at a few
+    // bars later, once it is genuinely behind.
+    // ── THE REPLAY NO LONGER CARRIES `entered` (Aaron, 2026-07-31) ──
+    // Measured: a correct block at an internal swing low, drawn, then GONE a bar or two
+    // later while price was rising AWAY from it and never came back.
+    // It was mitigated by its own birth move, and the chain is airtight once seen:
+    //   1. The replay set `entered` because some bar between the anchor and now CLOSED
+    //      inside the zone — which is nearly guaranteed, those are the base candles.
+    //   2. obGone REQUIRES price to have closed clean outside before the block is drawn
+    //      at all. So every block arrives with price already outside it.
+    //   3. extendOBs reads `obMitigated = not obInside and (obTouch or ob.entered)`.
+    //      With `entered` true and price outside, that is satisfied on the very next bar.
+    // Enter-and-leave, both halves supplied by the move that CREATED the level. The
+    // block was dead before price ever returned to it.
+    // The principle was already written into the note above — "a block cannot be
+    // mitigated by the move that CREATED it; the level did not exist yet" — and then the
+    // replay carried `entered` anyway, which is exactly the contradiction. It survived
+    // while close-through-the-far-edge was the dominant exit. Under enter-then-leave it
+    // is fatal, and every block with a base worth the name dies on arrival.
+    // So the block is born CLEAN: entered = false, mitigation counts only from the bar
+    // after it exists. The replay still earns its place — it computes obDead (refuse a
+    // block price already closed clean past) and obGone (the departure gate). Only the
+    // `entered` carry is gone.
+    // ── LEAVING IS NOT ENOUGH. IT HAS TO BE A DISPLACEMENT. (Aaron, 2026-07-31) ──
+    // "I want the last candle from every turn tracked, but not a consolidation — it must
+    // be a displacement."
+    // obGone used to be satisfied by ONE close outside the zone, which is a very low bar:
+    // in chop price closes just past a candle's range constantly, drifts back, and closes
+    // past it again. Every one of those nothing-turns became a level, and that is the
+    // consolidation clutter — the turn was real enough as a pivot, but nothing LEFT.
+    // A displacement is measured, not assumed: how FAR did price get from the zone before
+    // now, in ATR. The loop tracks the furthest close beyond the edge it departed by, and
+    // the block is only drawn once that travel clears OB_DISP_MULT × ATR(14).
+    // Measured in ATR for the same reason the push floor and the height cap are — it
+    // travels across instruments and timeframes with no per-chart retuning. Measured on
+    // CLOSES, so a single spike out and back cannot buy a level.
+    // This replaces the old boolean entirely: a close outside no longer counts on its own,
+    // and that is the whole difference between "price moved off this candle" and "price
+    // left this candle behind".
+    // ── AND THE REPLAY NOW APPLIES THE WICK RULE — AFTER DEPARTURE (Aaron, 2026-07-31) ──
+    // "You are leaving boxes behind that should have been mitigated when a candle wicks
+    // into it and pulls back."
+    // The hole was real and it is here, not in extendOBs. extendOBs already implements
+    // the rule correctly — wick in, close outside, dead — but it only ever sees a block
+    // from the bar AFTER it is created, and these blocks are born TEN BARS LATE. Every
+    // wick inside that window went unexamined, so a zone that had already been tapped
+    // and rejected arrived on the chart looking untouched.
+    // WHY THE REPLAY COULD NOT SIMPLY RUN THE TAP RULE FROM BAR ONE, and this is the
+    // thing that broke it when it was tried before: the candle right after the anchor is
+    // the DRIVE, and a drive starts from inside the base it is leaving. It overlaps the
+    // zone by construction and closes outside it — which is the tap rule exactly. Applied
+    // from bar one, every block on the chart is mitigated by its own departure.
+    // So mitigation starts counting only ONCE PRICE HAS ACTUALLY LEFT — the same
+    // displacement the block needed to exist at all. Before that threshold price is still
+    // departing, and a bar overlapping the zone is the move away, not a return to it.
+    // After it, a bar that reaches in and closes outside is a genuine tap and the block
+    // is refused at birth rather than drawn and deleted a bar later.
+    // This makes the birth check and extendOBs agree: both say a zone survives exactly
+    // one thing — price still being in it at the close.
+    bool  obDead   = false
+    bool  obLeft   = false
+    bool  obTapped = false
+    float obTravel = 0.0
+    if off >= OB_MIN_BACK
+        for j = off - 1 to 1
+            if dir == 1 ? close[j] < obBot : close[j] > obTop
+                obDead := true
                 break
-    found
+            if obLeft
+                if low[j] <= obTop and high[j] >= obBot and (close[j] > obTop or close[j] < obBot)
+                    obTapped := true
+                    break
+            float obAway = dir == 1 ? close[j] - obTop : obBot - close[j]
+            if obAway > obTravel
+                obTravel := obAway
+            if not obLeft and not na(obAtr) and obTravel >= obAtr * OB_DISP_MULT
+                obLeft := true
+    bool obGone = not na(obAtr) and obTravel >= obAtr * OB_DISP_MULT
+    // DEDUPE (Aaron, 2026-07-31). Two pushes in a row will often reach back to the SAME
+    // opposing candle — the base bar gets consumed, price ticks on, and the next drive
+    // still finds it as the nearest one behind. Without this the identical box is stacked
+    // two or three deep: the 94% fill compounds into a solid slab and the cap burns its
+    // slots on one level.
+    // ── OVERLAP, NOT EQUALITY (Aaron, 2026-07-31) — "there are two blocks here, I only
+    // want the one that replicates the blue" ──
+    // The test used to be `oX.top == obTop and oX.bottom == obBot`, and the note said two
+    // different candles agreeing to the tick was not worth worrying about. That was the
+    // wrong worry. The failure is the opposite one: the push source and the turn source
+    // fire at the same turn but land on ADJACENT candles, whose highs and lows differ by
+    // a few cents — so the equality never matched and BOTH boxes printed, one on top of
+    // the other, describing the same zone twice.
+    // Equality can only collapse the exact-same-candle case. What is needed is a test for
+    // the same ZONE, which is overlap: if a candidate covers OB_DUPE_OVERLAP of its own
+    // height inside a block already drawn, it is not a second level, it is the same level
+    // found by the other source.
+    // FIRST DRAWN WINS. The push source runs before the turn source in this file, so on a
+    // turn that also engulfed, the PUSH block is the one kept. That ordering is the whole
+    // preference — if the survivor is consistently the wrong one, swapping the two call
+    // blocks below is the entire fix.
+    // Deliberately a fraction of the CANDIDATE's height, not the older block's: a small
+    // candidate sitting wholly inside a big live zone is a duplicate, while a big
+    // candidate that merely contains a small old one is not, and would still print.
+    bool obDupe = false
+    if array.size(arr) > 0
+        for k = 0 to array.size(arr) - 1
+            OrderBlock oX = array.get(arr, k)
+            float obOvH = math.min(obTop, oX.top) - math.max(obBot, oX.bottom)
+            if obOvH > 0 and obOvH >= (obTop - obBot) * OB_DUPE_OVERLAP
+                obDupe := true
+                break
+    // RETURNS whether a block was actually drawn (Aaron, 2026-07-31). The turn source
+    // reads this to know whether the engulf rule already claimed this turn — see the
+    // one-block-per-turn latch at the call sites. Every gate above can refuse, so
+    // "the push fired" and "a block exists" are different facts and the caller needs
+    // the second one.
+    // ── THE "OB" TAG IS BACK ON EVERY BLOCK (Aaron, 2026-07-31) ──
+    // It used to be `isBrk ? "OB" : ""` — printed only on STRUCTURE blocks, so the tag
+    // told you which SOURCE made the zone. That source is gone (see the f_obMake note),
+    // every caller now passes false, and the result was a chart of untagged boxes.
+    // With one source left there is nothing to distinguish, so the tag goes back to
+    // doing its original job: NAMING the thing. At 94% transparency the fill is a
+    // whisper, and beside four other pale rectangles an unlabelled outline is just a
+    // shape — "OB" is what says which tool drew it.
+    // isBrk is left in the signature rather than removed: it costs nothing, and
+    // restoring f_obMake means restoring its meaning too.
+    bool obMade = false
+    if obGone and not obDead and not obTapped and not obDupe and not obHuge
+        box nb = box.new(bar_index - off, obTop, bar_index, obBot, border_color = vis ? OB_EDGE : color(na), border_width = 1, bgcolor = vis ? (dir == 1 ? colBullOB : colBearOB) : color(na), text = "OB", text_color = vis ? (dir == 1 ? obTextBull : obTextBear) : color(na), text_size = size.tiny, text_halign = text.align_right)
+        // `false`, not the old obEnt — the block is born clean. See the note above.
+        arr.manageOBs(OrderBlock.new(nb, obTop, obBot, dir == 1, isBrk, false))
+        obMade := true
+    obMade
 
-// Process OB creation on External breaks
-if showOBs and (st.bull_bos or st.bull_sos) and showBullOB
-    int obIdx = f_obCandle(st.bull_bos_l_loc, 1)
-    if not na(obIdx)
-        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-        activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
+// ── THE STRUCTURE SOURCE IS GONE (Aaron, 2026-07-31) — it was a THIRD anchor rule ──
+// Diagnosed off two screenshots minutes apart: a block sitting correctly at the last
+// candle VANISHED and a wrong one printed in its place. Nothing about that block was
+// mitigated; what happened in between was an iBOS.
+// An internal or external break called f_obMake, and f_obMake did three things none of
+// the other sources do:
+//   1. RETROACTIVE BATCH. It scanned back up to OB_SCAN_MAX (40) bars and made a block
+//      for the anchor PLUS every engulfed opposing candle in that stretch — five or six
+//      boxes at once, all anchored to candles already deep in the past.
+//   2. EVICTION. That batch overflowed maxActiveOB (6 at the time, 10 now) and manageOBs drops from the
+//      FRONT, so the good blocks drawn before the break were pushed out to make room for
+//      the retro ones. That is the disappearance, and it is why it looked like
+//      mitigation when price had never gone near the zone.
+//   3. A DIFFERENT DEFINITION. It never received either of today's fixes — no doji
+//      filter, and its anchor is the old "first opposing candle walking back, plus every
+//      engulfed one deeper in the leg", NOT the engulf/turn rule. So a break re-drew the
+//      chart by the OLD rule and wiped out what the new one had drawn.
+// It is deleted rather than repaired because it has nothing left to contribute. The rule
+// as stated is "if it's an engulf capture the engulfed candle; if it's not an engulf, at
+// the turning point capture the last candle" — the PUSH source owns the first case and
+// the TURN source owns the second, and both run on EVERY bar. A structure break is not a
+// third kind of order block; it is a break that happens to occur near ones already drawn.
+// WHAT GOES WITH IT: the "OB" text tag. isBrk was only ever true on this path, so every
+// remaining block is untagged. f_obAdd keeps the parameter — all callers now pass false —
+// so restoring is uncommenting this and its four call sites, nothing more.
+// Commented, not deleted: Pine does not compile comments, so this costs no tokens.
+// f_obMake(array<OrderBlock> arr, int swingLoc, int dir, bool vis) =>
+//     int startBack = math.min(bar_index - swingLoc, OB_SCAN_MAX)
+//     if startBack >= 1
+//         int found = na
+//         for i = 1 to startBack
+//             bool opp = dir == 1 ? close[i] < open[i] : close[i] > open[i]
+//             if opp
+//                 found := i
+//                 break
+//         if not na(found)
+//             for i = startBack to 1
+//                 bool opp = dir == 1 ? close[i] < open[i] : close[i] > open[i]
+//                 bool eng = dir == 1 ? close[i - 1] > open[i] : close[i - 1] < open[i]
+//                 if opp and (i == found or eng)
+//                     f_obAdd(arr, i, dir, vis, true)
+//     int _r = 0
 
-if showOBs and (st.bear_bos or st.bear_sos) and showBearOB
-    int obIdx = f_obCandle(st.bear_bos_h_loc, -1)
-    if not na(obIdx)
-        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-        activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
+// Process OB creation on External breaks — COMMENTED OUT with f_obMake above.
+// if showOBs and (st.bull_bos or st.bull_sos) and showBullOB
+//     f_obMake(activeBullOBs, st.bull_bos_l_loc, 1, true)
+
+// if showOBs and (st.bear_bos or st.bear_sos) and showBearOB
+//     f_obMake(activeBearOBs, st.bear_bos_h_loc, -1, true)
+
+// ── EVERY IMPULSIVE ENGULFING PUSH MAKES A BLOCK (Aaron, 2026-07-31) ──
+// This is now the MAIN source, and it runs on every bar with no structure break needed.
+// That is the whole difference against the reference overlay: their zones sit at each
+// PUSH, and a push does not wait for a BOS. The structure scan above only fires on a
+// break, so on a leg the engine has not broken yet it draws nothing at all — which is
+// why whole stretches of chart had no block on them while theirs had four.
+// A push is TWO things, and both have to hold:
+//   ENGULFING — this candle closes through the previous OPPOSING candle's open. That
+//     candle was consumed; it is the block, and it is where the orders sat.
+//   IMPULSIVE — the pushing candle's BODY beats ATR(14) × OB_PUSH_MULT. Without this
+//     every bar that edges past its neighbour would print a zone and the chart would be
+//     solid boxes. Measured against ATR rather than points so it travels across
+//     instruments and timeframes with no per-chart retuning.
+// Confirmed bars only — a live candle's body grows and shrinks tick by tick, so without
+// this a block would appear and vanish intrabar as the bar changed its mind.
+// Tagged as NOT-from-break, so these carry no "OB" text: same colour, same shape, and
+// the blank tag is the free way to tell a push block from a structure block.
+// ── TWO FIXES, 2026-07-31 — the first version of this caught almost nothing ──
+// 1. THE BLOCK CANDLE IS NOT ALWAYS THE PREVIOUS BAR. The old test demanded bar[1] be
+//    the opposing candle. Real pushes rarely oblige: the base is usually two or three
+//    small bars — a doji, a nothing bar, then the drive — so bar[1] is the wrong shape
+//    and the whole push was rejected. It now SCANS BACK for the nearest opposing candle
+//    within OB_PUSH_LOOK and takes that one. That candle is the block.
+// 2. "BODY BEATS ATR(14)" WAS FAR TOO STRICT, and this was the bigger killer. ATR spans
+//    the whole candle — wicks, gaps, the lot — so demanding a BODY bigger than a full
+//    ATR asks for a bar roughly twice the average range. Almost nothing qualifies, which
+//    is exactly why the chart came back with only the two structure blocks on it.
+//    What replaces it is what ENGULFING actually means: the push's body must be BIGGER
+//    THAN THE BODY IT CONSUMED. That is the real size test and it is self-scaling — no
+//    constant involved. The ATR term drops to a small NOISE FLOOR (0.3) whose only job
+//    is to stop two microscopic bars qualifying as a push in dead chop.
+// OB_PUSH_MULT is still the dial for that floor: raise it for fewer, stronger blocks.
+// OB_PUSH_WAIT — the push is read this many bars LATE (Aaron, 2026-07-31, "no clutter
+// on the current candle"). Everything below indexes off [OB_PUSH_WAIT] rather than the
+// live bar, so the push being examined is one that finished a few candles ago and its
+// anchor is already well behind price. Without this the source fired on the push bar
+// itself and f_obAdd's OB_MIN_BACK guard would simply REFUSE those blocks — the push
+// fires once and never comes round again, so refusing is losing them. Delaying is not:
+// the same push, the same anchor candle, just looked at once it is genuinely history.
+// ── THE WAIT IS THE DISPLACEMENT WINDOW (Aaron, 2026-07-31) ──
+// Measured: one orange box on a whole screen where the reference had six.
+// The cause is arithmetic, not definition. f_obAdd's departure loop runs from the
+// anchor's offset down to bar 1, so the number of bars price has to displace IN is
+// exactly how far back the anchor sits. At WAIT = 3 the push anchor lands 4–8 bars back
+// and the turn anchor 3–5, which gives the displacement test a two-to-four bar window to
+// find a full ATR of travel. Almost nothing clears that, and each source fires ONCE — so
+// a block that had not displaced within those few bars was lost for good, not deferred.
+// Raising the WAIT is the whole fix: it is the same push, the same anchor candle, simply
+// looked at once enough bars exist for "did price leave" to be a real question. 10 bars
+// is 2.5 hours on the 15m — long enough for a genuine displacement to be visible and
+// short enough that the box still lands near the turn rather than back in the last leg.
+// The two WAITs move together on purpose. They are the same quantity for the two sources,
+// and letting them drift apart means the push and turn stop agreeing on the same base,
+// which is what the overlap dedupe relies on.
+// ── EVERY BLOCK BELONGS TO A TURN (Aaron, 2026-07-31) ──
+// "It's capturing candles that have NOTHING to do with the turning points. I only want
+// candles from turning points — either an engulfed candle, or the last candle from the
+// turning point."
+// That is the rule stated completely, and re-reading it exposes what was wrong: BOTH
+// cases are AT A TURN. The engulf case is not "an engulf anywhere", it is "was there an
+// engulf at this turn". The push source never knew that — it fired on any impulsive
+// engulfing candle on the chart, mid-trend included, with no turn anywhere near it.
+// That is exactly the box sitting out in the middle of a fall with no reference zone
+// beside it, and no amount of anchor tuning could have fixed it: the block should never
+// have existed.
+// So the pivot is tracked HERE, above both sources, and the push must land at one.
+// These two constants moved up from the turn source for the same reason — the pivot is
+// now shared state, not the turn source's private business.
+int OB_TURN_LEN  = 2
+int OB_TURN_SCAN = 8
+float obPvLo = ta.pivotlow(low,  OB_TURN_LEN, OB_TURN_LEN)
+float obPvHi = ta.pivothigh(high, OB_TURN_LEN, OB_TURN_LEN)
+var int obPvLoBar = na
+var int obPvHiBar = na
+if not na(obPvLo)
+    obPvLoBar := bar_index - OB_TURN_LEN
+if not na(obPvHi)
+    obPvHiBar := bar_index - OB_TURN_LEN
+int   OB_PUSH_LOOK = 5
+int   OB_PUSH_WAIT = 10
+float OB_PUSH_MULT = 0.3
+float obPushAtr  = ta.atr(14)[OB_PUSH_WAIT]
+float obPushBody = math.abs(close[OB_PUSH_WAIT] - open[OB_PUSH_WAIT])
+bool  obPushUp   = close[OB_PUSH_WAIT] > open[OB_PUSH_WAIT]
+bool  obPushOk   = barstate.isconfirmed and not na(obPushAtr) and obPushBody > obPushAtr * OB_PUSH_MULT
+// Nearest OPPOSING candle BEHIND the push bar — the one it consumed. Offsets are
+// absolute (measured from the live bar), so they start one past the push itself.
+int obPushIdx = na
+if obPushOk
+    for j = OB_PUSH_WAIT + 1 to OB_PUSH_WAIT + OB_PUSH_LOOK
+        if obPushUp ? close[j] < open[j] : close[j] > open[j]
+            obPushIdx := j
+            break
+// Engulfed = closed through that candle's OPEN, with a bigger body than it had.
+// ── AND THE CANDLE CONSUMED MUST BE A REAL ONE (Aaron, 2026-07-31) ──
+// The measured case: a straight drop off a turn, and the SECOND box printed around a
+// tiny doji three bars into the fall — a four-dollar rectangle drawn around a bar with
+// no body at all.
+// The hole is in the size test right above. "Bigger body than the one it consumed" is
+// meant to be the EVIDENCE that a real candle was taken out, and against a doji it
+// proves nothing: a near-zero body is beaten by every bar on the chart, and a close
+// through its open is a hair's movement. So any doji sitting in a move is trivially
+// "engulfed" and becomes a block. Worse, obBodyOnly is false, so the box is drawn at
+// that bar's full WICK-TO-WICK range — an indecision bar prints a bigger zone than the
+// candle that actually turned the market.
+// So the consumed candle must clear the SAME ATR noise floor the pushing candle does.
+// If the push has to be a real candle to count as a push, the thing it ate has to be a
+// real candle to count as a level. One test, one constant, both ends.
+// It REFUSES rather than scanning deeper on purpose. When the nearest opposing candle
+// is a doji, the last opposing candle genuinely IS a doji — there is no order block
+// there. Walking further back to find a bigger one would claim a level the push never
+// came off, which is the same error in the other direction.
+bool obPushEng = false
+if not na(obPushIdx)
+    float obPushPrev = math.abs(close[obPushIdx] - open[obPushIdx])
+    bool  obPushReal = obPushPrev > obPushAtr * OB_PUSH_MULT
+    obPushEng := obPushReal and obPushBody > obPushPrev and (obPushUp ? close[OB_PUSH_WAIT] > open[obPushIdx] : close[OB_PUSH_WAIT] < open[obPushIdx])
+// ── AND THE PUSH MUST BE AT A TURN (Aaron, 2026-07-31) ──
+// The gate that was missing. The anchor candle has to sit AT OR JUST AFTER a pivot in
+// the matching direction — a pivot LOW for a bullish block, a pivot HIGH for a bearish
+// one — within the same OB_TURN_SCAN window the turn source uses for its base.
+// "At or just after", not "anywhere near": a block BEFORE the pivot is in the move that
+// was still going down, which is the previous leg, not this turn's base.
+// This is what makes the two sources two READINGS OF THE SAME EVENT rather than two
+// independent generators. A turn now produces at most one block, by whichever rule
+// applies to it — engulf if there was one, last-candle if there wasn't — and a stretch
+// of chart with no turn in it produces none at all.
+bool obPushAtTurn = false
+if not na(obPushIdx)
+    int obPushBar = bar_index - obPushIdx
+    int obPvBar   = obPushUp ? obPvLoBar : obPvHiBar
+    obPushAtTurn := not na(obPvBar) and obPushBar >= obPvBar and obPushBar - obPvBar <= OB_TURN_SCAN
+// ── ONE BLOCK PER TURN, AND THE ENGULF RULE WINS IT (Aaron, 2026-07-31) ──
+// Measured off the chart: at the same turn the reference drew ONE red zone and this drew
+// TWO orange ones bracketing it — a higher, earlier box and a lower, later box. One is
+// the push (engulf) reading, one is the turn (last-candle) reading, and both were right
+// by their own rule. The zone dedupe in f_obAdd could not collapse them because it
+// compares PRICE OVERLAP, and two readings of one turn can land on candles far enough
+// apart in price to look like two levels.
+// The rule as stated has an either/or in it — "the engulfed candle, OR if there is no
+// engulf, the last candle" — so a turn is entitled to exactly one block, and the engulf
+// reading is the one that claims it. That is what this latch enforces: the pivot bar a
+// push block was drawn from is remembered, and the turn source refuses that pivot.
+// Latched on the RETURN of f_obAdd, not on the push firing, because every gate in there
+// can still refuse — displacement, height, the wick tap. If the push was refused, no
+// block exists and the turn source must still get its chance at that pivot.
+// THE ORDERING CAVEAT, stated because it is real: the push source runs first in the file
+// but both read ~10 bars back, so on a turn where the turn source confirms FIRST the
+// latch is not yet set and both can still draw. The overlap dedupe remains the backstop
+// for that case. If pairs keep appearing, this is where to look.
+var int obTurnUsedL = na
+var int obTurnUsedS = na
+if showOBs and obPushEng and obPushAtTurn and obPushUp and showBullOB
+    if f_obAdd(activeBullOBs, obPushIdx, 1, true, false)
+        obTurnUsedL := obPvLoBar
+if showOBs and obPushEng and obPushAtTurn and not obPushUp and showBearOB
+    if f_obAdd(activeBearOBs, obPushIdx, -1, true, false)
+        obTurnUsedS := obPvHiBar
+
+// ── EVERY TURN IS A POTENTIAL BLOCK (Aaron, 2026-07-31) ──
+// "Not only engulfed candles but ALL points where price turns around." That is the
+// better definition, and it is why the engulf rule above kept coming up short: an
+// engulfing candle is one SYMPTOM of a turn, not the turn itself. Plenty of turns
+// happen without one — price stalls, rolls over across two or three bars, and leaves
+// no single candle that swallows its neighbour. The reference overlay has a zone at
+// those turns; the engulf rule saw nothing there.
+// So the trigger is now the TURN, detected as a short pivot:
+//   PIVOT LOW  — price turned UP. The orders that turned it are on the last BEARISH
+//                candle at or before that pivot → a BULLISH block.
+//   PIVOT HIGH — the mirror: last BULLISH candle → a BEARISH block.
+// AND THE LOOK-BACK IS THE OTHER HALF ("look back as price moves to capture the
+// correct last opposing candle"). The pivot bar itself is usually NOT the block — the
+// turn often prints as one or two small candles already going the new way, with the
+// real opposing candle sitting a bar or two behind them. Anchoring on the pivot bar
+// alone puts the box on the wrong candle, which is what "capture the correct last
+// opposing candle" is naming. So the scan walks BACK from the pivot until it meets the
+// first candle going the other way, and that is the block.
+// OB_TURN_LEN is how sharp a turn has to be — 2 bars either side, so small rolls
+// qualify and the chart gets a zone at each one. Raise it for fewer, bigger turns.
+// Pivots confirm OB_TURN_LEN bars late, so these are non-repainting by construction.
+// The dedupe in f_obAdd is what keeps this honest next to the push source above: a
+// turn and a push very often land on the SAME opposing candle, and only one box prints.
+// OB_TURN_WAIT — how long price is given to LEAVE before the turn is looked back at.
+// The pivot confirms OB_TURN_LEN bars after the low, and at that moment price is usually
+// still in the base, so the departure test in f_obAdd would find nothing and the block
+// would be refused for ever (the turn fires once and never comes round again). So the
+// pivot is read OB_TURN_WAIT bars LATE — obTurnBase is the pivot bar's offset by then,
+// and those extra bars are exactly the window f_obAdd's replay walks looking for the
+// close that left the zone. The turn nominates; the departure inside that window decides.
+// ── TWO CASES, TWO ANCHORS (Aaron, 2026-07-31) — "if it's an engulf capture the
+// engulfed candle; if it's not an engulf, at the turning point capture the last
+// candle" ──
+// That is the rule stated cleanly, and it is what the LOOK-BACK SCAN was getting
+// wrong. The scan walked back from the pivot up to OB_TURN_LOOK bars hunting for the
+// nearest opposing candle, which is the ENGULF rule's way of finding its anchor — and
+// applying it at a turn dragged the box two or three bars behind the actual turn and
+// down onto the wrong candle. That is exactly the mismatch the second measured
+// instance showed: the reference sat two bars earlier and a whole zone higher.
+//   ENGULF     — the push source above owns it. The block is the candle that got
+//                CONSUMED (obPushIdx), which is what it already captures.
+//   NO ENGULF  — a turn that just rolled over. The block is the LAST CANDLE, which
+//                is the pivot candle itself: the one that printed the extreme.
+// So there is no scan here any more. The pivot bar IS the anchor, full stop.
+// Where the two rules land on the same candle the dedupe in f_obAdd prints one box.
+// ── NO ENGULF → THE LAST CANDLE, AND THE LAST ONE IS NOT THE PIVOT (Aaron, 2026-07-31) ──
+// "If the candle is not engulfed it's the LAST candle to capture."
+// The pivot bar was being used as the anchor, and a pivot bar is the EXTREME — the
+// deepest point of the turn. That is not the last candle; it is the FIRST candle of the
+// base. Price then usually spends a bar or two more down there before it leaves, and the
+// candle it actually left FROM is the later one. That is the measured difference in the
+// blue-box pair: the reference sat one candle LATER than this.
+// So the pivot only says WHERE the turn is. The anchor is then found by walking FORWARD
+// from it — toward the live bar — and taking the LAST OPPOSING candle before the move
+// away. For a bullish block that is the last BEARISH candle at the base; bearish is the
+// mirror. Opposing, because that is the whole definition of an order block: the side
+// that was taken out.
+// This is NOT the scan that was removed earlier. That one walked BACKWARD from the pivot
+// into the candles before the turn, which dragged the box away from the turn entirely.
+// This walks the other way, and only across the base itself.
+// OB_TURN_FWD is deliberately 2, which lands the shallowest possible anchor on offset 3 —
+// exactly f_obAdd's OB_MIN_BACK. Raising it would let the anchor drift up beside the live
+// bar and defeat the look-back guard, so the two constants are coupled: change one and
+// check the other.
+// If no opposing candle sits in that window the pivot bar stays the anchor — a turn that
+// rolled over with no opposing candle at all genuinely has nothing better to point at.
+// OB_TURN_WAIT raised 3 → 10 with OB_PUSH_WAIT — see the displacement-window note at the
+// push source. obTurnBase becomes 12, so the forward walk still bottoms out at offset 10,
+// comfortably past f_obAdd's OB_MIN_BACK of 3, and the departure loop now gets ten bars
+// to measure travel in rather than two.
+// OB_TURN_LEN and OB_TURN_SCAN moved UP to the push source — the pivot is shared state
+// now, because the push has to prove it is at a turn too. See the note there.
+// OB_TURN_SCAN is still what it always was for this source: how far forward of the pivot
+// the base may run before the search gives up.
+int OB_TURN_WAIT = 10
+int obTurnBase = OB_TURN_LEN + OB_TURN_WAIT
+float obTurnLo = obPvLo[OB_TURN_WAIT]
+float obTurnHi = obPvHi[OB_TURN_WAIT]
+// ── COLOUR DOES NOT MATTER AT A TURN (Aaron, 2026-07-31) ──
+// "If there's no engulfed candle to box, focus on the LAST CANDLE BEFORE THE TURN.
+// Doesn't matter the colour of the candle."
+// The forward walk used to hunt for the last OPPOSING candle — bearish for a bullish
+// block, bullish for a bearish one. That test is the ENGULF rule's way of finding its
+// anchor, and it does not belong here: the push source owns the engulf case, and this
+// source exists precisely for the turns that have no engulf in them. Requiring an
+// opposing candle at a turn that simply rolled over meant skipping past the candle price
+// actually left from to find one that happened to be the right colour.
+// With the colour test gone the walk has nothing left to choose between — every bar in
+// the window qualifies, so it always lands on the shallowest one. So the loop is gone
+// too and the anchor is a plain offset.
+// ── THE LAST CANDLE IS FOUND, NOT COUNTED (Aaron, 2026-07-31) ──
+// "The last candle before the turn should be boxed. You're still boxing the wrong one —
+// look at the blue boxes."
+// OB_TURN_FWD was a fixed offset past the pivot, and a fixed offset cannot be right:
+// how long price spends in the base before it leaves is different at every turn. Set to
+// 2 it lands near the extreme on a slow base and past the drive on a fast one. Measured
+// against the reference on three separate clusters, the left edges were consistently a
+// few bars EARLY — which is what a too-small constant looks like. Raising it would just
+// be a different guess with the same defect.
+// So the anchor is DERIVED. "The last candle before the turn" means the last candle
+// before price LEAVES, so the search walks forward from the pivot, finds the first
+// candle where the drive has begun, and takes the bar immediately BEFORE it. That bar
+// is the last one of the base by construction, at whatever distance the base happened
+// to be — no constant to tune per chart.
+// ── THE BASE ENDS WHEN PRICE CLEARS IT, NOT WHEN A BIG CANDLE PRINTS (Aaron, 2026-07-31) ──
+// The first version of this search asked for an ATR-sized body in the new direction, and
+// that has a failure the size test cannot see: the move away often STARTS on a modest
+// candle and only gets big a bar or two later. Asking for size means walking straight
+// past the real first drive candle to the larger one behind it, and anchoring one or two
+// bars too LATE — the same class of error the fixed offset made, in the other direction.
+// So there is no size test any more. The base ends the moment a candle CLOSES CLEAR OF
+// EVERY CANDLE IN THE BASE SO FAR — above the running high for a bullish turn, below the
+// running low for a bearish one. That is what "the move happened" means geometrically,
+// and the anchor is the bar immediately before it: the last candle of the base.
+// Measuring against the base's OWN running extreme rather than the pivot candle alone is
+// what stops a slow base ending early. One candle poking above the pivot bar while the
+// base is still forming is not a departure; clearing everything printed so far is.
+// No constant, so nothing to retune per instrument or timeframe — the base sets its own
+// threshold as it goes.
+// ── THE BASE'S CEILING IS ITS BODIES, NOT ITS WICKS (Aaron, 2026-07-31) ──
+// Measured across all three clusters against the reference: every box sat about three
+// dollars HIGH, same height, same left region. A uniform offset in ONE direction is not
+// three separate misses — it is one systematic error, and the size of it is one candle.
+// The cause was using WICK extremes as the base's ceiling. A wick is the highest thing
+// in a base by definition, so demanding a close above every spike makes the departure
+// test hard to satisfy and it fires a bar LATE — which walks the anchor one bar forward
+// onto a candle sitting slightly higher up the turn. That is exactly the observed shift.
+// So the running extreme is the BODY extreme: max(open, close) going up, min going down.
+// A base's wicks are where price was rejected; its bodies are where it actually traded,
+// and clearing where it traded is what leaving the base means. The comparison is still
+// close-against-extreme, so both sides of the test are now body-based and consistent.
+// Colour is never tested, on the anchor or on the breakout candle. A close that clears
+// the whole base is a departure whatever colour the candle happens to be, which is the
+// rule as given.
+// The two directions still differ and still need their own scans: a bullish base ends on
+// a close above its highs, a bearish one on a close below its lows, and at the same turn
+// those land on different bars.
+// Falls back to the pivot bar if nothing clears inside OB_TURN_SCAN — a base that long
+// has not displaced, and f_obAdd's displacement gate will refuse it anyway.
+int   obTurnOffL = obTurnBase
+int   obTurnOffS = obTurnBase
+bool  obTurnFndL = false
+bool  obTurnFndS = false
+float obTurnRunH = math.max(open[obTurnBase], close[obTurnBase])
+float obTurnRunL = math.min(open[obTurnBase], close[obTurnBase])
+for j = obTurnBase - 1 to math.max(3, obTurnBase - OB_TURN_SCAN)
+    if not obTurnFndL
+        if close[j] > obTurnRunH
+            obTurnOffL := j + 1
+            obTurnFndL := true
+        else
+            obTurnRunH := math.max(obTurnRunH, open[j], close[j])
+    if not obTurnFndS
+        if close[j] < obTurnRunL
+            obTurnOffS := j + 1
+            obTurnFndS := true
+        else
+            obTurnRunL := math.min(obTurnRunL, open[j], close[j])
+// The pivot bar THIS source is reading — compared against the push latch so a turn the
+// engulf rule already claimed is not boxed a second time. See the note at the push sites.
+int obTurnPvBar = bar_index - obTurnBase
+if showOBs and showBullOB and not na(obTurnLo) and obTurnPvBar != obTurnUsedL
+    f_obAdd(activeBullOBs, obTurnOffL, 1, true, false)
+if showOBs and showBearOB and not na(obTurnHi) and obTurnPvBar != obTurnUsedS
+    f_obAdd(activeBearOBs, obTurnOffS, -1, true, false)
 
 // Internal structure — Step 2: pullback tracking to confirm iSH / iSL
 
@@ -2399,22 +3378,21 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         i_mode            := -1
         i_sos_watch_ll    := na
 
-// ── Internal Structure OB Creation ──
-if showOBs and showBullOB and int_bull_break and not na(int_break_origin_loc)
-    int obIdx = f_obCandle(int_break_origin_loc, 1)
-    if not na(obIdx)
-        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBullOB, 60), border_width = 1, bgcolor = colBullOB)
-        activeBullOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, true))
+// ── Internal Structure OB Creation — COMMENTED OUT with f_obMake (Aaron, 2026-07-31) ──
+// This pair was the actual culprit in the measured case: the iBOS between the two
+// screenshots fired THIS block, which ran the 40-bar retro scan and evicted the correct
+// zone. See the long note at f_obMake for the full reasoning.
+// The trend-aligned filter went with it, and only ever mattered here — an internal break
+// can fire against the external trend, an external one cannot. The push and turn sources
+// pass vis = true unconditionally, so with this gone the "Trend-Aligned Zones Only"
+// switch no longer bites on order blocks at all; it still filters fair value gaps.
+// bool obIntVisB = not obDirOnly or st.dir >= 0
+// bool obIntVisS = not obDirOnly or st.dir <= 0
+// if showOBs and showBullOB and int_bull_break and not na(int_break_origin_loc)
+//     f_obMake(activeBullOBs, int_break_origin_loc, 1, obIntVisB)
 
-if showOBs and showBearOB and int_bear_break and not na(int_break_origin_loc)
-    int obIdx = f_obCandle(int_break_origin_loc, -1)
-    if not na(obIdx)
-        float obTop = obBodyOnly ? math.max(open[obIdx], close[obIdx]) : high[obIdx]
-        float obBot = obBodyOnly ? math.min(open[obIdx], close[obIdx]) : low[obIdx]
-        box newBg = box.new(bar_index - obIdx, obTop, bar_index, obBot, border_color = color.new(colBearOB, 60), border_width = 1, bgcolor = colBearOB)
-        activeBearOBs.manageOBs(OrderBlock.new(newBg, obTop, obBot, false))
+// if showOBs and showBearOB and int_bear_break and not na(int_break_origin_loc)
+//     f_obMake(activeBearOBs, int_break_origin_loc, -1, obIntVisS)
 
 
 // ── Update last_mode when mode changes ───────────────────
@@ -3154,14 +4132,15 @@ f_processKillZones() =>
     var box  kz2TodayBox = na
     var box  kz3TodayBox = na
 
-    // The start-of-zone arrows. These were plotshape() until 2026-07-29, which is
-    // why they used to outlive their kill zone: a plotshape is a series plot, it has
-    // no handle and cannot be deleted, so the box vanished on schedule and the green
-    // triangle stayed behind on a chart with nothing under it. As labels they are
-    // drawing objects with handles, deleted in the same blocks as the box.
-    var label kz1Arrow = na
-    var label kz2Arrow = na
-    var label kz3Arrow = na
+    // The start-of-zone arrows are GONE (Aaron, 2026-07-30). They were green triangles
+    // above the bar that opened each zone; the shaded box already says where the zone
+    // is, so they only added clutter. size.tiny was already Pine's smallest label size,
+    // so "smaller" was not available — removing them was.
+    // History worth keeping: they were plotshape() until 2026-07-29, which is why they
+    // used to outlive their kill zone — a plotshape is a series plot with no handle and
+    // cannot be deleted, so the box vanished on schedule and the triangle stayed behind
+    // on a chart with nothing under it. Converting them to labels is what made them
+    // deletable, and is why they could simply be dropped here.
 
     var bool kz1TodayDeleted = false
     var bool kz2TodayDeleted = false
@@ -3177,9 +4156,6 @@ f_processKillZones() =>
         kz1TodayBox       := na
         kz2TodayBox       := na
         kz3TodayBox       := na
-        kz1Arrow          := na
-        kz2Arrow          := na
-        kz3Arrow          := na
 
     kzBgColor     = color.new(color.green, 90)
     kzBorderColor = color.new(color.green, 70)
@@ -3191,7 +4167,6 @@ f_processKillZones() =>
             array.push(kz1Boxes, newKZ1)
             if isToday
                 kz1TodayBox := newKZ1
-                kz1Arrow := label.new(bar_index, na, "", yloc = yloc.abovebar, style = label.style_triangledown, color = color.green, size = size.tiny)
         if inKZ1 and withinKZDays and array.size(kz1Boxes) > 0
             box.set_right(array.last(kz1Boxes), bar_index + 1)
 
@@ -3201,7 +4176,6 @@ f_processKillZones() =>
             array.push(kz2Boxes, newKZ2)
             if isToday
                 kz2TodayBox := newKZ2
-                kz2Arrow := label.new(bar_index, na, "", yloc = yloc.abovebar, style = label.style_triangledown, color = color.green, size = size.tiny)
         if inKZ2 and withinKZDays and array.size(kz2Boxes) > 0
             box.set_right(array.last(kz2Boxes), bar_index + 1)
 
@@ -3211,38 +4185,32 @@ f_processKillZones() =>
             array.push(kz3Boxes, newKZ3)
             if isToday
                 kz3TodayBox := newKZ3
-                kz3Arrow := label.new(bar_index, na, "", yloc = yloc.abovebar, style = label.style_triangledown, color = color.green, size = size.tiny)
         if inKZ3 and withinKZDays and array.size(kz3Boxes) > 0
             box.set_right(array.last(kz3Boxes), bar_index + 1)
 
-    if isToday and not kz1TodayDeleted and showKillZones
+    // Today's zone is wiped a few minutes after it closes so the live chart is not
+    // cluttered by a window that has already passed. With history ON the user is
+    // asking to SEE every zone, and today is a day like any other — so the wipe is
+    // switched off, otherwise the one day you are trading is the only one missing.
+    if isToday and not kz1TodayDeleted and showKillZones and not showKZHistoric
         if nyHour > 11 or (nyHour == 11 and nyMinute >= 5)
             if not na(kz1TodayBox)
                 box.delete(kz1TodayBox)
                 kz1TodayBox := na
-            if not na(kz1Arrow)
-                label.delete(kz1Arrow)
-                kz1Arrow := na
             kz1TodayDeleted := true
 
-    if isToday and not kz2TodayDeleted and showKillZones
+    if isToday and not kz2TodayDeleted and showKillZones and not showKZHistoric
         if nyHour > 12 or (nyHour == 12 and nyMinute >= 20)
             if not na(kz2TodayBox)
                 box.delete(kz2TodayBox)
                 kz2TodayBox := na
-            if not na(kz2Arrow)
-                label.delete(kz2Arrow)
-                kz2Arrow := na
             kz2TodayDeleted := true
 
-    if isToday and not kz3TodayDeleted and showKillZones
+    if isToday and not kz3TodayDeleted and showKillZones and not showKZHistoric
         if nyHour > 13 or (nyHour == 13 and nyMinute >= 35)
             if not na(kz3TodayBox)
                 box.delete(kz3TodayBox)
                 kz3TodayBox := na
-            if not na(kz3Arrow)
-                label.delete(kz3Arrow)
-                kz3Arrow := na
             kz3TodayDeleted := true
     int _ret = 0
 f_processKillZones()
@@ -4231,6 +5199,14 @@ var bool aplusL_702      = false // A+-owned 0.702 latch (E2)
 var bool aplusL_786      = false // A+-owned 0.786 latch (E3)
 var bool aplusL_886      = false // A+-owned 0.886 latch (E4)
 var bool aplusL_fvgTap   = false // price actually traded INTO a matching FVG in the zone
+// The SAME tap, UNGATED by depth (Aaron, 2026-07-30). aplusL_fvgTap can only arm in the
+// 0.5-to-0.618 window because it means "an early entry was taken"; this one just records
+// that a direction-matched gap ANYWHERE in the 0.5–0.886 zone has been traded into. It
+// is what lets the DEEP rows name the gap while they are still waiting — the Sniper Zone
+// was already reported there and the gap was not, so a deep row could sit on a tapped
+// gap and say nothing about it.
+var bool aplusL_fvgZone  = false
+var bool aplusL_szTap    = false // price actually traded INTO the aligned Sniper Zone
 var int  aplusS_sweepBar = na
 var int  aplusS_sosBar   = na
 var int  aplusS_armTime  = na
@@ -4240,6 +5216,8 @@ var bool aplusS_702      = false
 var bool aplusS_786      = false
 var bool aplusS_886      = false
 var bool aplusS_fvgTap   = false
+var bool aplusS_fvgZone  = false
+var bool aplusS_szTap    = false
 
 // Deep-entry (0.618-0.886) confirmation + scale/stop-profit latches.
    // _1mSawOpp : observed the 1m in the OPPOSITE direction while in the deep zone
@@ -4465,7 +5443,10 @@ bool _szTapNow = not na(sniperZoneTop) and not na(sniperZoneBot) and low <= snip
 // 15m security feed only carried the single newest 1m gap and dropped any gap the
 // moment price closed past it, so it kept missing the gaps you actually see drawn.
 // Direction-matched: a bearish gap for a short, a bullish gap for a long.
-f_fvg1mInZone(bool wantBull, float zLo, float zHi) =>
+// Scans the CHART's own drawn gaps — so on a 15m chart these are 15m FVGs, on a 1m
+// chart 1m FVGs. Renamed off "f_fvg1mInZone" 2026-07-30: the old name claimed 1m and
+// the A+ early entry now uses it on the 15m, where 1m would have been a lie.
+f_fvgInZone(bool wantBull, float zLo, float zHi) =>
     bool hit = false
     if not na(zLo) and not na(zHi) and array.size(fvgBoxes) > 0
         for i = 0 to array.size(fvgBoxes) - 1
@@ -4489,8 +5470,27 @@ if _rev1mA and not na(fiboP1) and not na(fiboP6) and not na(fiboP7)
     _rev1mZLo := math.min(fiboP6, _rev1mShallow)
     _rev1mZHi := math.max(fiboP6, _rev1mShallow)
 bool _rev1mReset = not _rev1mA or fiboOriginChanged
-rev1mEntryFvg := _rev1mReset ? false : (rev1mEntryFvg or f_fvg1mInZone(fibo_dir == 1, _rev1mZLo, _rev1mZHi))
+rev1mEntryFvg := _rev1mReset ? false : (rev1mEntryFvg or f_fvgInZone(fibo_dir == 1, _rev1mZLo, _rev1mZHi))
 rev1mEntrySz  := _rev1mReset ? false : (rev1mEntrySz  or (_szTapNow and (sz_bullish == (fibo_dir == 1))))
+
+// ── EARLY (0.5) entry trigger — the CHART's own gap, not the 1m feed ──
+// Aaron's call 2026-07-30, off a live 15m chart showing a gap sitting on 0.5 while the
+// row still read AWAIT. The two entry tiers are NOT confirmed the same way, and this is
+// the whole asymmetry of the setup:
+//   EARLY (0.5)   — a shallow retrace. The 15m gap at the level IS the entry; that is
+//                   the gap the trade is taken on and the one drawn in front of you.
+//   DEEP (0.618+) — price went further against the idea, so it must prove more: the 1m
+//                   turns first (aplusX_1mShift), THEN a 1m gap retests. Unchanged below.
+// The old early rule required a 1-MINUTE gap, and worse, the 15m chart only ever sees
+// the single newest 1m gap per direction (f_latest1mFvg keeps one and drops it on
+// mitigation) — so a genuine 15m gap on 0.5 could never arm the row, and even a valid
+// 1m one was forgotten the moment a newer 1m gap printed anywhere.
+float _apZLo = na, float _apZHi = na
+if not na(fiboP2) and not na(fiboP6)
+    _apZLo := math.min(fiboP2, fiboP6)
+    _apZHi := math.max(fiboP2, fiboP6)
+bool aplusL_fvgEarlyNow = fibo_dir == 1  and f_fvgInZone(true,  _apZLo, _apZHi)
+bool aplusS_fvgEarlyNow = fibo_dir == -1 and f_fvgInZone(false, _apZLo, _apZHi)
 
 // Stage 3 — entry zone progress on the SOS leg's fib
 // EARLY = 0.5 tapped inbound, READY = 0.618 reached (E1-E3 zone live)
@@ -4503,22 +5503,41 @@ if not na(aplusL_sosBar)
     aplusL_702    := aplusL_702    or fibo4Touched
     aplusL_786    := aplusL_786    or fibo5Touched
     aplusL_886    := aplusL_886    or fibo6Touched
-    aplusL_fvgTap := aplusL_fvgTap or aplusL_fvgInNow
+    // EARLY tier only — the chart's own (15m) gap. The DEEP tier below still reads
+    // aplusL_fvgInNow, the 1m gap, and only after the 1m shift.
+    // `not aplusL_618` is what keeps the two tiers separate, and it is load-bearing.
+    // The tap zone spans 0.5–0.886, so WITHOUT this gate a gap tapped at 0.7 on a
+    // straight run down would latch the EARLY entry — and the deep tier's whole point
+    // is that a retrace that far has to prove more than a gap. Gated, the latch can
+    // only arm in the 0.5-to-0.618 window, so it means exactly one thing: an early
+    // entry was genuinely taken BEFORE price went deep.
+    aplusL_fvgTap := aplusL_fvgTap or (not aplusL_618 and aplusL_fvgEarlyNow)
+    // Ungated twin — same tap, no depth gate. See aplusL_fvgZone's declaration.
+    aplusL_fvgZone := aplusL_fvgZone or aplusL_fvgEarlyNow
+    // SZ is latched off the PRECISE per-bar tap (_szTapNow), never off "a zone
+    // exists" — see the warning at _szTapNow's own declaration. Until 2026-07-30 the
+    // table's +SZ tag read `not na(sniperZoneTop) and sz_bullish == uLong`, which is
+    // true whenever an aligned zone is anywhere on the chart, at any price. That is
+    // the exact false stamp that comment was written about; the 1m row was fixed for
+    // it and this one was missed, so +SZ appeared on setups that never reached a zone.
+    aplusL_szTap  := aplusL_szTap  or (_szTapNow and sz_bullish)
 else
     aplusL_half := false, aplusL_618 := false
     aplusL_702 := false, aplusL_786 := false, aplusL_886 := false
-    aplusL_fvgTap := false
+    aplusL_fvgTap := false, aplusL_szTap := false, aplusL_fvgZone := false
 if not na(aplusS_sosBar)
     aplusS_half   := aplusS_half   or fiboHalfReached
     aplusS_618    := aplusS_618    or fibo618EverReached
     aplusS_702    := aplusS_702    or fibo4Touched
     aplusS_786    := aplusS_786    or fibo5Touched
     aplusS_886    := aplusS_886    or fibo6Touched
-    aplusS_fvgTap := aplusS_fvgTap or aplusS_fvgInNow
+    aplusS_fvgTap := aplusS_fvgTap or (not aplusS_618 and aplusS_fvgEarlyNow)
+    aplusS_fvgZone := aplusS_fvgZone or aplusS_fvgEarlyNow
+    aplusS_szTap  := aplusS_szTap  or (_szTapNow and not sz_bullish)
 else
     aplusS_half := false, aplusS_618 := false
     aplusS_702 := false, aplusS_786 := false, aplusS_886 := false
-    aplusS_fvgTap := false
+    aplusS_fvgTap := false, aplusS_szTap := false, aplusS_fvgZone := false
 
 // Deep-entry confirmation (0.618+): a genuine 1m shift IN the trade direction, then a
 // matching FVG retest. Plus multi-level take-profit / scale tracking. Latches clear when
@@ -4588,14 +5607,14 @@ if not na(aplusL_sosBar) and aplusL_deepNow > aplusL_deepSeen
     if aplusL_tp50 or aplusL_tp382 or aplusL_tp0
         aplusL_tp50 := false, aplusL_tp382 := false, aplusL_tp0 := false
         aplusL_1mSawOpp := false, aplusL_1mShift := false, aplusL_deepFvg := false
-        aplusL_fvgTap := false
+        aplusL_fvgTap := false, aplusL_szTap := false, aplusL_fvgZone := false
         aplusL_reentry := true
     aplusL_deepSeen := aplusL_deepNow
 if not na(aplusS_sosBar) and aplusS_deepNow > aplusS_deepSeen
     if aplusS_tp50 or aplusS_tp382 or aplusS_tp0
         aplusS_tp50 := false, aplusS_tp382 := false, aplusS_tp0 := false
         aplusS_1mSawOpp := false, aplusS_1mShift := false, aplusS_deepFvg := false
-        aplusS_fvgTap := false
+        aplusS_fvgTap := false, aplusS_szTap := false, aplusS_fvgZone := false
         aplusS_reentry := true
     aplusS_deepSeen := aplusS_deepNow
 
@@ -4845,10 +5864,40 @@ bLegS_box := _bSB, bLegS_lbl := _bSL
 // live source there). Edge-triggered so it fires on the transition INTO READY.
 bool aplusL_ready = (aplusL_stage == 4 and aplusL_deepFvg) or (aplusL_stage == 3 and aplusL_fvgTap)
 bool aplusS_ready = (aplusS_stage == 4 and aplusS_deepFvg) or (aplusS_stage == 3 and aplusS_fvgTap)
-if barstate.isconfirmed and timeframe.in_seconds() == 900 and aplusL_ready and not aplusL_ready[1]
-    alert("MPC-JARVIS: REV SETUP READY LONG (entry FVG confirmed) — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar)
-if barstate.isconfirmed and timeframe.in_seconds() == 900 and aplusS_ready and not aplusS_ready[1]
-    alert("MPC-JARVIS: REV SETUP READY SHORT (entry FVG confirmed) — " + syminfo.ticker + " " + timeframe.period, alert.freq_once_per_bar)
+
+// ── "You are in" — a ONE-WAY latch per SOS leg, COMMITTED ON BAR CLOSE ──
+// The row was seen flipping ENTRY → AWAIT at stage 3 with the fib, the SL and the TP
+// all unchanged. The mechanism is Pine's REALTIME ROLLBACK: on the live bar the whole
+// script re-runs on EVERY tick, and before each run every `var` is restored to its
+// last BAR-CLOSE value. So `x := x or cond` is not a latch on the live bar at all —
+// it holds only while cond is still true, and the tick after cond goes false the
+// "latch" is gone. That is how an entry gets announced on one tick and taken back on
+// the next, with nothing else on the row changing.
+// The cure is to commit ONLY on barstate.isconfirmed. At the close the bar's high and
+// low span the WHOLE bar, so a gap tapped anywhere inside it is still detected, and a
+// value written on a confirmed bar is the one that survives — it is never rolled back.
+// From then on the leg reads ENTRY until aplusX_sosBar itself changes, which means a
+// different SOS and a genuinely different setup.
+// Deliberately monotonic: it can only ever make the row say "you are in" for LONGER,
+// never shorter. Telling a trader to wait while they hold a position is the failure
+// that costs money; a stale ENTRY is only a nuisance.
+var bool aplusL_inTrade = false, var int aplusL_inSos = na
+if na(aplusL_sosBar) or aplusL_sosBar != aplusL_inSos
+    aplusL_inTrade := false
+    aplusL_inSos   := aplusL_sosBar
+var bool aplusS_inTrade = false, var int aplusS_inSos = na
+if na(aplusS_sosBar) or aplusS_sosBar != aplusS_inSos
+    aplusS_inTrade := false
+    aplusS_inSos   := aplusS_sosBar
+if barstate.isconfirmed
+    aplusL_inTrade := aplusL_inTrade or aplusL_ready
+    aplusS_inTrade := aplusS_inTrade or aplusS_ready
+// The two READY alerts that used to sit here are GONE — folded into the alert chain
+// below, off the LATCH instead of the raw flag. They fired on `aplusX_ready and not
+// aplusX_ready[1]`, and aplusX_ready is not stable across a leg: the RE-ENTRY reset
+// clears aplusX_fvgTap / aplusX_deepFvg, so ready goes true → false → true and the
+// same setup pinged ENTRY twice. aplusX_inTrade is one-way per SOS leg, so its rising
+// edge is exactly one entry alert per setup — the same guarantee the table's row has.
 
 
 // Deepest fib entry level price has tapped on the retrace — deeper implies the
@@ -4857,9 +5906,61 @@ if barstate.isconfirmed and timeframe.in_seconds() == 900 and aplusS_ready and n
 f_aplusEntryLvl(bool half, bool e618, bool e702, bool e786, bool e886) =>
     e886 ? "0.886" : e786 ? "0.786" : e702 ? "0.702" : e618 ? "0.618" : half ? "0.5" : "entry"
 
+// ── REV SETUP alerts — 2/3, entry zone reached, and setup death ──
+// Companion to the READY alert above, which fires only at the trade trigger. These
+// three fire EARLIER (and once at the end), so a setup can be watched from the SOS
+// rather than found at the moment it's already live.
+//
+// The tracked side is picked with the SAME rule the JARVIS table uses, so an alert can
+// never describe a stage the table isn't showing. Edge-triggered on the stage VALUE, and
+// the branches are `else if` on purpose: TradingView CONCATENATES multiple alert() calls
+// that fire on one bar into a single newline-joined message, which would break a JSON
+// webhook body. Exactly one message per bar, most-advanced state wins.
+//
+// Every message is PLAIN ASCII with no double quotes and no newlines, so it can be
+// dropped straight into a Telegram sendMessage body via {{alert_message}} without a relay.
+bool   _alLong = aplusL_stage > 0 and (aplusS_stage == 0 or aplusL_stage >= aplusS_stage)
+int    _alStg  = _alLong ? aplusL_stage : aplusS_stage
+bool   _alIn   = _alLong ? aplusL_inTrade : aplusS_inTrade
+string _alTag  = "MPC A+ " + syminfo.ticker + " " + (_alLong ? "LONG " : "SHORT ")
+// PRICES, not ratios — the same rule the LEVELS row exists for, and it binds harder
+// here: a phone alert is read AWAY from the chart, so "0.786 tapped" leaves the reader
+// with nothing to act on. Entry price is resolved off the deepest tapped tier by the
+// SAME expression the LEVELS row uses, so the alert and the table can never quote
+// different numbers. The stop is fiboP10 (the 1.0 leg origin) with no partial-banked
+// branch, because every alert below fires at a stage TRANSITION — before any rung has
+// filled — which is exactly when the LEVELS row would still be quoting fiboP10 too.
+string _alLvl = _alLong ? f_aplusEntryLvl(aplusL_half, aplusL_618, aplusL_702, aplusL_786, aplusL_886) : f_aplusEntryLvl(aplusS_half, aplusS_618, aplusS_702, aplusS_786, aplusS_886)
+float  _alEnt = _alLvl == "0.886" ? fiboP6 : _alLvl == "0.786" ? fiboP5 : _alLvl == "0.702" ? fiboP4 : _alLvl == "0.618" ? fiboP3 : fiboP2
+string _alPx  = na(_alEnt) or na(fiboP10) ? "" : " at " + str.tostring(_alEnt, format.mintick) + " SL " + str.tostring(fiboP10, format.mintick)
+if barstate.isconfirmed and timeframe.in_seconds() == 900
+    // ENTRY leads the chain — it is the only branch that says DO something now, so it
+    // must win any bar where a zone is reached and confirmed together.
+    if _alIn and not _alIn[1]
+        alert(_alTag + "ENTRY - " + _alLvl + " confirmed" + _alPx, alert.freq_once_per_bar)
+    else if _alStg == 4 and _alStg[1] != 4
+        alert(_alTag + "DEEP ZONE " + _alLvl + _alPx + " - wait 1m SOS then FVG", alert.freq_once_per_bar)
+    else if _alStg >= 3 and _alStg[1] < 3
+        // Wording matches the table's "0.5 ZONE / entry on FVG tap" deliberately. The
+        // word AWAIT was removed from that row because it reads as "wait" to someone
+        // already holding, and an alert repeating it would undo the fix off-chart.
+        alert(_alTag + "0.5 ZONE" + _alPx + " - entry on FVG tap", alert.freq_once_per_bar)
+    else if _alStg >= 2 and _alStg[1] < 2
+        alert(_alTag + "2/3 - SOS confirmed, retrace starting", alert.freq_once_per_bar)
+    // Death = the tracked leg dropped out of the SOS stages. Falling BELOW 2 is the test,
+    // not falling to 0: an opposite SOS kills this side and arms the other at 1/3 on the
+    // same bar, so the value lands on 1, not 0. Direction is read at [1] because by this
+    // bar _alLong may already describe the side that replaced it.
+    else if _alStg < 2 and _alStg[1] >= 2
+        alert("MPC A+ " + syminfo.ticker + " " + (_alLong[1] ? "LONG " : "SHORT ") + "SETUP DEAD - died at stage " + str.tostring(_alStg[1]) + " of 4", alert.freq_once_per_bar)
+
 if showConfTable and barstate.islast
     // Header
-    table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
+    // "JARVIS", not "MPC- JARVIS" (Aaron, 2026-07-30). This cell sits above the SECTION
+    // column, whose rows are short tags — REV SETUP, LEVELS, B LEG, 4H. The long form was
+    // the widest string in that column, so the branding was setting the width of every
+    // section label underneath it. The watermark still carries the full name.
+    table.cell(jarvisTable, 0, 0, "JARVIS",
       text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
       bgcolor = JARVIS_BLUE, text_halign = text.align_center)
     table.cell(jarvisTable, 1, 0, "STATUS",
@@ -4924,6 +6025,17 @@ if showConfTable and barstate.islast
         // True once a deeper retrace has RESET this leg — the row says RE-ENTRY instead
         // of AWAIT so it's clear this is a second bite, not the original entry.
         bool   uReentry = false
+        // Did price actually TRADE INTO the aligned Sniper Zone on this leg — not
+        // "does an aligned zone exist somewhere on the chart", which is what the tag
+        // used to ask and why it printed +SZ on setups that never reached one.
+        bool   uSz = false
+        // Has a matching FVG in the entry zone been tapped on this leg, at ANY depth —
+        // see aplusX_fvgZone. Distinct from uEarlyFvg, which means an early 0.5 entry was
+        // actually taken; this one is pure location confluence and is what the DEEP rows
+        // report while they wait.
+        bool   uFvgZone = false
+        // The one-way "you are in" latch for this SOS leg — see aplusX_inTrade.
+        bool   uInLatch = false
         if revOn15
             bool cLong = aplusL_stage > 0 and (aplusS_stage == 0 or aplusL_stage >= aplusS_stage)
             uStage    := cLong ? aplusL_stage : aplusS_stage
@@ -4938,6 +6050,9 @@ if showConfTable and barstate.islast
             uArmSwp   := cLong ? not na(aplusL_swpArmT) : not na(aplusS_swpArmT)
             uArmDiv   := cLong ? not na(aplusL_divArmT) : not na(aplusS_divArmT)
             uReentry  := cLong ? aplusL_reentry : aplusS_reentry
+            uSz       := cLong ? aplusL_szTap : aplusS_szTap
+            uFvgZone  := cLong ? aplusL_fvgZone : aplusS_fvgZone
+            uInLatch  := cLong ? aplusL_inTrade : aplusS_inTrade
         else
             uStage    := rStage
             uLong     := rDir == 1
@@ -4946,6 +6061,10 @@ if showConfTable and barstate.islast
             u1mShift  := rev1mShift
             uDeepFvg  := revDeepFvg
             uEarlyFvg := revEarlyFvg
+            // On the 1m the REV row rides the drawn aligned fib, so reuse that row's
+            // own tap latches rather than the 15m A+ ones, which aren't computed here.
+            uSz       := rev1mEntrySz
+            uFvgZone  := rev1mEntryFvg
         // HAND-OFF — once a REV finishes, the FIRST continuation BOS owns the table for its
         // WHOLE lifetime. While a CONT is live the REV row is hard-suppressed at every
         // stage: exactly one setup tracks at a time. The REV row shows Pass and returns
@@ -4964,40 +6083,175 @@ if showConfTable and barstate.islast
             string uArrow = uLong ? "▲ " : "▼ "
             bool   uDeep = uStage == 4
             bool   uScale = uTp50 or uTp382 or uTp0
-            // Confluence present in the entry zone right now: a tapped 1m FVG and/or the
-            // aligned Sniper Zone. Appended to the "watch 1m for SOS" AWAIT source so the
-            // student sees WHICH confluence sits at the fib level while the 1m is watched.
-            bool   uSz = not na(sniperZoneTop) and (sz_bullish == uLong)
-            string uConf = (uEarlyFvg ? " +FVG" : "") + (uSz ? " +SZ" : "")
-            // Scale names the deepest TP reached; "stop profit" (move stop to lock in) is
-            // stated at the FIRST TP of the entry type — 0.5 for a deep entry, 0.382 for an
-            // early 0.5 entry. The sequence gate above guarantees 0.5 prints before 0.382.
-            string uScaleDetail = uTp0 ? "TP3 close" : uTp382 ? (uDeep ? "0.382 scale" : "0.382 scale+stop") : "0.5 scale+stop"
+            // Confluence present in the entry zone right now, NAMED rather than implied.
+            // Every source string that describes an entry is built from these two, so the
+            // row always lists what is actually satisfied on this bar — a canned "+FVG+SZ"
+            // could not tell the student whether the Sniper Zone was really reached.
+            // uConf  = the deep row that is still waiting on its 1m shift: FVG and/or SZ.
+            // uDeepC = the deep read once the shift is in — it leads with +1mSOS, the
+            //          trigger that has to come FIRST on a deep entry.
+            // The early (0.5) rows use neither; they print plain literals with no +SZ.
+            // An empty string is information too: the level alone, no confluence yet.
+            string uSzT  = uSz ? " +SZ" : ""
+            // uFvgZone, not uEarlyFvg (Aaron, 2026-07-30). This string feeds the DEEP row
+            // that is still waiting on its 1m shift, and uEarlyFvg is false there by
+            // construction — it can only arm above 0.618. So the row named the Sniper Zone
+            // and stayed silent about a gap price had already traded into. Reading the
+            // ungated latch means both confluences are reported by the same rule.
+            string uConf = (uFvgZone ? " +FVG" : "") + uSzT
+            // uIn = a live position. Either tier's trigger fired and has not been reset,
+            // so the row must never go back to telling you to wait. On the deep branch
+            // uEarlyFvg can ONLY be true because an early 0.5 entry was taken and price
+            // then carried on deeper — the latch is gated to the pre-0.618 window.
+            // uInLatch first — it is the one-way per-leg latch and it is what stops the
+            // ENTRY → AWAIT regression. The two live flags stay in the OR so the row can
+            // still turn ENTRY on the very bar the trigger fires, before the latch has
+            // been through a bar close.
+            bool   uIn = uInLatch or uDeepFvg or uEarlyFvg
+            // `uIn or uFvgZone` — was `uIn` alone, which meant the middle deep row (shift
+            // in, waiting on the gap) could never print +FVG even with a tapped gap sitting
+            // in the zone. The two are different gaps and both are worth naming: uIn is the
+            // 1m retest that TRIGGERS the deep entry, uFvgZone is the chart's own gap the
+            // zone is built around. Which one you have is read off the status column —
+            // ENTRY means the trigger fired, AWAIT means it has not.
+            string uDeepC = (u1mShift ? " +1mSOS" : "") + (uIn or uFvgZone ? " +FVG" : "") + uSzT
+            // Names the deepest TP reached. Two rewrites landed here 2026-07-30, both to
+            // remove a meaning the student had to INFER:
+            //   "scale" → "partial N". "Scale" reads both ways (scale IN / scale OUT) and
+            //     this row only ever means taking money OFF. The NUMBER is the sequence —
+            //     which is why 0.382 has two forms: it is partial 2 after a deep entry
+            //     (0.5 was partial 1) and partial 1 after an early 0.5 entry, where 0.5 was
+            //     the ENTRY and not a target. The gate above guarantees that ordering.
+            //   "+stop" → "stop→profit", the SAME words the 1m ENTRY row already uses for
+            //     the same action. "+stop" never said whether to set a stop, move it to
+            //     breakeven, or move it into profit; and it carried "you already moved it"
+            //     by ABSENCE on partial 2, which is invisible. The number carries that now.
+            string uScaleDetail = uTp0 ? "TP3 · close the rest" : uTp382 ? (uDeep ? "0.382 partial 2" : "0.382 partial 1 · stop→profit") : "0.5 partial 1 · stop→profit"
             // REV SETUP is the SAME on every chart — it is the 15m thesis. The 1m chart
             // shows this identical row (driven by the 15m security skeleton + the chart-side
             // 1m confirmation flags) and hands the granular entry to the 1m ENTRY row below.
             if uScale
-                f_jRow3(jarvisTable, r, "REV SETUP", "SCALE " + uSide, uCol, uScaleDetail)
+                f_jRow3(jarvisTable, r, "REV SETUP", "TAKE PROFIT " + uSide, uCol, uScaleDetail)
             else if uDeep
-                if uDeepFvg
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "1m CONFIRMED " + uSide, uCol, uDeepLvl + " entry ✓ → TP1")
+                // `uIn`, not `uDeepFvg` — an EARLY entry that is still open must keep
+                // reading ENTRY once price retraces past 0.618. It used to fall through
+                // to the AWAIT branches below, which ask for the 1m shift and gap all
+                // over again: the row told you to wait while you were already in the
+                // trade, drawn down. A deep retrace after an early fill is the position
+                // going against you, not a fresh setup to be confirmed.
+                if uIn
+                    // "1m CONFIRMED" → "ENTRY" 2026-07-30: the status column answers "what
+                    // do I do", and the answer is you are in. WHERE the confirmation came
+                    // from now lives in the source column's +1mSOS / +FVG tags, so the
+                    // status no longer has to carry it.
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "ENTRY " + uSide, uCol, uDeepLvl + uDeepC + " → TP1")
                 else if u1mShift
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + (uReentry ? "RE-ENTRY " : "AWAIT ") + uSide, JARVIS_YELLOW, uDeepLvl + " 1m shift ✓ wait FVG")
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + (uReentry ? "RE-ENTRY " : "AWAIT ") + uSide, JARVIS_YELLOW, uDeepLvl + uDeepC + " · wait FVG")
                 else
                     f_jRow3(jarvisTable, r, "REV SETUP", uArrow + (uReentry ? "RE-ENTRY " : "AWAIT ") + uSide, JARVIS_YELLOW, uDeepLvl + uConf + " · wait 1m SOS")
             else if uStage == 3
-                if uEarlyFvg
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "1m CONFIRMED " + uSide, uCol, "0.5 entry ✓ → TP1")
+                // The early (0.5) rows carry NO +SZ, by Aaron's call 2026-07-30. A shallow
+                // retrace is not asked to prove its location twice — the gap is the entry
+                // and the Sniper Zone adds nothing to it, so showing the tag here only
+                // invites reading the zone as part of the trigger. The DEEP rows above keep
+                // it: price went further against the idea there, so where it turned is
+                // genuinely worth naming. Both strings are literals now — in this branch
+                // uEarlyFvg is already decided, so there is nothing left to compose.
+                // `uIn`, NOT `uEarlyFvg` — this is the exact branch that was seen flipping
+                // ENTRY → AWAIT at stage 3 with the fib, SL and TP all unchanged, i.e. the
+                // raw flag dropped mid-leg. Reading the one-way latch means the row cannot
+                // take an entry back, whatever the flag does underneath.
+                if uIn
+                    // → names the NEXT target, and on an early entry that is TP2, not TP1.
+                    // 0.5 IS TP1 here — it was the entry — so the old " → TP1" pointed at
+                    // the level price was already standing on. The TP latches above agree:
+                    // an early entry never fires the 0.5 rung (it needs aplusL_618), it
+                    // fires 0.382 first. The deep branch keeps → TP1, where 0.5 is ahead.
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "ENTRY " + uSide, uCol, "0.5 +FVG → TP2")
                 else
-                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "EARLY " + uSide, JARVIS_YELLOW, "0.5 wait FVG")
+                    // The word AWAIT is GONE from this branch (Aaron, 2026-07-30, asked
+                    // twice). It was wrong twice over. It collided with the 1m ENTRY row's
+                    // own EARLY — the two render together on a 1m chart, one meaning wait
+                    // and one meaning go. And it is the state the rollback bug lands on, so
+                    // any residual flicker printed the single most damaging sentence the
+                    // table can print: "wait" to someone already holding the position.
+                    // "0.5 ZONE" replaces it because it makes no claim either way. It states
+                    // WHERE price is, which is a fact that cannot become false mid-bar, and
+                    // the source column carries the one thing still outstanding. Nothing in
+                    // this row now contradicts a live trade, whatever the flags do.
+                    f_jRow3(jarvisTable, r, "REV SETUP", uArrow + "0.5 ZONE " + uSide, JARVIS_YELLOW, "entry on FVG tap")
             else if uStage == 2
                 f_jRow3(jarvisTable, r, "REV SETUP", "2/3 " + uSide, uCol, "SOS ✓ retrace")
             else
                 // Name which source armed Stage 1: a sweep, a divergence, or both
                 // overlapping. Off-15m there are no source latches → default to Div.
                 string uArmSrc = (uArmSwp and uArmDiv) ? "Sweep+Div" : uArmSwp ? "Sweep" : "Div"
-                f_jRow3(jarvisTable, r, "REV SETUP", "1/3 " + uSide, JARVIS_NEUTRAL, uArmSrc + " ✓ await SOS")
+                // "1/3" → "JARVIS TRACKING" (Aaron, 2026-07-30). A fraction reads as a
+                // countdown — 1 of 3 done, 2 to go — which promises a trade that does not
+                // exist yet and quietly invites getting ready for it. Most stage-1 arms
+                // never see an SOS at all; they age out. The honest statement is that the
+                // tool is WATCHING and there is nothing for you to do, and that is what
+                // this says. 2/3 keeps its fraction: an SOS has fired by then, so the
+                // sequence really is running and counting is fair.
+                // Just "Tracking" — no JARVIS prefix, no arrow, no side. The prefix came
+                // off because the header cell and the watermark already say whose tool
+                // this is. The DIRECTION came off because at stage 1 there is no trade to
+                // be long or short of: a sweep or a divergence has fired and the SOS that
+                // would decide the direction has not. Printing "LONG" there states a side
+                // the setup has not earned, and it is the row most likely to be read as
+                // "get ready to buy". The other statuses carry a side because by then an
+                // SOS has fixed one.
+                // Title case, matching the table's other no-side statuses ("Pass",
+                // "Monitor") — the uppercase forms are the ones that name a direction.
+                f_jRow3(jarvisTable, r, "REV SETUP", "Tracking", JARVIS_NEUTRAL, uArmSrc + " ✓ await SOS")
             r := r + 1
+            // ── LEVELS — the prices, added 2026-07-30 ──
+            // Every other row states RATIOS, and nobody can trade a ratio. A reader who
+            // agreed with "0.886 +1mSOS +FVG → TP1" still had to hunt the chart's fib
+            // labels to find where to buy, where the stop goes and what TP1 costs. This
+            // row is the order ticket: entry, invalidation, next target — as prices.
+            //   entry = the fib the row just named (uDeepLvl already resolves it on BOTH
+            //           the 15m and the 1m path, so one lookup serves both).
+            //   stop  = fiboP10, the 1.0 leg origin. A CLOSE past it is the same
+            //           invalidation the 1m ENTRY row reports as "1.0 broken".
+            //   next  = what price is working toward NOW, so it advances as rungs fill:
+            //           TP3 after partial 2, TP2 after partial 1, and before any partial
+            //           it is TP1 for a deep entry but TP2 for an early one — an early
+            //           entry was taken AT TP1, so TP1 is behind it, not ahead.
+            // Only from stage 3, because before price reaches the zone there is no entry
+            // to quote and a number here would read as a live instruction.
+            // 15m ONLY (Aaron, 2026-07-30). The 15m is where the thesis and its prices
+            // live; the 1m is the execution view and already carries its own entry row.
+            // Quoting 15m levels there just competes with what the 1m is telling you.
+            if uStage >= 3 and revOn15
+                float uEntryP = uDeepLvl == "0.886" ? fiboP6 : uDeepLvl == "0.786" ? fiboP5 : uDeepLvl == "0.702" ? fiboP4 : uDeepLvl == "0.618" ? fiboP3 : fiboP2
+                float uNextP  = uTp382 ? fiboP7 : uTp50 ? fiboP1 : (uDeep ? fiboP2 : fiboP1)
+                // The word in front of the price says whether you HOLD it or are still
+                // WAITING to get it. The row first shipped with no word at all — just
+                // "@ 4056.23" at every stage — which read as a fill at a level nobody got.
+                // The first attempt used "plan", and that failed for the plain reason that
+                // it is not a word a trader uses at a price: it named the row's own status
+                // instead of naming the ACTION. So the two states now say what to DO:
+                //   IN <price>          — you hold this. The number is your fill.
+                //   BUY / SELL <price>  — you do not hold it yet. That is the order to
+                //                         place, and it fills when the gap triggers.
+                // Colour follows the same split — grey while it is only an order, side-
+                // coloured once it is a position — so the row can never outrank the status
+                // line above it. uFilled reads the SAME uIn the status row reads, plus
+                // uScale (a banked partial is proof of a fill), so the two rows can never
+                // disagree about whether you are in.
+                bool uFilled = uIn or uScale
+                // The stop MOVES once partial 1 banks (Aaron, 2026-07-30). The REV row
+                // above says "partial 1 · stop→profit" at that moment, so from then on the
+                // stop sits at the ENTRY, not at the 1.0 leg origin — and quoting fiboP10
+                // after that describes a risk you are no longer carrying. uScale is exactly
+                // "at least one partial banked", which is exactly when the stop moves, so
+                // the two rows can never disagree about where the stop is.
+                float uStopP = uScale ? uEntryP : fiboP10
+                if not na(uEntryP) and not na(uStopP) and not na(uNextP)
+                    f_jRow3(jarvisTable, r, "LEVELS", (uFilled ? "IN " : (uLong ? "BUY " : "SELL ")) + str.tostring(uEntryP, format.mintick), uFilled ? uCol : JARVIS_NEUTRAL,
+                      "SL " + str.tostring(uStopP, format.mintick) + " · TP " + str.tostring(uNextP, format.mintick))
+                    r := r + 1
         else if revOn15 or revOn1m
             // "Pass" prints whenever REV is not tracking. The old `and cStage == 0` guard
             // existed to suppress Pass next to a live CONT row; with CONT disabled there is
@@ -5087,16 +6341,19 @@ if showConfTable and barstate.islast
             // Stop-protect: price reached 0.5/TP1 AFTER a real (FVG) entry → move stop to
             // profit (protect vs a 1m reversal). NO scale here — the 15m owns TPs.
             bool   e1Safety = fibo2Touched and rev1mEntryFvg
+            // Same rule as the REV row: name the confluences actually satisfied rather
+            // than print the canned pair the status word already implies.
+            string e1Conf = (rev1mEntryFvg ? " +FVG" : "") + (rev1mEntrySz ? " +SZ" : "")
             if rev1mConfirmed
                 f_jRow3(jarvisTable, r, "1m ENTRY", "✓ CONFIRMED " + e1Side, e1Col, "1m target ✓ · 15m runs")
             else if e1Broken
                 f_jRow3(jarvisTable, r, "1m ENTRY", "✗ INVALID " + e1Side, JARVIS_NEUTRAL, "1.0 broken")
             else if e1Safety
-                f_jRow3(jarvisTable, r, "1m ENTRY", "STOP→PROFIT " + e1Side, e1Col, "TP1 · protect · 15m scales")
+                f_jRow3(jarvisTable, r, "1m ENTRY", "STOP→PROFIT " + e1Side, e1Col, "TP1 · protect · 15m takes TP")
             else if e1Ult
-                f_jRow3(jarvisTable, r, "1m ENTRY", e1Arrow + "ULTIMATE " + e1Side, e1Col, e1Lvl + " +FVG+SZ · valid")
+                f_jRow3(jarvisTable, r, "1m ENTRY", e1Arrow + "ULTIMATE " + e1Side, e1Col, e1Lvl + e1Conf + " · valid")
             else if e1Early
-                f_jRow3(jarvisTable, r, "1m ENTRY", e1Arrow + "EARLY " + e1Side, e1Col, e1Lvl + " fib +FVG · valid")
+                f_jRow3(jarvisTable, r, "1m ENTRY", e1Arrow + "EARLY " + e1Side, e1Col, e1Lvl + e1Conf + " · valid")
             else if fiboHalfReached
                 f_jRow3(jarvisTable, r, "1m ENTRY", e1Arrow + "AWAIT " + e1Side, JARVIS_YELLOW, e1Lvl + " wait FVG/SZ")
             else
