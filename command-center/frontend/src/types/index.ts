@@ -22,6 +22,7 @@ export interface EquityPoint {
   equity: number
   date?: string
   entry_ms?: number | null   // trade OPEN time, UTC epoch ms — what the news filter tags against
+  exit_ms?: number | null    // trade CLOSE time — with entry_ms, gives duration over any SUBSET
   direction?: 'Long' | 'Short'
   profit?: number
   exit_name?: string

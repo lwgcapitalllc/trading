@@ -31,6 +31,12 @@ class EquityPoint(BaseModel):
     # straight off disk, so the SERVER-side tagging worked; it was missing HERE, so the model dropped
     # it on the way out and the card judged every run "made before trade times were recorded".
     entry_ms: Optional[int] = None
+    # The trade's CLOSE time (UTC epoch ms). Same story as entry_ms one line up, same fix: it has
+    # always been in equity_curve.json, and it was undeclared here so it never reached the browser.
+    # With both times present a consumer can compute duration over ANY SUBSET of trades — which is
+    # what lets the News & Holiday filter report Avg Trade instead of a dash. Older runs predate
+    # nothing (output.py has always written it), but NT8/MT5 curves carry neither time.
+    exit_ms: Optional[int] = None
     direction: Optional[str] = None   # 'Long' | 'Short'
     profit: Optional[float] = None
     exit_name: Optional[str] = None

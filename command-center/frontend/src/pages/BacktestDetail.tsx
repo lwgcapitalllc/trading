@@ -468,31 +468,18 @@ function kpiTone(valueCls?: string): KpiTone {
 // template so the two grids stay aligned.
 const KPI_COLS = 'grid-cols-[1.4fr_repeat(5,minmax(0,1fr))]'
 
-export function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null }: {
-  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
-  showMore?: boolean; fixedHeight?: number | null
-}) {
-  const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
-
-  const sharpe      = run.sharpe             ?? fallback.sharpe
-  const worstDay    = run.worst_day_pnl      ?? fallback.worstDay
+// Every number the grid shows, derived from one run. Pulled out of the component so the SAME
+// expressions can be evaluated a second time against a comparison run — that is what lets the news
+// filter print "−$2,003 vs unfiltered" on each card instead of shipping a second copy of the grid.
+// Adding a metric here and forgetting the card is harmless; the reverse is what drifts.
+function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], balance: number | null) {
+  const sharpe      = run.sharpe              ?? fallback.sharpe
+  const worstDay    = run.worst_day_pnl       ?? fallback.worstDay
   const worstStreak = run.worst_losing_streak ?? fallback.worstStreak
-  const sharpeEst   = run.sharpe == null && fallback.sharpe != null
-  // Canonical daily-√252 Sharpe shown as the value; platform's own value + low-sample as sub.
-  const sharpeSub   = (
-    <span>
-      {sharpeLabel(sharpe, sharpeEst)}
-      {run.platform_sharpe != null && (
-        <span className="text-text-tertiary"> · platform: {run.platform_sharpe.toFixed(2)}</span>
-      )}
-      {run.sharpe_low_sample && <span className="text-warn-text"> · low sample &lt;10d</span>}
-    </span>
-  )
   const recoveryFactor = computeRecoveryFactor(run.net_pnl, run.max_drawdown, equity)
   // Capital-based scores rebase the equity to `balance` (the ruleset's account_size, or the
   // what-if slider). Both compute off the same stored run — no re-run, no backend.
-  const calmar      = computeCalmar(equity, balance)
-
+  const calmar = computeCalmar(equity, balance)
   // 7a — expectancy. $/trade is always available; R needs per-trade risk, which stored
   // trades don't carry (profit only), so expectancy_r is not computable — left out honestly.
   const expectancyUsd = (run.net_pnl != null && run.trade_count)
@@ -518,6 +505,43 @@ export function KpiGrid({ run, fallback, equity = [], balance = null, showMore =
     : null
   // Dollar drawdown for the merged Max-DD card (trade-derived; falls back to the run's value).
   const ddDollar = tradeDd ?? (run.max_drawdown != null ? Math.abs(run.max_drawdown) : null)
+
+  return {
+    netPnl: run.net_pnl, winRate: run.win_rate, avgDur: run.avg_trade_duration_min,
+    sharpe, worstDay, worstStreak, recoveryFactor, calmar, expectancyUsd, zScore,
+    pfValue, profitConc, maxDdPct, ddDollar,
+  }
+}
+type DerivedKpis = ReturnType<typeof deriveKpis>
+
+export function KpiGrid({ run, fallback, equity = [], balance = null, showMore = false, fixedHeight = null,
+                         compare = null, filtered = false }: {
+  run: Run; fallback: FallbackMetrics; equity?: EquityPoint[]; balance?: number | null
+  showMore?: boolean; fixedHeight?: number | null
+  // When set, every card's sub-line becomes this metric's delta against `compare` instead of its
+  // usual caption. Used by the news filter: the grid IS the before/after readout, so there is no
+  // second set of KPI tiles anywhere on the page.
+  compare?: { run: Run; fallback: FallbackMetrics; equity: EquityPoint[] } | null
+  filtered?: boolean
+}) {
+  const pnlCls = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
+
+  const d  = deriveKpis(run, fallback, equity, balance)
+  const dc = compare ? deriveKpis(compare.run, compare.fallback, compare.equity, balance) : null
+
+  const { sharpe, worstDay, worstStreak, recoveryFactor, calmar,
+          expectancyUsd, zScore, pfValue, profitConc, maxDdPct, ddDollar } = d
+  const sharpeEst = run.sharpe == null && fallback.sharpe != null
+  // Canonical daily-√252 Sharpe shown as the value; platform's own value + low-sample as sub.
+  const sharpeSub = (
+    <span>
+      {sharpeLabel(sharpe, sharpeEst)}
+      {run.platform_sharpe != null && (
+        <span className="text-text-tertiary"> · platform: {run.platform_sharpe.toFixed(2)}</span>
+      )}
+      {run.sharpe_low_sample && <span className="text-warn-text"> · low sample &lt;10d</span>}
+    </span>
+  )
   // Reward:risk for Expectancy's sub-line (Avg Win / Avg Loss folded in here).
   const rr = (run.avg_win != null && run.avg_loss != null && run.avg_loss !== 0)
     ? (run.avg_win / Math.abs(run.avg_loss)).toFixed(2) : null
@@ -530,25 +554,44 @@ export function KpiGrid({ run, fallback, equity = [], balance = null, showMore =
     ? `avg +$${run.avg_win.toFixed(0)} / -$${Math.abs(run.avg_loss).toFixed(0)}${rr ? ` · ${rr}:1 R:R` : ''}`
     : 'per trade'
 
-  type KMetric = { key: string; label: string; value: React.ReactNode; valueCls?: string; tone?: KpiTone; sub?: React.ReactNode; tooltip?: string }
+  type KMetric = {
+    key: string; label: string; value: React.ReactNode; valueCls?: string; tone?: KpiTone
+    sub?: React.ReactNode; tooltip?: string
+    // How this card compares against `compare`. No `cmp` = no honest comparison exists (Avg Trade
+    // has no filtered value at all), and the sub-line then says so instead of showing a delta.
+    cmp?: (k: DerivedKpis) => number | null | undefined
+    fmt?: (delta: number) => string
+    goodWhen?: 'higher' | 'lower' | 'none'
+  }
+  const fmtMoney = (x: number) => dollar(x, true)
+  const fmtRatio = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(2)}`
+  const fmtPct01 = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`
+  const fmtPctPt = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}%`
+  const fmtCount = (x: number) => `${x >= 0 ? '+' : ''}${x}`
 
   // Core — always shown.
   const core: KMetric[] = [
     { key: 'netpnl', label: 'Net P&L', value: <FitMoney n={run.net_pnl} signed />, valueCls: pnlCls,
       sub: (balance != null && balance > 0 && run.net_pnl != null) ? `${(run.net_pnl / balance * 100).toFixed(1)}% return` : 'net of commissions',
+      cmp: k => k.netPnl, fmt: fmtMoney,
       tooltip: "Total profit or loss after commissions. The bottom line." },
     { key: 'sharpe', label: 'Sharpe (annlzd)', value: sharpe != null ? sharpe.toFixed(2) : '—', valueCls: sharpeCls(sharpe), sub: sharpeSub,
+      cmp: k => k.sharpe, fmt: fmtRatio,
       tooltip: "Return per unit of risk, annualized (daily P&L × √252) — the canonical definition shared with the optimizer and walk-forward. Days with no trade count as flat $0, so a strategy that sits out most days is scored on the whole period, not just the days it traded. 'platform' shows NT8/MT5's own reported Sharpe for reference (Python runs have no platform, so it's blank); note TradingView's Sharpe is monthly and NOT annualized — multiply it by √12 ≈ 3.46 to compare. Good ≥1.0, strong ≥2.0. Negative means the strategy loses more than doing nothing. 'low sample' flags fewer than 10 days that actually traded, where the value is statistically noisy." },
     { key: 'winrate', label: 'Win Rate', value: pct(run.win_rate), valueCls: winRateCls(run.win_rate), sub: winRateLabel(run.win_rate),
+      cmp: k => k.winRate, fmt: fmtPct01,
       tooltip: "% of trades that closed in profit. Good ≥60%, fair ≥50%, weak <50%. High win rate alone doesn't guarantee profitability — size of wins vs losses matters too." },
     { key: 'maxdd', label: 'Max DD % of Capital',
       value: maxDdPct != null ? `${maxDdPct.toFixed(1)}%` : '—',
       valueCls: maxDdPct != null ? 'text-neg-text' : 'text-text-tertiary', tone: 'neutral',
       sub: ddDollar != null ? `$${Math.round(ddDollar).toLocaleString()} peak-to-trough${maxDdPct == null ? ' · set a balance for %' : ''}` : 'set an account balance',
+      cmp: k => k.maxDdPct ?? k.ddDollar, fmt: maxDdPct != null ? fmtPctPt : fmtMoney, goodWhen: 'lower',
       tooltip: "Max drawdown — the largest peak-to-trough drop, shown both in dollars (sub-line) and as a % of the account balance (the value; ruleset's account_size, adjustable via the Account balance slider). Prop firms cap this hard. The dollar drawdown is trade-derived, identical across NT8 and MT5. Lower is better." },
     { key: 'pf', label: 'Profit Factor', value: kpiNum(pfValue), valueCls: pfCls(pfValue), sub: pfLabel(pfValue),
+      cmp: k => k.pfValue, fmt: fmtRatio,
       tooltip: "Gross wins ÷ gross losses. Below 1.0 is a losing strategy. Good ≥1.5, strong ≥2.0. A run with no losing trade has no denominator, so it shows ∞." },
-    { key: 'calmar', label: 'Calmar Ratio', value: kpiNum(calmar), valueCls: calmarCls(calmar), sub: calmarLabel(calmar), tooltip: calmarTip },
+    { key: 'calmar', label: 'Calmar Ratio', value: kpiNum(calmar), valueCls: calmarCls(calmar), sub: calmarLabel(calmar),
+      cmp: k => k.calmar, fmt: fmtRatio, tooltip: calmarTip },
   ]
 
   // More — revealed in the same grid, directly beneath the core row.
@@ -556,32 +599,60 @@ export function KpiGrid({ run, fallback, equity = [], balance = null, showMore =
     { key: 'profconc', label: 'Profit Concentration',
       value: profitConc != null ? `${profitConc.toFixed(0)}%` : '—',
       valueCls: concentrationCls(profitConc), sub: concentrationLabel(profitConc),
+      cmp: k => k.profitConc, fmt: fmtPctPt, goodWhen: 'lower',
       tooltip: "Share of total gross profit (sum of positive daily P&L) earned in the single most profitable calendar quarter of the test span (split into 4 equal date slices). High means the edge is clustered in one period — a classic sign of curve-fitting to a recent regime. ≥60% is a red flag." },
     { key: 'expectancy', label: 'Expectancy', value: expectancyUsd != null ? `$${expectancyUsd.toFixed(2)}` : '—',
       valueCls: expectancyUsd != null ? (expectancyUsd >= 0 ? 'text-pos-text' : 'text-neg-text') : '', sub: expectancySub,
+      cmp: k => k.expectancyUsd, fmt: fmtMoney,
       tooltip: "Average net P&L per trade (net P&L ÷ trade count) — your edge per position. Sub-line shows avg win / avg loss and the win:loss (reward:risk) ratio. R-multiple expectancy needs per-trade risk, which stored trades don't carry (profit only), so it's omitted rather than guessed." },
     { key: 'zscore', label: 'Z-Score', value: zScore != null ? zScore.toFixed(2) : '—', valueCls: zScoreCls(zScore),
       sub: zScore != null ? zScoreLabel(zScore) : zScoreUnavailableLabel(equity),
+      cmp: k => k.zScore, fmt: fmtRatio, goodWhen: 'none',
       tooltip: "Wald–Wolfowitz runs test over the win/loss sequence. Measures whether wins and losses streak more than random chance. Within ±1.5 is healthy; beyond ±2 signals non-random streaking (positive = fewer runs / longer streaks, negative = alternating more than chance)." },
     { key: 'avgtrade', label: 'Avg Trade', value: run.avg_trade_duration_min != null ? `${run.avg_trade_duration_min.toFixed(0)} min` : '—',
       sub: run.avg_trade_duration_min != null ? 'avg duration / trade' : 'duration unavailable',
+      cmp: k => k.avgDur, fmt: (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(0)} min`, goodWhen: 'none',
       tooltip: "Average time in a position per trade. The MT5 Strategy Tester report includes only trade-close times (no entry time), so duration can't be computed for MT5 runs — it shows as “—”." },
     { key: 'worstday', label: 'Worst Day', value: <FitMoney n={worstDay} />, valueCls: worstDay != null && worstDay < 0 ? 'text-neg-text' : '', sub: 'single worst trading day',
+      cmp: k => k.worstDay, fmt: fmtMoney,
       tooltip: "Largest single-day loss. Compare this to your prop firm's daily loss limit — exceeding it would have failed the challenge that day." },
     { key: 'worststreak', label: 'Worst Streak', value: worstStreak != null ? `${worstStreak} L` : '—', valueCls: worstStreakCls(worstStreak), sub: 'consecutive losing days',
+      cmp: k => k.worstStreak, fmt: fmtCount, goodWhen: 'lower',
       tooltip: "Longest consecutive run of losing days. Tests whether you'd stay disciplined under sustained drawdown. ≥6 days is a red flag." },
   ]
+
+  // Sub-line while comparing: the delta replaces the caption rather than crowding in beside it. The
+  // caption is a standing explanation you read once; the delta is the answer to the question the
+  // filter was opened to ask, and it changes on every drag of a slider.
+  const subFor = (m: KMetric): React.ReactNode => {
+    if (!dc) return m.sub
+    if (!m.cmp) return <span className="text-text-tertiary">no filtered value</span>
+    const to = m.cmp(d), from = m.cmp(dc)
+    if (to == null || from == null || !isFinite(to) || !isFinite(from)) {
+      return <span className="text-text-tertiary">no comparison</span>
+    }
+    const delta = to - from
+    if (Math.abs(delta) < 1e-9) return <span className="text-text-tertiary">unchanged vs unfiltered</span>
+    const good = m.goodWhen === 'lower' ? delta < 0 : delta > 0
+    const cls = m.goodWhen === 'none' ? 'text-text-secondary' : good ? 'text-pos-text' : 'text-neg-text'
+    return (
+      <span>
+        <span className={`tabular-nums font-medium ${cls}`}>{(m.fmt ?? fmtRatio)(delta)}</span>
+        <span className="text-text-tertiary"> vs unfiltered</span>
+      </span>
+    )
+  }
 
   const card = (m: KMetric, fixedCard = false, valSize = 'text-[26px] lg:text-[30px]') => (
     <div
       key={m.key}
-      className={`flex flex-col justify-center bg-bg-surface border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[88px]' : 'min-h-[100px]'}`}
+      className={`flex flex-col justify-center ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'} border border-border-subtle border-l-[3px] ${KPI_TONE_BORDER[m.tone ?? kpiTone(m.valueCls)]} rounded-xl px-4 py-3 overflow-hidden transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/30 ${fixedCard ? 'h-full min-h-[88px]' : 'min-h-[100px]'}`}
     >
       <div className="flex items-center text-[9px] font-bold uppercase tracking-[0.8px] text-text-tertiary">
         {m.label}{m.tooltip && <InfoTip text={m.tooltip} />}
       </div>
       <div className={`${valSize} font-bold tracking-[-0.6px] font-mono leading-none mt-1.5 transition-[font-size] duration-300 ${m.valueCls ?? ''}`}>{m.value}</div>
-      <div className="text-[10px] text-text-tertiary mt-1 leading-snug min-h-[14px]">{m.sub}</div>
+      <div className="text-[10px] text-text-tertiary mt-1 leading-snug min-h-[14px]">{subFor(m)}</div>
     </div>
   )
 
@@ -2613,82 +2684,129 @@ function ParamsSidePanel({ run, paramSchema, baselineParams, collapsed, onToggle
 // toggle only governs news-window trades. Operates on run.equity_curve (the raw, firm-independent
 // curve — the only one carrying entry_ms; per-firm sized curves are day-granular and unaffected).
 
-type NewsKpis = { net: number; winRate: number; pf: number; maxDd: number; trades: number }
-
-function newsKpisFrom(trades: EquityPoint[]): NewsKpis {
-  const pnls = trades.map(t => t.profit ?? 0)
-  const wins = pnls.filter(p => p > 0)
+// The kept trades rebuilt as a RUN — the same shape `KpiGrid` already takes, so the filter drives
+// the page's real 12 KPIs instead of a duplicated five. This is exactly the transform `effRun` does
+// for per-firm switching and `StackDetail.composeCombined` does for a portfolio: shallow-clone,
+// override what the trades determine, then NULL every field that is derived from `daily_pnl` so the
+// existing recompute path (computeFallbacks / computeProfitConcentration) redoes it off the filtered
+// series. Nulling is load-bearing — a left-behind `sharpe` would be the raw run's, sitting in a grid
+// labelled filtered.
+function buildFilteredRun(run: Run, kept: EquityPoint[], curve: EquityPoint[]): Run {
+  const pnls   = kept.map(t => t.profit ?? 0)
+  const wins   = pnls.filter(p => p > 0)
+  const losses = pnls.filter(p => p < 0)
   const grossWin  = wins.reduce((a, b) => a + b, 0)
-  const grossLoss = Math.abs(pnls.filter(p => p < 0).reduce((a, b) => a + b, 0))
+  const grossLoss = Math.abs(losses.reduce((a, b) => a + b, 0))
+
+  // Daily P&L regrouped from the kept trades. Regime tags are carried over by DATE from the raw
+  // series, so the regime overlay and the per-regime table keep working (a regime is a property of
+  // the market on a date — removing a trade cannot change it).
+  const regimeByDate = new Map((run.daily_pnl ?? []).map(d => [d.date, d.regime_tag]))
+  const byDay = new Map<string, number>()
+  for (const t of kept) if (t.date) byDay.set(t.date, (byDay.get(t.date) ?? 0) + (t.profit ?? 0))
+  const daily: DailyPnlPoint[] = [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, pnl]) => ({ date, pnl, regime_tag: regimeByDate.get(date) }))
+
   let cum = 0, peak = 0, maxDd = 0
   for (const p of pnls) { cum += p; peak = Math.max(peak, cum); maxDd = Math.max(maxDd, peak - cum) }
+
   return {
-    net: pnls.reduce((a, b) => a + b, 0),
-    winRate: trades.length ? wins.length / trades.length : 0,
-    pf: grossLoss > 0 ? grossWin / grossLoss : (grossWin || 0),
-    maxDd,
-    trades: trades.length,
+    ...run,
+    net_pnl:      pnls.reduce((a, b) => a + b, 0),
+    trade_count:  kept.length,
+    win_rate:     kept.length ? wins.length / kept.length : 0,
+    // Same convention as the backend: null when there is no denominator. KpiGrid recovers ∞ from the
+    // trade list itself, so an undefeated filtered run still prints ∞ rather than a dash.
+    profit_factor: grossLoss > 0 ? grossWin / grossLoss : null,
+    max_drawdown:  maxDd,
+    avg_win:       wins.length   ? grossWin / wins.length : null,
+    avg_loss:      losses.length ? losses.reduce((a, b) => a + b, 0) / losses.length : null,
+    equity_curve:  curve,
+    daily_pnl:     daily,
+    // Recomputed downstream from the filtered daily series.
+    worst_day_pnl: null,
+    worst_losing_streak: null,
+    sharpe: null,
+    profit_concentration_pct: null,
+    // Recomputed on the filtered day count, not carried over and not zeroed — the flag means "too
+    // few days that actually traded for the Sharpe to mean anything", and removing trades can only
+    // push a run TOWARDS that, so inheriting `false` would silence the warning exactly where it
+    // starts to matter. Threshold mirrors the backend's `active_day_count < 10`.
+    sharpe_low_sample: daily.length < 10,
+    avg_trade_duration_min: avgDurationOf(kept),
+    // NOT recomputable, and not guessed: NT8/MT5's own Sharpe for the whole run has no filtered
+    // version. Reads as "—" while filtered, which is the honest answer.
+    platform_sharpe: null,
   }
 }
 
-function NewsDelta({ from, to, kind, goodWhen = 'higher' }: {
-  from: number; to: number; kind: 'money' | 'pct' | 'pf' | 'num'; goodWhen?: 'higher' | 'lower'
-}) {
-  const d = to - from
-  if (Math.abs(d) < (kind === 'pf' ? 5e-3 : 1e-9)) return <span className="text-text-tertiary">·</span>
-  const good = goodWhen === 'higher' ? d > 0 : d < 0
-  const cls = good ? 'text-pos-text' : 'text-neg-text'
-  const sign = d >= 0 ? '+' : ''
-  const body = kind === 'money' ? dollar(d, true)
-    : kind === 'pct' ? `${sign}${(d * 100).toFixed(1)}%`
-    : kind === 'pf' ? `${sign}${d.toFixed(2)}`
-    : `${sign}${d}`
-  return <span className={`tabular-nums ${cls}`}>{body}</span>
+// Average time in a position, over whatever trades are handed in. ALL of them must carry both
+// timestamps or the answer is null — an average over the subset that happens to have times is a
+// different statistic wearing this one's label, and there is no way to see that on the card. NT8
+// and MT5 curves carry neither time, so those runs get a dash exactly as they do unfiltered.
+function avgDurationOf(trades: EquityPoint[]): number | null {
+  if (!trades.length) return null
+  let total = 0
+  for (const t of trades) {
+    if (t.entry_ms == null || t.exit_ms == null) return null
+    total += t.exit_ms - t.entry_ms
+  }
+  return total / trades.length / 60000
 }
 
-function NewsMiniKpi({ label, value, from, to, kind, goodWhen }: {
-  label: string; value: React.ReactNode; from: number; to: number
-  kind: 'money' | 'pct' | 'pf' | 'num'; goodWhen?: 'higher' | 'lower'
+// ONE exclusion rule as a row: tick, name, the trades it costs, and any settings it owns nested
+// underneath. The count is what the rule MATCHES, shown ticked or not — so the row is also the price
+// tag on turning it on. Both rules render through this; neither is hidden, which is the whole point.
+// The panel this replaced applied the holiday rule invisibly, so the pill could report trades being
+// removed while the only switch on screen said the news ones were kept.
+function ExcludeRule({ checked, onChange, label, note, count, tone, children }: {
+  checked: boolean; onChange: (next: boolean) => void
+  label: string; note?: string; count: number; tone: 'holiday' | 'news'; children?: React.ReactNode
 }) {
-  // Two lines, not three (delta BESIDE the value), and no border — this tile repeats five times
-  // directly above the Equity chart, inside a card that is already a box. Nested boxes read heavy,
-  // and every line the tile costs is a line of separation between the controls and the curve they
-  // reshape.
   return (
-    <div className="rounded-md bg-bg-sunken px-2.5 py-1.5 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-text-tertiary truncate">{label}</div>
-      <div className="flex items-baseline gap-1.5 min-w-0">
-        <div className="flex-1 min-w-0 text-[15px] font-semibold tabular-nums text-text-primary truncate">{value}</div>
-        <div className="text-[11px] shrink-0"><NewsDelta from={from} to={to} kind={kind} goodWhen={goodWhen} /></div>
-      </div>
+    <div className={`rounded-md border px-2.5 py-2 ${checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle'}`}>
+      <button
+        type="button"
+        onClick={() => onChange(!checked)}
+        className="w-full flex items-center gap-2 text-left cursor-pointer group"
+      >
+        <span className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
+          checked ? 'bg-accent border-accent' : 'border-border-default group-hover:border-text-tertiary'}`}>
+          {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
+        </span>
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'holiday' ? 'bg-neg-text' : 'bg-gold-text'}`} />
+        <span className="text-[12px] text-text-primary flex-1 min-w-0">
+          {label}
+          {note && <span className="text-text-tertiary"> · {note}</span>}
+        </span>
+        <span className="text-[12px] tabular-nums text-text-secondary shrink-0">
+          {count} {count === 1 ? 'trade' : 'trades'}
+        </span>
+      </button>
+      {children && checked && <div className="mt-2 pl-[22px] space-y-1.5">{children}</div>}
     </div>
-  )
-}
-
-// One excluded-trade count: a coloured dot, the number, the noun. It replaced a sentence per count
-// ("3 bank-holiday trades always excluded") — the rule that made the sentence long lives in the
-// panel's single InfoTip instead, where it costs no height.
-function NewsCountChip({ n, noun, tone }: { n: number; noun: string; tone: 'holiday' | 'news' }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[12px]">
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'holiday' ? 'bg-neg-text' : 'bg-gold-text'}`} />
-      <span className="tabular-nums font-medium text-text-primary">{n}</span>
-      <span className="text-text-tertiary">{noun}{n === 1 ? '' : 's'}</span>
-    </span>
   )
 }
 
 export type NewsFilter = ReturnType<typeof useNewsFilter>
 
-// The filter's whole state, owned by the PAGE rather than by the card, because two things now read
-// it: the card (controls + the before/after KPI comparison) and the MAIN equity chart, which redraws
-// on the kept trades. It used to live inside the card and draw its own little 200px curve — a second
-// equity chart directly under the real one, showing the same run twice at two different sizes. One
-// chart that reacts beats two that disagree.
+// The filter's whole state, owned by the PAGE rather than by any one control, because THREE things
+// read it: the pill on the Performance header, the Performance KPI grid (which recomputes off
+// `filteredRun`), and the main Equity chart (which redraws on `filteredCurve`). It has shed a copy
+// of the run's numbers twice for the same reason — first its own 200px equity curve, then its own
+// five KPI tiles. Each time the answer was the same: reshape the page's real readout, don't ship a
+// smaller second one beside it.
 function useNewsFilter(run: Run | undefined, avoidNews: boolean) {
   // null = follow the strategy's own default (avoidNews); once the user clicks, their choice sticks.
   const [removeNewsChoice, setRemoveNewsChoice] = useState<boolean | null>(null)
   const removeNews = removeNewsChoice ?? avoidNews
+  // Bank holidays: DEFAULT on, but a real choice (2026-07-30). It used to be hardcoded always-on and
+  // invisible, which is what made the whole panel unreadable — the pill counted trades being removed
+  // while the only visible switch said the news ones were kept, and nothing on screen accounted for
+  // the difference. Excluding them stays the default because it is still the standing rule; it is
+  // now a rule you can see and, when you want the run exactly as traded, switch off.
+  const [removeHolidays, setRemoveHolidays] = useState(true)
   const [pre, setPre]   = useState(15)                 // block window before an event (minutes)
   const [post, setPost] = useState(30)                 // block window after an event (minutes)
   const enabled = (run?.equity_curve.length ?? 0) > 0
@@ -2700,8 +2818,10 @@ function useNewsFilter(run: Run | undefined, avoidNews: boolean) {
     [run?.equity_curve],
   )
 
-  // Apply the filter: holidays always out, news out only when toggled. One pass, keyed on the tags
-  // and the toggle.
+  // Apply both rules in one pass. The COUNTS are what each rule matches, not what it removed — a
+  // rule's row shows its price whether or not it is currently ticked, so you can see what turning it
+  // on would cost before you turn it on. A trade matching both is counted as a holiday only, so the
+  // two counts never double-count the same trade against the total.
   const view = useMemo(() => {
     const tag = new Map<number, NewsTradeTag>()
     for (const t of report?.trades ?? []) if (t.index != null) tag.set(t.index, t)
@@ -2709,12 +2829,12 @@ function useNewsFilter(run: Run | undefined, avoidNews: boolean) {
     let holidayCount = 0, newsCount = 0
     for (const p of rawTrades) {
       const tg = tag.get(p.index)
-      if (tg?.in_holiday) { holidayCount++; continue }              // always removed
-      if (tg?.in_news)   { newsCount++; if (removeNews) continue }  // removed only when toggled on
+      if (tg?.in_holiday)   { holidayCount++; if (removeHolidays) continue }
+      else if (tg?.in_news) { newsCount++;    if (removeNews)     continue }
       kept.push(p)
     }
     return { kept, holidayCount, newsCount }
-  }, [rawTrades, report, removeNews])
+  }, [rawTrades, report, removeNews, removeHolidays])
 
   // The kept trades rebuilt as a curve the MAIN equity chart can draw. It must be rebuilt on the
   // same BALANCE basis as the original — that chart derives its starting balance from the first
@@ -2735,19 +2855,31 @@ function useNewsFilter(run: Run | undefined, avoidNews: boolean) {
     ]
   }, [rawTrades, view.kept, run?.equity_curve])
 
-  const baseline = useMemo(() => newsKpisFrom(rawTrades), [rawTrades])   // raw backtest (everything in)
-  const filtered = useMemo(() => newsKpisFrom(view.kept), [view.kept])   // after the filter
-
   const hasEntryTimes = rawTrades.some(p => p.entry_ms != null)
   const active = !!report?.has_data && hasEntryTimes && filteredCurve != null
 
+  // The whole run rebuilt on the kept trades — what the page's KPI grid reads while the filter is on.
+  const filteredRun = useMemo(
+    () => (run && filteredCurve ? buildFilteredRun(run, view.kept, filteredCurve) : null),
+    [run, view.kept, filteredCurve],
+  )
+
   return {
-    enabled, isLoading, report, removeNews, setRemoveNewsChoice, pre, setPre, post, setPost,
-    ...view, filteredCurve, baseline, filtered, hasEntryTimes,
+    enabled, isLoading, report, pre, setPre, post, setPost,
+    removeNews, setRemoveNewsChoice, removeHolidays, setRemoveHolidays,
+    ...view, filteredCurve, filteredRun, hasEntryTimes,
+    totalTrades: rawTrades.length,   // the run as traded — the denominator of "N of M counted"
+    // How many trades the CURRENT settings take out. Derived from the kept list rather than summed
+    // from the two counts: the counts are per-RULE and a trade can match both, so adding them would
+    // over-report. Lives here because the pill and the Performance header both state it, and two
+    // copies of this expression is exactly how they would come to disagree.
+    excluded: rawTrades.length - view.kept.length,
     isNt8: isNt8Runner(run?.runner),   // only NT8 has a "Reload charts" that can backfill trade times
     // `active` = the filter is actually removing trades right now, so the main chart is showing the
     // FILTERED run and has to say so. Everything else on the page still reports the raw backtest.
     active,
+    // `usable` = the calendar answered and the trades carry times, so the knobs mean something.
+    usable:     !!report?.has_data && hasEntryTimes,
     noData:     !isLoading && !!report && !report.has_data,
     oldRun:     !isLoading && !!report && report.has_data && !hasEntryTimes,
     nothingHit: !isLoading && !!report && report.has_data && hasEntryTimes
@@ -2755,173 +2887,157 @@ function useNewsFilter(run: Run | undefined, avoidNews: boolean) {
   }
 }
 
-function NewsFilterCard({ news }: { news: NewsFilter }) {
+function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: string | null }) {
   const {
-    enabled, isLoading, report, removeNews, setRemoveNewsChoice, pre, setPre, post, setPost,
-    holidayCount, newsCount, baseline, filtered, hasEntryTimes, noData, oldRun, nothingHit, active,
+    isLoading, pre, setPre, post, setPost,
+    removeNews, setRemoveNewsChoice, removeHolidays, setRemoveHolidays,
+    holidayCount, newsCount, totalTrades, excluded, noData, oldRun, nothingHit, usable,
   } = news
 
-  // Collapsed by default — this is a "go and check something" panel, not a permanent readout, and it
-  // sits directly under the charts. Persisted like the params rail so a preference survives reloads.
-  const [open, setOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem('bt_news_panel') === 'open' } catch { return false }
-  })
-  const toggleOpen = () => setOpen(o => {
-    const next = !o
-    try { localStorage.setItem('bt_news_panel', next ? 'open' : 'closed') } catch { /* quota */ }
-    return next
-  })
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
-  if (!enabled) return null
+  // Click-outside / Escape to dismiss. The popover holds live controls, so it must NOT close on an
+  // inner click the way a menu would — dragging a slider is a mousedown inside it.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
 
-  // The header has to be readable CLOSED, because closed is the default and the filter can be
-  // silently reshaping the Equity chart above. It carries ONE line: the state, not a title. The
-  // title is the SectionLabel directly above it — a card headed "Remove trades around high-impact
-  // news" under a heading reading "NEWS & HOLIDAY FILTER" said the same thing twice, and the state
-  // is the only part of it you can't already see.
-  const summary = isLoading ? <>Checking the calendar…</>
-    : noData     ? <>No calendar data for this period</>
-    : oldRun     ? <>No trade times on this run</>
-    : nothingHit ? <>Nothing landed on a trade</>
-    : report?.has_data && hasEntryTimes
-      ? <>
-          <span className="tabular-nums font-medium text-text-primary">{filtered.trades}</span>
-          {' of '}
-          <span className="tabular-nums">{baseline.trades}</span>
-          {' trades kept'}
-        </>
-      : null
+  // The pill counts what is OUT of the numbers beside it. Always a count of excluded trades, never
+  // a state word: "News kept" read as "nothing removed" while 3 holiday trades were being removed
+  // by a rule the UI never showed. One number, one meaning, in every state.
+  const label = blocked ? 'Excluding n/a'
+    : isLoading ? 'Checking calendar…'
+    : noData  ? 'No calendar data'
+    : oldRun  ? 'No trade times'
+    : excluded ? `Excluding ${excluded} ${excluded === 1 ? 'trade' : 'trades'}`
+    : 'Excluding nothing'
 
-  // No space-y on the root — SectionLabel already carries its own mb-3, and the two stacked on top
-  // of each other were spending 24px on one gap.
+  const disabled = !!blocked || isLoading || !usable
+
   return (
-    <div>
-      <SectionLabel>News &amp; Holiday Filter</SectionLabel>
-      <div className="rounded-lg border border-border-subtle bg-bg-surface overflow-hidden">
-        <button
-          onClick={toggleOpen}
-          className={`w-full px-4 py-2 flex items-center gap-2.5 text-left hover:bg-bg-elevated/30 transition-colors ${open ? 'border-b border-border-subtle' : ''}`}
-        >
-          <Newspaper size={14} className="text-accent shrink-0" />
-          <span className="text-[12px] text-text-secondary min-w-0 truncate">{summary}</span>
-          {active && (
-            <span className="shrink-0 rounded px-1.5 py-[1px] text-[10px] font-medium border border-accent/25 bg-accent/10 text-accent">
-              Equity chart filtered
-            </span>
-          )}
-          <span className="flex-1" />
-          {open ? <ChevronUp size={15} className="text-text-tertiary shrink-0" />
-                : <ChevronDown size={15} className="text-text-tertiary shrink-0" />}
-        </button>
+    <div ref={wrapRef} className="relative shrink-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={disabled}
+        title={blocked ?? undefined}
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          excluded > 0 ? 'border-accent/40 bg-accent/15 text-accent'
+                       : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'}`}
+      >
+        <Newspaper size={12} className="shrink-0" />
+        <span className="tabular-nums">{label}</span>
+        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
 
       {open && (
-      // Deliberately SHORT and deliberately terse. This panel sits directly above the Equity chart
-      // it reshapes and the two have to be readable together, so it is laid out as an instrument
-      // row — knobs LEFT, resulting numbers RIGHT — not as prose. Every rule that used to be a
-      // sentence on screen ("bank holidays are always excluded", "every other number is the raw
-      // backtest") is in the one InfoTip below, where it costs no height and no reading.
-      <div className="px-4 py-3 space-y-2.5">
-        {isLoading && <div className="text-[12px] text-text-tertiary">Checking the calendar…</div>}
-
-        {noData && (
-          <div className="flex items-start gap-2 text-[12px] text-text-secondary">
-            <Info size={14} className="text-text-tertiary mt-0.5 shrink-0" />
-            <span>No calendar data cached for these months — the run is shown unfiltered. Backfill with <code className="text-text-primary">engines/news/tools/backfill.py</code>.</span>
+        // Right-anchored so a wide popover on a right-aligned pill can't run off the column.
+        // BOTH exclusion rules are listed, each with its own trade count. The old panel showed one
+        // News Keep/Remove switch and silently applied a second rule (holidays, always on) that had
+        // no control and no row — so the pill could read "news kept" while trades were still being
+        // removed, which is unreadable rather than merely terse. A rule that affects the numbers
+        // gets a line, even when it is not yours to change.
+        <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[330px] rounded-lg border border-border-default bg-bg-surface shadow-2xl shadow-black/50 p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+              Exclude from these numbers
+            </span>
+            <InfoTip text="The backtest ran RAW — the strategy traded straight through news. This is arithmetic on the finished trade list, not a re-run, so it is instant. It reshapes the Performance numbers and the Equity chart only; the firm Evaluation, the price chart and the regime table still report every trade." />
           </div>
-        )}
 
-        {oldRun && (
-          <div className="flex items-start gap-2 text-[12px] text-text-secondary">
-            <Info size={14} className="text-warn-text mt-0.5 shrink-0" />
-            {/* Reload charts re-exports from NT8 on the VPS, so it is the fix on that runner ONLY.
-                Offering it on an MT5 or Python run sends you to a button that cannot help. */}
-            <span>This run recorded no trade times, so nothing can be matched against the calendar. {news.isNt8
-              ? <><span className="text-text-primary font-medium">Reload charts</span> or rerun it to enable the filter.</>
-              : <><span className="text-text-primary font-medium">Rerun it</span> to enable the filter.</>}</span>
+          <ExcludeRule
+            checked={removeHolidays}
+            onChange={setRemoveHolidays}
+            label="Bank holidays"
+            note="on by default"
+            count={holidayCount}
+            tone="holiday"
+          />
+
+          <ExcludeRule
+            checked={removeNews}
+            onChange={setRemoveNewsChoice}
+            label="High-impact news"
+            count={newsCount}
+            tone="news"
+          >
+            {/* The blackout window either side of a release, nested under the rule it belongs to so
+                it can't read as a global setting. Both re-tag live off the backend. */}
+            <label className="flex items-center gap-2 text-[11px] text-text-tertiary">
+              <span className="w-10 shrink-0">Before</span>
+              <input type="range" min={0} max={120} step={5} value={pre}
+                onChange={e => setPre(Number(e.target.value))}
+                className="flex-1 accent-accent cursor-pointer" />
+              <span className="w-8 text-right tabular-nums text-text-primary font-medium">{pre}m</span>
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-text-tertiary">
+              <span className="w-10 shrink-0">After</span>
+              <input type="range" min={0} max={120} step={5} value={post}
+                onChange={e => setPost(Number(e.target.value))}
+                className="flex-1 accent-accent cursor-pointer" />
+              <span className="w-8 text-right tabular-nums text-text-primary font-medium">{post}m</span>
+            </label>
+          </ExcludeRule>
+
+          <div className="border-t border-border-subtle pt-2.5 text-[12px] text-text-secondary">
+            {nothingHit
+              ? 'No release or holiday landed on a trade — nothing to exclude.'
+              : <><span className="tabular-nums font-medium text-text-primary">{totalTrades - excluded}</span>
+                  {' of '}
+                  <span className="tabular-nums">{totalTrades}</span>
+                  {' trades counted'}</>}
           </div>
-        )}
-
-        {report?.has_data && hasEntryTimes && (
-          // Flex-wrap, not a viewport breakpoint, because the params side panel changes the width
-          // available here — when the numbers can no longer hold their `min-w` the block simply
-          // drops to its own full-width line, which is the stacked layout.
-          <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-            <div className="shrink-0 max-w-full space-y-2">
-              {/* Row 1 — the knobs. "News" is a field label, so the segments don't have to repeat
-                  the word; holidays are not on this toggle (always excluded, see the InfoTip). The
-                  sliders are the blackout window either side of a release; both re-tag live. */}
-              <div className="flex items-center gap-x-5 gap-y-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-[12px] text-text-tertiary">News</span>
-                  <div className="inline-flex rounded-md border border-border-subtle overflow-hidden shrink-0">
-                    {(['Keep', 'Remove'] as const).map(opt => {
-                      const on = (opt === 'Remove') === removeNews
-                      return (
-                        <button key={opt} onClick={() => setRemoveNewsChoice(opt === 'Remove')}
-                          className={`px-2.5 py-1 text-[12px] font-medium transition-colors ${
-                            on ? 'bg-accent text-bg-base' : 'bg-bg-sunken text-text-secondary hover:text-text-primary'}`}>
-                          {opt}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 text-[12px] text-text-tertiary">
-                  <span className="shrink-0">Before</span>
-                  <input type="range" min={0} max={120} step={5} value={pre}
-                    onChange={e => setPre(Number(e.target.value))}
-                    className="w-28 accent-accent cursor-pointer" />
-                  <span className="w-9 tabular-nums text-text-primary font-medium">{pre}m</span>
-                </label>
-                <label className="flex items-center gap-2 text-[12px] text-text-tertiary">
-                  <span className="shrink-0">After</span>
-                  <input type="range" min={0} max={120} step={5} value={post}
-                    onChange={e => setPost(Number(e.target.value))}
-                    className="w-28 accent-accent cursor-pointer" />
-                  <span className="w-9 tabular-nums text-text-primary font-medium">{post}m</span>
-                </label>
-              </div>
-
-              {/* Row 2 — what those settings take out, as counts rather than sentences. */}
-              <div className="flex items-center gap-4 flex-wrap">
-                {nothingHit
-                  ? <span className="text-[12px] text-text-tertiary">Nothing excluded — no release or holiday landed on a trade</span>
-                  : <>
-                      <NewsCountChip n={holidayCount} noun="holiday" tone="holiday" />
-                      <NewsCountChip n={newsCount} noun="news trade" tone="news" />
-                    </>}
-                <InfoTip text={`Bank holidays are always excluded. News-window trades are excluded only while the toggle is set to Remove.${active ? ' Only the Equity chart above follows this filter — every other number and chart on the page reports the raw backtest.' : ''}`} />
-              </div>
-            </div>
-
-            {/* The five numbers are the whole answer to "does news cost me?" — each the FILTERED
-                value with its delta against the raw backtest beside it. The filtered equity curve
-                that used to sit below them is gone: it was a second, smaller copy of the Equity
-                chart further up the page. That chart now redraws on these same kept trades instead,
-                so there is one curve and it moves with these controls.
-                Uneven columns, same reasoning as the page's main KPI_COLS: the two money tiles carry
-                the long values, and a number whose font differs from its neighbours reads as broken
-                — so a long value is solved by ROOM, never by shrinking the type. min-w is what the
-                five need to stay legible; below it the block wraps rather than squeezing. */}
-            {!nothingHit && (
-              <div className="flex-1 min-w-[680px] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-[1.35fr_1fr_1fr_1.25fr_0.85fr] gap-1.5">
-                <NewsMiniKpi label="Net P&L" value={<FitMoney n={filtered.net} signed />}
-                  from={baseline.net} to={filtered.net} kind="money" />
-                <NewsMiniKpi label="Win Rate" value={pct(filtered.winRate)}
-                  from={baseline.winRate} to={filtered.winRate} kind="pct" />
-                <NewsMiniKpi label="Profit Factor" value={filtered.pf.toFixed(2)}
-                  from={baseline.pf} to={filtered.pf} kind="pf" />
-                <NewsMiniKpi label="Max DD" value={<FitMoney n={filtered.maxDd} />}
-                  from={baseline.maxDd} to={filtered.maxDd} kind="money" goodWhen="lower" />
-                <NewsMiniKpi label="Trades" value={filtered.trades}
-                  from={baseline.trades} to={filtered.trades} kind="num" />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+        </div>
       )}
-      </div>
+    </div>
+  )
+}
+
+// The Performance section label, with the news filter's pill on the right of it. The label row
+// already spanned the column with nothing in it, so the whole control costs zero vertical space —
+// and putting it HERE rather than in a section of its own is what removed the duplicated KPI tiles:
+// the filter reshapes these numbers, so it belongs on their header.
+function PerformanceHeader({ news, blocked, filtered }: {
+  news: NewsFilter; blocked: string | null; filtered: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 mb-3">
+      {/* The suffix names the SIZE of the exclusion, not the fact of it. "news filtered" told you a
+          filter existed without saying what it did or how much it moved — and it was wrong half the
+          time, since holidays are excluded whether or not the news rule is on. */}
+      <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">
+        Performance
+        {filtered && (
+          <span className="text-accent normal-case tracking-normal font-medium">
+            {' '}· {news.totalTrades - news.excluded} of {news.totalTrades} trades
+          </span>
+        )}
+      </h2>
+      {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
+    </div>
+  )
+}
+
+// The states where the filter cannot run at all get a one-line explanation under the grid rather
+// than a popover nobody can open — the pill is disabled, so it has nowhere to put this.
+function NewsFilterNote({ news }: { news: NewsFilter }) {
+  const { noData, oldRun, isNt8 } = news
+  if (!noData && !oldRun) return null
+  return (
+    <div className="flex items-start gap-2 text-[11px] text-text-tertiary">
+      <Info size={12} className={`mt-[2px] shrink-0 ${oldRun ? 'text-warn-text' : 'text-text-tertiary'}`} />
+      {noData
+        ? <span>News filter is off: no calendar data cached for these months. Backfill with <code className="text-text-secondary">engines/news/tools/backfill.py</code>.</span>
+        : <span>News filter is off: this run recorded no trade times. {isNt8
+            ? <><span className="text-text-secondary font-medium">Reload charts</span> or rerun it to enable it.</>
+            : <><span className="text-text-secondary font-medium">Rerun it</span> to enable it.</>}</span>}
     </div>
   )
 }
@@ -3059,10 +3175,33 @@ export function BacktestDetail() {
     }
   }, [run, selectedEval])
 
+  // ── What the Performance grid reads ─────────────────────────────────────────
+  // The news filter drives the page's REAL 12 KPIs — there is no second set of tiles anywhere.
+  //
+  // It can only do that off the raw, one-unit trade curve. A per-firm SIZED curve is path
+  // dependent: removing trade #7 changes the balance going into #8, which changes its position
+  // size, which changes every trade after it. That is a re-run, not arithmetic — and the sized
+  // curve is re-indexed 1..N over only the trades that firm took, so the news tags (keyed on raw
+  // indices) would not even line up. So when a firm's sizing is actually overriding the numbers,
+  // the filter is refused outright rather than applied to something it does not describe.
+  const newsBlocked = (run && effRun && effRun.equity_curve !== run.equity_curve)
+    ? 'Not available while a firm’s sized numbers are shown — position sizes depend on the trades before them, so removing one needs a re-run, not arithmetic.'
+    : null
+  const newsOnKpis = news.active && !newsBlocked && news.filteredRun != null
+  const kpiRun     = newsOnKpis ? news.filteredRun! : effRun
+
   const fallback = useMemo(
+    () => computeFallbacks(kpiRun?.daily_pnl ?? []),
+    [kpiRun?.daily_pnl],
+  )
+  // The unfiltered side of every card's "vs unfiltered" delta.
+  const rawFallback = useMemo(
     () => computeFallbacks(effRun?.daily_pnl ?? []),
     [effRun?.daily_pnl],
   )
+  const kpiCompare = (newsOnKpis && effRun)
+    ? { run: effRun, fallback: rawFallback, equity: effRun.equity_curve }
+    : null
 
   const hasRealRegimeTags = useMemo(
     () => run?.daily_pnl.some(d => d.regime_tag && d.regime_tag !== 'UNKNOWN') ?? false,
@@ -3072,7 +3211,11 @@ export function BacktestDetail() {
   // What the main Equity chart draws: the news/holiday-filtered curve while that filter is removing
   // trades, otherwise the run's real curve. `filteredCurve` is null unless something was actually
   // taken out, so the ordinary case is the untouched curve — reference-identical, nothing rebuilt.
-  const equityCurve = news.filteredCurve ?? run?.equity_curve ?? []
+  // Gated on the SAME condition as the KPI grid. Holidays are removed without anyone touching the
+  // toggle, so on a firm-sized run — where the grid refuses the filter — the chart would otherwise
+  // quietly draw a filtered curve under numbers that aren't, with a disabled pill and nothing
+  // saying why. One switch drives both.
+  const equityCurve = (newsOnKpis ? news.filteredCurve : null) ?? run?.equity_curve ?? []
 
   // Regime bands for the main equity chart, in whatever units its x-axis is using.
   // DATE mode reads the run's FULL-CALENDAR timeline — every trading day in the window, classified
@@ -3410,10 +3553,19 @@ export function BacktestDetail() {
                   {/* Left: ONE firm evaluation card — height measured so the KPI grid can match it.
                       Multi-firm runs switch via the compact counter on the header line (no growth). */}
                   <div className="flex flex-col">
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center justify-between gap-2 mb-3">
                       <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px]">Evaluation</h2>
                       {/* Firm switching now lives on the header ruleset chip (always visible, even
-                          scrolled) — no second switcher here. */}
+                          scrolled) — no second switcher here.
+                          The firm verdict is computed server-side over EVERY trade and cannot be
+                          re-evaluated in the browser, so while Performance beside it is filtered
+                          this column has to say plainly that it is not. */}
+                      {newsOnKpis && (
+                        <span className="shrink-0 rounded px-1.5 py-[1px] text-[10px] font-medium border border-border-default bg-bg-sunken text-text-tertiary">
+                          unfiltered
+                          <InfoTip text="Firm rules are evaluated on every trade, server-side — there is no news-filtered verdict. This card reports the full run even while the Performance numbers beside it have news and holiday trades removed." />
+                        </span>
+                      )}
                     </div>
                     <div className="flex flex-col gap-3" style={isLg ? { height: kpiRowH, transition: 'height 0.3s ease' } : undefined}>
                       {isOptCombo ? (
@@ -3433,35 +3585,40 @@ export function BacktestDetail() {
                       })()}
                     </div>
                   </div>
-                  {/* Right: flat KPIs pinned to the eval card's measured pixel height. */}
+                  {/* Right: flat KPIs pinned to the eval card's measured pixel height. The news
+                      filter's control lives on this header line — the row was empty, so it costs
+                      no vertical space, and it sits directly above the only numbers it changes. */}
                   <div className="flex flex-col min-w-0">
-                    <SectionLabel>Performance</SectionLabel>
-                    <KpiGrid run={effRun!} fallback={fallback} equity={effRun!.equity_curve}
-                      balance={balance} showMore={showMoreKpis} fixedHeight={isLg ? kpiRowH : null} />
+                    <PerformanceHeader news={news} blocked={newsBlocked} filtered={newsOnKpis} />
+                    <KpiGrid run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
+                      balance={balance} showMore={showMoreKpis} fixedHeight={isLg ? kpiRowH : null}
+                      compare={kpiCompare} filtered={newsOnKpis} />
                   </div>
                 </div>
                 {/* "More metrics" below the cards (left-aligned) — outside the grid so it doesn't
                     eat into the height that's matched to the eval card. */}
-                <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
+                <div className="flex items-start justify-between gap-4">
+                  <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
+                  <NewsFilterNote news={news} />
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
                 <div>
-                  <SectionLabel>Performance</SectionLabel>
+                  <PerformanceHeader news={news} blocked={newsBlocked} filtered={newsOnKpis} />
                   {run.trade_count != null && <div className="mb-3"><TradeCountStandout count={run.trade_count} /></div>}
-                  <KpiGrid run={effRun!} fallback={fallback} equity={effRun!.equity_curve}
-                    balance={balance} showMore={showMoreKpis} />
+                  <KpiGrid run={kpiRun!} fallback={fallback} equity={kpiRun!.equity_curve}
+                    balance={balance} showMore={showMoreKpis}
+                    compare={kpiCompare} filtered={newsOnKpis} />
                 </div>
                 <MoreMetricsToggle open={showMoreKpis} onToggle={() => setShowMoreKpis(s => !s)} count={6} />
               </div>
             )
           )}
 
-          {/* ── News & holiday filter (post-run view) ─────────────────────── */}
-          {isComplete && !isOptCombo && run.equity_curve.length > 0 && (
-            <NewsFilterCard news={news} />
-          )}
-
+          {/* The News & holiday filter no longer has a section of its own. It was carrying a
+              duplicate copy of five KPIs the Performance grid already showed; it now lives as a
+              pill on that grid's header and reshapes the real twelve. */}
           {/* ── Charts ────────────────────────────────────────────────────── */}
           {isComplete && !isOptCombo && (() => {
             const hasCharts = run.equity_curve.length > 0
