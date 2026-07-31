@@ -112,6 +112,7 @@ var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TO
 bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
 bool showHistoricSessions = input.bool(true, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "On (default) draws every session in the chart's history. Off draws only the current week's session boxes, from Sunday 00:00 New York.", display = display.none)
 bool showKZandNYRInput   = input.bool(true,  "Kill Zones & NY Range", group = GRP_TOOLS, tooltip = "KZ = Kill Zone, the high-activity window at a session open. NY = New York. NY Range = the opening range of the New York session.", display = display.none)
+bool showKZHistoric      = input.bool(false, "    ↳ Kill Zone History", group = GRP_TOOLS, active = showKZandNYRInput, tooltip = "Off (default) draws the kill zones and NY range for the current New York day only. On draws them for every day in the chart's history — three green bands per day, stamped at the same clock time, so expect it to cover a lot of chart.", display = display.none)
 bool showSVPInput        = input.bool(true,  "MV",                group = GRP_TOOLS, tooltip = "The MV line — where the highest volume of trades occurred during the Asian session.", display = display.none)
 bool showVwapInput       = input.bool(true,  "VWAP",              group = GRP_TOOLS, tooltip = "VWAP = Volume Weighted Average Price. The average price paid so far in the session, weighted by how much traded at each price.", display = display.none)
 bool showDivInput        = input.bool(true,  "RSI Divergence",    group = GRP_TOOLS, tooltip = "RSI = Relative Strength Index, a momentum oscillator. Divergence = price and RSI disagreeing, one making a new extreme while the other does not. Tagged Bull Div / Bear Div.", display = display.none)
@@ -480,18 +481,10 @@ color  thirdSessionColor = color.new(#FFEB3B, 90)
 //============================================================
   // KILL ZONES & NY RANGE INPUTS (single toggle)
 //============================================================
-// ── KILL ZONE HISTORY IS OFF, AND NO LONGER A CHOICE (Aaron, 2026-07-31) ──
-// It used to be a "↳ Kill Zone History" toggle under the parent, defaulting off. The
-// input is gone and the value is hardcoded false, so the kill zones and NY range draw
-// for the CURRENT New York day only.
-// It is the one history switch that had nothing to offer. A session box marks a window
-// price traded in and stays readable weeks later; a kill zone is a 15-to-60 minute band
-// stamped at the SAME clock time every single day, so switching its history on paints
-// three green stripes per day across the whole chart and buries the candles. The zone
-// only ever means something while you are in it or just past it.
-// Everything downstream still reads showKZHistoric, so restoring is putting the input
-// back on this one line.
-bool showKZHistoric = false
+// showKZHistoric is declared with the Chart Tools toggles, next to its parent. It was
+// briefly hardcoded false earlier today on the reading that "take off kill zone history"
+// meant remove the control; it meant leave the setting OFF. The input is back, still
+// defaulting off — which is the same chart, with the choice returned.
 bool showKZandNYR = showTradeTools and showKZandNYRInput
 
 bool showKillZones = showKZandNYR
@@ -514,23 +507,27 @@ int   vwapWidth = 1
 bool i_showLiquidity = true
 bool drawLiq = showTradeTools and i_showLiquidityInput
 bool i_showLabels      = true
-// ── ONE SIZE: TINY. NO INPUT. (Aaron, 2026-07-31) ──
-// The history explains why there is nothing left to choose. Normal / Large / Huge were
-// dropped on 2026-07-30: up to fifteen of these tags stack down the right edge, and past
-// Small they collide with each other and with the price scale — the collision-avoidance
-// pass below can only push labels apart VERTICALLY, it cannot make them narrower, so the
-// big sizes produced a wall of text over the candles. That left Tiny and Small, framed
-// as "tiny for a laptop, small for a large monitor".
-// Tiny is what gets used on both. Small buys a barely perceptible amount of legibility
-// and spends it on width, which is the one dimension that was already the problem — and
-// a two-option dropdown whose second option is never the right answer is not a choice,
-// it is a way to make the chart worse by accident.
-// Restoring is putting the input back on this one line; every call site already goes
-// through f_liqSize().
+// ── THE SIZE CONTROL IS BACK ON THE PANEL (Aaron, 2026-07-31) ──
+// It was removed earlier the same day on the reading that "the level tag size should be
+// tiny" meant lock it there. It did not — Tiny is the DEFAULT wanted, not the only
+// option, and those are different things. So the input returns unchanged, still
+// defaulting to Tiny.
+// The rest of the history stands and is why the list is only two long. Normal / Large /
+// Huge were dropped on 2026-07-30: up to fifteen of these tags stack down the right
+// edge, and past Small they collide with each other and with the price scale — the
+// collision-avoidance pass below can only push labels apart VERTICALLY, it cannot make
+// them narrower, so the big sizes produced a wall of text over the candles. Tiny for a
+// laptop, Small for a large monitor.
+// ONE control for every price-level tag on the right-hand side, deliberately. Sizing
+// them per-tool is what makes that edge look ragged.
+string liqLabelSize    = input.string("Tiny", "Level tag size", options = ["Tiny", "Small"], group = GRP_TOOLS, tooltip = "One size for every price-level tag down the right-hand side: the Liquidity Levels (PDH/PDL, PWH/PWL, PWC, H4 H/L, session highs and lows), the MV line, and the EQH/EQL pools. Deliberately ONE control — sizing them separately is what makes the right edge look ragged.", display = display.none)
 bool i_currentDayOnly  = true   // always hide mitigated on new day
 
+// Two branches now the other three options are gone. The `else` also absorbs a chart
+// saved with the OLD input still storing "Normal"/"Large"/"Huge" — it falls to small
+// rather than to a size that is no longer offered.
 f_liqSize() =>
-    size.tiny
+    liqLabelSize == "Tiny" ? size.tiny : size.small
 
 bool i_isDailyEnabled   = true
 bool i_isWeeklyEnabled  = true
