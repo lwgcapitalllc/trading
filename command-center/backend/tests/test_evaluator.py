@@ -189,6 +189,36 @@ def test_personal_profit_halt_is_informational(seeded_run):
     assert "daily profit target" in r["notes"]
 
 
+# ── A ruleset that states no limit cannot be passed ───────────────────────────
+# `unconstrained` configures neither fail condition on purpose, so both checks are
+# skipped and `failures` is empty no matter what the run did. It used to return PASS,
+# which claimed a verdict lab_db.py's own seed note says cannot be given.
+
+def test_unconstrained_is_not_graded(seeded_run):
+    """A run that loses 95% of the account still cannot FAIL a ruleset with no limits —
+    but it must not PASS one either."""
+    daily = [{"date": "2024-01-02", "pnl": -9000}, {"date": "2024-01-03", "pnl": -500}]
+    r = _eval(seeded_run, "unconstrained", net_pnl=-9500, daily_pnl=daily)
+    assert r["verdict"] == "INFO"
+    assert "no personal fail conditions configured" in r["notes"]
+
+
+def test_unconstrained_is_not_graded_when_profitable(seeded_run):
+    """Same verdict on a winning run — INFO is the absence of grading, not a bad grade."""
+    daily = [{"date": "2024-01-02", "pnl": 4000}]
+    r = _eval(seeded_run, "unconstrained", net_pnl=4000, daily_pnl=daily)
+    assert r["verdict"] == "INFO"
+
+
+def test_stated_limit_still_grades(seeded_run):
+    """The guard is 'nothing was checked', not 'personal ruleset' — a personal row that
+    DOES state a drawdown limit keeps its real PASS/DISCARD verdict."""
+    daily = [{"date": "2024-01-02", "pnl": -9999}]
+    r = _eval(seeded_run, "personal_forex_risk", net_pnl=-9999, daily_pnl=daily)
+    assert r["verdict"] == "DISCARD"
+    assert r["drawdown_pass"] is False
+
+
 # ── Multiple rulesets in one call ─────────────────────────────────────────────
 
 def test_evaluate_multiple_rulesets(seeded_run):

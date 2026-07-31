@@ -125,6 +125,9 @@ def _evaluate_personal(
     trigger. Granularity is end-of-day (same convention as the trailing-MLL engine):
     an intraday dip through the drawdown limit that recovers by the close is invisible.
 
+    A ruleset that configures NEITHER condition returns INFO, not PASS — see the verdict
+    line at the end of this function.
+
     Returns (verdict, drawdown_pass, notes, breach_count) where breach_count is the
     number of DISCARD conditions that fired (0-2).
     """
@@ -201,10 +204,26 @@ def _evaluate_personal(
                 f"target (would halt the day — informational)"
             )
 
-    if not daily_cap and not dd_limit_pct:
+    # ── Was anything actually checked? ─────────────────────────────────────
+    # Mirrors the two guards above EXACTLY: check 1 runs only on `daily_cap and
+    # streak_limit`, check 2 only on `account_size and dd_limit_pct`. A ruleset missing
+    # the second half of either pair silently skips that check, so testing the caps alone
+    # (as this note used to) called a run graded when nothing had graded it.
+    graded_streak = bool(daily_cap and streak_limit)
+    graded_dd = bool(account_size and dd_limit_pct)
+    ungraded = not graded_streak and not graded_dd
+    if ungraded:
         info.append("no personal fail conditions configured on this ruleset")
 
-    verdict = "DISCARD" if failures else "PASS"
+    # Zero failures out of zero checks is NOT a pass — it is the absence of a verdict, and
+    # saying PASS there means "passed nothing". `unconstrained` is the ruleset this exists
+    # for: it deliberately states no daily cap and no drawdown limit, so both checks are
+    # skipped and `failures` is empty by construction — a run that lost 95% of the account
+    # was graded PASS. services/lab_db.py already states the intended rule on that row:
+    # "a run against it cannot be graded — every grade is a statement about drawdown vs a
+    # limit, and there is no honest default to substitute". INFO is that absence; the
+    # frontend renders it neutrally and skips the rule rows.
+    verdict = "DISCARD" if failures else ("INFO" if ungraded else "PASS")
     parts = [f"net P&L ${net_pnl:,.0f}"] + failures + info
     return verdict, drawdown_pass, "; ".join(parts), len(failures)
 

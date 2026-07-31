@@ -462,6 +462,30 @@ def init_db() -> None:
             AND strategy_id IN (SELECT id FROM strategies WHERE runner = 'mt5')
         """)
 
+        # Re-verdict evaluations that were PASSed by a ruleset stating no fail condition.
+        # services/evaluator._evaluate_personal ended `DISCARD if failures else PASS`, and on a
+        # ruleset with neither condition configured (`unconstrained` is the deliberate case)
+        # both checks are skipped, so `failures` is empty no matter what the run did — a run
+        # that lost 95% of the account was stored as PASS. Fixed at the source 2026-07-31, but
+        # verdicts are STORED, so every existing row keeps its stale PASS without this.
+        # Conditions mirror the evaluator's two guards exactly: check 1 needs
+        # daily_loss_cap AND max_consecutive_loss_days, check 2 needs account_size AND
+        # max_drawdown_from_peak_pct. Only PASS is rewritten — a DISCARD came from a real
+        # failure and is left alone.
+        conn.execute("""
+            UPDATE evaluations
+            SET verdict = 'INFO'
+            WHERE verdict = 'PASS'
+            AND ruleset_id IN (
+                SELECT id FROM rulesets
+                WHERE ruleset_type IN ('personal', 'demo')
+                AND NOT (daily_loss_cap IS NOT NULL AND daily_loss_cap != 0
+                         AND max_consecutive_loss_days IS NOT NULL AND max_consecutive_loss_days != 0)
+                AND NOT (account_size IS NOT NULL AND account_size != 0
+                         AND max_drawdown_from_peak_pct IS NOT NULL AND max_drawdown_from_peak_pct != 0)
+            )
+        """)
+
         # Pass 1 — backfill foundational config for all existing rulesets where null.
         # Personal-specific overrides must run BEFORE the blanket defaults so the
         # blanket update (which only touches NULL rows) doesn't overwrite them.
