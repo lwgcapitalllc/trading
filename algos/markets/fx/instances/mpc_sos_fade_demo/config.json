@@ -61,8 +61,8 @@
     "account_profile": "puprime_standard",
     "symbol": "XAUUSD.s"
   },
-  "strategy_source_hash": "6f78d102bfd9c4e55a0fd327cf581a0a",
-  "promoted_commit": "8fb2986",
+  "strategy_source_hash": "4d7061a4c6dec0f922194df93fee358b",
+  "promoted_commit": "5c53b0d",
   "promoted_at": "2026-07-31",
   "strategy_version": 0,
   "telegram_chat_id": "",
