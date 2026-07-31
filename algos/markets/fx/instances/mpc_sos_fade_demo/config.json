@@ -27,7 +27,7 @@
     "exec_htf_source": "Weekly",
     "exec_htf_weekly": "Ignore",
     "exec_htf_daily": "Ignore",
-    "exec_risk_pct": 8.0,
+    "exec_risk_pct": 10.0,
     "exec_sl_level": "0.886",
     "exec_sl_buf_tk": 0.0,
     "exec_min_stop_mode": "Off",
