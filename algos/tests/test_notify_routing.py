@@ -139,6 +139,60 @@ def test_the_fallback_warning_is_printed_once_per_key(monkeypatch, sent, capsys)
     assert capsys.readouterr().out.count("telegram_token_bleg") == 1
 
 
+# ── unparseable Markdown must not eat the message ───────────────────────────────
+# Telegram rejects the WHOLE message when Markdown does not parse, and a single underscore is
+# enough. Bot keys, symbols and file paths are made of underscores — `mpc_sos_fade_demo`,
+# `MT5_FFT`, `live_config.py` — so the alert most likely to be refused is the one carrying an
+# exception, whose text is full of paths. Found on the first real send, 2026-07-31.
+
+class _RejectsMarkdown:
+    """Telegram's actual behaviour: 400 with a parse error while parse_mode is set."""
+
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, json=None, timeout=None):
+        self.calls.append(json)
+        if "parse_mode" in json:
+            return type("R", (), {
+                "status_code": 400,
+                "text": '{"ok":false,"error_code":400,"description":'
+                        '"Bad Request: can\'t parse entities: Can\'t find end of the entity"'})()
+        return type("R", (), {"status_code": 200, "text": "ok"})()
+
+
+def test_a_message_telegram_cannot_parse_is_resent_unformatted(monkeypatch, capsys):
+    monkeypatch.setattr(credentials, "_cache",
+                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    fake = _RejectsMarkdown()
+    monkeypatch.setattr(notify, "_requests", fake)
+
+    assert notify.send_telegram("MPC SOS Fade on MT5_FFT") is True
+    assert len(fake.calls) == 2
+    assert "parse_mode" in fake.calls[0]          # tried formatted first
+    assert "parse_mode" not in fake.calls[1]      # then plain
+    assert fake.calls[1]["text"] == "MPC SOS Fade on MT5_FFT"   # text itself is never mangled
+    assert "plain text" in capsys.readouterr().out
+
+
+def test_a_400_that_is_not_a_parse_error_is_not_retried(monkeypatch):
+    """A bot that is not in the chat also 400s. Retrying that unformatted just fails twice and
+    hides the real reason, which is the one worth reading."""
+    monkeypatch.setattr(credentials, "_cache",
+                        {"telegram_token": "T", "telegram_chat_id": "-100shared"})
+    calls = []
+
+    class _NotAMember:
+        def post(self, url, json=None, timeout=None):
+            calls.append(json)
+            return type("R", (), {"status_code": 400,
+                                  "text": '{"description":"Bad Request: chat not found"}'})()
+
+    monkeypatch.setattr(notify, "_requests", _NotAMember())
+    assert notify.send_telegram("hi") is False
+    assert len(calls) == 1
+
+
 # ── never raises ────────────────────────────────────────────────────────────────
 def test_an_unconfigured_notifier_is_a_no_op_not_a_crash(sent):
     assert notify.send_telegram("hi") is False

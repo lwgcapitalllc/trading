@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -57,19 +58,47 @@ def telegram_configured() -> bool:
 
 def send_telegram(text: str, chat_id: str = "") -> bool:
     """Best-effort send. Returns True on success, and NEVER raises — a notification failure
-    must not turn a working endpoint into a 500."""
+    must not turn a working endpoint into a 500.
+
+    Falls back to UNFORMATTED text when Telegram rejects the Markdown. Formatting is a nicety;
+    delivery is the point. A single underscore in a strategy name, a symbol or a file path
+    (`mpc_sos_fade`, `MT5_FFT`, `live_config.py`) opens an italic that never closes and Telegram
+    refuses the whole message — so the alert most likely to be lost is the one carrying an error,
+    because error text is full of paths. Measured on the VPS side's first real send, 2026-07-31.
+    """
     token = _cred("telegram_token", "LWG_TELEGRAM_TOKEN")
     dest = chat_id or _cred("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID")
     if not token or not dest:
         return False
-    try:
-        data = json.dumps({"chat_id": dest, "text": text, "parse_mode": "Markdown"}).encode()
+
+    def _post(parse_mode) -> None:
+        body = {"chat_id": dest, "text": text}
+        if parse_mode:
+            body["parse_mode"] = parse_mode
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            data=data,
+            data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
         )
         urllib.request.urlopen(req, timeout=_TIMEOUT).close()
+
+    try:
+        _post("Markdown")
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code != 400:
+            return False
+        try:
+            detail = e.read().decode("utf-8", "replace")
+        except Exception:
+            detail = ""
+        if "parse entities" not in detail:
+            return False
+    except Exception:
+        return False
+
+    try:
+        _post(None)
         return True
     except Exception:
         return False

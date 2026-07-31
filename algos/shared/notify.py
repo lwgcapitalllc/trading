@@ -69,12 +69,25 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "") -> bool:
     if _requests is None:
         print(f"notify: requests not installed, dropping message: {text}")
         return False
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+    def _post(parse_mode):
+        body = {"chat_id": dest, "text": text}
+        if parse_mode:
+            body["parse_mode"] = parse_mode
+        return _requests.post(url, json=body, timeout=5)
+
     try:
-        r = _requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": dest, "text": text, "parse_mode": "Markdown"},
-            timeout=5,
-        )
+        r = _post("Markdown")
+        if r.status_code == 400 and "parse entities" in r.text:
+            # Markdown is a nicety; DELIVERY is the point. An underscore in a bot key, a symbol
+            # or a file path inside an exception opens an italic that never closes, and Telegram
+            # rejects the WHOLE message — so the alert that never arrives is the one reporting a
+            # crash, whose text is a traceback full of paths. Measured on the first real send:
+            # "MT5_FFT" alone was enough. Retry unformatted rather than lose it.
+            print("notify: Markdown rejected, resending as plain text — "
+                  f"{r.text[:160]}")
+            r = _post(None)
         if r.status_code != 200:
             print(f"notify: Telegram returned {r.status_code}: {r.text[:200]}")
             return False
