@@ -84,10 +84,33 @@ its own group and `telegram_token_key` lets it send as its own Telegram bot. The
 entry in `algos/credentials.json`; the token itself never enters an instance config. Both empty
 = the shared default, so a one-bot setup needs neither.
 
-Tests: `algos/tests/` — **83, all offline against a faked terminal**, so `pytest algos/` runs on the
-Mac with no MT5 and no VPS. 54 cover this package, 16 cover the new pending-order layer in
-`shared/mt5_ops.py`, 13 cover credential resolution and Telegram routing. One of them hashes a strategy package with both `version.py` and the lab's
-scanner and requires the same answer — a pin that disagrees with the lab is worse than no pin.
+Tests: `algos/tests/` — **89, all offline against a faked terminal**, so `pytest algos/` runs on the
+Mac with no MT5 and no VPS. 60 cover this package, 16 cover the pending-order layer in
+`shared/mt5_ops.py`, 13 cover credential resolution and Telegram routing.
+
+**Offline green is not the same as "it runs".** The first real startup on the VPS
+(2026-07-31, dry run, full connect → pin → warm → bridge) found three things a fully green suite
+had not, and all three would have stopped the bot dead:
+
+1. **The version pin could never match.** The hash was over raw bytes, and the VPS has
+   `core.autocrlf = true` — git rewrites every newline on checkout, so one commit hashed
+   differently on the two machines. The bot would have refused to start every time, on correct
+   code. Newlines are now normalised in `live/version.py` **and** in the lab's scanner; they must
+   stay in step. A guard that always fires is a guard that gets switched off.
+2. **`LiveRunner` could not be constructed at all** — `_make_logger` imported `bot_utils`, which
+   was not on the path it built. Every test covered a PIECE (bridge, feed, ledger, pin); nothing
+   built the object that wires them together. `test_live_runner_startup.py` now does.
+3. **The log silently dropped lines.** A Windows console is cp1252 and cannot encode the arrows
+   and em-dashes these messages use; `logging` discards the record and prints a
+   UnicodeEncodeError in its place. Both streams are forced to UTF-8 now — the log is the audit
+   trail, so an unencodable character costs a glyph, never the line.
+
+The standing lesson: **run it on the VPS before believing it works.** These were found in one
+five-minute dry run.
+
+One test hashes a strategy package with both `version.py` and the lab's scanner and requires the
+same answer — a pin that disagrees with the lab is worse than no pin.
+
 The root `conftest.py` has to `collect_ignore` `algos/nt8/test_bt_switch.py`: it is a VPS debug
 script, not a test, and it calls `sys.exit(1)` at IMPORT when pywinauto is missing, which crashes
 collection for the whole repo rather than failing one file.

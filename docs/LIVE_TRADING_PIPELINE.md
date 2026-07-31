@@ -5,9 +5,10 @@ placing real orders on a chosen MT5 terminal, controlled from the command center
 **Scope:** The live runtime, the order bridge, per-bot control, Telegram alerts, trade logging,
 log backup, and version pinning. It does NOT change strategy logic, engines, or the backtest lab.
 **Status:** IN BUILD — steps 1-4 done (the minimum-stop guard, secrets out of git, pending orders +
-the broker-clock fix, and the `algos/live/` runtime). Steps 5-9 open; steps 5, 7 and 9 are blocked on
-Aaron's MT5 and Telegram details.
-**Created:** 2026-07-30. **Last updated:** 2026-07-30.
+the broker-clock fix, and the `algos/live/` runtime), and **the first bot is configured, deployed and
+proven to start on the VPS** (see *First VPS startup* below). Steps 5-9 open; 7 and 9 still need the
+Telegram token and a deliberate `exec_risk_pct`.
+**Created:** 2026-07-30. **Last updated:** 2026-07-31.
 **Owner requirements this satisfies (Aaron, 2026-07-30):** start/stop/restart individual bots from
 the Bots page without touching the others · Telegram on trade entry and trade exit only (exit
 carries P&L) · Aaron names which MT5 instance each bot trades · lab work on a strategy must never
@@ -508,11 +509,50 @@ git-ignored local folder whenever the app starts. Both idempotent.
 
 ---
 
+## 5b. First VPS startup — 2026-07-31
+
+The first bot is configured and deployed: `mpc_sos_fade_demo`, on the **MT5_FFT** terminal
+(`C:\MT5_FFT\terminal64.exe`), PU Prime demo **700107749** / `PUPrime-Demo` / **XAUUSD.s**.
+Instance config at `algos/markets/fx/instances/mpc_sos_fade_demo/config.json`; the MT5 password
+lives in the VPS-only `algos/credentials.json`, which git cannot see.
+
+**Every broker fact in that config was probed off the running terminal, not typed.** Contract 100 oz,
+tick value $1.00, volume 0.01–100.00 step 0.01, spread 33 points, trade mode FULL, balance $2,000,
+leverage 500, hedging. Two that would have bitten silently:
+
+- **`SYMBOL_TRADE_STOPS_LEVEL` = 20 points ($0.20).** The broker refuses a stop closer than that to
+  the entry — the same hazard the minimum-stop guard exists for, enforced independently.
+- **The symbol supports IOC but NOT FOK.** Market orders send IOC and pendings send RETURN, so we
+  are fine; an FOK would have been rejected order by order with nothing obviously wrong.
+
+The clock read **+3.00h vs UTC**, confirming the DST half of `"2,3"`. The winter half is still
+inferred — re-measure after the November changeover.
+
+**A full dry-run startup was executed on the VPS** — verify pin → connect → build strategy → feed →
+bridge → adopt broker state → warm 5,000 bars (2026-05-15 → 2026-07-31 01:15 UTC, 4.1s) → go live.
+It ended in `WARMING`, correctly: warmup finished with the emulator holding a position whose entry
+is in the past, so the bridge places nothing until it closes (D3). The ledger recorded both events.
+
+**That run found three bugs a fully green offline suite had not, and each would have stopped the
+bot dead.** They are worth remembering as a class, not as three incidents:
+
+| # | Bug | Why the suite missed it |
+|---|---|---|
+| 1 | The **version pin could never match**. The hash was over raw bytes and the VPS has `core.autocrlf = true`, so git rewrote every newline on checkout and one commit hashed two ways | Every test ran on the Mac, where both sides already see LF. Fixed in `live/version.py` **and** the lab scanner — they must stay in step |
+| 2 | **`LiveRunner` could not be constructed** — `_make_logger` imported `bot_utils` from a dir that was never on its path | Every test covered a PIECE; nothing built the object that wires them together |
+| 3 | **The log silently dropped lines** — a cp1252 console cannot encode the arrows and em-dashes, and `logging` discards the record rather than raising | Nothing asserted on log CONTENT, and macOS consoles are UTF-8 |
+
+Bug 1 is the one to keep in mind: a pin that always fires is a pin that gets switched off, which
+leaves nothing at all guarding what trades. **Standing rule from this: run it on the VPS before
+believing it works.** Offline green means the logic is right, not that the bot starts.
+
+---
+
 ## 6. Open items needing Aaron
 
 | # | Item | Why it blocks |
 |---|---|---|
-| 1 | **Which MT5 instance** — terminal path, account number, server name, and the exact symbol string | Step 4 onward. Also fixes the broker-clock offset to measure |
+| 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | **Live `exec_risk_pct`** | 10% was measured at **−54.9% max drawdown** over 6.5 years, and Run 12 found the drawdown is a losing streak at that risk, not give-back — risk % is the only lever that moves it. On a demo this is a choice about what you want to learn, not a survival question, but it should be a deliberate number |
 | 4 | **A+ only, or A+ and B-LEG?** | Recommendation: **A+ only.** Two bots need the account-level allocator (unbuilt) and the A+/B-LEG overlap audit (never run). Both are real work and neither is on this plan |
