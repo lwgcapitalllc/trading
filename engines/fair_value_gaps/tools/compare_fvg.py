@@ -10,8 +10,8 @@ saw and diffs its output against the px_fvg_* columns the Pine build plotted.
 
 What is compared (per bar, after --warmup)
 ------------------------------------------
-  * The active gap arrays, slot by slot (slot 1 = oldest): px_fvg_top_1..6 / px_fvg_bot_1..6 against
-    active[k].top / .bottom, and px_fvg_bull_1..6 against active[k].is_bullish (1/0). Matching the
+  * The active gap arrays, slot by slot (slot 1 = oldest): px_fvg_top_1..10 / px_fvg_bot_1..10 against
+    active[k].top / .bottom, and px_fvg_bull_1..10 against active[k].is_bullish (1/0). Matching the
     ordered arrays every bar proves formation, mitigation AND FIFO eviction all at once.
   * px_fvg_count against len(active).
   * px_fvg_formed / px_fvg_mit against the count of gaps formed / mitigated this bar (localisers).
@@ -20,9 +20,14 @@ Data lineup
 -----------
 Export ONE CSV from TradingView with indicators/fvg_export.pine on the chart (chart menu → Export
 chart data). Each row carries the candle (fed to Python) and the Pine FVG engine's outputs. Both
-sides come from the same file, so there is no data-source mismatch. Set --max-count / --threshold-pct
-to match the Pine inputs (defaults 6 / 0.1 = the mpc defaults — max_count 6 and a hardcoded
-0.1%-of-price gap floor).
+sides come from the same file, so there is no data-source mismatch. The export's `cfg_fvg_*` columns
+carry the Pine's own settings and are read automatically — run with NO config flags. The
+--max-count / --threshold-pct / --require-close flags are FALLBACKS for an export taken before those
+columns existed; their defaults are the mpc defaults (8 / 0.0 sub-15m / off).
+
+Note the minimum-gap floor is timeframe-split in mpc and in the export (0.0 below 15m, 0.04 at 15m
+and above), so `cfg_fvg_thresh` differs between a 5m and a 15m export of the same build. That is
+correct, not drift — the column carries whatever the chart actually ran.
 
 Warmup
 ------
@@ -52,7 +57,11 @@ if str(_REPO_ROOT) not in sys.path:
 
 from fair_value_gaps import FairValueGapEngine
 
-_MAX_SLOTS = 6  # mpc fvgMaxCount default; fvg_export.pine plots 6 slots
+# fvg_export.pine plots this many slots per array, and its fvgMaxCount input is capped to match.
+# It used to be 6 while the cap was 8, so the two newest gaps were live in Pine and never compared.
+# If you widen the export, widen this in the SAME commit — the guard below refuses the mismatch
+# rather than reporting a green that only covered part of the array.
+_MAX_SLOTS = 10
 
 # ── column groups ──
 TOP_FIELDS = [f"px_fvg_top_{k}" for k in range(1, _MAX_SLOTS + 1)]
@@ -198,7 +207,7 @@ def _read_cfg(header, rows):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with fvg_export.pine on the chart")
-    ap.add_argument("--max-count", type=int, default=10, help="fallback if the export has no cfg_fvg_maxcount column (Pine default 10)")
+    ap.add_argument("--max-count", type=int, default=8, help="fallback if the export has no cfg_fvg_maxcount column (Pine default 8)")
     ap.add_argument("--threshold-pct", type=float, default=0.0, help="fallback if the export has no cfg_fvg_thresh column (Pine sub-15m default 0.0)")
     ap.add_argument("--require-close", action="store_true", help="fallback if the export has no cfg_fvg_requireclose column (Pine default off)")
     ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
@@ -222,6 +231,16 @@ def main(argv=None):
     threshold_pct = cfg["thresh"] if cfg.get("thresh") is not None else args.threshold_pct
     require_close = bool(round(cfg["requireclose"])) if cfg.get("requireclose") is not None else args.require_close
     cfg_src = "export cfg_* columns" if cfg else "CLI args (no cfg_* columns in export)"
+
+    # A cap above the number of plotted slots means the export cannot describe its own state: gaps
+    # past slot _MAX_SLOTS would be live in Pine and invisible here, so a green would be partial.
+    if max_count > _MAX_SLOTS:
+        raise SystemExit(
+            f"ERROR: the export ran with fvgMaxCount={max_count} but fvg_export.pine plots only "
+            f"{_MAX_SLOTS} slots per array, so gaps {_MAX_SLOTS + 1}..{max_count} are never exported "
+            f"and could not be compared.\nWiden the px_fvg_top_/bot_/bull_ plots in "
+            f"indicators/fvg_export.pine and _MAX_SLOTS here to match, then re-export."
+        )
 
     # EQ coupling (mpc eqExemptFvg): when the export carries the cfg_eq_* columns AND the exemption is
     # on, run the EQ engine alongside and feed its active levels + tolerance into the FVG cap each bar.

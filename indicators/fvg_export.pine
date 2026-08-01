@@ -14,15 +14,27 @@
 // ============================================================================
 // overlay=false: runs in its own pane so the transparent parity plots don't drag the price
 // chart's scale. All drawing is removed anyway (this is the harness), so nothing needs the
-// price overlay. Export on any intraday timeframe — FVG detection is timeframe-agnostic.
+// price overlay. Export on any intraday timeframe — the DETECTION is timeframe-agnostic, and the one
+// thing that is not (the minimum-gap floor) is split at mpc's own 900-second boundary below.
 indicator("FVG Export", overlay = false, max_bars_back = 2000)
 
-// Defaults MIRROR mpc_assistant.pine's GRP_FVG on a sub-15m chart: max 10 gaps, no size floor
-// (fvgThreshLTF=0.0; on 15m+ the Pine passes 0.04), and require-close OFF (the classic 3-candle FVG).
-// The actual values used are exported as cfg_* columns so compare_fvg.py configures the Python engine
-// to whatever settings this export carried — parity survives any input tweak.
-int   fvgMaxCount     = input.int(10, "Max Active FVGs", minval = 1, maxval = 20)
-float fvgThreshPct    = input.float(0.0, "Min Gap Size (% of price)", minval = 0.0, maxval = 5.0, step = 0.01)
+// Defaults MIRROR mpc_assistant.pine:410-414 exactly.
+//
+// The size floor is TIMEFRAME-AWARE in mpc and this file now reproduces that split rather than
+// carrying one flat number. It matters: a %-of-price floor does not scale down, so 0.04% of gold at
+// $3,300 is $1.32 — a real filter on a 15m bar, but wider than many whole 5m bars. A harness pinned
+// to the sub-15m floor and then exported on a 15m chart would have been diffing Python against a
+// Pine running a DIFFERENT rule from the indicator it is supposed to mirror.
+//
+// Both floors are inputs so a run can be taken at a non-default setting, but `cfg_fvg_thresh` carries
+// the EFFECTIVE value, so compare_fvg.py always configures Python to whatever this chart really used.
+float fvgThreshLTF    = input.float(0.0,  "Min Gap Size, below 15m (% of price)",  minval = 0.0, maxval = 5.0, step = 0.01)
+float fvgThreshHTF    = input.float(0.04, "Min Gap Size, 15m and above (% of price)", minval = 0.0, maxval = 5.0, step = 0.01)
+float fvgThreshPct    = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
+// maxval is 10 because this file plots exactly 10 slots per array. Raise BOTH together or the
+// harness silently stops checking the gaps past the last plotted slot — which is what it did at
+// maxval 20 / 6 slots: the cap is 8, so gaps 7 and 8 were live and invisible to the diff.
+int   fvgMaxCount     = input.int(8, "Max Active FVGs", minval = 1, maxval = 10)
 bool  fvgRequireClose = input.bool(false, "Require Displacement Close")
 
 // ── EQ coupling (mpc eqExemptFvg): an FVG behind an active EQH/EQL level is exempt from the cap.
@@ -150,18 +162,30 @@ plot(array.size(fvgTops) > 2 ? array.get(fvgTops, 2) : na, "px_fvg_top_3",  colo
 plot(array.size(fvgTops) > 3 ? array.get(fvgTops, 3) : na, "px_fvg_top_4",  color = color.new(color.green, 100))
 plot(array.size(fvgTops) > 4 ? array.get(fvgTops, 4) : na, "px_fvg_top_5",  color = color.new(color.green, 100))
 plot(array.size(fvgTops) > 5 ? array.get(fvgTops, 5) : na, "px_fvg_top_6",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 6 ? array.get(fvgTops, 6) : na, "px_fvg_top_7",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 7 ? array.get(fvgTops, 7) : na, "px_fvg_top_8",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 8 ? array.get(fvgTops, 8) : na, "px_fvg_top_9",  color = color.new(color.green, 100))
+plot(array.size(fvgTops) > 9 ? array.get(fvgTops, 9) : na, "px_fvg_top_10", color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 0 ? array.get(fvgBots, 0) : na, "px_fvg_bot_1",  color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 1 ? array.get(fvgBots, 1) : na, "px_fvg_bot_2",  color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 2 ? array.get(fvgBots, 2) : na, "px_fvg_bot_3",  color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 3 ? array.get(fvgBots, 3) : na, "px_fvg_bot_4",  color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 4 ? array.get(fvgBots, 4) : na, "px_fvg_bot_5",  color = color.new(color.green, 100))
 plot(array.size(fvgBots) > 5 ? array.get(fvgBots, 5) : na, "px_fvg_bot_6",  color = color.new(color.green, 100))
-plot(array.size(fvgIsBull) > 0 ? (array.get(fvgIsBull, 0) ? 1.0 : 0.0) : na, "px_fvg_bull_1", color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 1 ? (array.get(fvgIsBull, 1) ? 1.0 : 0.0) : na, "px_fvg_bull_2", color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 2 ? (array.get(fvgIsBull, 2) ? 1.0 : 0.0) : na, "px_fvg_bull_3", color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 3 ? (array.get(fvgIsBull, 3) ? 1.0 : 0.0) : na, "px_fvg_bull_4", color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 4 ? (array.get(fvgIsBull, 4) ? 1.0 : 0.0) : na, "px_fvg_bull_5", color = color.new(color.gray, 100))
-plot(array.size(fvgIsBull) > 5 ? (array.get(fvgIsBull, 5) ? 1.0 : 0.0) : na, "px_fvg_bull_6", color = color.new(color.gray, 100))
+plot(array.size(fvgBots) > 6 ? array.get(fvgBots, 6) : na, "px_fvg_bot_7",  color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 7 ? array.get(fvgBots, 7) : na, "px_fvg_bot_8",  color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 8 ? array.get(fvgBots, 8) : na, "px_fvg_bot_9",  color = color.new(color.green, 100))
+plot(array.size(fvgBots) > 9 ? array.get(fvgBots, 9) : na, "px_fvg_bot_10", color = color.new(color.green, 100))
+plot(array.size(fvgIsBull) > 0 ? (array.get(fvgIsBull, 0) ? 1.0 : 0.0) : na, "px_fvg_bull_1",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 1 ? (array.get(fvgIsBull, 1) ? 1.0 : 0.0) : na, "px_fvg_bull_2",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 2 ? (array.get(fvgIsBull, 2) ? 1.0 : 0.0) : na, "px_fvg_bull_3",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 3 ? (array.get(fvgIsBull, 3) ? 1.0 : 0.0) : na, "px_fvg_bull_4",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 4 ? (array.get(fvgIsBull, 4) ? 1.0 : 0.0) : na, "px_fvg_bull_5",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 5 ? (array.get(fvgIsBull, 5) ? 1.0 : 0.0) : na, "px_fvg_bull_6",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 6 ? (array.get(fvgIsBull, 6) ? 1.0 : 0.0) : na, "px_fvg_bull_7",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 7 ? (array.get(fvgIsBull, 7) ? 1.0 : 0.0) : na, "px_fvg_bull_8",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 8 ? (array.get(fvgIsBull, 8) ? 1.0 : 0.0) : na, "px_fvg_bull_9",  color = color.new(color.gray, 100))
+plot(array.size(fvgIsBull) > 9 ? (array.get(fvgIsBull, 9) ? 1.0 : 0.0) : na, "px_fvg_bull_10", color = color.new(color.gray, 100))
 plot(array.size(fvgTops), "px_fvg_count",  color = color.new(color.gray, 100))
 plot(fvgFormed,           "px_fvg_formed", color = color.new(color.gray, 100))
 plot(fvgMit,              "px_fvg_mit",    color = color.new(color.gray, 100))

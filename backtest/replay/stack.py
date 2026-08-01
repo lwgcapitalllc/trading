@@ -66,9 +66,19 @@ class EngineConfig:
     # internal-derived fields before the fibs read them. Default True keeps the canonical
     # behaviour the fib-parity harness (fib_export.pine, showInternal ON) was validated at.
     show_internal: bool = True
-    # fair_value_gaps
-    fvg_max_count: int = 6
-    fvg_threshold_pct: float = 0.1
+    # fair_value_gaps. These mirror the ENGINE defaults (== `mpc_assistant.pine`, the indicator),
+    # NOT any one strategy — this package is strategy-agnostic and cannot encode one bot's tuning.
+    # A consumer replaying a specific Pine must pin every value that Pine does not leave at the
+    # engine default; see the unpinned-engine-input rule in `backtest/CLAUDE.md`.
+    #
+    # ⚠ `fvg_threshold_pct` is LOAD-BEARING and was 0.1 here until 2026-07-31 — not as a considered
+    # default but because `mpc_sos_fade` silently relied on it (it pins max_count and require_close
+    # and forgot this one). `mpc_strategy.pine`'s 15m floor is 0.1 while the indicator's is 0.04,
+    # so the bot now pins 0.1 explicitly and this default is free to mirror the engine again.
+    # Verified the hard way: setting this to 0.0 while the bot was unpinned broke
+    # `compare_strategy.py` on the first compared bar (`px_edge` 3478.99 vs 3475.43).
+    fvg_max_count: int = 8
+    fvg_threshold_pct: float = 0.0
     # Middle-bar close-cleared requirement (Pine `fvgRequireClose`). `mpc_assistant.pine`
     # exposes it as an input defaulting OFF — the classic 3-candle FVG — which is why this
     # defaults False. But `mpc_strategy.pine` HARDCODES the check (`close[1] > high[2]` /

@@ -21,7 +21,13 @@ consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine` FVG block ("FAIR VALUE GAPS — persist until
 mitigated", + the `GRP_FVG` inputs); parity harness is `indicators/fvg_export.pine`, diffed against
 this Python by `tools/compare_fvg.py`.
-**Last reviewed:** 2026-07-26 — no engine change, but the `require_close` DEFAULT is now documented as a downstream trap: it is correct for `mpc_assistant.pine` and wrong for `mpc_strategy.pine`, which hardcodes the check (see the callout under "What it detects"). Earlier: 2026-07-19 (re-synced to the mpc FVG default drift — optional `require_close`,
+**Last reviewed:** 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME.** `compare_fvg.py --warmup 4990` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export, where `cfg_fvg_thresh` read back as **0.0** — the timeframe split firing the OTHER way, so both branches of it are now proven through a real export. The long warm-up is pure ghost carry-in and the export proves it: **`px_fvg_formed` never mismatches on a single bar** (both sides agree on every gap FORMATION from bar 0); the slot columns differ only because Pine opens holding gaps from before the window, one of them at 4733.88 while price trades ~4520 — it can never close past its far edge, so it sits in Pine's array for ever. Textbook 2026-07-19 ghost trap, observed rather than theorised. Earlier the same evening — ✅ **VALIDATED, AND THE 15m FLOOR IS PROVEN THROUGH THE
+EXPORT.** `compare_fvg.py` → **exit 0** on a real 21,691-bar `VANTAGE_XAUUSD, 15m` export
+(2025-09-01 → 2026-07-31) at **zero warm-up**, across all **10** slots, with the EQ coupling active
+(`cfg_eq_exempt = 1`, pivot 2, mult 0.1, max 6) so the exemption is validated rather than assumed.
+The tool read `cfg_fvg_thresh = 0.04` back out of the file — i.e. the timeframe split added the same
+day **fired correctly on a 15m chart**, which is the one thing a green could not have shown before it
+existed. `cfg_fvg_maxcount = 8`, `cfg_fvg_requireclose = 0`. Earlier the same day — 🔴 **THE HARNESS WAS UNDER-CHECKING THE ARRAY, AND ITS SIZE FLOOR DID NOT MATCH mpc ON 15m.** Two real holes in `indicators/fvg_export.pine`, both now closed; no engine code changed. (1) **It plotted 6 slots while the cap is 8**, so gaps 7 and 8 were live in Pine and invisible to the diff — every past "exit 0" covered the oldest six only. Now 10 slots per array (`px_fvg_top_/bot_/bull_1..10`), the `fvgMaxCount` input is capped at 10 to match, `compare_fvg.py`'s `_MAX_SLOTS` is 10, and the tool now REFUSES an export whose `cfg_fvg_maxcount` exceeds the plotted slots rather than reporting a partial green. (2) **The minimum-gap floor was one flat input defaulting to 0.0**, but mpc's is timeframe-split (`mpc_assistant.pine:410-412`: `0.0` below 900s, `0.04` at 15m and above). Exported on a 15m chart, the harness would have run a DIFFERENT rule from the indicator it mirrors — Pine-vs-Python parity would still have gone green, because `cfg_fvg_thresh` configures both sides, but the run would have proven nothing about the 15m gap set that `mpc_strategy.pine` actually trades. The export now carries `fvgThreshLTF` / `fvgThreshHTF` and the same `timeframe.in_seconds() < 900` ternary, and `cfg_fvg_thresh` plots the EFFECTIVE value, so the comparator needed no change. ⚠ **Consequence: `cfg_fvg_thresh` legitimately differs between a 5m and a 15m export of the same build.** That is the split working, not drift. 17 unit tests green (529 repo-wide). Earlier the same day: **`max_count` default synced 10 → 8** to the mpc paste (`fvgMaxCount`, `mpc_assistant.pine:414`), found by `/audit-engines`. **DETECTION IS UNCHANGED** — the imbalance formula, both thresholds (`0.0` sub-15m / `0.04` 15m+) and `fvgRequireClose = false` are all byte-identical, so this is a FIFO-cap default only and the 2026-07-19 parity result still describes the logic. 17 unit tests green. ⚠ **Neither strategy bot moves:** `mpc_sos_fade` and `mpc_bleg` both PIN `fvg_max_count=7` (they replay `mpc_strategy.pine`, which carries its own count), so this default reaches nothing they do. ✅ **`backtest/replay/stack.py`'s `EngineConfig` was RECONCILED 2026-07-31** (`fvg_max_count` 6→8, `fvg_threshold_pct` 0.1→0.0, both now mirroring the engine) — and doing it exposed that the "harmless, every real consumer pins" claim below was **half wrong**: `mpc_sos_fade` pins `fvg_max_count` and `fvg_require_close` but NOT `fvg_threshold_pct`, so it was silently inheriting `stack.py`'s 0.1 (which happens to be `mpc_strategy.pine`'s 15m floor) by coincidence rather than by decision. Removing it broke `compare_strategy.py` on the first compared bar. The bot now pins `fvg_threshold_pct=0.1` explicitly and a test asserts all four pins, so this shared default is free to move again. Original note, kept because the reasoning still stands: ⚠ it was **two generations stale** — it still carries `fvg_max_count = 6` and `fvg_threshold_pct = 0.1`, i.e. the pre-2026-07-18 values that the engine reconciled away and this pass moved again. Harmless today (every real consumer pins), but it is exactly the silent-parity-trap that `backtest/CLAUDE.md` → *Rules* warns about; reconcile it deliberately, not as a side effect. Also synced: `compare_fvg.py`'s FALLBACK `--max-count` (8) — the tool reads `cfg_fvg_maxcount` from the export when present, so the flag only bites on a pre-`cfg` export. Earlier: 2026-07-26 — no engine change, but the `require_close` DEFAULT is now documented as a downstream trap: it is correct for `mpc_assistant.pine` and wrong for `mpc_strategy.pine`, which hardcodes the check (see the callout under "What it detects"). Earlier: 2026-07-19 (re-synced to the mpc FVG default drift — optional `require_close`,
 reconciled defaults, EQ-exemption coupling; unit tests green; Pine-parity re-validated exit 0 on a fresh
 grand export)
 
@@ -77,7 +83,7 @@ Two things end a gap:
   was consumed. Emitted as `mitigated`. **Skipped on the gap's own creation bar** (`bar_index >
   born`), so a fresh gap can't self-mitigate. (Pine also gates this on `barstate.isconfirmed`; the
   engine only ever sees closed bars, so that is always true here.)
-- **Eviction** — the total list already holds `max_count` (default 10) gaps, so the OLDEST **not
+- **Eviction** — the total list already holds `max_count` (default 8) gaps, so the OLDEST **not
   exempt by the EQ coupling** is dropped when a newer one forms (Pine scans for the oldest non-EQ gap).
   With no `eq_levels` passed the first gap is never exempt → a plain drop-oldest, unchanged. **Not** a
   trading signal — emitted separately as `evicted`. An FVG behind an active EQH/EQL (`eqExemptFvg`,
@@ -126,7 +132,7 @@ with its `is_bullish` flag; a consumer (e.g. the A+ setup) decides alignment aga
 ```python
 from fair_value_gaps import FairValueGapEngine
 
-fvg = FairValueGapEngine()   # max_count=10, threshold_pct=0.0, require_close=False — the Pine defaults
+fvg = FairValueGapEngine()   # max_count=8, threshold_pct=0.0, require_close=False — the Pine defaults
 
 # Each closed bar, in order:
 ev = fvg.update(bar.index, bar.open, bar.high, bar.low, bar.close)
@@ -186,7 +192,9 @@ EQ-exemption cap behaviour).
 
 1. `indicators/fvg_export.pine` — the FVG compute block from `mpc_assistant.pine` (drawing removed,
    the four `fvgTops/fvgBots/fvgIsBull/fvgBorn` arrays kept) + `plot()` columns for the active gap
-   arrays (6 slots × top/bottom/is-bull), the count, the formed/mitigated pulses, the `cfg_fvg_*`
+   arrays (**10** slots × top/bottom/is-bull — it was 6 against a cap of 8 until 2026-07-31, so two
+   live gaps went unchecked; keep the slot count, the `fvgMaxCount` maxval and `compare_fvg.py`'s
+   `_MAX_SLOTS` moving together), the count, the formed/mitigated pulses, the `cfg_fvg_*`
    settings columns (thresh / maxcount / requireclose), AND — to reproduce the `eqExemptFvg` coupling —
    the EQ compute block + `f_fvgNearEq` + the exempt eviction, plus `cfg_eq_*` columns (pivotlen /
    atrmult / max / exempt). `compare_fvg.py` reads `cfg_eq_*`, runs the Python EqualHighsLowsEngine, and

@@ -25,7 +25,7 @@ column), so both sides use the identical volume series — no data-source mismat
 
 No calibration knob
 -------------------
-Unlike VWAP / liquidity, the SVP anchor is the ASIA SESSION (2000-0500 GMT-4, a fixed offset —
+Unlike VWAP / liquidity, the SVP anchor is the ASIA SESSION (0900-1800 Asia/Tokyo — Japan has no DST, so
 season-independent), not the trading-day boundary, so there is no --htf-rollover to sweep. The Asia
 window comes from the composed, already-Pine-validated sessions engine.
 

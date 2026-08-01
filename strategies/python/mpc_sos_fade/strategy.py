@@ -91,10 +91,20 @@ class MpcSosFadeStrategy:
         never did — caught 2026-07-26 as the single parity mismatch on a fresh export: a
         weekend-gap bar whose middle candle never closed past the void produced a Python-only
         entry edge. Do not "simplify" this back to the engine default.
+        `fvgThreshPct` — the minimum-gap floor. `mpc_strategy.pine` splits it by timeframe
+        (`fvgThreshLTF` 0.0 below 15m / `fvgThreshHTF` **0.1** at 15m and above, lines 116-118)
+        and this bot trades 15m, so 0.1 is the value that must reach the engine. Note the
+        indicator uses **0.04** at 15m and the engine default mirrors the indicator, so the two
+        Pines genuinely disagree here and neither default can be right for both.
+        **This pin was MISSING until 2026-07-31** — the bot happened to work only because
+        `EngineConfig` carried 0.1 as its own default, which was never a decision. Proven
+        load-bearing by removing it: `compare_strategy.py` failed on the first compared bar
+        (`px_edge` py=3478.99 vs pine=3475.43). Same class as `fvg_require_close` below.
         If a bot ever tunes another engine input off its default, add it here (and export it
         if it must vary per run)."""
         from backtest.replay import EngineConfig
-        return EngineConfig(fvg_max_count=7, show_internal=False, fvg_require_close=True)
+        return EngineConfig(fvg_max_count=7, show_internal=False, fvg_require_close=True,
+                            fvg_threshold_pct=0.1)
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "MpcSosFadeStrategy":
         """Replay a canonical bar frame end-to-end. Engines warm on every bar; the

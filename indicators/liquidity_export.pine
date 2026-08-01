@@ -80,9 +80,12 @@ if not na(h4l) and not h4l_mit and low < h4l
 //============================================================
 //  SESSION H/L — running extremes (verbatim from sessions_export.pine) → published on close edge
 //============================================================
-string firstSessionTime  = "2000-0500", string firstSessionTZ  = "GMT-4"   // Asia
-string secondSessionTime = "0400-1300", string secondSessionTZ = "GMT-4"   // London
-string thirdSessionTime  = "0900-1800", string thirdSessionTZ  = "GMT-4"   // New York
+// Re-synced 2026-07-31 to the mpc paste (mpc_assistant.pine:465-478) — see the note in
+// sessions_export.pine. Asia is UTC-identical to the old form; London and New York shift one hour
+// earlier under BST/EDT, which MOVES the Asia/London/NY session high-low levels this file exports.
+string firstSessionTime  = "0900-1800", string firstSessionTZ  = "Asia/Tokyo"        // Asia
+string secondSessionTime = "0800-1700", string secondSessionTZ = "Europe/London"     // London
+string thirdSessionTime  = "0800-1700", string thirdSessionTZ  = "America/New_York"  // New York
 inAsia   = not na(time("", firstSessionTime,  firstSessionTZ))
 inLondon = not na(time("", secondSessionTime, secondSessionTZ))
 inNY     = not na(time("", thirdSessionTime,  thirdSessionTZ))

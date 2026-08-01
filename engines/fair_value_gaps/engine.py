@@ -47,16 +47,16 @@ class FairValueGapEngine:
     """Streaming fair-value-gap detector.
 
     Build one per symbol/timeframe, feed it one closed candle at a time as they close, in order.
-    Mirrors mpc_assistant.pine's default FVG settings: max_count = 10 gaps total, threshold_pct = 0.0
+    Mirrors mpc_assistant.pine's default FVG settings: max_count = 8 gaps total, threshold_pct = 0.0
     (the sub-15m value the Pine uses — no minimum gap; on 15m+ the Pine passes 0.04), and
     require_close = False (the Pine default `fvgRequireClose`: the classic 3-candle FVG where bars A
     and C simply don't overlap; the middle-bar close-cleared check is OPTIONAL). Match these to the
     Pine inputs the export carried — compare_fvg.py reads them from the CSV's cfg_* columns.
     """
 
-    def __init__(self, max_count: int = 10, threshold_pct: float = 0.0,
+    def __init__(self, max_count: int = 8, threshold_pct: float = 0.0,
                  require_close: bool = False) -> None:
-        self._max_count = max_count            # Pine fvgMaxCount (default 10)
+        self._max_count = max_count            # Pine fvgMaxCount (default 8)
         self._threshold_pct = threshold_pct    # Pine fvgThreshPct (0.0 sub-15m / 0.04 15m+)
         self._require_close = require_close     # Pine fvgRequireClose (default False = classic FVG)
 

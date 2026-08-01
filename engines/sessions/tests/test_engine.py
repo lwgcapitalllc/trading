@@ -1,8 +1,9 @@
 """
 Hand-traced tests for the sessions engine.
 
-These pin the clock logic against explicit epoch timestamps: session-window membership (including
-the overnight Tokyo wrap and the fixed GMT-4 offset), kill-zone windows and their DST behaviour,
+These pin the clock logic against explicit epoch timestamps: session-window membership (each window
+in its own city's clock, DST-aware, plus the overnight-wrap rule the parser still supports),
+kill-zone windows and their DST behaviour,
 the running session high/low + open/close edges, the NY opening range, and new-day/weekday flags.
 Full Pine-parity validation lives in tools/compare_sessions.py against a real TradingView export;
 these tests lock the mechanics so a regression is caught without an export.
@@ -68,40 +69,80 @@ def test_session_spec_from_pine():
     assert s.tz_name == "GMT-4"
 
 
-# ── session windows (fixed GMT-4, season-independent) ────────────────────────
+# ── session windows (each in its own city's clock, DST-aware since 2026-07-31) ─
 
-def test_session_windows_fixed_offset_same_both_seasons():
+def _in_ny(ts_ms):
+    return SessionEngine().update(0, ts_ms, 1, 0).in_ny
+
+
+def _in_london(ts_ms):
+    return SessionEngine().update(0, ts_ms, 1, 0).in_london
+
+
+def _in_asia(ts_ms):
+    return SessionEngine().update(0, ts_ms, 1, 0).in_asia
+
+
+def test_ny_session_is_dst_aware():
+    """NY is 0800-1700 America/New_York, so its UTC span MOVES with DST: 12:00-21:00 under EDT,
+    13:00-22:00 under EST. This is the behaviour change from the old fixed 0900-1800 GMT-4 (always
+    13:00-22:00 UTC) — under EDT the session now opens an hour earlier in UTC terms."""
+    # Summer (EDT, UTC-4) -> 12:00-21:00 UTC.
+    assert _in_ny(ms_utc(2024, 7, 2, 11, 59)) is False
+    assert _in_ny(ms_utc(2024, 7, 2, 12, 0)) is True
+    assert _in_ny(ms_utc(2024, 7, 2, 20, 59)) is True
+    assert _in_ny(ms_utc(2024, 7, 2, 21, 0)) is False
+    # Winter (EST, UTC-5) -> 13:00-22:00 UTC. 12:00 UTC is now OUTSIDE.
+    assert _in_ny(ms_utc(2024, 1, 2, 12, 0)) is False
+    assert _in_ny(ms_utc(2024, 1, 2, 13, 0)) is True
+    assert _in_ny(ms_utc(2024, 1, 2, 21, 59)) is True
+    assert _in_ny(ms_utc(2024, 1, 2, 22, 0)) is False
+
+
+def test_london_session_is_dst_aware():
+    """London is 0800-1700 Europe/London: 07:00-16:00 UTC under BST, 08:00-17:00 UTC under GMT."""
+    # Summer (BST, UTC+1) -> 07:00-16:00 UTC.
+    assert _in_london(ms_utc(2024, 7, 2, 6, 59)) is False
+    assert _in_london(ms_utc(2024, 7, 2, 7, 0)) is True
+    assert _in_london(ms_utc(2024, 7, 2, 15, 59)) is True
+    assert _in_london(ms_utc(2024, 7, 2, 16, 0)) is False
+    # Winter (GMT, UTC+0) -> 08:00-17:00 UTC. 07:00 UTC is now OUTSIDE.
+    assert _in_london(ms_utc(2024, 1, 2, 7, 0)) is False
+    assert _in_london(ms_utc(2024, 1, 2, 8, 0)) is True
+    assert _in_london(ms_utc(2024, 1, 2, 16, 59)) is True
+    assert _in_london(ms_utc(2024, 1, 2, 17, 0)) is False
+
+
+def test_asia_session_is_utc_stable_year_round():
+    """Asia is 0900-1800 Asia/Tokyo, and Japan has no DST — so it is 00:00-09:00 UTC in BOTH
+    seasons. That is bit-identical to the old 2000-0500 GMT-4 form, which is why the 2026-07-31
+    re-sync did NOT move the Asia window and why engines/session_volume_profile/ (Asia POC only)
+    was unaffected by it. Guard this: if Asia ever moves, SVP's parity moves with it."""
     for y, mo in [(2024, 7), (2024, 1)]:            # summer and winter
-        se = SessionEngine()
-        ev = se.update(0, ms("GMT-4", y, mo, 2, 10, 0), 10.0, 9.0)   # 10:00 GMT-4
-        assert ev.in_ny is True        # NY 0900-1800
-        assert ev.in_london is True    # London 0400-1300 (overlaps)
-        assert ev.in_asia is False     # Asia 2000-0500
-
-
-def test_asia_overnight_membership():
-    se = SessionEngine()
-    # 20:00 GMT-4 -> in Asia; 00:00 -> in; 04:59 -> in; 05:00 -> out.
-    assert se.update(0, ms("GMT-4", 2024, 7, 2, 20, 0), 1, 0).in_asia is True
-    assert SessionEngine().update(0, ms("GMT-4", 2024, 7, 3, 0, 0), 1, 0).in_asia is True
-    assert SessionEngine().update(0, ms("GMT-4", 2024, 7, 3, 4, 59), 1, 0).in_asia is True
-    assert SessionEngine().update(0, ms("GMT-4", 2024, 7, 3, 5, 0), 1, 0).in_asia is False
+        assert _in_asia(ms_utc(y, mo, 3, 23, 59)) is False   # previous day, before the open
+        assert _in_asia(ms_utc(y, mo, 3, 0, 0)) is True
+        assert _in_asia(ms_utc(y, mo, 3, 8, 59)) is True
+        assert _in_asia(ms_utc(y, mo, 3, 9, 0)) is False     # end exclusive
+    # Same boundaries expressed in the OLD fixed-offset clock, to make the equivalence explicit.
+    assert _in_asia(ms("GMT-4", 2024, 7, 2, 20, 0)) is True
+    assert _in_asia(ms("GMT-4", 2024, 7, 3, 4, 59)) is True
+    assert _in_asia(ms("GMT-4", 2024, 7, 3, 5, 0)) is False
 
 
 # ── session high/low + open/close edges ──────────────────────────────────────
 
 def test_session_hl_open_expand_close():
     se = SessionEngine()
-    # Three NY-session bars then a bar past the NY close (18:00 GMT-4, exclusive).
-    e0 = se.update(0, ms("GMT-4", 2024, 7, 2, 10, 0), high=10.0, low=9.0)
+    # Three NY-session bars then a bar past the NY close (NY is 0800-1700, end exclusive).
+    e0 = se.update(0, ms("America/New_York", 2024, 7, 2, 10, 0), high=10.0, low=9.0)
     assert "NY" in e0.opened and e0.in_ny is True
-    e1 = se.update(1, ms("GMT-4", 2024, 7, 2, 11, 0), high=12.0, low=9.5)   # new high
-    e2 = se.update(2, ms("GMT-4", 2024, 7, 2, 12, 0), high=11.0, low=8.0)   # new low
+    e1 = se.update(1, ms("America/New_York", 2024, 7, 2, 11, 0), high=12.0, low=9.5)   # new high
+    e2 = se.update(2, ms("America/New_York", 2024, 7, 2, 12, 0), high=11.0, low=8.0)   # new low
     assert e1.opened == [] and e2.opened == []
     live = se.current_range("NY")
     assert (live.high, live.low) == (12.0, 8.0)
 
-    e3 = se.update(3, ms("GMT-4", 2024, 7, 2, 18, 0), high=20.0, low=1.0)   # NY closed
+    e3 = se.update(3, ms("America/New_York", 2024, 7, 2, 17, 0), high=20.0, low=1.0)   # NY closed
     assert e3.in_ny is False
     closed = [r for r in e3.closed if r.name == "NY"]
     assert len(closed) == 1
@@ -112,8 +153,8 @@ def test_session_hl_open_expand_close():
 
 def test_session_hl_persists_between_sessions():
     se = SessionEngine()
-    se.update(0, ms("GMT-4", 2024, 7, 2, 10, 0), high=10.0, low=9.0)
-    se.update(1, ms("GMT-4", 2024, 7, 2, 18, 0), high=99.0, low=1.0)  # NY closed
+    se.update(0, ms("America/New_York", 2024, 7, 2, 10, 0), high=10.0, low=9.0)
+    se.update(1, ms("America/New_York", 2024, 7, 2, 17, 0), high=99.0, low=1.0)  # NY closed
     # Between sessions the last NY extremes persist (Pine `var`), not the post-close bar.
     assert se.current_range("NY").high == 10.0
 

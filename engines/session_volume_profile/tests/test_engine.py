@@ -6,7 +6,7 @@ that the session-close bar is folded into the profile, the FIFO history, and the
 (sweep) state/edge. Full Pine-parity validation of the POC lives in tools/compare_svp.py against a
 real TradingView export; these lock the logic so a regression is caught without an export.
 
-Timestamps are in UTC. The Asia window is 2000-0500 GMT-4 == 0000-0900 UTC, so a bar whose UTC hour
+Timestamps are in UTC. The Asia window is 0900-1800 Asia/Tokyo == 0000-0900 UTC, so a bar whose UTC hour
 is in [0, 9) is in-session; [9, 24) is out. A session needs an out-of-session bar first (to prime
 the "was out" edge), then in-session bars, then an out-of-session bar to close it.
 """

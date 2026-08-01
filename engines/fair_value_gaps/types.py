@@ -51,7 +51,7 @@ class FvgEvents:
       - mitigated: a candle CLOSED fully past the gap's far edge (bull: `close <= bottom`; bear:
         `close >= top`). This is the real signal — the gap was consumed. Pine deletes the box on that
         close; a wick into the gap does not count.
-      - evicted: the gap simply aged out because the total cap (max_count, default 6) was exceeded
+      - evicted: the gap simply aged out because the total cap (max_count, default 8) was exceeded
         by a newer gap. Pine array.shifts the oldest; not a trading signal.
     """
 

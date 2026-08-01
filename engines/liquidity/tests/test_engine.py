@@ -153,7 +153,8 @@ def test_h4_sweep_low_emits_ssl():
 
 def test_session_levels_created_on_session_close():
     liq = _only(enable_sessions=True)
-    # Asia = 2000-0500 GMT-4 == 0000-0900 UTC. Feed two in-Asia bars then one out (London opens).
+    # Asia = 0900-1800 Asia/Tokyo == 0000-0900 UTC year-round. Feed two in-Asia bars then one out
+    # (09:00 UTC in July is past the Asia close and inside London's BST window).
     liq.update(0, ms("UTC", 2024, 7, 1, 0), 10, 5, 8)       # Asia opens
     liq.update(1, ms("UTC", 2024, 7, 1, 4), 12, 6, 11)      # Asia high 12, low 5
     ev = liq.update(2, ms("UTC", 2024, 7, 1, 9), 11, 9, 10)  # out of Asia → Asia closes

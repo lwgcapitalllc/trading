@@ -9,7 +9,7 @@ its confirmation-table "MV slot" (line ~2772).
 
 What a Session Volume Profile is
 --------------------------------
-While the Asia session (2000-0500 GMT-4 — the same window as the sessions engine's Asia) is open the
+While the Asia session (0900-1800 Asia/Tokyo — the same window as the sessions engine's Asia) is open the
 Pine tracks the session high/low. When the session closes it builds a 50-row volume profile over
 [low, high]: each session bar's volume is spread evenly across the price rows the bar's range spans,
 and the row that accumulated the most volume is the POINT OF CONTROL. Its mid-price is the "MV" line
@@ -66,9 +66,14 @@ from sessions import SessionEngine, SessionSpec
 
 from .types import SvpEvents
 
-# Asia session window the Pine SVP block keys off (SVP_SESSION / SVP_TZ, mpc lines 2556-2557) — the
+# Asia session window the Pine SVP block keys off (SVP_SESSION / SVP_TZ, mpc lines 4863-4864) — the
 # same window the sessions engine's Asia tracker already validates.
-_ASIA_SPEC = SessionSpec.from_pine("Asia", "2000-0500", "GMT-4")
+# Re-synced 2026-07-31 from "2000-0500"/"GMT-4". **This is a pure re-expression, not a behaviour
+# change:** Japan has no DST and GMT-4 is a fixed offset, so both forms are 00:00-09:00 UTC in every
+# season. It is restated in the Pine's new words so a future diff against mpc reads clean. The other
+# two mpc sessions (London, New York) DID move in the same paste — see engines/sessions/CLAUDE.md —
+# which is why liquidity is stale and this engine is not.
+_ASIA_SPEC = SessionSpec.from_pine("Asia", "0900-1800", "Asia/Tokyo")
 
 _SVP_ROWS = 50         # svpRows (mpc line 317) — fixed row count of the profile (was 100 pre-2026-07-08)
 _SVP_HISTORY = 2       # svpHistory input default (mpc line 224) — FIFO cap on kept POCs

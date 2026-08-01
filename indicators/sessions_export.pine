@@ -24,9 +24,13 @@ indicator("Sessions Engine EXPORT", overlay = false)
 //============================================================
 //  SESSION INPUTS (hardcoded to the mpc_assistant.pine defaults)
 //============================================================
-string firstSessionTime  = "2000-0500", string firstSessionTZ  = "GMT-4"   // Tokyo / Asia
-string secondSessionTime = "0400-1300", string secondSessionTZ = "GMT-4"   // London
-string thirdSessionTime  = "0900-1800", string thirdSessionTZ  = "GMT-4"   // New York
+// Re-synced 2026-07-31 to the mpc paste (mpc_assistant.pine:465-478). Each window is now stated in
+// its OWN city's clock and follows that city's DST; they used to be pinned to a fixed "GMT-4".
+// Asia is unchanged in UTC (00:00-09:00 either way — Japan has no DST). London and New York move
+// one hour earlier in UTC under BST/EDT, which is a real window change for ~7 months a year.
+string firstSessionTime  = "0900-1800", string firstSessionTZ  = "Asia/Tokyo"        // Tokyo / Asia
+string secondSessionTime = "0800-1700", string secondSessionTZ = "Europe/London"     // London
+string thirdSessionTime  = "0800-1700", string thirdSessionTZ  = "America/New_York"  // New York
 
 //============================================================
 //  SHARED CLOCK (mpc 808-809)

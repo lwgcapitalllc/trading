@@ -23,9 +23,11 @@ Two deliberate deviations from the Pine source, both consistent with "emit event
      non-reproducible export wall-clock; the underlying time flags and running extremes they gate
      are computed unconditionally here so the output is reproducible bar-for-bar.
 
-Timezones: the Asia/London/NY windows use fixed GMT offsets ("GMT-4"), while the kill zones,
-new-day, weekday and NY-range windows use "America/New_York" (DST-aware) — matching the Pine source
-exactly. Fixed offsets are resolved arithmetically; IANA names via the stdlib `zoneinfo`.
+Timezones: every window is DST-aware and stated in its own city's clock — Asia/Tokyo,
+Europe/London, America/New_York for the sessions, and America/New_York for the kill zones, new-day,
+weekday and NY-range windows — matching the Pine source exactly. Fixed GMT offsets ("GMT-4") are
+still parsed (the mpc sessions used them until 2026-07-31, and a custom SessionSpec may) and are
+resolved arithmetically; IANA names go through the stdlib `zoneinfo`.
 
 The NY opening range is a ≤5m feature (Pine reads it off a 5-minute security). Feed this engine
 5-minute-or-finer bars if you rely on ny_range_high/low; on a 5m feed the 0930-0935 window is a
@@ -115,14 +117,20 @@ class SessionEngine:
     """Streaming trading-sessions / kill-zones / NY-range detector.
 
     Build one per symbol/timeframe and feed it one closed bar at a time, in order. Defaults mirror
-    the mpc_assistant.pine inputs: Tokyo 2000-0500, London 0400-1300, New York 0900-1800, all in
-    GMT-4; kill zones and the NY opening range on America/New_York time.
+    the mpc_assistant.pine inputs: Tokyo 0900-1800 Asia/Tokyo, London 0800-1700 Europe/London,
+    New York 0800-1700 America/New_York; kill zones and the NY opening range on America/New_York time.
+
+    Re-synced 2026-07-31 from the previous fixed-offset form (Tokyo 2000-0500, London 0400-1300,
+    New York 0900-1800, all "GMT-4"). Each window is now stated in its OWN city's clock and follows
+    that city's DST, which is a real behaviour change for two of the three — see the table in
+    CLAUDE.md. Asia is unchanged in UTC terms; London and New York move one hour earlier under
+    BST/EDT.
     """
 
     DEFAULT_SESSIONS = (
-        SessionSpec.from_pine("Asia", "2000-0500", "GMT-4"),
-        SessionSpec.from_pine("London", "0400-1300", "GMT-4"),
-        SessionSpec.from_pine("NY", "0900-1800", "GMT-4"),
+        SessionSpec.from_pine("Asia", "0900-1800", "Asia/Tokyo"),
+        SessionSpec.from_pine("London", "0800-1700", "Europe/London"),
+        SessionSpec.from_pine("NY", "0800-1700", "America/New_York"),
     )
 
     def __init__(self, sessions: Optional["list[SessionSpec]"] = None,

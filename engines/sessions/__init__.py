@@ -14,7 +14,7 @@ the future VWAP engine (session anchor).
 Public API:
     from sessions import SessionEngine, SessionSpec, SessionEvents, SessionRange
 
-    se = SessionEngine()             # Pine defaults: Tokyo/London/NY in GMT-4, kill zones NY time
+    se = SessionEngine()             # Pine defaults: Tokyo/London/NY each in its own city's zone
     # each closed bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
     ev = se.update(bar.index, bar.timestamp_ms, bar.high, bar.low)
     ev.in_ny, ev.in_killzone         # clock flags for this bar (state)

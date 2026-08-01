@@ -7,7 +7,7 @@ mitigated"): a 3-candle imbalance (LuxAlgo definition) — the two outer candles
 forms a gap spanning that void; the middle-bar close-cleared check (`close[1] > high[2]` bull /
 `close[1] < low[2]` bear) is OPTIONAL, gated by `require_close` (Pine `fvgRequireClose`, default
 False). There is NO clean-impulse / progressive-close requirement. Defaults match the Pine:
-max_count=10, threshold_pct=0.0, require_close=False. A
+max_count=8, threshold_pct=0.0, require_close=False. A
 gap is never mitigated on its own creation bar; it is mitigated only when a candle CLOSES fully past
 its far edge (bull `close <= bottom`, bear `close >= top`) — a wick into the gap leaves it alive; the
 list is capped at max_count with oldest-first (FIFO) eviction. Full Pine<->Python parity is validated

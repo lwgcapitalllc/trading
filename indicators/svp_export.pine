@@ -21,8 +21,13 @@ indicator("SVP Engine EXPORT", overlay = false)
 // ── SVP inputs (mpc 224-225, 2556-2557) — drawing inputs/colours dropped ──
 int    svpHistory  = 2
 int    svpRows     = 50
-string SVP_SESSION = "2000-0500"
-string SVP_TZ      = "GMT-4"
+// Re-stated 2026-07-31 to match the mpc paste's Asia window. This is a pure RE-EXPRESSION, not a
+// behaviour change: "2000-0500" GMT-4 and "0900-1800" Asia/Tokyo are the SAME 00:00-09:00 UTC
+// window all year (GMT-4 is a fixed offset and Japan has no DST). That equivalence is why
+// engines/session_volume_profile/ needed no code change when the session windows moved, and a test
+// there pins it. London and NY genuinely DID move — this engine reads neither.
+string SVP_SESSION = "0900-1800"
+string SVP_TZ      = "Asia/Tokyo"
 
 // Only the POC-price FIFO array survives (the line/label arrays are drawing — dropped).
 var array<float> svp_poc_px   = array.new<float>()

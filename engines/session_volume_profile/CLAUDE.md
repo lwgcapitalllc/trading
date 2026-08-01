@@ -16,13 +16,13 @@ on a fresh 50-row export (`--warmup 251`, exit 0). The one canonical implementat
 confirmation-table "MV slot" (line ~2772); parity harness is `indicators/svp_export.pine`, diffed
 against this Python by `tools/compare_svp.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-09
+**Last reviewed:** 2026-07-31 — ✅ **UNAFFECTED by the session re-sync, and now provably so.** The 2026-07-31 mpc paste moved all three session windows into their own cities' clocks, which made `engines/sessions/` and `engines/liquidity/` stale (see those files). **This engine is not**, because it composes the **Asia** window only and Asia is the one window that did not move: `2000-0500` GMT-4 and `0900-1800` Asia/Tokyo are both 00:00–09:00 UTC in every season (a fixed offset on one side, no DST in Japan on the other). `_ASIA_SPEC` and `SVP_SESSION`/`SVP_TZ` were restated in the Pine's new words so a future mpc diff reads clean — **a re-expression, not a behaviour change.** A new test in `engines/sessions/` (`test_asia_session_is_utc_stable_year_round`) pins that equivalence in both seasons, so if Asia ever genuinely moves it fails loudly instead of silently repricing every POC. 12 unit tests green; the 2026-07-09 GREEN parity run still stands. Earlier: 2026-07-09
 
 ---
 
 ## What this engine is (ported semantics)
 
-While the **Asia session** (2000-0500 GMT-4 — the same window as the sessions engine's Asia) is open,
+While the **Asia session** (0900-1800 Asia/Tokyo — the same window as the sessions engine's Asia) is open,
 the source tracks the running session high/low. When it closes it builds a 50-row volume profile over
 `[low, high]`: each session bar's volume is spread evenly across the price rows the bar's high/low
 span, and the row that accumulated the most volume is the **POINT OF CONTROL**. Its mid-price is the
@@ -64,7 +64,7 @@ its most recent entry. The bull/bear split is retained (see quirk #2) but only a
 
 ## The anchor = the Asia session (no calibration knob)
 
-Unlike VWAP / liquidity, the SVP anchor is the **Asia session** (2000-0500 **GMT-4**, a fixed offset —
+Unlike VWAP / liquidity, the SVP anchor is the **Asia session** (0900-1800 **Asia/Tokyo** — Japan has no DST, so
 season-independent), NOT the trading-day boundary. So there is no `--htf-rollover` to sweep. The Asia
 window, its running high/low and its open/close edges come from the composed, already-Pine-validated
 `engines/sessions/` engine (see below).
@@ -105,7 +105,7 @@ Parity export build: `indicators/svp_export.pine`.
 ```python
 from session_volume_profile import SvpEngine, SvpEvents
 
-sv = SvpEngine()   # Pine defaults: Asia 2000-0500 GMT-4, 50 rows, keep 2 POCs
+sv = SvpEngine()   # Pine defaults: Asia 0900-1800 Asia/Tokyo, 50 rows, keep 2 POCs
 
 # Each closed intraday bar (timestamp is epoch MILLISECONDS, UTC — exactly Pine's `time`):
 ev = sv.update(bar.index, bar.timestamp_ms, bar.open, bar.high, bar.low, bar.close, bar.volume)
@@ -138,7 +138,7 @@ sv.poc()        # current POC (read)
 - Port any change to `mpc_assistant.pine`'s SVP / MV-slot blocks back here. Keep the 50 rows, the
   `floor`/`ceil` row-binning with the clamps, the `span = max(1, …)` even-spread, the strict-`>`
   first-wins POC, the close-bar inclusion and the newest-first two-array summation EXACT.
-- Keep the Asia window in step with the sessions engine — both read 2000-0500 GMT-4.
+- Keep the Asia window in step with the sessions engine — both read 0900-1800 Asia/Tokyo.
 - When adding a field, update this file's Public API and the tests in the same commit.
 
 ## Never do

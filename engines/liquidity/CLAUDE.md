@@ -19,7 +19,14 @@ its own.
 LIQUIDITY SWEEP, SESSION H/L); parity harness is `indicators/liquidity_export.pine`, diffed against
 this Python by `tools/compare_liquidity.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-05
+**Last reviewed:** 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME.** `compare_liquidity.py --htf-rollover 18 --warmup 862` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export (2026-05-27 → 2026-07-31), stable at warm-up 2000 / 6000. All 28 fields. The prev-WEEK levels are the long pole in the warm-up, as expected on a two-month window. Earlier the same evening — ✅ **RE-VALIDATED ON THE NEW WINDOWS.**
+`compare_liquidity.py --htf-rollover 18 --warmup 449` → **exit 0** on a real 21,691-bar
+`VANTAGE_XAUUSD, 15m` export (2025-09-01 → 2026-07-31, spanning four DST changeovers). All 28 fields
+match on every warm bar, and it stays green at warm-up 1000 / 2000 / 5000. The 449-bar warm-up is
+entirely the `_mit` flags reading `None` in Python against `0.0` in Pine — Python has not formed the
+level yet where Pine's `var bool` initialised false — not a disagreement about any level's price.
+**The STALE-BY-INPUT flag below is cleared:** the Asia/London/NY session H/L levels now form over the
+re-synced windows and agree with Pine across all four changeovers. Earlier the same day — 🔴 **STALE-BY-INPUT: the session windows underneath this engine moved.** `/audit-engines` found the 2026-07-31 mpc paste re-stated all three session windows in their own cities' clocks (see `engines/sessions/CLAUDE.md`). **NO code changed here** — `LiquidityEngine` constructs `SessionEngine()` with no args, so it picked the new windows up automatically — but the **Asia / London / NY session high-low levels this engine creates now form over different windows**: Asia is unchanged, while London and New York both shift **one hour earlier in UTC** under BST/EDT (~7 months a year). Every non-session level (PDH/PDL, PWH/PWL, PWC, H4 SSH/BSL) is untouched, as are all the mitigation rules and the per-bar order. `indicators/liquidity_export.pine` hardcoded the OLD session strings and was re-synced in the same pass. 14 unit tests green. ⚠ **The 2026-07-09 GREEN parity run predates this and no longer describes the session levels** — re-run `compare_liquidity.py --htf-rollover 18` on a fresh export off the re-synced harness, exit 0, before trusting any session-level result or committing this as validated. Earlier: 2026-07-05
 
 ---
 

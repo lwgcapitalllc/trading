@@ -41,8 +41,15 @@ def test_engine_config_pins_every_input_the_pine_moved_off_its_default():
     pin them by hand — and an unpinned one is invisible until a fresh export disagrees.
     `fvg_require_close` cost exactly that on 2026-07-26: `mpc_strategy.pine` HARDCODES the
     middle-bar close-cleared check while the FVG engine defaults it off, so Python held gaps
-    the Pine never created and produced a phantom entry edge. Lock all three."""
+    the Pine never created and produced a phantom entry edge.
+
+    `fvg_threshold_pct` was the same trap one step quieter (found 2026-07-31): it was never
+    pinned at all, and the bot only worked because `EngineConfig` happened to default to 0.1.
+    That default was itself stale relative to the engine, so "tidying" it up would have
+    silently moved this bot. Pinned now — an assertion here is what makes the shared default
+    free to change. Lock all four."""
     ec = MpcSosFadeStrategy.engine_config()
-    assert ec.fvg_max_count == 7          # Pine fvgMaxCount (engine default 6)
-    assert ec.fvg_require_close is True   # Pine hardcodes close[1] past the gap
-    assert ec.show_internal is False      # Pine "Show Internal Structure" defaults OFF
+    assert ec.fvg_max_count == 7           # Pine fvgMaxCount (engine default 8)
+    assert ec.fvg_require_close is True    # Pine hardcodes close[1] past the gap
+    assert ec.show_internal is False       # Pine "Show Internal Structure" defaults OFF
+    assert ec.fvg_threshold_pct == 0.1     # Pine fvgThreshHTF at 15m (engine default 0.0)

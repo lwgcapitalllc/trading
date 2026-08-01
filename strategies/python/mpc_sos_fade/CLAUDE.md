@@ -22,7 +22,7 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-30 — **the MINIMUM-STOP GUARD is ported, closing the one known Pine↔Python
+**Last reviewed:** 2026-07-31 — 🔴 **THE BOT WAS RELYING ON AN ENGINE DEFAULT IT NEVER PINNED.** `engine_config()` pinned `fvg_max_count` and `fvg_require_close` but not **`fvg_threshold_pct`** — the minimum-gap floor, which decides which FVGs exist and therefore which entry edges exist at all. It was inheriting `backtest/replay/stack.py`'s `0.1`, which matches `mpc_strategy.pine`'s 15m floor **by coincidence, not by decision** (that shared default was flagged as "stale, harmless, every real consumer pins its own" — half of which was false). Proven load-bearing by removing it: `compare_strategy.py` failed on the FIRST compared bar. Now pinned explicitly, `stack.py` carries the engine default again, and the pin test asserts all four. **No number moves** — `compare_strategy.py --warmup 100` still exit 0 on the 2026-07-29 export, 529 tests green. See `## Engine-construction pins`. **The rule this sharpens:** *an engine input the decision stream does not export is a silent parity trap* already existed — what was missing is that it applies to an input a bot FORGOT to pin, not only to one whose default changed. Also this session: the session windows underneath this bot (`SessionEngine`, reached via `EngineStack`, feeding `recent_ssl`/`recent_bsl`) were re-synced to the mpc paste; this bot's Pine has had the new windows since 2026-07-12, so the Python had been running the OLD ones against it — parity stayed green through the change. Earlier: 2026-07-30 — **the MINIMUM-STOP GUARD is ported, closing the one known Pine↔Python
 divergence on this pair.** `exec_min_stop_mode` / `exec_min_stop_val`, the floor applied at order
 placement, block reason code 7, a REGENERATED `mpc_strategy_export.pine` (body byte-identical to the
 parent again) carrying `cfg_min_stop` / `cfg_min_stop_val`, and the decode in `compare_strategy.py`.
@@ -661,11 +661,25 @@ All OFF for the parity check (to match the Pine); each is a real-run choice:
 
 ## Engine-construction pins (`MpcSosFadeStrategy.engine_config`)
 
-Two engine inputs are NOT in the decision stream, so the bot pins them to the Pine STRATEGY's own
-input defaults rather than the shared engine defaults — miss either and the fib the bot reads drifts:
-1. **`fvg_max_count=7`** — `mpc_strategy.pine` sets Max Active FVGs to 7 (the FVG engine default is 6);
+**FOUR** engine inputs are NOT in the decision stream, so the bot pins them to the Pine STRATEGY's own
+input defaults rather than the shared engine defaults — miss any one and the fib the bot reads drifts.
+`test_engine_config_pins_every_input_the_pine_moved_off_its_default` asserts all four.
+1. **`fvg_max_count=7`** — `mpc_strategy.pine` sets Max Active FVGs to 7 (the FVG engine default is 8);
    a smaller cap evicts the oldest gap one bar sooner and drops an entry edge Pine still holds.
-2. **`show_internal=False`** — the Pine's "Show Internal Structure" input defaults OFF, and Pine gates
+2. **`fvg_threshold_pct=0.1`** *(added 2026-07-31 — it had NEVER been pinned)*. The minimum-gap floor.
+   `mpc_strategy.pine` splits it by timeframe (`fvgThreshLTF` 0.0 below 15m / `fvgThreshHTF` **0.1** at
+   15m and up, lines 116-118) and this bot trades 15m. `mpc_assistant.pine` uses **0.04** at 15m and
+   the ENGINE default mirrors the indicator, so the two Pines genuinely disagree and no shared default
+   can be right for both. **The bot worked for months by coincidence**: `backtest/replay/stack.py`
+   happened to carry 0.1 as its own default. That default was itself stale relative to the engine, so
+   anyone reconciling it would have silently moved this bot's trades with no test failing. Proven
+   load-bearing by removing it — `compare_strategy.py` failed on the first compared bar
+   (`px_edge` py=3478.99 vs pine=3475.43). `stack.py` now carries the engine default (0.0) and this
+   pin carries the strategy's, which is the right way round.
+3. **`fvg_require_close=True`** — `mpc_strategy.pine` HARDCODES the middle-bar close-cleared check
+   while the engine defaults it OFF (mirroring the indicator). Caught 2026-07-26 as the single
+   mismatch on a fresh export; full story in `### PARITY GREEN 2026-07-26`.
+4. **`show_internal=False`** — the Pine's "Show Internal Structure" input defaults OFF, and Pine gates
    the ENTIRE internal block behind it (`internalActive = showInternal`), so `i_confirmed_*` is never
    set and the **Structure fib never adopts a more-extreme internal swing** as its anchor. The
    `market_structure` engine ALWAYS computes internal structure, so the `EngineStack` must be told to

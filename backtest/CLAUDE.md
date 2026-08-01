@@ -7,7 +7,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
 (local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-29 — `run_report.py --start` now defaults to the MEASURED broker floor instead of a hardcoded `2022-01-01`, and `backtest/archive/` was added for committed multi-year trade data. Earlier: 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`; 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
+**Last reviewed:** 2026-07-31 — `EngineConfig`'s FVG defaults reconciled to the ENGINE (`fvg_max_count` 6→8, `fvg_threshold_pct` 0.1→0.0), and doing it exposed that `mpc_sos_fade` had been reading the old `0.1` **unpinned** — a stale-looking default that was actually load-bearing. The unpinned-engine-input rule below gained that second example and its corollary: never tidy an `EngineConfig` default without checking which consumers read it unpinned. Both strategy parity gates re-verified green afterwards. Earlier: 2026-07-29 — `run_report.py --start` now defaults to the MEASURED broker floor instead of a hardcoded `2022-01-01`, and `backtest/archive/` was added for committed multi-year trade data. Earlier: 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`; 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
 
 ---
 
@@ -334,6 +334,19 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
   `compare_strategy.py` until a fresh export happened to disagree, ~8 days after the engine made the
   gate optional. **When an engine default changes, audit every `engine_config()` that replays a Pine
   which does not share the new default.**
+  **Second live example, and the nastier direction (caught 2026-07-31): the trap also fires on an input
+  a consumer FORGOT to pin.** `EngineConfig` carried `fvg_max_count = 6` / `fvg_threshold_pct = 0.1`,
+  two generations stale, and this file said so — flagged as harmless because "every real consumer pins
+  its own". **That was half wrong.** `mpc_sos_fade` pinned `fvg_max_count` and `fvg_require_close` and
+  never pinned `fvg_threshold_pct`, so it was silently inheriting the 0.1 — which happens to equal
+  `mpc_strategy.pine`'s 15m floor, so the bot worked by coincidence rather than by decision. Anyone
+  reconciling that "stale" default to the engine's would have moved the A+ bot's trades with **no test
+  failing**. Verified by doing exactly that: `compare_strategy.py` failed on the first compared bar
+  (`px_edge` py=3478.99 vs pine=3475.43). Fixed the right way round — **`EngineConfig` carries ENGINE
+  defaults (8 / 0.0), each strategy pins what its own Pine uses**, and
+  `test_engine_config_pins_every_input_the_pine_moved_off_its_default` now asserts all four pins so the
+  shared default is free to move again. **Corollary: never "tidy" an `EngineConfig` default without
+  first checking which consumers read it unpinned — a stale-looking default may be load-bearing.**
 - **Never build a second copy of a canonical engine here.** This package *replays* `engines/`; it
   imports them, it does not reimplement structure/fib/fvg/rsi/liquidity/sessions detection.
 - **Resample only ever UP.** Building a lower timeframe from a higher one invents intrabar path —

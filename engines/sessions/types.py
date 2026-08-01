@@ -31,7 +31,9 @@ from typing import List, Optional
 def _pine_session_to_minutes(session: str) -> "tuple[int, int]":
     """Parse a Pine `input.session` string ("HHMM-HHMM") into (start_minute, end_minute), each
     measured as minutes-from-midnight in the session's own timezone. The window is [start, end):
-    start inclusive, end exclusive, and when end <= start it spans midnight (e.g. Tokyo 2000-0500).
+    start inclusive, end exclusive, and when end <= start it spans midnight (e.g. "2000-0500").
+    None of the three shipped mpc windows wraps since the 2026-07-31 re-sync — each is now stated in
+    its own city's clock — but the rule stays: a custom SessionSpec may still wrap.
     Day-of-week suffixes ("...:1234567") are not used by the mpc sessions and are not parsed."""
     start_s, end_s = session.split("-")
     start = int(start_s[:2]) * 60 + int(start_s[2:])

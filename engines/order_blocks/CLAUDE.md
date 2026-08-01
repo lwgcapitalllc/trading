@@ -1,23 +1,63 @@
-# CLAUDE.md — Order Block Engine Subsystem
+**Purpose:** Turn the bar stream into order-block EVENTS — the base candle a turn left behind once
+price displaced away from it, and the bar it is later consumed on. The signal is the event ("a bull
+OB formed at 4102-4108", "price consumed it"), not the drawing.
+**Scope:** OB zone geometry + the two live OB lists + their lifecycle (create / mitigate / expire /
+evict) only. No trading decisions, no structure detection, no MT5 ops, no UI, no chart rendering (no
+boxes, no colours, no box width, no trend-aligned hide — those are all drawing).
+**Status:** Production — RE-PORTED 2026-07-31 to the turn-anchored definition and **100%
+Pine-parity-VALIDATED the same day**: `compare_ob.py` exit 0 on a real 21,691-bar
+`VANTAGE_XAUUSD, 15m` export (2025-09-01 → 2026-07-31) at `--warmup 798`, config read from the
+export's own `cfg_ob_*` columns, and still green at warm-up 1000 / 2000 / 5000 / 10000. Engine +
+types + `__init__` + 19 unit tests + a rebuilt `indicators/ob_export.pine` + a rebuilt
+`tools/compare_ob.py`. ⚠ **Budget ~300 bars of warm-up** — see *The 798-bar warm-up* below; it was
+investigated rather than accepted, and the direction of the error matters to a consumer. The one
+canonical implementation — no consumer builds its own.
+**Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`,
+diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source,
+TradingView-only toolchain); the CSV + compare tool are the engine's half.
+**Last reviewed:** 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME, AND IT SETTLES THE WARM-UP QUESTION.** `compare_ob.py --warmup 326` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export, stable at warm-up 1000 / 5000. **326, not 798** — and the reason matters: this export is a mid-history SLICE, so Pine is WARM and Python is the cold one, exactly the configuration of the cold-start-at-2000/6000/12000 test below. Same ~300-bar figure, same direction, reached from different data and a different timeframe. Earlier the same evening — ✅ **VALIDATED. `compare_ob.py` exit 0** on a real
+21,691-bar `VANTAGE_XAUUSD, 15m` export, all 55 columns, warm-up 798, stable to warm-up 10000. The
+re-port below is now proven against TradingView, not just against unit tests. One Pine bug had to be
+fixed to get there: `ob_export.pine` did not compile (`CE10088 — cannot modify global variable in
+function`), because the export-only counters were incremented inside `extendOBs` and inside
+`f_obAdd`. Pine lets a function READ a global but never WRITE one. `extendOBs` now returns its
+mitigation count and the creation counters are bumped at `f_obAdd`'s call sites off its existing bool
+return; the counters do not exist in mpc, so no ported logic moved. **See *The 798-bar warm-up*
+below — it is not ghost blocks, and the error direction reverses for a normal cold start.** Earlier
+the same day — 🔴 **FULL RE-PORT. The order block is a DIFFERENT OBJECT now, not a
+tweaked one.** Found by `/audit-engines` on the 2026-07-31 mpc paste. Nothing of the old definition
+survives, so this was a rewrite rather than a re-sync:
 
-**Purpose:** Turn market-structure output into order-block EVENTS — a supply/demand zone created
-off each structure break, and the bar it is later mitigated (tapped out) on. The signal is the
-event ("a bull OB formed at 4102–4108", "price mitigated it"), not the drawing.
-**Scope:** OB zone geometry + the two live OB lists + their lifecycle (create / mitigate / evict)
-only. No trading decisions, no structure detection (it consumes `engines/market_structure/`), no MT5 ops,
-no UI, no chart rendering (no boxes, no colours).
-**Status:** Production — ported line-by-line from `mpc_assistant.pine`, unit-tested (12 hand-traced
-tests), and Pine-parity-validated (100%) on two independent real exports: `VANTAGE_XAUUSD, 5m`
-(6,727 bars, `--warmup 594`, exit 0) and `VANTAGE_XAUUSD, 15m` (10,197 bars, `--warmup 207`, exit 0).
-Every OB field — active bull/bear arrays slot-by-slot, counts, created/mitigated pulses, and the
-internal-break origin — matched on every warm bar of both. Two timeframes with no timeframe-specific
-branching re-confirms the engine is timeframe-agnostic. **Re-validated 2026-07-09** after the
-2026-07-08 structure re-sync (which shifted internal-break timing): the engine code was untouched, but
-its harness `indicators/ob_export.pine` embedded the pre-2026-07-08 structure block and was re-synced
-first — then `compare_ob.py` passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (12,618 bars,
-`--warmup 1133`). The one canonical implementation — no consumer builds its own.
-**Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`, diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-14 — **`max_active` default synced 6→2** to the mpc `maxActiveOB` paste (engine default, `ob_export.pine` cap, and a new `compare_ob.py --max-active` arg all now default 2; older cap-6 exports still checkable with `--max-active 6`). Re-validated on a fresh combined `VANTAGE_XAUUSD, 5m` export (`…5ead0.csv`, 10,364 bars): `compare_ob.py --warmup 353` (cap 2 default) exit 0 — every OB field matched on every warm bar, confirming the new default on fresh data. The algorithm was also re-confirmed at cap 6 (`--max-active 6`) against the Jul-12 `…9c376.csv`. Previously 2026-07-12 — **re-validated after the `choch_lock` structure re-sync.** This engine was STALE-BY-INPUT, not stale: its own code was untouched, but the structure stream feeding it changed (more SOS fire, fewer swings confirm), and `ob_export.pine` embeds the structure block so it was re-synced first. `compare_ob.py --warmup 548` then passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` export (9,270 bars) — the same single CSV that validated market_structure and fibonacci, since `ob_export.pine` + `fib_export.pine` can sit on one chart (no `px_*` column collisions). Details in `engines/market_structure/CLAUDE.md`.
+* **Structure breaks no longer create blocks at all.** `f_obMake` / `f_obCandle` and all four
+  creation sites (external bull/bear, internal bull/bear) are commented out in the Pine. **This
+  engine is therefore STANDALONE** — it consumes no other engine, `StructureSnapshot` is deleted,
+  and `update()` takes plain OHLC. A test guards the signature so the snapshot cannot drift back in.
+  It is now a sibling of `fair_value_gaps/` and `equal_highs_lows/` in shape.
+* **Every block belongs to a TURN** (`ta.pivotlow/pivothigh`, len 2), read two ways, at most ONE
+  block per turn. **PUSH** = the engulf reading (an impulsive candle that closed through the nearest
+  opposing candle's open with a bigger body than the one it consumed, which must itself clear the
+  ATR noise floor — a doji is not a level); it must sit at or within `turn_scan` bars *after* a
+  matching-direction pivot. **TURN** = the no-engulf reading (walk forward from the pivot to the
+  first candle that CLOSES clear of every BODY in the base so far, anchor on the bar before it).
+  Both are read `wait` (10) bars late. The push runs first and latches the pivot; the turn refuses
+  a latched pivot. **Source order is load-bearing** — first drawn wins the overlap dedupe.
+* **Six creation gates** (`f_obAdd`): min-back, dead, displacement (≥ 1.0 x ATR of travel measured
+  on CLOSES), tap-after-departure, overlap dedupe (0.5 of the CANDIDATE's own height), height
+  ceiling (2.0 x ATR).
+* **Mitigation redefined three ways over:** a wick in that closes back out kills it (tap); a close
+  INSIDE keeps it alive until a later close outside either side (enter-then-leave); a close clean
+  past the far edge kills it outright. Plus an age cap (500 bars), reported as `expired` — a
+  separate event from `mitigated`, because a block price never returned to was not consumed.
+* **`max_active` 2 → 10**, and eviction no longer protects structure-born blocks (there are none).
+
+**Nothing downstream broke:** no consumer imports this engine — not `backtest/replay/EngineStack`,
+not either bot — so the re-port carries no strategy risk. And unlike the Cycle fib, there is **no
+two-Pine fork to worry about**: the strategy files dropped order blocks entirely on 2026-07-24/25, so
+`mpc_assistant.pine` is the only source. **`indicators/ob_export.pine` was rebuilt too** — it used to
+EMBED the whole structure engine (1148 lines → ~300), which was its single biggest maintenance trap
+(it silently went stale twice); it now needs no structure re-sync ever again, and carries `cfg_ob_*`
+columns so `compare_ob.py` configures the Python engine FROM the export. Earlier: 2026-07-14 —
+`max_active` default synced 6→2; 2026-07-12 — re-validated after the `choch_lock` structure re-sync.
 
 ---
 
@@ -25,193 +65,256 @@ first — then `compare_ob.py` passed exit 0 on a fresh `VANTAGE_XAUUSD, 5m` exp
 
 ```
 engines/order_blocks/
-├── engine.py       ← the OB state machine (OrderBlockEngine): extend/mitigate + external & internal creation
-├── types.py        ← OrderBlock (a zone); StructureSnapshot (input); OrderBlockEvents (output)
+├── engine.py       ← the OB state machine (OrderBlockEngine): mitigate → push source → turn source
+├── types.py        ← OrderBlock (a zone); OrderBlockEvents (output)
 ├── __init__.py     ← re-exports the public API
 ├── CLAUDE.md       ← this file
 ├── tests/
-│   └── test_engine.py
+│   └── test_engine.py       ← 19 hand-traced tests
 └── tools/
     └── compare_ob.py   ← Pine↔Python parity harness (reads a TradingView CSV export)
 ```
 
-Pine source of truth: `indicators/mpc_assistant.pine` OB blocks — the type + `manageOBs`/`extendOBs`
-(lines 38-66), external-break creation (863-895), internal-break creation (1290-1317).
+Pine source of truth: `mpc_assistant.pine` — the type + `manageOBs`/`extendOBs` (191-393), the shared
+turn pivot + PUSH source (2626-2715), `f_obAdd` (2269-2550), the TURN source (2717-2881).
 Parity export build: `indicators/ob_export.pine`.
 
 ---
 
 ## What an order block is (ported semantics)
 
-A **bullish OB** is the last DOWN candle before an up-break of structure — a demand zone to buy
-from. A **bearish OB** is the last UP candle before a down-break — a supply zone to sell from. The
-zone spans the candle's full high/low (or its body extremes when `body_only=True`).
+**A block is the base a turn left behind, drawn only once price has DISPLACED away from it.** It is
+made by looking BACK: the turn nominates a candidate, and the move away is what confirms it. No zone
+is ever drawn around price where it currently stands.
 
-On each structure break, the engine scans **back from the break-leg origin** (up to +20 bars) for
-the first opposite-colour candle and drops an OB across it. Two things kill an OB:
+A **bullish OB** sits below price (demand to buy from); a **bearish OB** sits above (supply to sell
+from). The zone spans the anchor candle's full high/low, or its body extremes when `body_only=True`.
 
-- **Mitigation** — price closes through the far edge (bull OB: `close < bottom`; bear OB:
-  `close > top`). This is the real signal: the zone was consumed. Emitted as `mitigated`.
-- **Eviction** — the per-direction list already holds `max_active` (default 2) OBs, so the oldest
-  is dropped FIFO when a new one is pushed. Pine deletes the box silently; **not** a trading
-  signal. Emitted separately as `evicted` so a consumer never confuses the two.
+**Two sources, one turn, at most one block.** A turn is a short pivot (`ta.pivotlow`/`pivothigh`,
+`turn_len=2`). Both sources read that same turn, `wait=10` bars late:
 
-Both the EXTERNAL structure break (BOS/SOS) and the INTERNAL structure break (iBOS/iSOS) create OBs
-into the SAME two arrays. That shared-array coupling is why the port includes both paths and why
-the per-bar order is fixed (see below) — porting only one path would guarantee a parity mismatch.
+| source | what it looks for | anchor |
+|---|---|---|
+| **PUSH** (the engulf reading) | an impulsive candle that closed through the nearest opposing candle's OPEN, with a **bigger body than the one it consumed**; the consumed candle must itself clear `push_mult × ATR` (a doji is not a level); and the anchor must sit at or within `turn_scan` bars *after* a matching-direction pivot | the candle it consumed |
+| **TURN** (the no-engulf reading) | any pivot. Walks forward from it to the first candle that **CLOSES clear of every BODY in the base so far** | the bar immediately before that one |
+
+The push runs FIRST and latches the pivot it used; the turn source refuses a latched pivot. That
+order is load-bearing — first drawn wins the overlap dedupe. If the wrong reading ever wins
+consistently, swapping the two call sites is the entire fix (the Pine says so too).
+
+**Six gates, all in `_add` (Pine `f_obAdd`). A candidate must clear every one:**
+
+| gate | rule | why |
+|---|---|---|
+| min-back | anchor ≥ `min_back` (3) bars behind the live bar | a level belongs in history, not beside the forming candle |
+| dead | no bar since has CLOSED clean past the far edge | else `_extend` would delete it next bar — refuse rather than flicker |
+| **displacement** | furthest CLOSE beyond the departed edge ≥ `disp_mult` (1.0) × ATR(14) | leaving is not enough. In chop price closes just past a candle constantly; without this every nothing-turn became a level |
+| tap-after-departure | once displaced, no bar may reach into the zone and close outside it | that is a real tap-and-reject; refuse at birth rather than draw and delete |
+| dedupe | overlap with a live block ≥ `dupe_overlap` (0.5) **of the CANDIDATE's own height** | the two sources land on ADJACENT candles at one turn, so an equality test never matched and both boxes printed |
+| height | zone ≤ `max_atr` (2.0) × ATR(14) | a box the size of the impulse is a redrawing of the move, not its base — and oversized zones become immortal |
+
+Measuring in ATR everywhere is deliberate: it travels across instruments and timeframes with no
+per-chart retuning. Measuring displacement on CLOSES means a single spike out and back cannot buy a
+level.
+
+**Four ways a block leaves, and only one is a signal:**
+
+- **mitigated** — the real signal, and it is now three rules in one. A **close clean past the far
+  edge** kills it outright (without this, price that runs cleanly THROUGH in one bar leaves an
+  immortal block). Otherwise, when the bar is not closing inside, it dies if the bar **touched** the
+  zone (a wick in that closed back out) OR it had previously **entered** (closed inside earlier, now
+  closing outside — either side). So a zone survives exactly one thing: price still being in it at
+  the close. ⚠ **The wick half is a tap rule, and a tap rule kills the blocks that HELD** — a level
+  that rejects price cleanly is wicked and closed out of. That is the trade Aaron chose (2026-07-31)
+  for a chart with no worked-through zones left on it.
+- **expired** — age only (`max_age`, 500 bars). Under enter-then-leave a block price never returns
+  to can never be mitigated (both halves need price at the zone), so age is the only thing retiring
+  those. **Not** a signal.
+- **evicted** — FIFO past `max_active` (10). Plain oldest-out; it no longer protects structure-born
+  blocks, because there are none. **Not** a signal.
+- **created** — a new zone exists.
+
+**A block is born CLEAN (`entered=False`).** The look-back replay computes `dead` and the
+displacement, but deliberately does NOT carry `entered` forward. It used to, and it killed correct
+blocks on arrival: the base candles nearly always contain a close inside the zone, and since the
+displacement gate already requires price to be OUTSIDE, `_extend` fired on the very next bar. **A
+block cannot be mitigated by the move that created it — the level did not exist yet.**
 
 ---
 
 ## Per-bar order (ported exactly — do not reorder)
 
-Each bar, `update()` runs, mirroring `mpc_assistant.pine`'s execution order:
+1. **History + ATR**, so `[0]` is the current bar.
+2. **Mitigate/expire both lists** (Pine `extendOBs`, mpc 2158) — BEFORE any creation. This is what
+   guarantees a block is never mitigation-checked on the bar it is born.
+3. **Pivots** — detect this bar's, and remember the latest confirmed pivot bar per side.
+4. **PUSH source** (mpc 2710-2715).
+5. **TURN source** (mpc 2878-2881).
 
-1. **Extend + mitigate both arrays** — mitigation runs FIRST, so a freshly created OB is never
-   mitigated on its own creation bar.
-2. **External-break creation** — bull, then bear (`st.bull_bos or st.bull_sos` scanning back from
-   `bull_bos_l_loc`; bear mirror from `bear_bos_h_loc`).
-3. **Internal-break creation** — bull, then bear (`int_bull_break` / `int_bear_break` scanning back
-   from the shared `int_break_origin_loc`).
-
-This order drives which OBs survive the `max_active` cap when several are created/evicted on one
-bar. Keep it identical to Pine.
+Steps 4 and 5 in that order decide which reading claims a turn, and the dedupe in step 4/5 sees the
+post-mitigation lists from step 2. Keep it identical to Pine.
 
 ---
 
 ## Timeframes & what it needs
 
-No timeframe branching — the same code runs on every TF (unlike the Macro fib, which is ≤5m only).
-To be accurate the engine needs, exactly like `engines/fibonacci/`:
+No timeframe branching, and **no upstream engine** — this engine is standalone and OHLC-driven. It
+needs:
 
-1. **An accurate structure engine.** OBs are downstream of `engines/market_structure/` — wrong structure →
-   wrong OBs. It is the foundation.
-2. **The right candles.** Same price feed you chart on (see "Live parity" in `engines/fibonacci/CLAUDE.md`
-   — the same rule applies here once a bot consumes this engine).
-3. **Closed bars, in order, one at a time.** The two OB lists + the rolling OHLC window carry
-   bar-to-bar; feed one closed bar per `update()`, in sequence, never replayed out of order.
-4. **Warm-up.** Nothing forms until the first in-window break; and the bars-ago lookback needs
-   history (an OB can reference a candle up to 519 bars back). Don't act on events during warm-up.
+1. **The right candles.** Same price feed you chart on (see "Live parity" in
+   `engines/fibonacci/CLAUDE.md` — the same rule applies here once a bot consumes this engine).
+2. **Closed bars, in order, one at a time.** The two lists, the rolling OHLC/ATR/pivot history and
+   the push latch all carry bar-to-bar; feed one closed bar per `update()`, never out of order.
+3. **Warm-up.** Short in absolute terms — ATR(14) is None for 13 bars, the pivot needs 5, and the
+   turn source needs `turn_len + turn_wait` (12) bars, so the earliest block lands around bar 14.
+   Against a Pine export the practical warm-up is much longer (see Validation).
+
+It needs **no timestamp and no volume**.
 
 ---
 
 ## Public API
 
 ```python
-from order_blocks import OrderBlockEngine, StructureSnapshot
+from order_blocks import OrderBlockEngine
 
-ob = OrderBlockEngine()   # max_active=2, body_only=False — the Pine defaults
+ob = OrderBlockEngine()   # max_active=10, body_only=False, … — the Pine defaults
 
-# Each closed bar, right after market_structure's engine.update(bar) -> events:
-snap = StructureSnapshot.from_engine(structure_engine, events)
-ob_events = ob.update(bar.index, bar.open, bar.high, bar.low, bar.close, snap)
+# Each closed bar, in order:
+ev = ob.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 
-for o in ob_events.created:      # OBs created THIS bar (event)
+for o in ev.created:      # zones created THIS bar (event)
     o.top, o.bottom, o.is_bullish
-    o.origin_index               # bar index of the OB candle itself
-    o.created_index              # bar index of the break that made it
-    o.id                         # stable id: match a created OB to its later mitigation
-for o in ob_events.mitigated:    # OBs tapped out THIS bar — price closed through the far edge (event)
+    o.origin_index        # bar index of the anchor candle itself
+    o.created_index       # bar index it was added on (~10 bars later — the sources read late)
+    o.id                  # stable id: match a created OB to its later mitigation
+    o.entered             # has a candle closed inside it yet (mitigation state)
+    o.from_break          # always False today — the structure sources are commented out in the Pine
+for o in ev.mitigated:    # zones CONSUMED this bar — the signal
     ...
-for o in ob_events.evicted:      # OBs aged out past the cap THIS bar — NOT a signal
+for o in ev.expired:      # zones that simply aged out — NOT a signal
     ...
-ob_events.active_bull            # live bull OBs, oldest-first (state) — mirrors Pine activeBullOBs
-ob_events.active_bear            # live bear OBs, oldest-first (state) — mirrors Pine activeBearOBs
+for o in ev.evicted:      # zones dropped past the cap — NOT a signal
+    ...
+ev.active_bull            # live bull OBs, oldest-first (state) — mirrors Pine activeBullOBs
+ev.active_bear            # live bear OBs, oldest-first (state) — mirrors Pine activeBearOBs
 ```
 
-Note `update()` takes the bar index + full OHLC (the bars-ago scan needs the candle history and the
-origin location); the snapshot carries only the structure engine's break flags + leg locations.
+Every Pine constant is a constructor arg (`max_active`, `body_only`, `max_age`, `min_back`,
+`max_atr`, `dupe_overlap`, `disp_mult`, `turn_len`, `turn_scan`, `turn_wait`, `push_look`,
+`push_wait`, `push_mult`, `atr_len`) so a consumer can match a tweaked Pine.
 
 ---
 
-## Relationship to `engines/market_structure/`
+## Relationship to the other engines
 
-Order Blocks is a **sibling** of `engines/fibonacci/`, not downstream of it: both consume
-`engines/market_structure/` directly and keep their own decoupled `StructureSnapshot`. It reads only the
-structure engine's PUBLIC output — never its internals. `StructureSnapshot.from_engine(engine,
-events)` reads the documented `ExternalEvents` (`bull/bear_bos`, `bull/bear_sos`, and the break-leg
-`bull_bos_l_loc` / `bear_bos_h_loc`) and `InternalEvents` (`int_bull_break`, `int_bear_break`,
-`int_break_origin_loc`).
+**None — this engine is STANDALONE.** It used to be a sibling of `engines/fibonacci/` downstream of
+`engines/market_structure/`, because every block was born on a BOS/SOS/iBOS/iSOS. The 2026-07-31 mpc
+rework commented out all four of those creation sites, so `StructureSnapshot` is gone and `update()`
+takes plain OHLC. In shape it is now a sibling of `fair_value_gaps/`, `rsi_divergence/` and
+`equal_highs_lows/`: price-pattern detection with no upstream engine, no volume and no timestamp.
 
-**The three internal-break fields were added to `engines/market_structure/` for this engine.** They are a
-purely additive, capture-only exposure of state the structure engine already computed (mirroring
-Pine's `int_bull_break` / `int_bear_break` / `int_break_origin_loc`), set at the six internal-break
-sites — no structure logic changed, and structure parity was re-confirmed unbroken. If you need a
-new field from structure, add a capture like that — do not reach into `_ext`/`_int`.
-
-Same stateful-streaming rationale as `engines/market_structure/` and `engines/fibonacci/`: build one
-`OrderBlockEngine` per symbol/timeframe, feed one closed bar per `update()`.
+A test (`test_update_takes_no_structure_snapshot`) guards the signature, so the dependency cannot
+drift back in unnoticed. **If the Pine's structure source is ever restored**, restore
+`StructureSnapshot` with it — read the structure engine's documented public output, never its
+internals.
 
 ---
 
 ## Do
 
-- Port any change to `mpc_assistant.pine`'s OB blocks back here line-by-line. Keep the per-bar
-  order (mitigate → external create → internal create), the +20-bar first-opposite-colour scan, the
-  `lookbackIdx < 500` guard, the mitigation edges (`close < bottom` / `close > top`) and the FIFO
-  cap exact — do not "clean up" or reorder them.
+- Port any change to `mpc_assistant.pine`'s OB blocks back here line-by-line. Keep the per-bar order
+  (mitigate → push → turn), the six gates, the enter-then-leave/tap/through mitigation, the Pine
+  pivot tie rule and the FIFO cap exact — do not "clean up" or reorder them.
+- Mirror any new mpc OB input as a constructor arg AND a `cfg_ob_*` column in `ob_export.pine` that
+  `compare_ob.py` reads, in the same commit.
 - When adding a new event or field, update this file's Public API and the tests in the same commit.
 
 ## Never do
 
-- Do not bake in colours, boxes, or any TradingView drawing concern. This layer emits events; the
-  Pine `box bg` field and every `box.*` call are deliberately dropped.
-- Do not reach into `market_structure` engine internals — consume its public reads/events only.
+- Do not bake in colours, boxes, the `OB_STUB` box width, or the trend-aligned hide — those are all
+  TradingView drawing concerns. This layer emits events.
+- Do not carry `entered` forward from the birth replay. It reads like a fix and it kills correct
+  blocks on arrival — see "A block is born CLEAN" above.
+- Do not re-add a structure dependency because it "feels" like an order block should need one. The
+  Pine decides that, and today it does not.
 - Do not build a second OB implementation elsewhere. This is the canonical one.
 - Do not let this engine or the OB blocks in `mpc_assistant.pine` drift; re-run the parity check
-  (below) after any change to either.
+  after any change to either.
 
 ---
 
 ## Validation (Pine ↔ Python parity)
 
-**Unit tests — GREEN:** `python3 -m pytest engines/order_blocks/tests/ -q` (12 hand-traced tests pinning
-creation, the first-opposite-colour scan, body-only geometry, the lookback guards, mitigation, FIFO
-eviction, and the shared internal-break path).
+**Unit tests — GREEN:** `python3 -m pytest engines/order_blocks/tests/ -q` (19 hand-traced tests
+pinning the Wilder-ATR seed, the Pine pivot tie rule on both sides, creation off a real displaced
+turn, the no-displacement and min-back and dead and height-ceiling refusals, all four mitigation
+paths plus the bear mirror, age expiry reported separately from mitigation, FIFO eviction through
+the real add path, the overlap dedupe both ways, the one-block-per-turn latch, and the standalone
+`update()` signature). Several are A/B against one feed — the same bar that creates a block on a
+clean engine must create nothing once the latch or a duplicate zone is in place — so they cannot
+pass vacuously.
 
-**Smoke — GREEN:** run over a real `VANTAGE_XAUUSD, 15m` export the engine produced 196 OBs / 153
-mitigations / 40 evictions, and the new `int_bull_break` / `int_bear_break` fields matched Pine's
-existing `px_i_bull_break` / `px_i_bear_break` export columns on every warm bar (0 mismatches).
+**✅ FULL Pine↔Python parity — GREEN (2026-07-31).** `compare_ob.py` exit 0 on a real
+`VANTAGE_XAUUSD, 15m` export, **21,691 bars, 2025-09-01 → 2026-07-31**, at `--warmup 798`, with **no
+config flags** (the tool read `body_only=False, disp_mult=1.0, dupe_overlap=0.5, max_active=10,
+max_age=500, max_atr=2.0, push_mult=0.3, push_wait=10, turn_wait=10` out of the export's own
+`cfg_ob_*` columns). All 55 columns matched — both count columns, both created and both mitigated
+pulses, and all 40 slot columns (10 slots × top/bottom × 2 directions), so creation, mitigation,
+age-expiry and FIFO eviction are all proven at once. Still green at warm-up 1000 / 2000 / 5000 /
+10000, so 798 is not a threshold sitting just past a real mismatch.
 
-**Full Pine↔Python parity — GREEN (2026-07-04).** 100% match on a real `VANTAGE_XAUUSD, 5m` export
-(6,727 bars): every OB field matched on all 6,133 warm bars (`--warmup 594`, exit 0). The first 594
-bars mismatch only because the TradingView chart had history before the export window, so Pine's
-arrays opened already holding 3 bull + 5 bear OBs whose origin candles were off-screen; the Python
-engine starts cold and cannot know them. Those phantom OBs flush (mitigate or FIFO-evict) out of
-Pine's arrays by bar 594, and the two engines are bar-for-bar identical from there — the same
-warm-start offset the structure engine has.
+The export was a **grand export**: `sessions_export`, `liquidity_export`, `ob_export` and
+`fvg_export` on ONE 15m chart, 146 columns, no column-name collisions between the four. All four
+comparators ran off that single file.
 
-**Re-validated — GREEN (2026-07-09).** After the 2026-07-08 structure re-sync shifted internal-break
-timing, `indicators/ob_export.pine` (which embeds the structure engine) was found still on the
-2026-07-04 structure block. It was re-synced with the two f2a8411 changes — the bear-BOS fallback
-swing-high scan and the internal-reset now firing on an external BOS too — leaving its `process`
-method byte-identical to the current `structure_engine_export.pine` and its internal state machine
-differing only by the OB creation blocks. `compare_ob.py` then passed on a fresh `VANTAGE_XAUUSD, 5m`
-export (12,618 bars, `--warmup 1133`, exit 0): every OB field matched on every warm bar. The OB
-**engine code was untouched** — only the harness was re-synced. The 1133-bar warm-up is the cold-start
-(Pine opened holding 6 pre-window bull OBs; the bull side flushed them by bar 1132, bear by bar 29).
+**One Pine bug had to be fixed first.** `ob_export.pine` would not compile — `CE10088: cannot modify
+global variable "obBullMit" in function`. Pine lets a function or method READ a global but never
+assign to one, and the export-only counters were being incremented inside `extendOBs` AND inside
+`f_obAdd`. Fix: `extendOBs` returns its mitigation count (its `isBull` parameter became pointless and
+is gone), and the creation counters are bumped at `f_obAdd`'s four call sites off the bool it already
+returned. Those counters do not exist in `mpc_assistant.pine` at all — they are pure instrumentation
+— so no ported logic moved.
 
-The harness mirrors the `engines/market_structure/` and
-`engines/fibonacci/` flow:
+### The 798-bar warm-up — investigated, not assumed
 
-1. `indicators/ob_export.pine` — `structure_engine_export.pine` (the byte-identical structure
-   engine, external + internal) + the OB blocks from `mpc_assistant.pine` (drawing removed) +
-   `plot()` columns for the active OB arrays (6 slots × top/bottom per direction), counts,
-   created/mitigated pulses, and `px_i_break_origin_ago` (the one internal field with no prior
-   column). Put it on a chart, Export chart data → CSV, drop it in `engines/order_blocks/exports/`
-   (git-ignored).
-2. `engines/order_blocks/tools/compare_ob.py <that.csv>` — runs the REAL pipeline (StructureEngine →
-   StructureSnapshot → OrderBlockEngine) on the CSV's candles and diffs against the `px_ob_*`
-   columns, bar by bar. The active arrays are compared slot-by-slot (oldest first), which proves
-   creation, mitigation AND eviction at once. Exit 0 = parity. Standard library only.
+798 is long, so it was chased rather than waved through. **It is NOT the usual pre-window-ghost
+warm-up**, and the finding changes what a consumer should expect:
 
-Early-bar mismatches are warmup (structure not yet converged, or a pre-window OB still lingering in
-Pine's arrays); the tool prints the last mismatching bar so you can pick `--warmup N`. Re-run
-`compare_ob.py` after any change to the OB blocks in `mpc_assistant.pine` or to this engine.
+- The export starts at Pine's **bar_index 0** — Pine holds zero blocks at row 0 and creates its first
+  only at bar 122 — so there are no off-screen anchors carried in. The standard explanation is out.
+- Over bars 0–324 Python creates a strict **superset**: 20 blocks Pine never made, and **zero** that
+  Pine made and Python missed.
+- Not the displacement gate going marginal — those 20 clear it at **travel/ATR 1.06 … 6.71**, none
+  near ×1.0. Not the ATR seed, not `obHuge`.
+- **The decisive test: cold-start the Python engine at bar 2000, 6000 and 12000 instead.** Every one
+  produces the OPPOSITE signature — Python *misses* 1–3 blocks inside its first ~300 bars (Pine is
+  warm there, Python is not), then matches exactly. The over-firing happens ONLY at bar 0, i.e. only
+  where **Pine itself is also cold**.
+
+So Pine suppresses creation over the oldest bars of a chart in a way this port does not. The
+mechanism could not be identified from this export because it plots no intermediate values
+(`obTurnHi`/`obTurnLo`, `obTravel`, the pivot series), and it never recurs across the following
+20,893 bars.
+
+**What this means for a consumer: budget ~300 bars of warm-up, and expect a cold engine to be
+MISSING a block or two in that window rather than inventing one.** That is the safe direction — a
+missing zone declines a trade, an invented one takes a bad one. If it ever needs settling, add
+`px_ob_pv_hi` / `px_ob_pv_lo` / `px_ob_travel` diagnostic columns to the harness and re-export; that
+is the cheap follow-up.
+
+**Standing warning that still applies to a NARROWER export.** Pine's arrays can open holding blocks
+whose anchor candles are off-screen, and under enter-then-leave those clear only as they mitigate or
+FIFO out. **If warm-up never clears, re-export a WIDER window rather than raising `--warmup`** — a
+block price never returns to cannot mitigate, so a pre-window ghost can sit in Pine's array for ever.
+That is the 2026-07-19 EQ/FVG lesson, and it applies to this engine more than any other now that age
+is the only backstop. It did not bite on the 21,691-bar run above.
 
 ## References
 
-- Pine source of truth: `indicators/mpc_assistant.pine` OB blocks (38-66 / 863-895 / 1290-1317).
+- Pine source of truth: `indicators/mpc_assistant.pine` OB blocks (191-393 / 2269-2550 / 2626-2881).
 - Parity export build: `indicators/ob_export.pine`.
-- Upstream structure engine: `engines/market_structure/CLAUDE.md`.
-- Sibling engine (same pattern, downstream of the same structure engine): `engines/fibonacci/CLAUDE.md`.
+- Siblings in shape (standalone, price-pattern, events-not-visuals): `engines/fair_value_gaps/CLAUDE.md`,
+  `engines/equal_highs_lows/CLAUDE.md`, `engines/rsi_divergence/CLAUDE.md`.
+- The audit that found this: `docs/ENGINE_EXTRACTION_ROADMAP.md` → "Audit findings — 2026-07-31".
 - Monorepo context: `../CLAUDE.md`.
