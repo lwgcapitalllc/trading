@@ -30,8 +30,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import pandas as pd
 
@@ -106,6 +107,46 @@ def _expand(df: pd.DataFrame) -> pd.DataFrame:
 # mismatch USUALLY originates — diffing it turns "a trade differs" into "the upstream moved").
 _BOOL = ["px_long_armed", "px_short_armed", "bl_l_on", "bl_l_tap", "bl_s_on", "bl_s_tap"]
 _INT = ["px_l_stage", "px_s_stage", "px_entry_dir", "bl_l_bar", "bl_s_bar"]
+# The two _INT columns that hold a BAR INDEX rather than a value — see _bar_index_offset.
+_BAR_COLS = ("bl_l_bar", "bl_s_bar")
+
+
+def _bar_index_offset(ex: pd.DataFrame, bleg_states) -> Tuple[int, int]:
+    """Measure the chart-origin offset between Pine's bar index and Python's.
+
+    Pine's `bar_index` counts from the first bar the CHART loaded; the Python tracker
+    counts from the first row of the EXPORT. When TradingView exports its whole loaded
+    history the two origins coincide and the raw indices match — which is why every run
+    before 2026-07-31 was green without this. When the export is a SUBSET (the normal
+    case once a chart has scrolled back, and what a 6k-bar export off a 21k-bar chart
+    is), every `bl_*_bar` is off by one constant, and diffing raw reports a mismatch on
+    every armed bar while the logic is bar-for-bar identical.
+
+    So the origin is MEASURED, never assumed: the most common (pine - python) difference
+    over every bar where both sides name an armed bar. This normalises a coordinate
+    system; it does not soften the check. A real drift in WHICH bar armed produces a
+    MINORITY offset, so those bars still fail the diff. Returns (offset, stray_count) —
+    stray > 0 means more than one offset was seen, which is itself the drift signal.
+    """
+    seen: Counter = Counter()
+    present = ex["_px_present"].tolist()
+    cols = {c: ex[c].tolist() for c in _BAR_COLS if c in ex.columns}
+    n = min(len(present), len(bleg_states))
+    for i in range(n):
+        if not present[i]:
+            continue
+        st = bleg_states[i]
+        for col, py_attr in (("bl_l_bar", "l_bar"), ("bl_s_bar", "s_bar")):
+            if col not in cols:
+                continue
+            a, b = getattr(st, py_attr), cols[col][i]
+            if a is None or b is None or pd.isna(b):
+                continue
+            seen[int(b) - int(a)] += 1
+    if not seen:
+        return 0, 0
+    offset, hits = seen.most_common(1)[0]
+    return offset, sum(seen.values()) - hits
 _PRICE = ["px_edge", "px_stop", "px_entry_price", "px_tp1", "px_tp2",
           "px_exit_tp1", "px_exit_tp2", "px_exit_run",
           "bl_l_top", "bl_l_bot", "bl_l_inv", "bl_l_tgt",
@@ -153,6 +194,13 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
     late drift by shifting the alignment."""
     ex = _expand(df)
     msgs: List[str] = []
+    bar_offset, strays = _bar_index_offset(ex, bleg_states)
+    if bar_offset:
+        print(f"NOTE: the export starts at Pine bar_index {bar_offset} (a partial chart export), "
+              f"so bl_l_bar/bl_s_bar are compared relative to that origin.")
+    if strays:
+        print(f"WARNING: {strays} armed-bar reading(s) do not sit at the measured offset — "
+              f"that is real drift, not the origin, and they are reported below.")
     n = min(len(ex), len(decisions), len(bleg_states))
     for i in range(warmup, n):
         row = ex.iloc[i]
@@ -171,8 +219,12 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
             a, b = py[col], row[col]
             if (a is None) != (b is None or pd.isna(b)):
                 msgs.append(f"bar {i} {when} {col}: py={a} pine={b}")
-            elif a is not None and b is not None and not pd.isna(b) and int(a) != int(b):
-                msgs.append(f"bar {i} {when} {col}: py={a} pine={int(b)}")
+            elif a is not None and b is not None and not pd.isna(b):
+                # a bar index is reported in the EXPORT's coordinates, so it reads the same
+                # as every other "bar N" in this output whether or not the chart was partial
+                pine = int(b) - (bar_offset if col in _BAR_COLS else 0)
+                if int(a) != pine:
+                    msgs.append(f"bar {i} {when} {col}: py={a} pine={pine}")
         for col in _PRICE:
             if col not in ex.columns:
                 continue

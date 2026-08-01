@@ -8,12 +8,33 @@ resting limit at the 0.5 edge waits for the late return.
 **Scope:** This bot only — its tracker, order layer, config, tests. It does NOT own the
 engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it reuses
 (`strategies/python/mpc_sos_fade/`).
-**Status:** Built + unit-tested (15 tests green) + **Pine-parity GREEN (exit 0), re-validated 2026-07-29**
-on a fresh 21,493-bar `VANTAGE_XAUUSD, 15m` export carrying the ratchet exit ladder — bar-for-bar
+**Status:** Built + unit-tested (19 tests green) + **Pine-parity GREEN (exit 0), re-validated 2026-07-31**
+on a fresh 6,329-bar `VANTAGE_XAUUSD, 15m` export off the session-window build — bar-for-bar
 identical decision stream. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
-open question, not correctness:** 5 trades is far too thin to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-30 — **the parent's new MINIMUM-STOP guard is PINNED OFF here, and is inert
+open question, not correctness:** the validated windows have produced 2–5 trades each, far too thin
+to tune against. See "The parity gate".
+**Last reviewed:** 2026-07-31 — **the session-window fork is CLOSED and proven, and the harness had a
+latent hole that a partial chart export walked straight into.** `mpc_b_leg_strategy.pine` had never
+received the DST-aware session windows its A+ parent has carried since 2026-07-12; both were synced
+and `compare_bleg.py` re-run on a fresh export → **exit 0 at `--warmup 800`**, green at 1200 / 2000 /
+3000. **What makes this run the right one for that fix:** the window is 2026-04-27 → 2026-07-31,
+which sits ENTIRELY inside BST/EDT — the half of the year where the new city-clock windows and the
+old fixed GMT-4 windows actually disagree (New York `0800-1700` America/New_York is 12:00–21:00 UTC
+under EDT, an hour earlier than the old `0900-1800` GMT-4). A stale Python side would have disagreed
+with Pine on every session boundary in this export, so green here is a real result rather than a
+window where the two happen to coincide. **The harness hole:** `bl_l_bar`/`bl_s_bar` carry Pine's
+`bar_index`, which counts from the first bar the CHART loaded, while the Python tracker counts from
+the export's first ROW. Every previous export was the whole loaded history, so the two origins
+coincided and nobody noticed the assumption. This one starts 15,362 bars in, and all 2,409 armed-bar
+comparisons failed at exactly that constant — the logic was identical the whole time. `compare_bleg.py`
+now MEASURES the origin (the modal `pine - python` difference) instead of assuming zero, and the
+normalisation is deliberately majority-based so a genuine drift in WHICH bar armed is a minority
+offset and still fails; `test_partial_chart_export_still_parity` and
+`test_offset_normalisation_still_catches_a_real_armed_bar_drift` pin both halves. **Generalise it:
+any parity column holding a Pine BAR INDEX is export-window-relative, and a harness that compares one
+raw is only correct by the accident of a full-history export.** 19 tests green.
+Earlier: 2026-07-30 — **the parent's new MINIMUM-STOP guard is PINNED OFF here, and is inert
 on this path.** `mpc_sos_fade` gained `exec_min_stop_mode` / `exec_min_stop_val` (refuse a setup whose
 stop lands too close to the entry — `qty = risk / stop_distance`, so a collapsing stop buys an enormous
 position). It does not reach this fork: the floor is enforced in the parent's `_place_entries`, which
@@ -205,12 +226,44 @@ recorded in the export's own header (`sed -n '1,4486p'`, then re-append the bloc
 line-40 title). A new trade-affecting input = a new `config.py` field + a new `cfg_*` plot + a new
 read in `compare_bleg.config_from_export`, in the SAME commit as the Pine change.
 
-Offline guard: `tests/test_compare_bleg.py` (5 tests) round-trips the tool — run the bot, serialise
+Offline guard: `tests/test_compare_bleg.py` (8 tests) round-trips the tool — run the bot, serialise
 its own decisions + tracker state into an export-shaped CSV using the Pine's packing, feed it back,
 require exit 0 — then plants a `bl_l_top` mismatch and a `px_dec_bits` mismatch and requires the tool
 to catch each at the right bar. The encoder there is written from the Pine's plot expressions rather
 than from the tool's decoder, so it also catches the two drifting apart. It uses 30 synthetic days,
 not 10: on 10 no leg ever ARMS, so the `bl_*` diff would prove nothing.
+
+Two of those eight cover the **partial-export** case added 2026-07-31 — one re-packs `bl_bars` as
+if the chart held 15,362 bars before the export's first row and requires exit 0, the other shifts
+all but ONE armed bar and requires that odd one to still be caught. They are a pair on purpose:
+the first alone would pass just as happily if the tool had stopped diffing the bar index at all.
+
+### PARITY GREEN 2026-07-31 (exit 0) — the session-window build
+
+`compare_bleg.py "VANTAGE_XAUUSD, 15_cabec.csv" --warmup 800` → **exit 0**. 6,329 bars,
+2026-04-27 → 2026-07-31. Green at warmup 1200, 2000 and 3000 too, so nothing late is hiding
+behind the skip.
+
+**Why the warm-up is 800 and not 100.** This export is a partial chart — it starts 15,362 bars
+into the loaded history, so Pine walks in already holding a frozen band that the Python side has
+never seen. It has to wait for a whole fresh band to form. That is cold start in the ordinary
+sense, just a longer one than a from-bar-zero export needs; the same run at `--warmup 400` fails
+only on `bl_s_top`-style band prices Pine carried in, never on a decision.
+
+**What it proves that the 21k-bar 2026-07-29 run could not.** The window is entirely inside
+BST/EDT, which is exactly where the new city-clock session windows differ from the old fixed
+GMT-4 ones. `mpc_b_leg_strategy.pine` had been a genuine fork on those windows; a Python side
+still on the old offsets would have disagreed with Pine on every session boundary here. Config
+decoded off the export: `cfg_exitmode = 20` (the ratchet trail), `cfg_trail_pct = 1`,
+`cfg_tp1_pct = cfg_tp2_pct = 0`, `cfg_bleg_days = 1.25`, risk 10%, `aplus_window = 4320`.
+
+Exercised: 605 / 695 bars with a live long / short leg, 2,063 bars armed, **2 entries, 2 trades
+graded, sum 5.73R**. The usual caveat applies harder than ever on a 3-month window — that trade
+count proves the two implementations agree and says nothing about the edge.
+
+**It also found the harness bug described in "Last reviewed"** — the raw `bar_index` comparison.
+Worth restating as a rule: a round trip proves the two halves agree, and a full-history export
+hides an origin assumption, so **the first PARTIAL export is its own kind of gate.**
 
 ### PARITY GREEN 2026-07-29 (exit 0) — the ratchet build
 

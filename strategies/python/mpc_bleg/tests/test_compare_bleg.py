@@ -188,6 +188,54 @@ def test_detects_a_planted_decision_mismatch(tmp_path):
     assert f"bar {i} " in msgs[0] and "px_long_armed" in msgs[0], msgs[0]
 
 
+def _shift_bar_indices(df: pd.DataFrame, offset: int) -> None:
+    """Re-pack `bl_bars` as if the CHART had `offset` bars of history before the export's
+    first row — which is what Pine's `bar_index` counts from. Mutates in place."""
+    packed = df["bl_bars"].fillna(0).round().astype("int64")
+    lo = packed // 1_000_000
+    so = packed % 1_000_000
+    lo = lo.map(lambda x: 0 if x == 0 else x + offset)
+    so = so.map(lambda x: 0 if x == 0 else x + offset)
+    df["bl_bars"] = lo * 1_000_000 + so
+
+
+def test_partial_chart_export_still_parity(tmp_path):
+    """TradingView exports the VISIBLE range, but Pine's `bar_index` counts from the first
+    bar the CHART loaded. Export a subset of a scrolled-back chart and every `bl_*_bar` is
+    off by one constant while the logic is bar-for-bar identical. The tool must MEASURE
+    that origin, not assume it is zero — before 2026-07-31 it assumed, and a real 6,329-bar
+    export off a 21k-bar chart failed on all 2,409 armed bars at a flat offset of 15,362."""
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    _shift_bar_indices(df, 15_362)
+    p2 = tmp_path / "partial.csv"
+    df.to_csv(p2, index=False)
+    msgs = cb.run_parity(p2, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_offset_normalisation_still_catches_a_real_armed_bar_drift(tmp_path):
+    """The guard on the test above: normalising the origin must not become "ignore the bar
+    index". Shift every armed bar by the same constant EXCEPT one, and the odd one out must
+    still be reported — a genuine drift in WHICH bar armed is a minority offset, so it fails
+    the diff while the majority sets the origin."""
+    p, _ = _write(tmp_path)
+    df = pd.read_csv(p)
+    _shift_bar_indices(df, 15_362)
+    packed = df["bl_bars"].fillna(0).round().astype("int64")
+    live = df.index[(packed // 1_000_000) != 0]
+    live = [i for i in live if i > 100]
+    if not live:
+        pytest.skip("no armed long bar past warmup on the synthetic bars")
+    i = int(live[len(live) // 2])
+    df.loc[i, "bl_bars"] = int(packed[i]) + 7 * 1_000_000    # this bar alone claims +7
+    p2 = tmp_path / "drift.csv"
+    df.to_csv(p2, index=False)
+    msgs = cb.run_parity(p2, warmup=100)
+    assert msgs, "offset normalisation swallowed a real armed-bar drift"
+    assert f"bar {i} " in msgs[0] and "bl_l_bar" in msgs[0], msgs[0]
+
+
 def test_entry_direction_comes_from_fill_dir_not_qty_sign():
     """`Fill.dir` is the signed direction; `Fill.qty` is not signed. Deriving the direction
     from qty's sign made every SHORT report as a long — and the round-trip test above could
