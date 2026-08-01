@@ -63,6 +63,12 @@ backend/
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
 │   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Always ships the timeframe the run TRADED and caps the WINDOW instead (`_capped_start` → the newest slice under `_CANDLE_CAP`), with `historyStartMs` telling the panel how far back it may page; see "ChartSpec candles" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below; `_build_misses` reads `missed_setups.json` and ALSO returns the derived `missNoise` list — see "Missed setups" below
+│   ├── fvg_overlays.py    replay the CANONICAL engines/fair_value_gaps/ engine (+ engines/equal_highs_lows/
+│   │                      for mpc's eqExemptFvg cap coupling) over a run's candles → the "Fair Value Gaps"
+│   │                      overlay group. Emits a box ONLY for a gap that was LIVE on a trade-entry / blocked /
+│   │                      missed bar (all of them when several overlap); everything else is dropped. Settings
+│   │                      are mpc_assistant.pine's LOCKED constants incl. the timeframe-SPLIT gap floor —
+│   │                      NOT the strategy's, which differ. See "Fair value gaps" below
 │   ├── structure_overlays.py  replay the CANONICAL engines/market_structure/ engine over a run's candles → BOS/SOS/swing overlays for the chart, in the 4 groups that ARE structure_engine.pine's 4 toggles (External / Internal / Historic Internal Structure / Swing Point Labels), nesting like the Pine's via each overlay's `requires` list (swing tags need their owning structure; historic internal needs Internal). Never a 2nd engine (bare-name import like regime/news); called by chart_spec on the displayed TF. Break tags anchor at the line MIDPOINT (`_mid`, = Pine's `mid_x`) so they clear the break-bar candles; reversal breaks are labelled SOS/iSOS (not "CHoCH")
 │   ├── news_filter.py     post-run news/holiday tagging — composes the canonical engines/news/ engine (never a 2nd impl) to mark which of a run's trades opened in a high-impact news window / on a bank holiday, for the BacktestDetail News filter card. Pure over a trade list; loads the EventStore cache (see "News filter (post-run)")
 │   ├── history_limits.py  broker history floors — thin shim over the canonical `backtest/data/history.py`
@@ -658,6 +664,56 @@ file written before the flag existed does not have every one of its reasons file
 hidden on open (which would make an old run look like it had no misses at all). Locked by
 `backend/tests/test_chart_spec_misses.py`. **Python runner only, no backfill** — same as the blocks,
 for the same reason.
+
+## Fair value gaps — only where something happened
+
+`services/fvg_overlays.py`. Replays the canonical `engines/fair_value_gaps/` engine over the candles
+the chart is about to show and emits one `box` overlay per gap, in the group `Fair Value Gaps`, which
+the panel lists in its **Analysis** dropdown (default OFF). Never a second FVG engine — bare-name
+import, public events only, same shim as regime / news / structure.
+
+**A gap is drawn only if it was in the engine's LIVE list on the bar of a trade ENTRY, a blocked
+setup, or a missed setup.** That filter is the whole design: a 33k-bar run leaves thousands of gaps
+and drawing them all is both unreadable and an answer to a question nobody asked. When several gaps
+were open at one of those bars, ALL of them are drawn — a cluster is exactly the thing worth seeing.
+The anchors arrive as bare timestamps (`trades[].entryTime` + `blocks[].time` + `misses[].time`), so
+the module knows nothing about what a trade or a block IS; hand it different anchors and it draws
+gaps at those. No anchors ⇒ `[]` ⇒ the toggle never appears, which is the honest answer for NT8/MT5.
+
+**⚠ These are `mpc_assistant.pine`'s gaps, and that is NOT the set the bot traded on.** The indicator
+runs `fvgMaxCount 8`, `fvgRequireClose false`, and the timeframe-**split** floor
+(`timeframe.in_seconds() < 900 ? 0.0 : 0.04`), with `eqExemptFvg` on — all locked constants, mirrored
+here as named `MPC_*` values. `strategies/python/mpc_sos_fade` pins `fvg_max_count=7`,
+`fvg_require_close=True`, `fvg_threshold_pct=0.1`, because `mpc_strategy.pine` hardcodes the
+middle-bar close check and carries its own count. So the bot's entry rule counted strictly FEWER gaps
+than this layer draws (`require_close` only ever removes gaps, and its floor is higher). The chart was
+asked to match what TradingView draws, so it does — do not resolve the fork by repointing the emitter
+at the strategy's config, and do not read a drawn gap as one a "no FVG" block ignored. Background:
+`engines/fair_value_gaps/CLAUDE.md` → the `require_close` callout.
+
+**Two details that would silently draw the wrong thing if they broke**, both pinned by tests:
+- **The floor is timeframe-split**, so the same run charted at M5 and M15 legitimately has different
+  gaps. An unrecognised timeframe takes the STRICTER (15m+) branch on purpose: over-filtering drops a
+  marginal gap, under-filtering invents one the indicator never drew, and only the second puts
+  something on the chart that is not there.
+- **Box span mirrors the Pine box.** Pine creates it at `bar_index - 1`, pushes `box.set_right` every
+  surviving bar, and DELETES it on the bar the gap is mitigated or evicted — so `t1` is the bar
+  BEFORE its death, never the death bar. On the death bar mpc showed nothing there.
+
+`build_stack_chart_spec` **strips this group**, for the same reason it strips blocks and misses: it
+is anchored to the BASE leg's trades, so on a merged chart it would draw gaps at one strategy's
+entries and nothing at the others' — which reads as "these setups had gaps and those didn't". A leg's
+own page still carries it. Existing runs need **Reload charts** (`chart_spec.json` is cached).
+
+**Tested two ways** (`tests/test_fvg_overlays.py`, 16 tests). Hand-built candles pin the layer's own
+rules (which gaps, the cluster case, the box span, the timeframe split, the mpc constants). Then a
+real TradingView export is replayed and every box is diffed against **the Pine's own live gap arrays**
+(`px_fvg_top_k` / `px_fvg_bot_k` / `px_fvg_count`): on each sampled anchor bar the boxes covering it
+must be exactly the gaps mpc had open, price for price. The unit tests could all pass on an emitter
+drawing the wrong gaps; that one could not. The export is git-ignored, so those two SKIP without it —
+and it predates the 2026-07-18 mpc default drift, so it is replayed with the settings ITS build ran
+(which is what the config keyword arguments on `build_fvg_overlays` exist for). That the ENGINE still
+matches today's mpc build is proven separately by `engines/fair_value_gaps/tools/compare_fvg.py`.
 
 ## News filter (post-run)
 

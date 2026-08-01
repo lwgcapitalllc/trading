@@ -3,7 +3,25 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-07-30 (**scroll-left paging now SHOWS itself** — the blank strip you scroll
+**Last reviewed:** 2026-08-01 — **Step (`◀ Loss 12/60 ▶`), a header pill that walks the markers.**
+Reading a run's losers back to back was a scroll hunt across years of bars. The arrows (and ← / →
+while the pointer is over the panel) jump to the previous / next marker and centre it, paging older
+history in on the way via the SAME `goToDate` the date pill drives. The design decision worth keeping:
+**it has no set of its own — it walks whatever the Analysis dropdown is showing.** Untick Winners and
+◀ walks the losers; turn Trades off with Blocked on and it walks the refusals; leave both on and it
+interleaves them by time (measured on run `0e3983a0c3c7`: 164 trades → 104 / 60 / 138 with blocked
+added, stepping Loss → Blocked → Loss). A second set of filters would just be a second place for the
+navigator and the chart to disagree. One new overlay, `FOCUS` — an accent dashed vline on the parked
+marker, because a step CENTRES its target rather than isolating it.
+Earlier the same day: **Analysis → Fair Value Gaps.** The canonical FVG engine is replayed
+server-side and a gap is drawn ONLY where it was live on a trade / blocked / missed bar (all of them
+when several overlap), so the layer answers "where were the gaps when this fired" instead of papering
+a 33k-bar chart with every gap the run ever saw — measured on the shipped 142-trade run: 215 anchor
+bars → 655 boxes. It needed **no new overlay template and no new effect** — it is a plain `box` group,
+and the only new panel concept is `ANALYSIS_GROUPS`, the list of overlay groups that belong in the
+Analysis dropdown rather than Structure. ⚠ The gaps are the INDICATOR's (`mpc_assistant.pine`), which
+is a stricter-vs-looser fork from what the bot's own entry rule counted — see the bullet below.
+Earlier: 2026-07-30 (**scroll-left paging now SHOWS itself** — the blank strip you scroll
 into is shaded and labelled `Loading earlier bars…` from the oldest loaded bar back, so a page in
 flight no longer reads as the end of the data; earlier: **configurable fib levels** — the ladder is no longer a hardcoded
 array: add / remove / retune / recolour / hide any level from a live editor, per drawing or as the
@@ -178,6 +196,39 @@ here**, so the chart shows exactly what the strategy saw.
   - Switching TF re-applies data; it must NOT re-init the chart, so overlays (anchored by timestamp,
     incl. trade markers) survive the switch and land ON the 1m/5m candles — that's the sniper-entry
     view. The `DATA_EDGE` overlay is rebuilt after each data change like the other vline overlays.
+- **Step** (`MarkerNav` in `index.tsx`, header pill next to Go to date, 2026-08-01) — `◀ Loss 12/60 ▶`.
+  The other answer to "where": Go to date takes a calendar date, this walks the MARKERS. Reading a
+  run's losers back to back was a scroll hunt across years of bars; it is now two keys.
+  - **It has no set of its own and no filters of its own — the set is whatever the Analysis dropdown
+    is SHOWING**, oldest to newest. Untick Winners and ◀ walks the losers; turn Trades off and leave
+    Blocked on and it walks the refusals; leave both on and it interleaves them by time. This is the
+    whole design. A second "winners only" control would be a second place for the chart and the
+    navigator to disagree, and the navigator can never step to something that isn't drawn.
+    `navMarkers` therefore reuses the drawing effects' own predicates (`winnersOn`/`losersOn`,
+    `hiddenLayers`, `blockVisible`, `missVisible`) — change one of those and check both.
+  - **The one place it deliberately parts company with the drawing effects is the loaded-candle
+    clip.** They skip a marker outside `[loadedLoTs, loadedHiTs]` because klinecharts would clamp it
+    onto the plot edge; the navigator must still LIST it, since reaching it is the entire point. It
+    calls `goToDate`, so a step into unloaded history pages the bars in exactly like a typed date —
+    one machinery, not two.
+  - **It parks on `{ id, ts }`, not on an index.** The id is what finds the current position; the
+    timestamp is what lets a marker leave the set under you (untick Losers while parked on a loss)
+    and have the next press continue FROM THERE rather than teleport back to the viewport. The id is
+    kind-prefixed AND layer-qualified — a stack merges several runs' trade lists, and two legs
+    numbering their own trades from 1 would otherwise collide and walk in circles.
+  - **The FIRST press anchors on the middle of the plot** (`visibleCentreTs`), so ◀ means "the last
+    one before what I'm looking at", not "the last one in the run". Comparison is strict, so an
+    anchor that IS a marker steps off it instead of onto itself.
+  - **A step CENTRES its target, so `FOCUS` marks it** — an accent dashed vline under its own overlay
+    name (registered from the same `vline` shape as `VLINE`/`DAY_BREAK`). Its own name is load-bearing:
+    the generic structure effect calls `removeOverlay({ name: VLINE })`, which would wipe a shared one.
+    Without the line, "which of the three trades on screen did it take me to" has no answer.
+  - **← / → work only while the pointer is over the panel** (`hoveredRef`, set on the ROOT div so the
+    keys keep working after clicking an arrow). The arrow keys belong to the page everywhere else, and
+    a chart that swallowed them globally would be a bug on every host that embeds two of these.
+  - **Both arrows disable while `jumping`** and `stepMarker` bails on `jumpingRef` — `goToDate`
+    refuses to start a second jump, so without the guard the readout would advance while the chart
+    stood still.
 - **Overlays are registered once, created per-spec.** Custom templates live in `overlays.ts`
   (`registerChartOverlays()`, guarded so StrictMode/remounts don't double-register). The panel
   creates instances with `points` (anchored by `timestamp`) + `extendData` (colors/labels).
@@ -310,6 +361,37 @@ here**, so the chart shows exactly what the strategy saw.
     silently, and one click restores any of them.
   - Everything else — per-reason filters with ANY-of semantics, clipping to the loaded candles,
     default OFF, listed only when the run reports any — is the Blocked layer's, unchanged.
+- **Fair value gaps** (`Fair Value Gaps` overlay group, backend `services/fvg_overlays.py`) — **the
+  gaps that were LIVE when something happened.** The canonical `engines/fair_value_gaps/` engine is
+  replayed server-side over the run's candles and a gap is emitted **only if it was in the engine's
+  live list on the bar of a trade ENTRY, a blocked setup, or a missed setup**. Everything else is
+  dropped, and when several gaps overlapped at one of those bars ALL of them are drawn.
+  - **It is a plain `box` overlay group, so the panel needed no new template and no new effect** —
+    the generic overlay pipeline already renders, clips and toggles it. The only new frontend
+    concept is `ANALYSIS_GROUPS` in `overlays.ts`: the one list of overlay groups that belong in the
+    **Analysis** dropdown rather than Structure, because they describe the strategy's SIGNALS rather
+    than what the market drew. `overlayGroups` still backs `groupsOn` for every group; only the MENU
+    each row appears in differs (`structureGroups` / `analysisGroups`). Default OFF, with its box
+    count on the row, exactly like Blocked and Missed. Adding a second analysis layer is one string.
+  - **It sits LAST in Analysis** because it is the context around the three rows above it, not a
+    fourth kind of signal — "and show me what the gaps looked like there".
+  - **The gaps are `mpc_assistant.pine`'s, not the strategy's**, and the fork is real: the indicator
+    runs `fvgMaxCount 8 / fvgRequireClose false / 0.0 below 15m, 0.04 at and above`, while
+    `mpc_sos_fade` pins `7 / True / 0.1`. A drawn gap is therefore one the INDICATOR shows, which is
+    not always one the bot's entry rule counted (the bot sees strictly fewer). See
+    `backend/CLAUDE.md` → *Fair value gaps* — do not "fix" it by repointing the emitter.
+  - **Box geometry mirrors the Pine box**: created at `bar_index - 1`, extended every surviving bar,
+    and gone on the bar the gap is mitigated or evicted — so `t1` is the bar BEFORE its death, never
+    the death bar. mpc showed nothing there.
+  - **No border, and bull and bear look identical** — mpc sets `border_color = color(na)` and paints
+    both directions the same grey, so a tinted edge would be a shape the indicator doesn't have (its
+    only direction cue is a green/red "FVG" caption, which klinecharts boxes have no room for). The
+    generic `BOX` template reads **`lineWidth: 0` as "no border"** and switches the rect to `fill` —
+    a 0 border SIZE alone still strokes a hairline. That rule is generic, not FVG-specific: some
+    sources draw a bordered region, some a bare tint.
+  - Dropped from a **stack** spec, for the same reason blocks and misses are: it is anchored to the
+    BASE leg's trades, so on a merged chart it would draw gaps at one strategy's entries and nothing
+    at the others'. A leg's own page still has it.
 - **Portfolio-stack layering** (`layer` / `layerName` / `layerColor` on a trade — all absent on a
   single-run spec, which is what makes every stack affordance vanish for a normal backtest). With
   several strategies' trades on ONE chart, the outcome alone doesn't say WHOSE trade it was, so the
@@ -414,7 +496,7 @@ here**, so the chart shows exactly what the strategy saw.
   had no counts and different padding).
 - **All layer toggles** use one `ToggleChip` component (colored dot + label).
 - **Header + tool-strip layout (TradingView).** The header row carries the **symbol/interval**
-  controls top-**LEFT** — timeframe dropdown, then Go to date, then Analysis / Structure, then the drill-down fetch status — and
+  controls top-**LEFT** — timeframe dropdown, then Go to date, then Step, then Analysis / Structure, then the drill-down fetch status — and
   the **snapshot (Copy)** button top-**RIGHT**. The header exposes three optional slot props so a
   host can fold ITS chrome onto this SAME single row rather than stacking a second bar above it:
   `headerLeading` (far left, before TF), `headerTrailing` (far right, after Copy), and

@@ -9,13 +9,13 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
+import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
+import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, FOCUS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
 import FibSettings from './FibSettings'
 import { DEFAULT_FIB_LEVELS, loadFibLevels, sameFibLevels, saveFibLevels, type FibLevel } from './fibLevels'
 import { ensureSeriesIndicator } from './indicators'
@@ -197,6 +197,90 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** One thing the Step navigator can park on. Deliberately NOT "a trade": the layers already on the
+ *  chart — winners, losers, blocked setups, missed setups — are all answers to "where did the
+ *  strategy act", and stepping should reach whichever of them are on screen. */
+interface NavMarker {
+  id: string          // kind-prefixed, so a trade and a block can never collide on one id
+  ts: number          // the bar the chart parks on (a trade's ENTRY, a block/miss's own bar)
+  kind: 'win' | 'loss' | 'block' | 'miss'
+  label: string       // the word the pill prints — "Win" / "Loss" / "Blocked" / "Missed"
+  color: string
+  note: string        // the extra line on hover (direction + P&L, or the refusing rule)
+}
+
+const NAV_KIND_LABEL: Record<NavMarker['kind'], string> = {
+  win: 'Win', loss: 'Loss', block: 'Blocked', miss: 'Missed',
+}
+
+/** Epoch ms → "YYYY-MM-DD HH:MM" in LOCAL time — the axis's own timezone (see `toIsoDay`). */
+function fmtStamp(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${toIsoDay(ms)} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** "Step" — ◀ / ▶ through the markers currently ON the chart, oldest to newest.
+ *
+ *  It has no set of its own and no filters of its own: the set is whatever the Analysis dropdown is
+ *  showing. Turn Losers off and ◀ walks the winners; turn Trades off and leave Blocked on and it
+ *  walks the refusals. That is the whole design — a second place to choose "winners only" would be
+ *  a second place for it to disagree with the chart.
+ *
+ *  A pure control, like `GoToDate`: it reports a direction and prints where it is. Paging the
+ *  history in and centring the bar belong to the host. */
+function MarkerNav({ current, idx, total, busy, onStep }: {
+  current: NavMarker | null
+  idx: number                 // 0-based position of `current` in the set, or -1 when parked nowhere
+  total: number
+  busy: boolean
+  onStep: (dir: 1 | -1) => void
+}) {
+  // At an end the arrow is dead, and it says so by going dim rather than by doing nothing on click.
+  const atStart = idx === 0
+  const atEnd = idx >= 0 && idx === total - 1
+  const btn = 'flex items-center justify-center w-6 h-[22px] transition-colors disabled:opacity-30 disabled:cursor-default'
+  return (
+    <div
+      className="inline-flex items-center rounded-md border border-border-subtle bg-bg-sunken overflow-hidden"
+      title={current
+        ? `${current.label} — ${fmtStamp(current.ts)}\n${current.note}\n← / → steps (or hover the chart and use the arrow keys)`
+        : `${total} on the chart — ← / → steps through them, oldest to newest`}
+    >
+      <button
+        onClick={() => onStep(-1)}
+        disabled={busy || atStart}
+        aria-label="Previous marker"
+        className={`${btn} text-text-secondary hover:text-text-primary hover:bg-bg-surface`}
+      >
+        <ChevronLeft className="w-3.5 h-3.5" />
+      </button>
+      {/* The readout is the point of the control: what you are parked on, and where that sits in
+          the set. With nothing selected it states the SIZE of the set, so the first press is not a
+          jump into the dark. */}
+      <div className="flex items-center gap-1.5 px-2 h-[22px] border-x border-border-subtle text-[11px] leading-none">
+        {current && (
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: current.color }} />
+        )}
+        <span className={current ? 'text-text-primary' : 'text-text-tertiary'}>
+          {current ? current.label : 'Step'}
+        </span>
+        <span className="font-mono tabular-nums text-text-tertiary">
+          {current ? `${idx + 1}/${total}` : total}
+        </span>
+      </div>
+      <button
+        onClick={() => onStep(1)}
+        disabled={busy || atEnd}
+        aria-label="Next marker"
+        className={`${btn} text-text-secondary hover:text-text-primary hover:bg-bg-surface`}
+      >
+        <ChevronRight className="w-3.5 h-3.5" />
+      </button>
     </div>
   )
 }
@@ -828,6 +912,115 @@ export default function ChartPanel({
     return next
   })
 
+  // ── Step navigator ───────────────────────────────────────────────────────────
+  // The set the ◀ / ▶ arrows walk: every marker the Analysis dropdown is currently SHOWING, oldest
+  // first. It reuses that dropdown's own predicates rather than offering its own filters, which is
+  // what makes "show me only the losers, then step" work with no extra control — and what stops the
+  // navigator from ever walking to something that isn't drawn.
+  //
+  // The one place it deliberately parts company with the drawing effects is the loaded-candle clip:
+  // those skip a marker outside the loaded window because klinecharts would clamp it onto the plot
+  // edge; the navigator must still LIST it, because reaching it is exactly what the arrows are for
+  // (the jump pages the history in on the way, like Go to date).
+  const navMarkers = useMemo<NavMarker[]>(() => {
+    const out: NavMarker[] = []
+    if (tradesOn) {
+      for (const tr of spec.trades) {
+        if (tr.layer && hiddenLayers.has(tr.layer)) continue
+        const win = tr.pnl > 0
+        if (!(win ? winnersOn : losersOn)) continue
+        out.push({
+          // Layer-qualified: a stack merges several runs' trade lists, and two legs numbering their
+          // own trades from 1 would otherwise share an id — which the step lookup reads as one
+          // marker and walks in circles on.
+          id: `t:${tr.layer ?? ''}:${tr.id}`,
+          ts: tr.entryTime,
+          kind: win ? 'win' : 'loss',
+          label: NAV_KIND_LABEL[win ? 'win' : 'loss'],
+          color: win ? TRADE_WIN_COLOR : TRADE_LOSS_COLOR,
+          note: `${tr.dir === 'long' ? '▲ Long' : '▼ Short'} · ${tr.pnl >= 0 ? '+' : '−'}${Math.abs(tr.pnl).toFixed(2)}`
+            + (tr.layerName ? ` · ${tr.layerName}` : ''),
+        })
+      }
+    }
+    if (blocksOn) {
+      for (const b of blocks) {
+        if (!blockVisible(b)) continue
+        out.push({
+          id: `b:${b.id}`, ts: b.time, kind: 'block', label: NAV_KIND_LABEL.block, color: BLOCK_COLOR,
+          note: `${b.dir === 'long' ? '▲ Long' : '▼ Short'} · ${b.reasons.map(r => r.label).join(', ')}`,
+        })
+      }
+    }
+    if (missesOn) {
+      for (const m of misses) {
+        if (!missVisible(m)) continue
+        out.push({
+          id: `m:${m.id}`, ts: m.time, kind: 'miss', label: NAV_KIND_LABEL.miss, color: MISS_COLOR,
+          note: `${m.dir === 'long' ? '▲ Long' : '▼ Short'} · ${m.met}/${m.of} · ${m.reasons.map(r => r.label).join(', ')}`,
+        })
+      }
+    }
+    return out.sort((a, b) => a.ts - b.ts)
+  }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, blocks, blocksOn, blockVisible, misses, missesOn, missVisible])
+
+  // Where the navigator is parked. The TIMESTAMP is kept beside the id on purpose: a marker can
+  // leave the set under you (untick Losers while parked on a loss) and the next press must still
+  // continue FROM THERE rather than teleporting back to the viewport.
+  const [navAt, setNavAt] = useState<{ id: string; ts: number } | null>(null)
+  const navIdx = useMemo(
+    () => (navAt ? navMarkers.findIndex(m => m.id === navAt.id) : -1),
+    [navAt, navMarkers],
+  )
+  // Parked on something the spec no longer has (a new run, a reloaded chart) ⇒ park nowhere.
+  useEffect(() => { setNavAt(null) }, [spec])
+
+  const navMarkersRef = useRef(navMarkers)
+  useEffect(() => { navMarkersRef.current = navMarkers }, [navMarkers])
+  const navAtRef = useRef(navAt)
+  useEffect(() => { navAtRef.current = navAt }, [navAt])
+  const displayCandlesRef = useRef(displayCandles)
+  useEffect(() => { displayCandlesRef.current = displayCandles }, [displayCandles])
+
+  // The bar under the middle of the plot — the anchor for the FIRST press, so ◀ means "the last one
+  // before what I'm looking at" rather than "the last one in the run".
+  const visibleCentreTs = useCallback((): number | null => {
+    const chart = chartRef.current
+    const candles = displayCandlesRef.current
+    if (!chart || candles.length === 0) return null
+    const r = chart.getVisibleRange()
+    const mid = Math.floor((r.from + r.to) / 2)
+    return candles[Math.max(0, Math.min(candles.length - 1, mid))]?.time ?? null
+  }, [])
+
+  const stepMarker = useCallback((dir: 1 | -1) => {
+    const list = navMarkersRef.current
+    // A jump that has to page history is a real wait, and `goToDate` refuses to start a second one.
+    // Bailing here keeps the readout honest — otherwise the pill would advance and the chart wouldn't.
+    if (!list.length || jumpingRef.current) return
+    const at = navAtRef.current
+    const idx = at ? list.findIndex(m => m.id === at.id) : -1
+    let target: NavMarker | undefined
+    if (idx >= 0) {
+      target = list[idx + dir]
+    } else {
+      // Not parked on anything in the current set — anchor on where we left off if we have it,
+      // otherwise on the middle of the plot. Strict comparison, so an anchor that IS a marker
+      // steps off it rather than onto itself.
+      const anchor = at?.ts ?? visibleCentreTs() ?? list[list.length - 1].ts
+      target = dir === 1
+        ? list.find(m => m.ts > anchor)
+        : [...list].reverse().find(m => m.ts < anchor)
+    }
+    if (!target) return
+    setNavAt({ id: target.id, ts: target.ts })
+    void goToDate(target.ts)
+  }, [goToDate, visibleCentreTs])
+  const stepMarkerRef = useRef(stepMarker)
+  useEffect(() => { stepMarkerRef.current = stepMarker }, [stepMarker])
+  // Pointer-over-panel gate for the ← / → keys — see the keydown effect for why it is gated.
+  const hoveredRef = useRef(false)
+
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
   // is independently toggleable. The chart never knows which strategy produced them.
   const overlayGroups = useMemo(() => {
@@ -852,9 +1045,29 @@ export default function ChartPanel({
     return [...nonStruct, ...struct]
   }, [spec.overlays])
 
-  // Every overlay group defaults ON, EXCEPT the market-structure groups — those are opt-in (a chart
-  // would be unreadable with all of BOS/SOS/swings/internal drawn by default), toggled from Structure.
-  const groupDefault = (name: string): boolean => !STRUCTURE_GROUPS.includes(name as typeof STRUCTURE_GROUPS[number])
+  // Overlay groups are split by the QUESTION they answer, exactly like the two dropdowns: an
+  // ANALYSIS group (fair value gaps, drawn only around trades/blocks/misses) is about the strategy's
+  // signals and belongs beside Trades/Blocked/Missed; everything else is market structure. One
+  // roster still backs `groupsOn` — only the MENU each row appears in differs.
+  const isAnalysisGroup = (name: string) => ANALYSIS_GROUPS.includes(name as typeof ANALYSIS_GROUPS[number])
+  const structureGroups = useMemo(() => overlayGroups.filter(g => !isAnalysisGroup(g.name)), [overlayGroups])
+  // Each analysis group carries its BOX COUNT, the way Blocked and Missed carry theirs — a layer
+  // that draws 41 gaps and one that draws 4 read very differently before you switch it on.
+  const analysisGroups = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const ov of spec.overlays) {
+      if (isAnalysisGroup(ov.group)) counts.set(ov.group, (counts.get(ov.group) ?? 0) + 1)
+    }
+    return ANALYSIS_GROUPS.filter(g => counts.has(g)).map(g => ({
+      name: g as string, color: ANALYSIS_GROUP_COLOR[g], count: counts.get(g) ?? 0,
+    }))
+  }, [spec.overlays])
+
+  // Every overlay group defaults ON, EXCEPT the market-structure groups and the analysis groups —
+  // both are opt-in (a chart would be unreadable with all of BOS/SOS/swings/internal drawn by
+  // default, and the gap layer is a diagnostic view like Blocked and Missed beside it).
+  const groupDefault = (name: string): boolean =>
+    !STRUCTURE_GROUPS.includes(name as typeof STRUCTURE_GROUPS[number]) && !isAnalysisGroup(name)
   const [groupsOn, setGroupsOn] = useState<Record<string, boolean>>(
     () => Object.fromEntries(overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])) as Record<string, boolean>,
   )
@@ -1265,6 +1478,24 @@ export default function ChartPanel({
     }
   }, [misses, missesOn, missVisible, displayCandles, loadedLoTs, loadedHiTs])
 
+  // The Step navigator's parked marker — one accent vline through it. A step CENTRES its target
+  // rather than isolating it, so with several markers on screen "which one am I on?" has no answer
+  // without this. Same rebuild-on-data-change rationale as every overlay above; same loaded-window
+  // clip, which is also what makes the line vanish while a jump's bars are still landing.
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    chart.removeOverlay({ name: FOCUS })
+    if (!navAt || loadedLoTs == null || loadedHiTs == null) return
+    if (navAt.ts < loadedLoTs || navAt.ts > loadedHiTs) return
+    chart.createOverlay({
+      name: FOCUS,
+      lock: true,
+      points: [{ timestamp: navAt.ts, value: baseCandles[0]?.close ?? 0 }],
+      extendData: { color: theme.accent, lineStyle: 'dashed', lineWidth: 1 },
+    })
+  }, [navAt, displayCandles, baseCandles, loadedLoTs, loadedHiTs])
+
   // Fibonacci drawings — re-created from state after any data change (applyNewData clears overlays,
   // same rationale as the trade/session effects), so a fib survives TF switches. Each carries
   // per-instance callbacks: onSelected marks it for the Delete key; onPressedMoveEnd writes an
@@ -1592,7 +1823,10 @@ export default function ChartPanel({
     setFibEditorSeq(n => n + 1)
   }
 
-  // Delete/Backspace removes the selected fib (ignored while typing); Escape closes the menu.
+  // Delete/Backspace removes the selected fib (ignored while typing); Escape closes the menu;
+  // ← / → step the marker navigator — but ONLY while the pointer is over this panel. The arrow keys
+  // belong to the page (and to any control on it) everywhere else, and a chart that swallowed them
+  // globally would be a bug on every host that ever embeds two of these.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null
@@ -1603,6 +1837,10 @@ export default function ChartPanel({
         selectedFibRef.current = null
         setFibs(prev => prev.filter(f => f.id !== id))
         e.preventDefault()
+      }
+      if (!typing && hoveredRef.current && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault()
+        stepMarkerRef.current(e.key === 'ArrowRight' ? 1 : -1)
       }
       if (e.key === 'Escape') { setCtxMenu(null); setFibEditor(null) }
     }
@@ -1627,7 +1865,12 @@ export default function ChartPanel({
   }, [fibEditor])
 
   return (
-    <div>
+    // The hover gate for the ← / → step keys covers the WHOLE panel, header included: clicking a
+    // step arrow leaves the pointer on the button, and the keys must keep working from there.
+    <div
+      onMouseEnter={() => { hoveredRef.current = true }}
+      onMouseLeave={() => { hoveredRef.current = false }}
+    >
       {/* Header — TradingView layout: symbol/interval controls top-LEFT (timeframe + layers),
           the snapshot (Copy) top-RIGHT by the fullscreen exit. Chart TOOLS live on the vertical
           strip down the left edge of the chart body (below), not in this row. A host may inject its
@@ -1680,12 +1923,26 @@ export default function ChartPanel({
               can actually reach, and hidden until there are candles to reach into. */}
           {jumpRange && <GoToDate lo={jumpRange.lo} hi={jumpRange.hi} busy={jumping} onGo={goToDate} />}
 
+          {/* Step — the other way of answering "WHERE": Go to date takes a calendar date, this walks
+              the markers themselves, so reading a run's losers back to back costs two keys instead
+              of a scroll hunt. It sits next to Go to date because they share that question, and it
+              drives the same pager underneath. Hidden when the chart is showing nothing to step. */}
+          {navMarkers.length > 0 && (
+            <MarkerNav
+              current={navIdx >= 0 ? navMarkers[navIdx] : null}
+              idx={navIdx}
+              total={navMarkers.length}
+              busy={jumping}
+              onStep={stepMarker}
+            />
+          )}
+
           {/* Analysis: what the strategy DID with its signals — the trades it took (split by
               outcome) and the setups its own rules refused (split by reason). Deliberately its own
               dropdown, separate from Structure: Structure is what the MARKET drew, Analysis is what
               to interrogate about the run. Trades ALSO toggles from the right-click chart menu —
               both drive the same `tradesOn` state. */}
-          {(spec.trades.length > 0 || blocks.length > 0 || misses.length > 0) && (
+          {(spec.trades.length > 0 || blocks.length > 0 || misses.length > 0 || analysisGroups.length > 0) && (
             <ToggleMenu
               title="Analysis"
               minWidth={198}
@@ -1724,6 +1981,15 @@ export default function ChartPanel({
                   on: !hiddenMissReasons.has(r.label), toggle: () => toggleMissReason(r.label),
                   sub: true, count: r.count,
                 })) : []),
+                // Analysis overlay groups — today just Fair Value Gaps. Last in the menu because it
+                // is the CONTEXT around the three rows above it rather than a fourth kind of signal:
+                // the backend draws a gap only where a trade was taken, refused or missed, so this
+                // row is "and show me what the gaps looked like there". Default OFF like Blocked and
+                // Missed; the count is how many gap boxes the run produced.
+                ...analysisGroups.map(g => ({
+                  key: `ag-${g.name}`, label: g.name, color: g.color,
+                  on: groupsOn[g.name], toggle: () => toggleGroup(g.name), count: g.count,
+                })),
               ]}
             />
           )}
@@ -1733,7 +1999,7 @@ export default function ChartPanel({
           <ToggleMenu
             title="Structure"
             items={[
-              ...overlayGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name) })),
+              ...structureGroups.map(g => ({ key: `g-${g.name}`, label: g.name, color: g.color, on: groupsOn[g.name], toggle: () => toggleGroup(g.name) })),
               ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name) })),
             ]}
           />

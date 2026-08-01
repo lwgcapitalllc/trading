@@ -21,7 +21,7 @@ consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine` FVG block ("FAIR VALUE GAPS — persist until
 mitigated", + the `GRP_FVG` inputs); parity harness is `indicators/fvg_export.pine`, diffed against
 this Python by `tools/compare_fvg.py`.
-**Last reviewed:** 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME.** `compare_fvg.py --warmup 4990` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export, where `cfg_fvg_thresh` read back as **0.0** — the timeframe split firing the OTHER way, so both branches of it are now proven through a real export. The long warm-up is pure ghost carry-in and the export proves it: **`px_fvg_formed` never mismatches on a single bar** (both sides agree on every gap FORMATION from bar 0); the slot columns differ only because Pine opens holding gaps from before the window, one of them at 4733.88 while price trades ~4520 — it can never close past its far edge, so it sits in Pine's array for ever. Textbook 2026-07-19 ghost trap, observed rather than theorised. Earlier the same evening — ✅ **VALIDATED, AND THE 15m FLOOR IS PROVEN THROUGH THE
+**Last reviewed:** 2026-08-01 — **a SECOND consumer landed, and it wants the INDICATOR's settings, not the strategy's.** `command-center/backend/services/fvg_overlays.py` replays this engine over a backtest's candles to draw the gaps that were live at each trade / blocked setup / missed setup on the lab's price chart. It configures the engine from `mpc_assistant.pine` (cap 8, `require_close=False`, the timeframe-split 0.0/0.04 floor, EQ-exempt cap via `equal_highs_lows/`) — i.e. the OPPOSITE side of the `require_close` fork below from the one `mpc_sos_fade` pins. **That is deliberate and it is now load-bearing in two directions**: the chart must match what TradingView draws, and the bot must match `mpc_strategy.pine`, so the two consumers legitimately see different gap sets off the same engine (the bot sees strictly fewer). Anyone reconciling "the" FVG defaults must not collapse them. The new consumer carries its own Pine check — it diffs its boxes against the export's `px_fvg_*` arrays, so it validates this engine's public output a second, independent way (`command-center/backend/tests/test_fvg_overlays.py`, 16 tests green). No engine code changed. Earlier: 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME.** `compare_fvg.py --warmup 4990` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export, where `cfg_fvg_thresh` read back as **0.0** — the timeframe split firing the OTHER way, so both branches of it are now proven through a real export. The long warm-up is pure ghost carry-in and the export proves it: **`px_fvg_formed` never mismatches on a single bar** (both sides agree on every gap FORMATION from bar 0); the slot columns differ only because Pine opens holding gaps from before the window, one of them at 4733.88 while price trades ~4520 — it can never close past its far edge, so it sits in Pine's array for ever. Textbook 2026-07-19 ghost trap, observed rather than theorised. Earlier the same evening — ✅ **VALIDATED, AND THE 15m FLOOR IS PROVEN THROUGH THE
 EXPORT.** `compare_fvg.py` → **exit 0** on a real 21,691-bar `VANTAGE_XAUUSD, 15m` export
 (2025-09-01 → 2026-07-31) at **zero warm-up**, across all **10** slots, with the EQ coupling active
 (`cfg_eq_exempt = 1`, pivot 2, mult 0.1, max 6) so the exemption is validated rather than assumed.
@@ -218,7 +218,13 @@ check must exit 0 on a fresh export before the engine is committed as validated.
 
 - Pine source of truth: `indicators/mpc_assistant.pine` FVG block + `GRP_FVG` inputs.
 - Parity export build: `indicators/fvg_export.pine`.
-- Consumer (not yet built): the A+ setup sequence — reads live gaps overlapping the fib entry zone
-  as confluence. See `docs/ENGINE_EXTRACTION_ROADMAP.md`.
+- Consumers, and they run DIFFERENT settings on purpose (see the `require_close` callout above):
+  - `strategies/python/mpc_sos_fade/` — the A+ setup reads live gaps overlapping the fib entry zone
+    as confluence, via `backtest/replay/stack.py`. Pins `max_count=7`, `require_close=True`,
+    `threshold_pct=0.1` to match `mpc_strategy.pine`.
+  - `command-center/backend/services/fvg_overlays.py` — draws the gaps that were live at each trade /
+    blocked / missed setup on the lab's price chart. Uses `mpc_assistant.pine`'s settings (cap 8,
+    `require_close=False`, the 0.0/0.04 timeframe split, EQ-exempt cap) because it mirrors the
+    INDICATOR. See `command-center/backend/CLAUDE.md` → *Fair value gaps*.
 - Sibling in shape (also events-not-visuals off the same indicator): `engines/order_blocks/CLAUDE.md`.
 - Monorepo context: `../CLAUDE.md`.

@@ -38,6 +38,7 @@ from typing import Optional
 
 from services import lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
+from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.structure_overlays import build_market_structure_overlays
 
 log = logging.getLogger("CHARTSPEC")
@@ -495,7 +496,20 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # structure Layers groups (default OFF in the panel). Best-effort: [] on any failure.
     overlays = overlays + build_market_structure_overlays(candles)
 
+    blocks = _build_blocks(run_dir, candles)
     misses, miss_noise = _build_misses(run_dir, candles)
+
+    # Fair value gaps — but ONLY the ones that were live when something happened. The anchors are
+    # every trade ENTRY, every blocked setup and every missed setup, so the layer answers "where were
+    # the gaps when this fired?" rather than papering the chart with every gap the run ever saw. The
+    # gaps themselves are mpc_assistant.pine's (see fvg_overlays.py — the strategy runs a different,
+    # stricter set). Best-effort: [] on any failure, and [] when the run has no trades/blocks/misses
+    # in the window, which is what keeps the toggle off an NT8/MT5 chart.
+    overlays = overlays + build_fvg_overlays(
+        candles,
+        [t["entryTime"] for t in trades] + [b["time"] for b in blocks] + [m["time"] for m in misses],
+        base_tf,
+    )
 
     spec = {
         "instrument": instrument,
@@ -510,7 +524,7 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
         "candles": candles,
         "sessions": [dict(s) for s in _FX_SESSIONS],
         "trades": trades,
-        "blocks": _build_blocks(run_dir, candles),
+        "blocks": blocks,
         "misses": misses,
         # Reason labels the panel starts with unticked — derived from the strategy's own `near`
         # flag, never named here. See `_build_misses`.
@@ -588,7 +602,11 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         # any one strategy — identical for every leg (same instrument/timeframe/window). So the
         # stack's price chart carries the base leg's, giving it full BacktestDetail parity
         # (structure layers, ATR pane, fib/measurement tools all read the same spec).
-        "overlays": [dict(o) for o in src.get("overlays", [])],
+        # The FVG group is the ONE exception and is dropped for the same reason blocks and misses
+        # are: it is anchored to the BASE leg's trades, so on a merged chart it would draw gaps at
+        # one strategy's entries and nothing at the others' — which reads as "these setups had gaps
+        # and those didn't" rather than "only one leg was measured". A leg's own page still has it.
+        "overlays": [dict(o) for o in src.get("overlays", []) if o.get("group") != GROUP_FVG],
         "indicators": [dict(i) for i in src.get("indicators", [])],
         "layers": layers,
         # The base leg's run_id — the frontend routes M1/M5 drill-down + fullscreen candle fetches

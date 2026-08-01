@@ -42,6 +42,23 @@ export const STRUCTURE_GROUP_COLOR: Record<typeof STRUCTURE_GROUPS[number], stri
   'Swing Point Labels': '#26a69a',
 }
 
+/** Overlay groups that belong in the **Analysis** dropdown rather than Structure, because they
+ *  describe the strategy's SIGNALS rather than what the market drew. Today that is the fair-value-gap
+ *  layer, which the backend emits only around trades / blocked setups / missed setups — so it answers
+ *  "where were the gaps when this fired", the Analysis question, not "what shape is the market in".
+ *  Like the structure groups these default OFF and are listed with a count. MUST match the GROUP_*
+ *  names in the backend `fvg_overlays.py`. */
+export const ANALYSIS_GROUPS = [
+  'Fair Value Gaps',
+] as const
+
+/** Analysis-menu dot colour per group — it matches what the layer actually draws, so the FVG dot is
+ *  the same neutral grey as the boxes (which are borderless and identical for bull and bear, exactly
+ *  like mpc's). Distinct enough from Blocked pink / Missed amber to tell the rows apart. */
+export const ANALYSIS_GROUP_COLOR: Record<typeof ANALYSIS_GROUPS[number], string> = {
+  'Fair Value Gaps': '#94a3b8',
+}
+
 /** Daily session-break marker (Step 6) — a vline drawn under a separate name so the generic
  *  vline group and the day breaks can be removed/toggled independently. */
 export const DAY_BREAK = 'lwgDayBreak'
@@ -59,6 +76,12 @@ export const BLOCK = 'lwgBlock'
 
 /** A setup that got PARTWAY — met some of the strategy's confluences, then died unfilled. */
 export const MISS = 'lwgMiss'
+
+/** The marker the Step navigator is parked on — a vline under its own name so it survives every
+ *  other layer's rebuild and can never be wiped by the generic vline group's `removeOverlay`.
+ *  It exists because stepping CENTRES a marker rather than isolating it: with three trades on
+ *  screen, "which one did it take me to" has no answer without something pointing at it. */
+export const FOCUS = 'lwgFocus'
 
 /** User-drawn Fibonacci retracement tool (2 anchor points → horizontal levels + price labels). */
 export const FIB = 'lwgFib'
@@ -524,12 +547,17 @@ export function registerChartOverlays(): void {
       const height = Math.max(1, Math.abs(b.y - a.y))
       const d = (overlay.extendData ?? {}) as OverlayExtend
       const color = d.color ?? '#888888'
+      // `lineWidth: 0` means NO BORDER — a filled area and nothing else. Generic, not FVG-specific:
+      // some sources draw a bordered region (a session/ORB range) and some draw a bare tint, and
+      // Pine says so with `border_color = color(na)`. klinecharts needs the rect's `style` switched
+      // for it; a 0 border SIZE alone still strokes a hairline.
+      const bordered = (d.lineWidth ?? 1) > 0
       const figures: OverlayFigure[] = [
         {
           type: 'rect',
           attrs: { x, y, width, height },
           styles: {
-            style: 'stroke_fill',
+            style: bordered ? 'stroke_fill' : 'fill',
             color: d.fillColor ?? withAlpha(color, 0.12),
             borderColor: withAlpha(color, 0.50),
             borderSize: d.lineWidth ?? 1,
@@ -618,6 +646,7 @@ export function registerChartOverlays(): void {
   }
   registerOverlay({ name: VLINE, ...vline })
   registerOverlay({ name: DAY_BREAK, ...vline })
+  registerOverlay({ name: FOCUS, ...vline })
 
   // ── Point-anchored text labels (market-structure tags), de-collided ───────────
   // ONE overlay holds EVERY visible structure label (its `points` are the anchors, `extendData.items`
