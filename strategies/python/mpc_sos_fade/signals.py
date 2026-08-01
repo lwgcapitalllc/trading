@@ -81,6 +81,13 @@ class Signals:
     fibo_p6: Optional[float]        # 0.886
     fibo_p7: Optional[float]        # 0.0  (swing extreme / TP3)
     fibo_p10: Optional[float]       # 1.0  (leg origin)
+    # The leg anchors the fiboP* above were built from (Pine fibo_ash / fibo_asl). Only the
+    # Custom SL level reads them, to price a ratio that has no fiboP* of its own. None on the
+    # same bars every fiboP* is None, which is what keeps a Custom stop on the same leg as the
+    # entry — Pine gets that for free by assigning fiboPSl inside the fib block; here it comes
+    # from the engine reporting the anchors only on its active path.
+    fibo_ash: Optional[float]       # swing HIGH anchor
+    fibo_asl: Optional[float]       # swing LOW anchor
     fibo_half_reached: bool
     fibo_618_ever_reached: bool
     fibo7_touched: bool
@@ -105,6 +112,15 @@ class Signals:
     bull_bos_low: Optional[float] = None
     bear_bos_high: Optional[float] = None
     bear_bos_low: Optional[float] = None
+
+    # The Sniper Zone — the 0.382-0.5 pocket of the break leg, re-anchored on every BOS
+    # (Pine sniperZoneTop / sniperZoneBot / sz_bar / sz_bullish). The A+ path does not read
+    # them (`exec_conf_sz` is unported there), so they cannot move compare_strategy.py; the
+    # BOS bot's entry ladder uses the zone to price a leg that had no qualifying FVG.
+    sniper_zone_top: Optional[float] = None
+    sniper_zone_bot: Optional[float] = None
+    sz_bar: Optional[int] = None       # the bar the current zone was anchored on
+    sz_bullish: bool = True            # Pine seeds `var bool sz_bullish = true`
 
     # Last CONFIRMED external swing high/low (Pine st.last_conf_high / st.last_conf_low) — the
     # anchor the STRUCTURE runner trail rides (`exec_runner_trail == "Structure (swing)"`).
@@ -180,6 +196,11 @@ class SignalAdapter:
         self._last_bull_div_bar: Optional[int] = None
         self._last_bear_div_bar: Optional[int] = None
         self._last_ext_break_bar: Optional[int] = None
+
+        # Sniper Zone anchor bar (Pine `var int sz_bar`) — set on the bar a fresh zone is
+        # created, i.e. on every BOS. The engine reports the creation as an EVENT, so the
+        # bar has to be latched here.
+        self._sz_bar: Optional[int] = None
 
     # ── liquidity helpers ──────────────────────────────────────────────────────
     _HIGH_NAME = {"h4": "H4 High", "day": "Day High", "asia": "Asia High",
@@ -341,6 +362,11 @@ class SignalAdapter:
                 poi_long = low <= mac.top - rp * 0.618 and high >= mac.top - rp * 0.886
                 poi_short = high >= mac.top - rp * 0.382
 
+        # Sniper Zone (Pine 2984-2989): the zone object persists, `sz_bar` latches on creation.
+        sz = state.sniper
+        if sz.created:
+            self._sz_bar = index
+
         self._prev_prev_time = self._prev_time
         self._prev_time = t
 
@@ -356,12 +382,16 @@ class SignalAdapter:
             fibo_dir=fibo_dir,
             fibo_p1=p["p1"], fibo_p2=p["p2"], fibo_p3=p["p3"], fibo_p4=p["p4"],
             fibo_p5=p["p5"], fibo_p6=p["p6"], fibo_p7=p["p7"], fibo_p10=p["p10"],
+            fibo_ash=(fib.ash if fib.active else None),
+            fibo_asl=(fib.asl if fib.active else None),
             fibo_half_reached=fibo_half, fibo_618_ever_reached=fibo_618_ever,
             fibo7_touched=fibo7_touched,
             fvgs=fvgs, poi_long_now=poi_long, poi_short_now=poi_short,
             bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
             bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,
             last_conf_high=ext.last_conf_high, last_conf_low=ext.last_conf_low,
+            sniper_zone_top=sz.zone_top, sniper_zone_bot=sz.zone_bot,
+            sz_bar=self._sz_bar, sz_bullish=(sz.direction != -1),
         )
 
 
