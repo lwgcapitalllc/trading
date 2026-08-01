@@ -44,6 +44,8 @@ def _sig(index, o, h, l, c, dir=1, ny_hour=8, **kw):
         fibo_dir=dir,
         fibo_p1=106.18, fibo_p2=105.0, fibo_p3=103.82, fibo_p4=102.8,
         fibo_p5=102.0, fibo_p6=101.14, fibo_p7=110.0, fibo_p10=100.0,
+        # Bull leg, so fiboP7 (0.0) IS the high anchor and fiboP10 (1.0) IS the low one.
+        fibo_ash=110.0, fibo_asl=100.0,
         fibo_half_reached=True, fibo_618_ever_reached=True, fibo7_touched=False,
         fvgs=[], poi_long_now=False, poi_short_now=False,
     )

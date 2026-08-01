@@ -232,6 +232,8 @@ class StructureFib:
             touched_so_far={name for name, hit in self._touched.items() if hit},
             reset_active=self._reset_active,
             half_reached=self._half_reached,
+            ash=self._ash,
+            asl=self._asl,
         )
 
 

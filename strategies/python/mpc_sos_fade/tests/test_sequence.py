@@ -83,6 +83,8 @@ def _sig(**kw):
         bull_div_active=False, bear_div_active=False, veto_on=False, veto_rsi_ob=False, veto_rsi_os=False,
         fibo_dir=0, fibo_p1=None, fibo_p2=None, fibo_p3=None, fibo_p4=None,
         fibo_p5=None, fibo_p6=None, fibo_p7=None, fibo_p10=None,
+        # Anchors track the levels: this fixture's fib is inactive, so both are None.
+        fibo_ash=None, fibo_asl=None,
         fibo_half_reached=False, fibo_618_ever_reached=False, fibo7_touched=False,
         fvgs=[], poi_long_now=False, poi_short_now=False,
     )
