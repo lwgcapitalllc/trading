@@ -201,6 +201,63 @@ def test_trade_records_favorable_and_adverse_excursion():
     assert abs(t.mfe_usd / t.mae_usd - expected_ratio) < 1e-3   # 2dp rounding on the stored $ values
 
 
+def test_the_entry_bar_cannot_stage_the_stop():
+    """Regression — `indicators/BUG_exit_fill_price_mismatch.md`.
+
+    A resting limit is reached by price coming to it from the WRONG side: this buy limit at
+    103.82 is filled on the way down, so the entry bar's HIGH is where the market was before
+    the trade existed. Staging off it lifted the stop to breakeven (entry + buf = ABOVE the
+    entry) on a trade that had gone nowhere — a stop already through the market, which fills
+    every leg at the next bar's open at a price that is neither the stop nor any target.
+
+    Entry bar opens at 105.40, ABOVE TP1 (105.0), dips to 103.5 filling the limit, closes at
+    104.0. Nothing about that is favourable to the trade, so nothing may stage.
+    """
+    ex = Execution(_cfg(exec_be_buf_tk=30.0, mintick=0.01), initial_capital=10_000.0)
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())          # place the limit
+    dec1 = ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())
+
+    assert abs([f for f in dec1.fills if f.kind == "entry"][0].price - 103.82) < 1e-9
+    assert ex._stage == 0                       # the entry bar's high reached TP1 — irrelevant
+    assert abs(dec1.stop - 100.0) < 1e-9        # still the real SL, not entry + 0.30
+
+    # ...and an ordinary next bar must NOT close the trade.
+    dec2 = ex.step(_sig(2, 103.50, 104.10, 103.40, 103.60), _seq_flat())
+    assert [f for f in dec2.fills if f.kind == "exit"] == []
+    assert ex._pos_dir == 1
+
+    # The bar AFTER the fill stages normally — the rule is "not on the fill bar", not "never".
+    dec3 = ex.step(_sig(3, 104.0, 105.20, 103.9, 105.10), _seq_flat())
+    assert ex._stage == 1
+    assert abs(dec3.stop - (103.82 + 0.30)) < 1e-9
+
+
+def test_max_fav_starts_at_the_entry_price_not_the_entry_bars_extreme():
+    """Pine `lMaxFav := lEntry`. The high-water mark drives the runner trail and the
+    "One trail step behind" floor, so seeding it from the entry bar's high hands the trail a
+    peak the trade never made — the same contamination as the staging bug above."""
+    ex = Execution(_cfg(exec_be_buf_tk=30.0, mintick=0.01))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())      # fill @103.82
+    assert ex._max_fav == 103.82                # not the bar's 105.50
+
+    ex.step(_sig(2, 104.0, 104.60, 103.9, 104.5), _seq_flat())              # now it tracks
+    assert ex._max_fav == 104.60
+
+
+def test_entry_bar_excursion_keeps_the_adverse_side_and_drops_the_favourable_one():
+    """The asymmetry is real, not a rounding-off: a buy limit fills on the way DOWN, so the
+    entry bar's LOW is reached AFTER the fill and is a genuine adverse excursion, while its
+    HIGH is the approach. Reporting-only (no decision reads these), but reading the approach
+    as "the trade went into profit" is exactly what sent the original bug report down the
+    wrong path."""
+    ex = Execution(_cfg(exec_be_buf_tk=30.0, mintick=0.01))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+    ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())      # fill @103.82
+    assert ex._ext_high == 103.82               # the 105.50 approach is NOT favourable
+    assert ex._ext_low == 103.50                # the dip past the fill IS adverse
+
+
 def test_late_day_block_stops_new_entries():
     ex = Execution(_cfg())
     dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())

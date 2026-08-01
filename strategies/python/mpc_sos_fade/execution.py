@@ -559,7 +559,10 @@ class Execution:
         # ── Phase B: at close, (re)place the sniper limit / stage the open trade ──
         if self._pos_dir == 0:
             self._pend_sec = self._secondary_pending(arm)
-        elif self._entry_kind == "secondary":
+        elif self._entry_kind == "secondary" and filled_dir is None:
+            # `filled_dir is None` = this 1m bar is not the fill bar. Same rule as the primary
+            # (see the fill-bar note in `step`): the sniper also enters on a resting limit, so
+            # its fill bar's extreme is the approach to that limit, not the trade's own move.
             self._advance_stage(sig1m)
 
         return filled_dir
@@ -617,7 +620,17 @@ class Execution:
 
         # ── Phase B: at close, (re)place orders for the next bar ──
         if self._pos_dir != 0 and self._entry_kind != "secondary":
-            self._advance_stage(sig)
+            # The FILL bar cannot stage the stop (Pine: `and strategy.position_size[1] > 0`,
+            # i.e. we were ALREADY in the position last bar, so this is not the fill bar). A resting
+            # limit is reached by price coming to it from the wrong side — a buy limit fills on
+            # the way DOWN, a sell limit on the way UP — so the fill bar's favourable extreme is
+            # where the market was BEFORE the trade existed, not profit the trade made. Staging
+            # off it lifted the stop to breakeven on a trade that had gone nowhere, and breakeven
+            # is then on the WRONG SIDE of the market, so every leg market-closes at the next
+            # bar's open at a price that is neither the stop nor any target. The exit orders are
+            # not live on this bar either (one-bar delay), so nothing could have banked here.
+            if not opened:
+                self._advance_stage(sig)
             dec.stop = self._current_stop()
             dec.tp1, dec.tp2 = self._tp1, self._tp2
             # tell the account this leg's live stop + remaining size, so its reservation is
@@ -1061,11 +1074,22 @@ class Execution:
         self._costs_usd = 0.0
         self._last_roll_ms = None
         self._charge_commission(pend.qty)
-        self._max_fav = None                            # _advance_stage seeds it
+        # Seeded from the ENTRY PRICE, not the entry bar's extreme (Pine `lMaxFav := lEntry`).
+        # The bar's FAVOURABLE extreme is where price was on its way INTO the resting limit,
+        # i.e. before the trade existed — see the fill-bar note in `step`.
+        self._max_fav = fill_price
         self._trail_swing_hi = None                     # structure-trail anchors — same
         self._trail_swing_lo = None
-        self._ext_high = sig.high                       # excursion (reporting) — seed on entry bar
-        self._ext_low = sig.low
+        # Excursion (reporting only) is seeded ASYMMETRICALLY on the entry bar, and the asymmetry
+        # is the whole point: a buy limit is filled on the way DOWN, so the bar's LOW is reached
+        # AFTER the fill and is a real adverse excursion, while its HIGH is the approach and is
+        # not the trade's move at all. Mirrored for a short. Seeding both from the bar (the old
+        # behaviour) is what made this bug's own report conclude "favorable excursion = 0, so the
+        # stop was never staged" — a reading of the approach, not of the trade.
+        if pend.dir > 0:
+            self._ext_high, self._ext_low = fill_price, sig.low
+        else:
+            self._ext_high, self._ext_low = sig.high, fill_price
         self._legs = []                                 # per-rung exit ledger (reporting only)
         # The traded-SOS latch is the PRIMARY's one-trade-per-15m-leg gate (and the secondary's
         # "primary already went" precondition). A secondary fill must NOT move it — its sos_bar is

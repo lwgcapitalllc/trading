@@ -22,7 +22,44 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-07-31 — 🔴 **THE BOT WAS RELYING ON AN ENGINE DEFAULT IT NEVER PINNED.** `engine_config()` pinned `fvg_max_count` and `fvg_require_close` but not **`fvg_threshold_pct`** — the minimum-gap floor, which decides which FVGs exist and therefore which entry edges exist at all. It was inheriting `backtest/replay/stack.py`'s `0.1`, which matches `mpc_strategy.pine`'s 15m floor **by coincidence, not by decision** (that shared default was flagged as "stale, harmless, every real consumer pins its own" — half of which was false). Proven load-bearing by removing it: `compare_strategy.py` failed on the FIRST compared bar. Now pinned explicitly, `stack.py` carries the engine default again, and the pin test asserts all four. **No number moves** — `compare_strategy.py --warmup 100` still exit 0 on the 2026-07-29 export, 529 tests green. See `## Engine-construction pins`. **The rule this sharpens:** *an engine input the decision stream does not export is a silent parity trap* already existed — what was missing is that it applies to an input a bot FORGOT to pin, not only to one whose default changed. Also this session: the session windows underneath this bot (`SessionEngine`, reached via `EngineStack`, feeding `recent_ssl`/`recent_bsl`) were re-synced to the mpc paste; this bot's Pine has had the new windows since 2026-07-12, so the Python had been running the OLD ones against it — parity stayed green through the change. Earlier: 2026-07-30 — **the MINIMUM-STOP GUARD is ported, closing the one known Pine↔Python
+**Last reviewed:** 2026-08-01 — 🔴 **THE FILL BAR WAS STAGING THE STOP — fixed, and it moved every
+number in this file.** `indicators/BUG_exit_fill_price_mismatch.md`, open since 2026-07-14, was not
+a TradingView artifact: `_advance_stage` ran on the ENTRY bar and read that bar's whole high/low.
+A resting limit is reached by price coming to it from the wrong side, so the entry bar's
+*favourable* extreme is the approach to the order, never the trade's own move — the stop went to
+breakeven on a trade that had gone nowhere, which puts it on the WRONG SIDE of the market, and
+every leg market-closed at the next bar's open. Fixed here (`step` skips `_advance_stage` when
+`opened`, `step_secondary` likewise, `_max_fav` seeds from the fill price) and in all five strategy
+Pine files. **The excursion pair is now seeded ASYMMETRICALLY and that is deliberate** — a buy
+limit fills on the way DOWN, so the entry bar's LOW is post-fill and a real adverse excursion while
+its HIGH is only the approach; seeding both flat threw real information away and
+`test_trade_records_favorable_and_adverse_excursion` caught it. **Measured on lab run
+`d2ab68f9e884`** (XAUUSD 15m, 2020-01-01 → 2026-07-31): **all 165 entries identical**, 30 results
+changed (18 better / 12 worse), **+101.68R → +112.43R**, win rate 63.6% → 67.3%. Four trades the
+bug had killed at breakeven were really +3.90R / +2.98R / +2.86R / +1.87R. ⚠ **12 trades that used
+to scratch now take a full −1R and max drawdown was NOT measured** — re-run in the lab before
+quoting any risk number. ✅ **PARITY RE-VALIDATED the same day** on a FULL-HISTORY post-fix export
+(`VANTAGE_XAUUSD, 15_fd236.csv`, **21,691 bars**, 2025-08-31 → 2026-07-31): `compare_strategy.py`
+**exit 0** at warmups 100 / 200 / 500 / 1000 / 2000, no truncation warning. **The fingerprint is
+gone from the bars:** on the entry bar, is `px_stop` already at breakeven instead of the real SL?
+Before = **4 of 26** entries; after = **0 of 27**. All four affected candles are inside the window,
+so each reads before/after on the same bar — 2025-10-02 died in 1 bar at −0.120R and now runs **47
+bars to +0.008R**; 2025-12-02 −0.860R → **−1.000R**; 2026-05-11 +0.008R → **−1.000R**; 2026-07-20
+**unchanged** at +0.859R (wrong stop, never hit). Three of four get worse or stay flat; the fix is
+right anyway, because the exit price now corresponds to an order the strategy actually placed. An
+earlier PARTIAL export the same day exposed a harness asymmetry, now fixed: `compare_strategy.py`
+HARD REFUSED a truncated export where `compare_bleg.py` replays until the engine converges. It now
+warns and requires `--warmup >= the missing bars` (`--debug-arm` still refuses — it diffs the
+chart-relative `dbg_*` bar indices). ⚠ **Every measured number below this line — 110.65R, Run 8's 43% → 53%
+run-capture, all twelve runs in `mpc_sos_fade_optimization.md` — was taken THROUGH this bug and
+needs re-baselining**; the exit-ladder conclusions are the most exposed, because the bug killed
+trades one bar after entry, before the ladder ever engaged. 3 regression tests, 534 green.
+**The lesson: a green `compare_strategy.py` says Pine and Python AGREE, never that either is
+right** — this bug was faithfully ported, so the gate was green for its whole life. **Recorded the
+same day and NOT part of the bug: a wrong-side stop can still fill at the next bar's open
+legitimately, and it is a backtest limitation rather than a defect** — see
+`### Wrong-side stop fills` before anyone re-reports the symptom.
+Earlier: 2026-07-31 — 🔴 **THE BOT WAS RELYING ON AN ENGINE DEFAULT IT NEVER PINNED.** `engine_config()` pinned `fvg_max_count` and `fvg_require_close` but not **`fvg_threshold_pct`** — the minimum-gap floor, which decides which FVGs exist and therefore which entry edges exist at all. It was inheriting `backtest/replay/stack.py`'s `0.1`, which matches `mpc_strategy.pine`'s 15m floor **by coincidence, not by decision** (that shared default was flagged as "stale, harmless, every real consumer pins its own" — half of which was false). Proven load-bearing by removing it: `compare_strategy.py` failed on the FIRST compared bar. Now pinned explicitly, `stack.py` carries the engine default again, and the pin test asserts all four. **No number moves** — `compare_strategy.py --warmup 100` still exit 0 on the 2026-07-29 export, 529 tests green. See `## Engine-construction pins`. **The rule this sharpens:** *an engine input the decision stream does not export is a silent parity trap* already existed — what was missing is that it applies to an input a bot FORGOT to pin, not only to one whose default changed. Also this session: the session windows underneath this bot (`SessionEngine`, reached via `EngineStack`, feeding `recent_ssl`/`recent_bsl`) were re-synced to the mpc paste; this bot's Pine has had the new windows since 2026-07-12, so the Python had been running the OLD ones against it — parity stayed green through the change. Earlier: 2026-07-30 — **the MINIMUM-STOP GUARD is ported, closing the one known Pine↔Python
 divergence on this pair.** `exec_min_stop_mode` / `exec_min_stop_val`, the floor applied at order
 placement, block reason code 7, a REGENERATED `mpc_strategy_export.pine` (body byte-identical to the
 parent again) carrying `cfg_min_stop` / `cfg_min_stop_val`, and the decode in `compare_strategy.py`.
@@ -146,6 +183,8 @@ BarState  --SignalAdapter-->  Signals  --SosFadeSequence-->  SeqState  --Executi
   the two TradingView fill assumptions logic parity depends on:
   1. **calc-on-close, one-bar delay** — an order placed at a bar's close is active only next bar (a
      resting limit never fills the bar it was placed; an exit never fills the bar the entry filled).
+     **This is also a KNOWN BACKTEST LIMITATION, not a defect — see `### Wrong-side stop fills`
+     below before reporting it as one.**
   2. **intrabar path** — when a bar covers both a TP and the stop, the open's proximity to the
      extremes decides which fills first (open nearer high ⇒ price travels open→high→low→close ⇒
      targets first; nearer low ⇒ stop first). **This is the single most parity-sensitive assumption
@@ -530,6 +569,39 @@ or noise (see the ⚠ block in `## The missed-setup watch`), and the final-hour 
 6.5 years so it stays on. **Trade count is a PORTFOLIO property here** — with one position slot every
 marginal setup displaces a real one, and sizing UP trades already trusted beats adding new ones
 (shipped book at `exec_risk_pct=12.5` = 832x @ 64.2% DD vs 426x @ 64.9% for the loosened book).
+
+### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
+
+**Read this before reporting "the exit price matches no stop and no target" again.** That symptom
+was the phantom-exit bug (`indicators/BUG_exit_fill_price_mismatch.md`, fixed 2026-08-01), but with
+that fixed there is a *legitimate* residue that produces a similar-looking exit, and it will keep
+appearing on the chart forever.
+
+**The shape.** Price runs up, tags TP1, the ladder stages the stop to breakeven — and then price
+closes back through breakeven **inside the same bar**. The stop only becomes live on the NEXT bar
+(assumption 1 above, `calc_on_every_tick = false` / `process_orders_on_close = false`). By then it
+is already behind the market, so the emulator converts it to a market order and fills at that bar's
+**open**, not at the stop price.
+
+**Why it is not a defect.** Being OUT is correct — price genuinely went through the stop. What is
+imprecise is the exit PRICE, and only because a bar-replay backtest looks at orders once per bar
+while a real broker watches every tick and would have filled at or near the stop. Three consequences
+worth holding onto:
+
+- It makes the backtest look **slightly worse than reality**, which is the safe direction to be
+  wrong. Do not "fix" it to make numbers look better.
+- **Pine and Python behave identically**, so **parity is unaffected** — `compare_strategy.py` and
+  `compare_bleg.py` stay valid, and neither will ever flag it.
+- It is a **bar-mode** property. `fill_model="tick"` resolves the stop against real ticks and will
+  legitimately disagree here; that is the improvement, not drift (see `backtest/CLAUDE.md` → A2).
+
+**Deliberately NOT fixed: a "a stop may never be placed through the market" clamp.** It would have
+caught the phantom-exit bug on day one, but applied now it would change real trade behaviour and
+would have to land in all five Pine files too. That makes it its own change with its own
+measurement, not a tidy-up. ⚠ It also matters for **live**: the bridge places the stop with the
+broker, so a live fill will land nearer the stop than the backtest's. Expect live to beat the
+backtest marginally on exactly these trades — and treat any BIGGER live/backtest gap as a real
+problem, not as this.
 
 ## The 2026-07-26 exit-lever sync
 

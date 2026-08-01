@@ -46,6 +46,15 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   Pine on ambiguous bars — that is the improvement, not drift.** Bar mode must stay bit-identical
   forever; `test_execution_ticks.py::test_bar_mode_is_untouched_by_a2` is the guard.
   Measured on the 365d 15m XAUUSD run: real fills cost 1.3% of net, 0 bars fell back to the guess.
+  ⚠ **Bar mode has one KNOWN LIMITATION that is not a defect and must not be "fixed" (recorded
+  2026-08-01):** a stop staged mid-bar can be behind the market by the time it goes live next bar
+  (price tags TP1, the stop stages to breakeven, price closes back through it in the SAME bar), so
+  the exit fills at the next bar's OPEN rather than at the stop. Being out is CORRECT; only the
+  exit PRICE is imprecise, and only because bar replay checks orders once per bar while a real
+  broker watches every tick. **It errs in the safe direction (backtest looks slightly worse than
+  reality), it is identical in Pine and Python so parity is unaffected, and tick mode legitimately
+  disagrees with it** — that is the improvement, not drift. Canonical write-up:
+  `strategies/python/mpc_sos_fade/CLAUDE.md` → `### Wrong-side stop fills`.
 - **A3 — Output adapter** *(done 2026-07-16)*. `backtest/output.py`. `build_results(trades, …)` →
   the lab's `{equity_curve, daily_pnl, kpis, engine_trades, blocked_setups}`. Strategy-agnostic: it consumes any
   trade object carrying the reporting fields (`execution.Trade` satisfies it) and owns no strategy

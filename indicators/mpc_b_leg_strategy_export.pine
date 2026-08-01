@@ -4327,7 +4327,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
         tradedSosL := pendSosL
     lEntry     := strategy.position_avg_price
     lStage     := 0
-    lMaxFav    := high
+    lMaxFav    := lEntry
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegL
@@ -4339,7 +4339,7 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
         tradedSosS := pendSosS
     sEntry     := strategy.position_avg_price
     sStage     := 0
-    sMaxFav    := low
+    sMaxFav    := sEntry
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
     netAtEntry  := strategy.netprofit
     tlbl.bLeg  := pendIsBLegS
@@ -4523,13 +4523,23 @@ f_swingRatchet(float swing, float maxFav, int dir, float buf, float pct) =>
 
 // lSL / sSL are only ever written while flat (longArmed requires position_size == 0),
 // so entry-to-stop is frozen for the life of the trade and is a safe 1R yardstick.
-if strategy.position_size > 0
+// ── The FILL bar cannot stage the stop (BUG_exit_fill_price_mismatch.md) ────
+// `position_size[1] > 0` = we were ALREADY long last bar, i.e. this is not the fill bar.
+// A resting limit is reached by price coming to it from the wrong side — a buy limit fills on
+// the way DOWN, a sell limit on the way UP — so the fill bar's FAVOURABLE extreme is where the
+// market was before the trade existed, not profit the trade made. Staging off it lifted the stop
+// to breakeven on a trade that had gone nowhere, and breakeven is then on the WRONG SIDE of the
+// market, so TradingView market-closes every leg at the next bar's open at a price that is
+// neither the stop nor any target. The exit orders are not live on the fill bar either (one-bar
+// delay), so nothing could have banked there. Written as a bare condition rather than a helper
+// bool on purpose: this file is near Pine's main-body statement cap (CE10295).
+if strategy.position_size > 0 and strategy.position_size[1] > 0
     lMaxFav := na(lMaxFav) ? high : math.max(lMaxFav, high)
     if lStage < 1 and high >= lTP1
         lStage := 1
     if lStage < 2 and high >= lTP2
         lStage := 2
-if strategy.position_size < 0
+if strategy.position_size < 0 and strategy.position_size[1] < 0
     sMaxFav := na(sMaxFav) ? low : math.min(sMaxFav, low)
     if sStage < 1 and low <= sTP1
         sStage := 1

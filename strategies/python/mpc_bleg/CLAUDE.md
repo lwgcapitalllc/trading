@@ -14,7 +14,25 @@ identical decision stream. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** the validated windows have produced 2–5 trades each, far too thin
 to tune against. See "The parity gate".
-**Last reviewed:** 2026-07-31 — **the session-window fork is CLOSED and proven, and the harness had a
+**Last reviewed:** 2026-08-01 — 🔴 **THIS BOT INHERITED THE PHANTOM-EXIT BUG AND IS FIXED WITH THE
+A+ — it reuses `mpc_sos_fade/execution.py`, so the fix arrived here without a line changing in this
+folder.** `indicators/BUG_exit_fill_price_mismatch.md`: the FILL BAR was allowed to stage the stop,
+which put the stop through the market on a trade that had gone nowhere and market-closed every leg
+at the next bar's open. Fixed on both sides, including `mpc_b_leg_strategy.pine` and its export.
+✅ **`compare_bleg.py` exit 0** on a FULL-HISTORY post-fix export (`VANTAGE_XAUUSD, 15_1b2f3.csv`,
+**21,691 bars**, 2025-08-31 → 2026-07-31) at warmups 100 / 200 / 500 / 1000 / 2000, no truncation
+warning. Fingerprint scan: **0 of 5 entries** have a stop staged on the fill bar.
+⚠ **The B-LEG fork has ZERO affected entries in any window measured, before OR after** — its TP1 is
+the broken swing extreme, far further from the entry than the A+ ladder's next fib, so its fill bar
+rarely reaches it. **That is exposure, not proof:** the fix here is verified by construction (the
+code is literally the A+'s) and by parity, never by a caught case. If a B-LEG trade ever shows the
+symptom, treat it as new. ⚠ **Every B-LEG number measured before today was measured through the
+bug** — the trade counts are thin enough that one changed result moves the whole picture. ⚠ **NOT a
+recurrence of this bug, and it will keep appearing:** a stop staged legitimately at TP1 on a later
+bar can still be behind the market when it goes live next bar, and then fills at that bar's open.
+That is a backtest limitation, identical in Pine and Python, parity-neutral, and erring in the safe
+direction — see `strategies/python/mpc_sos_fade/CLAUDE.md` → `### Wrong-side stop fills`.
+Earlier: 2026-07-31 — **the session-window fork is CLOSED and proven, and the harness had a
 latent hole that a partial chart export walked straight into.** `mpc_b_leg_strategy.pine` had never
 received the DST-aware session windows its A+ parent has carried since 2026-07-12; both were synced
 and `compare_bleg.py` re-run on a fresh export → **exit 0 at `--warmup 800`**, green at 1200 / 2000 /

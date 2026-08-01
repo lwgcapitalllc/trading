@@ -479,17 +479,33 @@ def main(argv=None) -> int:
                          "against the export's dbg_* columns, to locate an arming gap")
     args = ap.parse_args(argv)
 
-    # A truncated export (Pine's bar_index runs past the CSV row count) can't be matched
-    # by any bot — Pine warmed on history the file doesn't contain. Catch it up front.
+    # A truncated export (Pine's bar_index runs past the CSV row count) means Pine warmed its
+    # engine on history the file does not contain, so row 0 can never match. It does NOT mean
+    # the export is unusable: replay far enough and the Python engine converges on the same
+    # state, which is exactly how `compare_bleg.py` handles the same situation. So warn, and
+    # require a warmup at least as deep as the missing history rather than refusing outright.
+    # (The `px_*` decision stream carries no bar-index column, so nothing in the main diff is
+    # in chart coordinates — unlike `--debug-arm` below, which reads the `dbg_*` bar indices
+    # directly and genuinely cannot be corrected for. See the standing rule in
+    # strategies/CLAUDE.md: a parity column holding a Pine bar index is export-window-relative.)
     _df = load_export(args.csv)
     _gap = export_truncation(_df)
     if _gap > 0:
-        print(f"TRUNCATED EXPORT — the CSV is missing ~{_gap} warmup bars.")
+        print(f"PARTIAL EXPORT — the CSV is missing ~{_gap} warmup bars.")
         print(f"  Pine's bar_index runs past the {len(_df)} exported rows, so its engine state was")
-        print(f"  built on ~{_gap} bars that aren't in this file. Re-export the FULL history:")
-        print(f"  scroll the chart all the way left (load the oldest bar) before Export chart data,")
-        print(f"  so row 0 is the chart's first bar. Then re-run.")
-        return 2
+        print(f"  built on ~{_gap} bars that aren't in this file. For a clean run, re-export the")
+        print(f"  FULL history: scroll the chart all the way left (load the oldest bar) before")
+        print(f"  Export chart data, so row 0 is the chart's first bar.")
+        if args.debug_arm:
+            print("  --debug-arm compares dbg_* BAR INDICES, which are chart-relative here and")
+            print("  cannot be corrected for. Re-export the full history and re-run.")
+            return 2
+        if args.warmup < _gap:
+            print(f"  Refusing to diff at --warmup {args.warmup}: the Python engine is still cold.")
+            print(f"  Re-run with --warmup {_gap} or more ({len(_df) - _gap} bars would remain).")
+            return 2
+        print(f"  Proceeding at --warmup {args.warmup} (>= the missing {_gap}); "
+              f"{len(_df) - args.warmup} bars compared.")
 
     if args.debug_arm:
         msgs = debug_arm(args.csv, args.warmup)
