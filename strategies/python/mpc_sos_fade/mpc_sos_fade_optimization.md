@@ -32,6 +32,7 @@ Standing rules for anything recorded here:
 | 10 | 2026-07-29 | *"cut the trade by the SHAPE of its path"* — Aaron's in-and-out-of-profit idea, a stall variant, and his fib-level cut. 3 families, ~130 variants + 6 real replays, on captured per-bar R paths | **Two rejected, one mild keeper.** The in/out pattern is **not a loss signal** (trades showing it lose 18–30% of the time vs a **32% base rate**) — every cut loses, best is −70.5R. The fib cut at **0.886 fires 0 times** (it IS the stop) and at 0.786 costs **−27.0R** (35 losers saved +12.6R, 4 winners cost −33.6R). Only the **stall** cut works: no +0.15R by bar 3 → close = **+4.8R real-replayed**, and **drawdown does not move (54.9%)**. | measured, **not adopted** |
 | 11 | 2026-07-29 | **Run 5's `exec_sl_level` sweep RE-RUN with Run 7's guard installed** — the file's stated highest-value open item. 5 SL levels × 4 guard strengths, 14 full-history replays | **ANSWERED, negatively. 0.886 is the right level.** 0.786 = **105.2R unguarded (below shipped) and 49.0R guarded**, and 72% of its unguarded total is 2024+2026 — the guard turns its 2024 from **+50.4R to −2.9R**, i.e. the tight-stop trades ARE the money. 0.702/0.618 reproduce Run 4's detonation on a third window. **The one improvement is `0.886 + pct 0.1`: 112.0R, maxDD 54.3%, worst trade −1.98R → −1.00R.** | **Run 7's guard CONFIRMED — awaiting Aaron's go** |
 | 12 | 2026-07-29 | *"what if I took the MISSED setups?"* — Aaron's question about the 2-of-3 misses that had sweep + SOS + the retrace but **no FVG in the zone**. Measured as an A/B on one input (`exec_req_fvg`), 2020-01-01 → 2026-07-29, plus a 3-level robustness sweep on the counterfactual entry price | **KEEP REQUIRING THE FVG.** 180 no-FVG misses, 173 would have filled at the 0.618 fallback: **50 win / 54 loss / 69 breakeven, +34.0R gross** — but they crowd out 17 real trades worth **+21.0R**, so the net is **+13.0R on 110.6R** while **drawdown goes 54.9% → 77.1%**. And it is not an edge: **40% of the +34R is ONE trade** (2020-01-02) and the sign **flips with the entry price** (+13.0R at fib 0.618, **−6.7R at 0.5**, −58.5R at 0.786). | **do not build it** — read the verdict |
+| 13 | 2026-07-31 | **NOT a sweep — a DEFECT, found from one chart.** Stop staging reads the ENTRY BAR's own high/low, so a limit that fills on the way down is credited with the move that happened *before* it filled — promoted to breakeven having never been in profit | **44 of 164 trades (27%) are staged by their own entry bar** — 34 to breakeven, 10 straight to the TP2 floor; 35 die within 3 bars. Staging only from the bar AFTER the fill: **110.65R → 125.56R (+14.91R)**, same 164 entries, 30 outcomes changed. **81% of the gain is 3 trades and drawdown is UNMEASURED**, so the case is correctness, not profit. Present in `mpc_strategy.pine` identically. | **OPEN — investigate, do not ship** |
 
 ✅ **Both Pine↔Python parity gates were re-run GREEN on 2026-07-29** (`compare_strategy.py`, 21,494
 bars, at the shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the ratchet through
@@ -1937,3 +1938,294 @@ measured:** trade frequency is a PORTFOLIO property. The routes that remain are 
 Harness: `scratchpad/nofvg_ab.py`, `nofvg_extra.py`, `nofvg_tiered.py`, `nofvg_deep.py`,
 `loosen_gap.py`, `matched_dd.py`, `latehour.py` — all subclass or re-configure `Execution`; **no
 repo file modified.** Throwaway, not committed.
+
+---
+
+# Run 13 — The entry bar stages its own stop (2026-07-31) — **OPEN DEFECT, not a sweep**
+
+**This is the only entry in this file that is not a parameter sweep.** It is a logic defect found
+by reading one chart, then measured. Nothing was changed; the numbers below come from a patched
+replay in the scratchpad.
+
+➡ **The defect itself — mechanism, why it is wrong, and the fix plan — lives in
+`mpc_sos_fade_bugs.md` → Bug 1.** This entry is the MEASUREMENT only. Do not duplicate the
+analysis here; update the bug file.
+
+## How it was found
+
+Aaron asked why the 2025-10-02 A+ long lost when price never reached the 0.886 stop. It didn't
+need to — the stop had already moved to breakeven, on the entry bar, before price came back.
+
+```
+bar 12057   2025-10-02 10:30 NY   O 3864.01  H 3866.09  L 3836.38  C 3837.94
+  10:30:00   3864.01   FLAT — a limit rests at 3842.60
+     ...     3866.09   FLAT — the bar's high
+     ...     3856.29   FLAT — this is TP1 (fib 0.5). Nobody is in a trade.
+     ...     3842.60   LIMIT FILLS — now long
+     ...     3836.38   underwater
+  10:44:59   3837.94   close.  staging asks "high >= TP1?"  3866.09 >= 3856.29 -> stage 1
+                       stop 3804.82 -> breakeven + 30tk = 3842.90
+
+bar 12058   O 3838.07  -> already through 3842.90, fills at the open.  -0.12R
+```
+
+The position's best price while open was its own fill. It was never one cent in profit. Why that is
+a defect rather than a tuning choice, and why no parity gate can see it: `mpc_sos_fade_bugs.md`.
+
+## Measured — 2020-01-01 → 2026-07-29, 155,255 M15 bars, shipped config
+
+| | trades | sumR |
+|---|---|---|
+| baseline (shipped) | 164 | **110.65** |
+| staging starts the bar AFTER the fill | 164 | **125.56** |
+
+Entries are byte-identical in both runs — the entry rule is untouched, only the stop moves.
+
+```
+trades staged by their OWN entry bar     44 / 164   (27%)
+  -> stage 1 (breakeven)                 34
+  -> stage 2 (TP2 floor)                 10    stop jumps PAST breakeven on the entry bar
+  died within 3 bars                     35
+  their combined result                  +20.5R
+outcomes changed by the counterfactual   30
+```
+
+Biggest movers (baseline R → counterfactual R):
+
+```
+2025-06-12   +0.02 ->  +4.50      2020-09-29   +0.18 ->  -1.00
+2025-05-30   -0.07 ->  +3.90      2023-02-16   +0.07 ->  -1.00
+2025-04-23   -0.23 ->  +3.37      2026-05-11   +0.01 ->  -1.00
+2020-05-08   +0.21 ->  +2.86      2021-06-18   -0.00 ->  -1.00
+2020-08-27   -0.37 ->  +1.58
+```
+
+## Read the +14.91R honestly — it is NOT the reason to fix this
+
+**Three trades carry 81% of the gain** (+12.05R of +14.91R); past the top seven movers the
+remaining 18 changed trades net to roughly zero. That is the same concentration signature this file
+has already called noise twice (Run 12's "40% of the gross is one 2020 trade", Run 9's "11 trades
+carry 106R of 109R"). A result resting on three trades in 6.6 years is not a measured edge.
+
+Four scratches also become full −1.00R stops. Run 3 measured that delaying breakeven grows drawdown
+3.5x, and this is a milder version of the same lever, so **drawdown is expected to move the wrong
+way and it was NOT measured.**
+
+**Fix it because the rule fires on the wrong event. If it had measured at −5R the answer would be
+the same.**
+
+⚠ **If this ever ships, every historical figure in THIS FILE moves** — all 12 prior runs are
+measured against a 110.65R baseline that the fix invalidates. The four prerequisites before any
+code changes are in `mpc_sos_fade_bugs.md` → Bug 1 → *Before anything changes*.
+
+Harness: `scratchpad/why_trade.py`, `why_trade2.py`, `why_exit.py`, `stage_audit.py` — the audit
+monkey-patches `Execution._advance_stage` to skip the entry bar; **no repo file modified.**
+Throwaway, not committed.
+
+---
+
+# Run 14 — 2026-08-01 — **OPEN HYPOTHESIS, NOT MEASURED.** The SOS with no follow-through is a sweep
+
+**Aaron's observation, his words:** *"If there's a shift of structure and it barely closes above,
+meaning it does not even have one candle or two … two candles going in, and they occur third chain.
+Then that can probably be a sweep, and that [trade] can most likely lose."*
+
+**The claim.** An SOS that closes only marginally through the broken level, and is NOT followed by
+a couple of candles continuing in the break direction, is not a real shift — it is a liquidity
+sweep wearing an SOS label. A+ arms Stage 2 on that SOS, so the "retrace into 0.5-0.886" it then
+waits for is not a retrace at all: it is the reversal continuing, and the limit fills into it.
+
+**Nothing like this exists in A+ today.** Grepped `mpc_strategy.pine` for displacement /
+follow-through / consecutive-close gates: there are none. The SOS arms Stage 2 the moment
+`close > ash` (or `< asl`), with no test of how far past, and no test of what the next bars did.
+
+**Two DIFFERENT filters live inside that one sentence, and they must not be conflated:**
+
+| | what it measures | already exists anywhere? |
+|---|---|---|
+| **MAGNITUDE** | how far past the broken level the breaking candle CLOSED | Yes — `bosMinDispAtr` in `mpc_bos_strategy.pine` ("Break must clear the swing by x ATR", default 0.5). **Never measured** — the BOS file's own tooltip says so. |
+| **PERSISTENCE** | how many candles CLOSED in the break direction before price turned | **No. Nowhere.** This is the new idea. |
+
+Aaron described the second one. A one-candle poke that closes a long way past the level would PASS
+a magnitude filter and FAIL a persistence filter, and a slow grind two candles deep would do the
+reverse. They are independent, and the sweep signature is arguably the second.
+
+## What this is NOT, so it does not get answered with the wrong data
+
+**Run 10 does not cover this.** Run 10 cut by the shape of the path AFTER the trade was already
+open (pokes in and out of profit, stalls). This is a gate BEFORE the setup ever arms — a different
+population and a different question. Nothing in Runs 1-13 tests the SOS bar itself.
+
+**Run 6 does not cover it either.** Run 6 established that a live losing trade is indistinguishable
+from a live winner. That is about trades that already exist. This proposes to stop some from
+existing.
+
+## The honest prior, stated before measuring so it cannot be fitted afterwards
+
+Every "cut the losers" family measured in this file has lost money — Run 5 (nothing to cut
+quicker with), Run 6 (~40 cut variants, all negative), Run 10 (70 poke combos, all negative). That
+is a poor base rate for this class of idea in this strategy, and it is a reason to score it
+honestly, not a reason to skip it: those three all cut trades that were ALREADY OPEN. This one
+refuses the setup, which is the one shape not yet tried.
+
+Run 12 also removed the usual objection: with one position slot, fewer trades is not automatically
+worse, because a marginal setup DISPLACES a real one rather than adding to it. So a filter that
+cuts trade count can win on both R and drawdown — that is exactly what has to be measured.
+
+## What a measurement has to report, or it does not count
+
+- **R, not dollars**, and per-half + per-year (this file's standing convention).
+- **Both sides of the ledger**, the way Run 10's separation table did: of every SOS that FAILS the
+  filter, what did those setups turn out to be? If the loss rate among them is not clearly above
+  the 32% base rate, there is nothing here and no threshold will find it.
+- **Winners killed**, in R, against losers avoided. Run 10 died on this column.
+- **Drawdown**, which Run 6 identified as a losing-streak property that only risk % moves. A filter
+  that improves R but not drawdown is a smaller book, not a safer one.
+- **The grid**: persistence N ∈ {1, 2, 3} closes; magnitude ∈ {0, 0.25, 0.5, 1.0} × ATR; and the
+  two crossed, because they may only work together.
+
+**One design question to settle first, and it changes what is even measurable.** Requiring N
+candles of follow-through DELAYS the arm by N bars. On a fast reversal the retrace into 0.5-0.886
+can begin inside those N bars, so the filter would not merely refuse bad setups — it would arrive
+too late for some good ones and never place their order at all. That cost is invisible unless the
+harness counts the setups lost to LATENESS separately from the setups lost to the FILTER. Design
+the capture for that before running anything.
+
+## Status
+
+**Not built, not measured, nothing adopted.** No code changed. Recorded so the idea is not lost and
+so the next person does not answer it with Run 10's data.
+
+---
+
+# FVG DETECTION — 2026-08-01 — **OPEN DEFECT.** A+ does not see gaps that are on the chart
+
+**Found by Aaron on a live chart** (XAUUSD, ~$4,170, Nov 27-28 2025): two fair value gaps he drew
+by hand were not drawn or held by the strategy. This is the SAME class of discrepancy already fixed
+in `mpc_bos_strategy.pine` on 2026-07-31 — and A+ was deliberately left alone at the time, so the
+gap is still open here.
+
+**Three filters, all still at the A+ values, any of which alone explains a missing gap:**
+
+| input | A+ (`mpc_strategy.pine`) | what the chart draws (`mpc_assistant.pine`) | effect at gold $4,170 |
+|---|---|---|---|
+| `fvgThreshHTF` (15m+ min gap) | **0.1 %** | 0.04 % | A+ needs **$4.17**; the chart draws from **$1.67**. Every gap between those two is VISIBLE and INVISIBLE to the strategy at the same time. |
+| `fvgReqCloseHTF` (middle bar must close past the gap) | **ON** | OFF | A+ refuses a gap the chart shows whenever bar B closed inside the void. |
+| `fvgMaxCount` | **7** | 8 | The 8th-oldest gap is evicted here and kept there. |
+
+A fourth, smaller one now exists too: the EQ engine was ported into all three strategy files on
+2026-08-01, but `eqExemptFvg` defaults **OFF** there and is hardcoded **ON** in the assistant — so a
+gap sitting on an EQH/EQL survives the cap on the chart and is evicted in A+.
+
+**The 0.1 % floor is the prime suspect** because it is the only one that scales with price: gold has
+run to $4,170, so the floor is now $4.17 and rising, while the gaps a 15m bar leaves have not grown
+with it. This filter gets stricter every year with no one deciding that it should.
+
+**Why A+ was NOT changed when the BOS file was.** Both values are load-bearing here and only here:
+
+1. The **110.65R baseline** and every one of Runs 1-13 were measured at 0.1 / close-test-ON.
+   Changing either moves which gaps exist, so it moves which entries fire, so **every number in
+   this file becomes invalid.**
+2. `MpcSosFadeStrategy.engine_config()` PINS `fvg_require_close = True` specifically to match this
+   Pine. Turning the Pine's test off without re-pinning the Python breaks `compare_strategy.py`
+   silently — and the export carries no `cfg_` column for either input, so the harness would go
+   GREEN while comparing two different gap populations.
+
+**So this is a DECISION, not a bug fix.** Matching the chart is one line per input. The work is
+everything attached to it:
+
+- flip `fvgThreshHTF` 0.1 → 0.04 and `fvgReqCloseHTF` ON → OFF in `mpc_strategy.pine` **and**
+  `mpc_strategy_export.pine` in the same commit (the export must never drift from the parent),
+- add `cfg_fvg_thresh` / `cfg_fvg_req_close` columns and decode them in `compare_strategy.py`,
+  so the harness can never again go green across a floor change,
+- re-pin `EngineConfig.fvg_require_close` from the export rather than hardcoding True,
+- re-export off a fresh paste and re-run `compare_strategy.py` to exit 0,
+- **then** re-measure the baseline, and treat every prior run in this file as superseded.
+
+Same prerequisite chain as `mpc_sos_fade_bugs.md` → Bug 1. Do not do the one-line half of it alone.
+
+⚠ **Unverified from the screenshot: WHICH filter refused those two specific gaps.** Three candidates
+fit. Confirming it costs one chart: put `mpc_assistant.pine` and `mpc_strategy.pine` on the same
+chart, set the assistant's FVG drawing on, and read off which gaps differ — then check each
+candidate gap's height in dollars against $1.67 and $4.17. Do that before changing anything, or the
+fix is a guess.
+
+**Unrelated cosmetic bug found while checking, in BOTH A+ and BOS:** `fvgKeepUntilBroken` is
+declared `input.bool(true, …)` but its tooltip opens *"OFF (default) = a gap is removed the moment
+price taps its near edge."* The default is ON. The tooltip is wrong, not the code — the behaviour is
+keep-until-broken. Fix the text, not the default.
+
+---
+
+# ENTRY PRICE — 2026-08-01 — **OPEN CHANGE REQUEST.** Snap every gap entry to a fib, not the gap edge
+
+**Aaron, 2026-08-01:** *"The entry should be on the nearest fib, not the edge of the fair value gap."*
+
+**Half of this already exists and the other half is the hole.** `execDeepFib` (Method 3, added
+2026-07-23, default ON) does exactly this — but ONLY for a gap whose near edge sits DEEPER than
+0.618. Everything shallower still rests at the raw gap edge.
+
+```pine
+f_deepFibEdge(_gB, _gT, _bull, p3, p4, p5) =>
+    if _bull and _gT < p3            // ONLY fires past 0.618
+        _out := _gT >= p4 ? p3 : _gT >= p5 ? p4 : p5
+...
+float _e = na(_df) ? math.min(_gT, lTop) : _df      // else: the gap's own edge
+```
+
+With `exec_fvg_deep_only` ON (the shipped default) a qualifying gap's near edge sits between 0.5 and
+0.886. So the untouched population is precisely **gaps whose near edge lands between 0.5 and
+0.618** — those rest at an arbitrary price like 0.57 that is not a fib at all, is not a level anyone
+drew, and is not a level price has any reason to respect.
+
+**The fix is to extend the same function down one rung**, so 0.5 becomes a snap target alongside
+0.618 / 0.702 / 0.786. One branch, both directions, in `mpc_strategy.pine`, `mpc_strategy_export.pine`,
+`mpc_bos_strategy.pine` (same helper, same hole) and `execution._deep_fib_edge()`.
+
+## The one design question that has to be answered first
+
+**"Nearest" is ambiguous, and the two readings are different strategies.** Method 3 today does NOT
+snap to the nearest fib — it snaps to the nearest fib **SHALLOWER** than the gap, deliberately. Its
+own tooltip gives the reason: *"the price you reach first — instead of chasing the gap's own edge,
+which price may never tap."*
+
+| reading | a long whose gap top is 0.57 rests at | consequence |
+|---|---|---|
+| **nearest SHALLOWER** (what Method 3 does today) | 0.5 | fills MORE often, at a WORSE price, and fills **before price ever enters the gap** |
+| **nearest by distance** | 0.618 (0.57 is closer to 0.618 than to 0.5) | better price, but the fill now requires a deeper retrace than the gap itself demanded — some never come |
+
+Extending the current behaviour means the second option is never chosen. That is defensible and
+consistent, but it makes something explicit that is currently half-hidden: **once every entry snaps
+shallower, the FVG stops being the entry price and becomes only a QUALIFIER** — it says "a gap
+exists in this band", and a fib decides where the order rests. The trade may then fill without price
+ever touching the gap it was justified by.
+
+That may be exactly what is wanted. It is not what the spec says today, so it needs to be a stated
+decision rather than a side effect of a one-line edit.
+
+## Second-order effects to check, not guess
+
+- **0.886 is never a snap target and must stay that way.** The helper's shallowest output is 0.786.
+  In A+ the default stop IS 0.886 (`exec_sl_level`), so snapping an entry there would put the stop
+  on top of the entry — the Run 4 hazard. Do not add it as a rung.
+- **`mpc_bos_strategy.pine` derives its TP ladder from where the entry landed** (`longTier` /
+  `shortTier`, added 2026-08-01). Snapping every entry to a fib makes those tiers cleaner, not
+  messier — but the tier boundaries are `<= 0.618` and `> 0.5`, so an entry snapped exactly TO 0.5
+  lands in the STANDARD tier, not SHALLOW. Verify that is still the intent after the change.
+- **The BOS file's new `bosEntryTop = "0.382"` option** (also 2026-08-01) adds 0.382 as a band
+  ceiling. If that is on, 0.382 becomes a legitimate snap target too and the helper needs it.
+- **This moves every A+ number in this file.** It changes entry PRICES, so it changes fills, R and
+  drawdown on trades that already exist — a bigger blast radius than the FVG-floor item above, which
+  only changes WHICH gaps qualify.
+
+## What a measurement has to report
+
+Same bar as every other run here: R per half and per year, drawdown, and **the trades whose entry
+price actually moved** counted separately from the trades that changed outcome. Most entries will be
+unaffected (the deep population already snaps); the honest question is what happens to the 0.5-0.618
+band alone, so report that slice on its own rather than only the aggregate.
+
+## Status
+
+**Not built, not measured, nothing adopted.** Recorded with the ambiguity unresolved on purpose —
+answer "nearest shallower or nearest by distance" before writing the branch.
