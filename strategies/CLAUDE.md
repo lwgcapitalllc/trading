@@ -75,6 +75,13 @@ strategies/
    "Strategy Logic" group. **Note the filename differs from the MT5 convention**: it is
    `<package>.meta.json` inside the package dir (`mpc_sos_fade/mpc_sos_fade.meta.json`), not
    `<ClassName>.meta.json`. UI-only, so editing it needs no re-parity — but re-scan after editing.
+   **Every non-foundational config field needs a `desc`, and a test enforces it** —
+   `command-center/backend/tests/test_python_runner.py::test_every_tunable_param_is_documented`
+   fails by NAME on any that lack one, because a param with no description renders as `—` on the
+   strategy page and the reader has no way to find out what it does. Add a config field and its
+   meta entry in the same commit. A field that is deliberately not ported yet still gets one — say
+   so in the text (`exec_conf_sz` and `exec_fvg_50` are the reference wording: "Pine-only for now …
+   NOT ported to this bot — leave it OFF").
 4. Strategy logic must consume the canonical `engines/` through `backtest/replay` — never a second engine implementation.
 5. **Declare who sizes it.** Default (omit) = the strategy proposes UNIT-size trades and the lab's
    dynamic sizing engine sizes them per ruleset — the gated-layer rule that NT8/MT5 strategies

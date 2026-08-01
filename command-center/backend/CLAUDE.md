@@ -45,7 +45,11 @@ backend/
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
-│   ├── strategy_scanner.py  reads from strategies/ (not algos/); scan is READ-ONLY (add/update + report orphans, never deletes). reconcile_strategies() is the explicit destructive counterpart (DB row + VPS file); remove_strategy() is the shared one-strategy delete
+│   ├── strategy_scanner.py  reads from strategies/ (not algos/); scan is READ-ONLY (add/update + report orphans, never deletes). reconcile_strategies() is the explicit destructive counterpart (DB row + VPS file); remove_strategy() is the shared one-strategy delete.
+│   │                      ⚠ Its tests state the expected roster ONCE, as `EXPECTED_CLASS_NAMES` in
+│   │                      tests/test_strategies.py — added/skipped counts are `len()` of it, never a
+│   │                      repeated literal. Adding a strategy used to fail three tests that each had
+│   │                      to be traced back to the same cause; now it is a one-line edit
 │   ├── evaluator.py       per-ruleset verdict; also exports compute_contract_cap_status()
 │   ├── trailing_drawdown.py  compute_trailing_mll() — EOD trailing max-loss engine (the drawdown check)
 │   ├── sizing_engine.py     dynamic sizing & risk engine — PURE (no DB/network). run_engine(mode="bullet"|"consistent") sizes each trade off the room left (bullet=max the rules allow; consistent=room÷7), reserves open-trade risk, applies halts, rounds-up-to-min-or-skip, detects breaches; emits size-correct daily_pnl (feeds evaluator) + the decision log. CORE BUILT, not yet wired to a runner — see "Dynamic sizing & risk engine" below

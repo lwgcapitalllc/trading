@@ -3,15 +3,26 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) + 1 Python package (mpc_sos_fade, declaring LAB_STRATEGY; added 2026-07-16)
-= 3 strategies. NT8 and Python strategies get a suggested_instrument; MT5 does not. Param
-types span int/double/bool (NT8), string (MT5), and all four off a dataclass (Python).
+2026-06-22) + 3 Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
+mpc_bleg 2026-07-24, mpc_bos). NT8 and Python strategies get a suggested_instrument; MT5
+does not. Param types span int/double/bool (NT8), string (MT5), and all four off a
+dataclass (Python).
+
+`EXPECTED_CLASS_NAMES` is the single place the roster is stated — every count below is
+`len()` of it, never a repeated literal. Adding a strategy is then a one-line edit here
+instead of three failing tests that each have to be traced back to the same cause.
 """
 
 import textwrap
 import pytest
 
-EXPECTED_CLASS_NAMES = {"ORB", "LondonBreakout", "MpcSosFadeStrategy"}
+EXPECTED_CLASS_NAMES = {
+    "ORB",
+    "LondonBreakout",
+    "MpcSosFadeStrategy",
+    "MpcBLegStrategy",
+    "MpcBosStrategy",
+}
 
 SYNTHETIC_CS = textwrap.dedent("""\
     public class SyntheticStrat : Strategy
@@ -39,14 +50,14 @@ def test_scan_adds_every_strategy(client):
     r = client.post("/strategies/scan")
     assert r.status_code == 200
     data = r.json()
-    assert data["added"] == 3
+    assert data["added"] == len(EXPECTED_CLASS_NAMES)
     assert data["updated"] == 0
 
 
 def test_scan_returns_correct_class_names(client):
     client.post("/strategies/scan")
     strategies = client.get("/strategies").json()
-    assert len(strategies) == 3
+    assert len(strategies) == len(EXPECTED_CLASS_NAMES)
     assert {s["class_name"] for s in strategies} == EXPECTED_CLASS_NAMES
 
 
@@ -80,7 +91,7 @@ def test_second_scan_is_idempotent(client):
     data = r.json()
     assert data["added"] == 0
     assert data["updated"] == 0
-    assert data["skipped"] == 3
+    assert data["skipped"] == len(EXPECTED_CLASS_NAMES)
 
 
 # ── Param-schema + hash update on source change ───────────────────────────────
