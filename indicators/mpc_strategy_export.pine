@@ -1757,6 +1757,143 @@ if internalActive and not na(i_sw_line)
     line.set_x2(i_sw_line, bar_index)
 
 //============================================================
+//  EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
+//============================================================
+// Ported line-for-line from mpc_assistant.pine on 2026-08-01. Before that date NO
+// strategy file had an EQ engine — not this one, not mpc_strategy.pine, not
+// mpc_b_leg_strategy.pine, not either export. It was never a decision: the block
+// landed in the assistant on 2026-07-17 (a0b8e1d) and simply never flowed back
+// down the fork, the same drift that left the FVG floor and cap out of sync.
+//
+// EQH = two consecutive swing highs within a tolerance of each other = a stacked
+// pool of buy-side liquidity resting just above; EQL is the mirror below. Drawn as
+// a horizontal line from the FIRST pivot, extended right, until price CLOSES
+// through it (the liquidity is taken).
+//
+// Detection is LOCKED to the assistant's constants — no panel inputs for pivot
+// width, tolerance or cap — so the indicator and the strategy can never draw
+// different levels. The canonical Python port is engines/equal_highs_lows/
+// (Pine-parity green 2026-07-19). Do not build a second implementation.
+//
+// ⚠ THE EXEMPTION DEFAULTS OFF HERE, AND THE ASSISTANT HARDCODES IT ON. That is
+// deliberate, and it is the only part of this block that can change a trade. With
+// it on, a gap sitting on an EQ level survives the FVG cap and the directional
+// filter — so WHICH gaps exist changes, so which entries fire changes. Two things
+// would break silently if it shipped on: every historical result for this file,
+// and Pine<->Python parity — the fair_value_gaps engine accepts eq_levels/eq_tol
+// but backtest/replay/EngineStack does not wire them yet, and no cfg_ column
+// carries this input into the export builds. Flip it for an experiment; do not
+// trust a parity run taken with it on.
+int   eqPivotLen  = 2
+float eqAtrMult   = 0.1
+int   eqMax       = 6
+color eqhColor    = color.new(color.black, 0)
+color eqlColor    = color.new(color.black, 0)
+// An unmitigated EQ level can outlive its pivot by thousands of bars, and Pine
+// throws once a line's x1 ages past the drawing buffer — so the origin is clamped
+// this far back. Same guard, same number, as the liquidity levels use.
+int   EQ_ORIGIN_CAP = 1500
+
+bool eqShowInput = input.bool(true, "Equal Highs/Lows (EQH/EQL)", group = GRP_LIQ, tooltip = "Marks stacked liquidity pools. EQH = two swing highs at the same price, with buy-side liquidity resting just above. EQL is the mirror below. The level lives until a candle CLOSES through it. Drawing only at the default — it prices no entry and blocks no trade.", display = display.none)
+bool eqExemptFvg = input.bool(false, "   ↳ A gap on an EQ level survives the FVG cap", group = GRP_LIQ, active = eqShowInput, tooltip = "ON = a fair value gap sitting on an EQH/EQL is exempt from the Max Active FVGs cap and from the directional filter, so it persists until mitigated instead of being evicted by newer gaps. The idea: a gap backed by resting liquidity is worth more than a gap that is merely recent. ⚠ This is the ONE setting here that changes trades — it changes which gaps exist, so it changes which entries fire. It also puts this file out of sync with its Python port and its export, neither of which model the exemption. OFF by default so nothing historical moves; treat any run with it on as an experiment, not a baseline.")
+
+bool  eqShow = marketStructureOnly ? false : eqShowInput
+float eqAtr  = ta.atr(50)
+float eqTol  = na(eqAtr) ? 0.0 : eqAtr * eqAtrMult
+
+var array<line>  eqhLines = array.new<line>()
+var array<label> eqhLbls  = array.new<label>()
+var array<float> eqhPx    = array.new<float>()
+var array<int>   eqhBar   = array.new<int>()
+var array<line>  eqlLines = array.new<line>()
+var array<label> eqlLbls  = array.new<label>()
+var array<float> eqlPx    = array.new<float>()
+var array<int>   eqlBar   = array.new<int>()
+
+// True when an FVG (gTop..gBot) overlaps, or sits within `prox` of, any active EQ level.
+f_fvgNearEq(float gTop, float gBot, float prox) =>
+    bool near = false
+    if array.size(eqhPx) > 0
+        for i = 0 to array.size(eqhPx) - 1
+            float lvl = array.get(eqhPx, i)
+            if lvl >= gBot - prox and lvl <= gTop + prox
+                near := true
+    if array.size(eqlPx) > 0
+        for i = 0 to array.size(eqlPx) - 1
+            float lvl = array.get(eqlPx, i)
+            if lvl >= gBot - prox and lvl <= gTop + prox
+                near := true
+    near
+
+// Toggled off → clear anything drawn
+if not eqShow and (array.size(eqhLines) > 0 or array.size(eqlLines) > 0)
+    if array.size(eqhLines) > 0
+        for i = 0 to array.size(eqhLines) - 1
+            line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
+    if array.size(eqlLines) > 0
+        for i = 0 to array.size(eqlLines) - 1
+            line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
+    array.clear(eqhLines), array.clear(eqhLbls), array.clear(eqhPx), array.clear(eqhBar)
+    array.clear(eqlLines), array.clear(eqlLbls), array.clear(eqlPx), array.clear(eqlBar)
+
+// Wrapped in a function so the main body pays for ONE statement rather than ~40 —
+// the same CE10295 budget trick f_liqLabels and f_diag use.
+f_processEq() =>
+    float eqPh = ta.pivothigh(high, eqPivotLen, eqPivotLen)
+    float eqPl = ta.pivotlow(low,  eqPivotLen, eqPivotLen)
+    var float eqPrevPh = na, var int eqPrevPhBar = na
+    var float eqPrevPl = na, var int eqPrevPlBar = na
+
+    if eqShow and not na(eqPh)
+        int phBar = bar_index - eqPivotLen
+        if not na(eqPrevPh) and math.abs(eqPh - eqPrevPh) <= eqTol
+            float lvl = math.max(eqPh, eqPrevPh)
+            line ln = line.new(eqPrevPhBar, lvl, bar_index + i_lineExtend, lvl, color = eqhColor, style = line.style_dotted, width = 1)
+            label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = f_liqSize(), textalign = text.align_left)
+            array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl), array.push(eqhBar, eqPrevPhBar)
+            while array.size(eqhLines) > eqMax
+                line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx), array.shift(eqhBar)
+        eqPrevPh := eqPh, eqPrevPhBar := phBar
+
+    if eqShow and not na(eqPl)
+        int plBar = bar_index - eqPivotLen
+        if not na(eqPrevPl) and math.abs(eqPl - eqPrevPl) <= eqTol
+            float lvl = math.min(eqPl, eqPrevPl)
+            line ln = line.new(eqPrevPlBar, lvl, bar_index + i_lineExtend, lvl, color = eqlColor, style = line.style_dotted, width = 1)
+            label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = f_liqSize(), textalign = text.align_left)
+            array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl), array.push(eqlBar, eqPrevPlBar)
+            while array.size(eqlLines) > eqMax
+                line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx), array.shift(eqlBar)
+        eqPrevPl := eqPl, eqPrevPlBar := plBar
+
+    // Mitigation + right-extend each bar: EQH taken on a close above, EQL on a close below.
+    if eqShow and array.size(eqhLines) > 0
+        for i = array.size(eqhLines) - 1 to 0
+            float lvl = array.get(eqhPx, i)
+            if close > lvl
+                line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
+                array.remove(eqhLines, i), array.remove(eqhLbls, i), array.remove(eqhPx, i), array.remove(eqhBar, i)
+            else
+                line ehl = array.get(eqhLines, i)
+                // Read the origin from eqhBar, NOT line.get_x1 — querying an
+                // already-aged line is the very thing that can throw.
+                line.set_x1(ehl, math.max(array.get(eqhBar, i), bar_index - EQ_ORIGIN_CAP))
+                line.set_x2(ehl, bar_index + i_lineExtend)
+                label.set_x(array.get(eqhLbls, i), bar_index + i_lineExtend)
+    if eqShow and array.size(eqlLines) > 0
+        for i = array.size(eqlLines) - 1 to 0
+            float lvl = array.get(eqlPx, i)
+            if close < lvl
+                line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
+                array.remove(eqlLines, i), array.remove(eqlLbls, i), array.remove(eqlPx, i), array.remove(eqlBar, i)
+            else
+                line ell = array.get(eqlLines, i)
+                line.set_x1(ell, math.max(array.get(eqlBar, i), bar_index - EQ_ORIGIN_CAP))
+                line.set_x2(ell, bar_index + i_lineExtend)
+                label.set_x(array.get(eqlLbls, i), bar_index + i_lineExtend)
+    int _ret = 0
+f_processEq()
+//============================================================
 //  FAIR VALUE GAPS — persist until mitigated
 //============================================================
 // A bullish FVG is the void between candle A's high and candle C's low when the
@@ -1815,12 +1952,24 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
         array.push(fvgIsBull, false)
         array.push(fvgBorn, bar_index)
     // Cap: drop oldest gaps beyond the limit
+    // Cap: drop the oldest NON-EQ gap beyond the limit. With eqExemptFvg OFF (the
+    // default here) the scan finds index 0 on its first test, so this is exactly
+    // the old array.shift and nothing moves. With it ON, a gap sitting on an
+    // EQH/EQL is skipped over and survives until it is actually mitigated.
     while array.size(fvgBoxes) > fvgMaxCount
-        box.delete(array.shift(fvgBoxes))
-        array.shift(fvgTops)
-        array.shift(fvgBots)
-        array.shift(fvgIsBull)
-        array.shift(fvgBorn)
+        int _dropIdx = -1
+        for _di = 0 to array.size(fvgBoxes) - 1
+            if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                _dropIdx := _di
+                break
+        if _dropIdx == -1
+            break
+        box.delete(array.get(fvgBoxes, _dropIdx))
+        array.remove(fvgBoxes, _dropIdx)
+        array.remove(fvgTops, _dropIdx)
+        array.remove(fvgBots, _dropIdx)
+        array.remove(fvgIsBull, _dropIdx)
+        array.remove(fvgBorn, _dropIdx)
 
 // ── Extend live gaps, delete tapped ones, apply directional visibility ──
 if showFVG and array.size(fvgBoxes) > 0
@@ -1846,7 +1995,9 @@ if showFVG and array.size(fvgBoxes) > 0
             box fb = array.get(fvgBoxes, i)
             box.set_right(fb, bar_index)
             // Directional filter: hide misaligned gaps (st.dir 0 = undecided, show all)
-            bool visible = not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1)
+            // A gap backed by an EQH/EQL stays visible even when misaligned (eqExemptFvg).
+            bool nearEq  = eqExemptFvg and f_fvgNearEq(gTop, gBot, eqTol)
+            bool visible = nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1)
             box.set_bgcolor(fb, visible ? (isBull ? fvgBullColor : fvgBearColor) : color(na))
             box.set_text_color(fb, visible ? color.new(color.gray, 30) : color(na))
 
