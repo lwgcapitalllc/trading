@@ -32,15 +32,39 @@ Standing rules for anything recorded here:
 | 10 | 2026-07-29 | *"cut the trade by the SHAPE of its path"* — Aaron's in-and-out-of-profit idea, a stall variant, and his fib-level cut. 3 families, ~130 variants + 6 real replays, on captured per-bar R paths | **Two rejected, one mild keeper.** The in/out pattern is **not a loss signal** (trades showing it lose 18–30% of the time vs a **32% base rate**) — every cut loses, best is −70.5R. The fib cut at **0.886 fires 0 times** (it IS the stop) and at 0.786 costs **−27.0R** (35 losers saved +12.6R, 4 winners cost −33.6R). Only the **stall** cut works: no +0.15R by bar 3 → close = **+4.8R real-replayed**, and **drawdown does not move (54.9%)**. | measured, **not adopted** |
 | 11 | 2026-07-29 | **Run 5's `exec_sl_level` sweep RE-RUN with Run 7's guard installed** — the file's stated highest-value open item. 5 SL levels × 4 guard strengths, 14 full-history replays | **ANSWERED, negatively. 0.886 is the right level.** 0.786 = **105.2R unguarded (below shipped) and 49.0R guarded**, and 72% of its unguarded total is 2024+2026 — the guard turns its 2024 from **+50.4R to −2.9R**, i.e. the tight-stop trades ARE the money. 0.702/0.618 reproduce Run 4's detonation on a third window. **The one improvement is `0.886 + pct 0.1`: 112.0R, maxDD 54.3%, worst trade −1.98R → −1.00R.** | **Run 7's guard CONFIRMED — awaiting Aaron's go** |
 | 12 | 2026-07-29 | *"what if I took the MISSED setups?"* — Aaron's question about the 2-of-3 misses that had sweep + SOS + the retrace but **no FVG in the zone**. Measured as an A/B on one input (`exec_req_fvg`), 2020-01-01 → 2026-07-29, plus a 3-level robustness sweep on the counterfactual entry price | **KEEP REQUIRING THE FVG.** 180 no-FVG misses, 173 would have filled at the 0.618 fallback: **50 win / 54 loss / 69 breakeven, +34.0R gross** — but they crowd out 17 real trades worth **+21.0R**, so the net is **+13.0R on 110.6R** while **drawdown goes 54.9% → 77.1%**. And it is not an edge: **40% of the +34R is ONE trade** (2020-01-02) and the sign **flips with the entry price** (+13.0R at fib 0.618, **−6.7R at 0.5**, −58.5R at 0.786). | **do not build it** — read the verdict |
-| 13 | 2026-07-31 | **NOT a sweep — a DEFECT, found from one chart.** Stop staging reads the ENTRY BAR's own high/low, so a limit that fills on the way down is credited with the move that happened *before* it filled — promoted to breakeven having never been in profit | **44 of 164 trades (27%) are staged by their own entry bar** — 34 to breakeven, 10 straight to the TP2 floor; 35 die within 3 bars. Staging only from the bar AFTER the fill: **110.65R → 125.56R (+14.91R)**, same 164 entries, 30 outcomes changed. **81% of the gain is 3 trades and drawdown is UNMEASURED**, so the case is correctness, not profit. Present in `mpc_strategy.pine` identically. | **OPEN — investigate, do not ship** |
+| 13 | 2026-07-31 | **NOT a sweep — a DEFECT, found from one chart.** Stop staging reads the ENTRY BAR's own high/low, so a limit that fills on the way down is credited with the move that happened *before* it filled — promoted to breakeven having never been in profit | **44 of 164 trades (27%) are staged by their own entry bar** — 34 to breakeven, 10 straight to the TP2 floor; 35 die within 3 bars. Staging only from the bar AFTER the fill: **110.65R → 125.56R (+14.91R)**, same 164 entries, 30 outcomes changed. **81% of the gain is 3 trades and drawdown is UNMEASURED**, so the case is correctness, not profit. Present in `mpc_strategy.pine` identically. | ✅ **FIXED & SHIPPED 2026-08-01** (commit `8143c05`) — see the banner below |
 
-✅ **Both Pine↔Python parity gates were re-run GREEN on 2026-07-29** (`compare_strategy.py`, 21,494
-bars, at the shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the ratchet through
-`cfg_exitmode`/`cfg_trail_pct`; `compare_bleg.py`, 21,493 bars). This CLEARS the Run 8 stale-parity
-warning — Runs 8–9 now describe the Pine Aaron trades. ⚠ One gap remains and it is the one that
-matters for Run 11's recommendation: `mpc_strategy_export.pine` still emits **no `cfg_min_stop*`
-column**, so parity is proven only at the `execMinStopMode = "Off"` default. Shipping the guard
-means closing that hole in the same commit.
+🔴 **READ THIS BEFORE QUOTING ANY NUMBER ABOVE. Run 13's defect SHIPPED on 2026-08-01, so every
+figure in Runs 1–12 was measured through a bug that no longer exists.** The fix (commit `8143c05`)
+changed 30 of 164 outcomes without touching a single entry, so a config's *ranking* is probably
+intact but its *score* is not. **No run in this file has been re-measured against the fixed build.**
+Treat every R figure above as a pre-fix number until it is.
+
+⚠ **The two post-fix measurements taken so far DISAGREE on the baseline, and reconciling them is an
+open item.** Run 13's counterfactual (below) measured 110.65R → 125.56R over 164 trades,
+2020-01-01 → 2026-07-29. The shipped fix measured **101.68R → 112.43R over 165 trades** on lab run
+`d2ab68f9e884`. Same change, same direction, ~+11R either way — but the *baselines* differ by 9R,
+which is a window/config difference nobody has chased down yet. Do not average them and do not quote
+one as if it settles the other.
+
+➡ The defect itself — mechanism, why it is wrong, why no parity gate could see it, and what is still
+open — is in **`indicators/BUG_exit_fill_price_mismatch.md`** (status: ✅ CLOSED). It was found by
+eye off a price chart by Aaron's brother on 2026-07-14.
+
+✅ **Both Pine↔Python parity gates were re-run GREEN on 2026-08-01, post-fix** (`compare_strategy.py`
+and `compare_bleg.py`, both 21,691 bars, 2025-08-31 → 2026-07-31, **exit 0 at warmups
+100/200/500/1000/2000**). That is the run that matters: it says the Run 13 fix landed identically on
+both sides. The earlier 2026-07-29 pass (21,494 / 21,493 bars, at the shipped
+`exec_tp1_pct = exec_tp2_pct = 0` and carrying the ratchet through `cfg_exitmode`/`cfg_trail_pct`)
+CLEARED the Run 8 stale-parity warning — Runs 8–9 describe the Pine Aaron trades.
+
+⚠ **A green parity run says the two implementations AGREE, never that either is RIGHT.** Run 13's
+defect was faithfully ported, so this gate was green for its entire life and never saw it. It took a
+human reading a price chart to find it.
+
+⚠ One parity gap remains and it is the one that matters for Run 11's recommendation:
+`mpc_strategy_export.pine` still emits **no `cfg_min_stop*` column**, so parity is proven only at the
+`execMinStopMode = "Off"` default. Shipping the guard means closing that hole in the same commit.
 
 **Still open:** *"what R:R should I use as a dynamic stop loss?"* — the plan at the bottom of this
 file under `# OPEN — "What R:R should I use?"` still stands, but **Run 11 has closed one of its two
@@ -1941,15 +1965,22 @@ repo file modified.** Throwaway, not committed.
 
 ---
 
-# Run 13 — The entry bar stages its own stop (2026-07-31) — **OPEN DEFECT, not a sweep**
+# Run 13 — The entry bar stages its own stop (2026-07-31) — ✅ **FIXED 2026-08-01, not a sweep**
 
 **This is the only entry in this file that is not a parameter sweep.** It is a logic defect found
-by reading one chart, then measured. Nothing was changed; the numbers below come from a patched
-replay in the scratchpad.
+by reading one chart, then measured. **It was fixed and shipped the next day in commit `8143c05`** —
+in all five strategy Pine files and in `strategies/python/mpc_sos_fade/execution.py` (which
+`mpc_bleg` reuses), with both parity gates re-run green on full-history post-fix exports.
 
-➡ **The defect itself — mechanism, why it is wrong, and the fix plan — lives in
-`mpc_sos_fade_bugs.md` → Bug 1.** This entry is the MEASUREMENT only. Do not duplicate the
-analysis here; update the bug file.
+⚠ **The numbers below are the pre-fix COUNTERFACTUAL, not the shipped result.** They come from a
+patched replay in the scratchpad that monkey-patched the staging call; nothing in the repo was
+modified when they were taken. The shipped fix measured **101.68R → 112.43R over 165 trades** on lab
+run `d2ab68f9e884` — same direction, ~+11R either way, but off a different baseline. See the
+reconciliation warning at the top of this file before quoting either.
+
+➡ **The defect itself — mechanism, why it is wrong, why no parity gate could see it, and what is
+still open — lives in `indicators/BUG_exit_fill_price_mismatch.md`** (status: ✅ CLOSED). This entry
+is the MEASUREMENT only. Do not duplicate the analysis here; update the bug file.
 
 ## How it was found
 
@@ -1970,7 +2001,8 @@ bar 12058   O 3838.07  -> already through 3842.90, fills at the open.  -0.12R
 ```
 
 The position's best price while open was its own fill. It was never one cent in profit. Why that is
-a defect rather than a tuning choice, and why no parity gate can see it: `mpc_sos_fade_bugs.md`.
+a defect rather than a tuning choice, and why no parity gate could see it:
+`indicators/BUG_exit_fill_price_mismatch.md`.
 
 ## Measured — 2020-01-01 → 2026-07-29, 155,255 M15 bars, shipped config
 
@@ -2014,9 +2046,9 @@ way and it was NOT measured.**
 **Fix it because the rule fires on the wrong event. If it had measured at −5R the answer would be
 the same.**
 
-⚠ **If this ever ships, every historical figure in THIS FILE moves** — all 12 prior runs are
-measured against a 110.65R baseline that the fix invalidates. The four prerequisites before any
-code changes are in `mpc_sos_fade_bugs.md` → Bug 1 → *Before anything changes*.
+🔴 **IT SHIPPED, so every historical figure in THIS FILE has moved** — all 12 prior runs are measured
+against a 110.65R baseline that the fix invalidated, and **none of them has been re-measured.** The
+re-baselining is tracked in `indicators/BUG_exit_fill_price_mismatch.md` → *What is still open*.
 
 Harness: `scratchpad/why_trade.py`, `why_trade2.py`, `why_exit.py`, `stage_audit.py` — the audit
 monkey-patches `Execution._advance_stage` to skip the entry bar; **no repo file modified.**
@@ -2142,13 +2174,21 @@ everything attached to it:
 - re-export off a fresh paste and re-run `compare_strategy.py` to exit 0,
 - **then** re-measure the baseline, and treat every prior run in this file as superseded.
 
-Same prerequisite chain as `mpc_sos_fade_bugs.md` → Bug 1. Do not do the one-line half of it alone.
+Same prerequisite chain as `indicators/BUG_exit_fill_price_mismatch.md` (the Run 13 defect). Do not
+do the one-line half of it alone.
 
 ⚠ **Unverified from the screenshot: WHICH filter refused those two specific gaps.** Three candidates
 fit. Confirming it costs one chart: put `mpc_assistant.pine` and `mpc_strategy.pine` on the same
 chart, set the assistant's FVG drawing on, and read off which gaps differ — then check each
 candidate gap's height in dollars against $1.67 and $4.17. Do that before changing anything, or the
 fix is a guess.
+
+💡 **This got cheaper on 2026-08-01 and the note above predates it.** The command center's price
+chart now draws fair value gaps server-side (`command-center/backend/services/fvg_overlays.py`,
+Analysis dropdown, default OFF) — and it deliberately draws **`mpc_assistant.pine`'s** gaps at cap 8
+/ no close-check / the 0.0–0.04 split floor, i.e. exactly the set A+ does NOT trade. So a run page
+already shows both populations at once: a visible gap beside a "no FVG" block IS the discrepancy
+this section is about. Read it there against a real run before touching TradingView.
 
 **Unrelated cosmetic bug found while checking, in BOTH A+ and BOS:** `fvgKeepUntilBroken` is
 declared `input.bool(true, …)` but its tooltip opens *"OFF (default) = a gap is removed the moment
