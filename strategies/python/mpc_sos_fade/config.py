@@ -57,7 +57,7 @@ class SosFadeConfig:
     exec_htf_daily: str = "Ignore"     # "Daily bias requirement"
     #   HTF-bias options: Ignore | Must agree | Must not oppose | Must oppose (reversal)
     exec_risk_pct: float = 10.0        # "Risk % per trade"
-    exec_sl_level: str = "0.886"       # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0}
+    exec_sl_level: str = "0.886"       # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
     #   **Defaulted "1.0" → "0.886" on 2026-07-27** (Aaron's call, and how his TradingView chart is
     #   configured), in lockstep with both A+ Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886
     #   entry band, so the stop sits just past the deepest price a limit may rest at. Evidence: the
@@ -68,6 +68,28 @@ class SosFadeConfig:
     #   side of the entry, and a near-zero stop distance balloons `qty = risk / dist`. The three
     #   SHALLOWER levels (0.618 / 0.702 / 0.786) remain unsupported — 0.786 detonated an account to
     #   −$63k in Run 4. See the ⚠ block in CLAUDE.md before changing this.
+    #   **"Custom" (added 2026-08-02, Aaron's request)** frees the level from the five-value dropdown
+    #   and reads `exec_sl_custom` instead — the ladder never had a 0.90, and a stop is a price, not
+    #   a member of a set. It is the ONE value here with no Pine counterpart; see the field below.
+    exec_sl_custom: float = 0.886      # "↳ Custom SL fib level", read ONLY when exec_sl_level == "Custom"
+    #   The retracement ratio of the SOS leg, priced through the canonical `engines.fibonacci`
+    #   `fib_level()` off the leg anchors the fiboP* were built from — so 0.886 here is the SAME
+    #   price to the last bit as picking "0.886" from the dropdown, and the two are interchangeable.
+    #   That is why the default is 0.886 and not Aaron's 0.9: switching the mode to Custom changes
+    #   nothing until the number is moved, so the change is always deliberate.
+    #   Legal range 0 < v <= 1.0, enforced in __post_init__ and ONLY when the mode reads it (a swept
+    #   value sitting behind a non-Custom mode is inert, not an error). The bound is Aaron's stated
+    #   spec, and 1.0 is where the ladder ends — the leg origin, past which the leg is invalidated.
+    #   ⚠ SHALLOWER IS NOT SAFER. Below ~0.886 this walks straight into Run 4's hazard: the entry is
+    #   a resting limit inside the 0.5-0.886 band, so a stop shallower than the fill sits ON or PAST
+    #   the entry. `dist <= 0` refuses the order outright (no trade, no tag), and a merely TINY dist
+    #   is the dangerous one — `qty = risk / dist` balloons the position. Turn `exec_min_stop_mode`
+    #   on before going below 0.886. DEEPER (0.886 → 1.0) is the safe direction and is the reason
+    #   this exists: it is the half of the range the dropdown never covered.
+    #   ⚠ NO PINE COUNTERPART. `mpc_strategy.pine`'s `execSlLevel` is an `input.string` with five
+    #   options, so a Custom run has nothing to diff against and `compare_strategy.py` can never
+    #   configure one (it decodes `cfg_strcodes` into those five). A Custom result is a LAB finding,
+    #   not a validated one — port the input to the Pine before trading it.
     exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
     exec_min_stop_mode: str = "Off"    # "Minimum stop distance" (Pine execMinStopMode)
     #   ∈ {"Off", "% of price", "Fixed $", "x ATR(14)"}. An ENTRY filter, nothing to do with the
@@ -183,3 +205,26 @@ class SosFadeConfig:
     # backtest/fills.py. The old PU Prime values were "XAUUSD.s" / "puprime_standard".
     account_profile: str = "vantage_demo"   # a key of backtest.fills.PROFILES; used only for "tick"
     symbol: str = "XAUUSD"                   # Vantage broker symbol for the tick pull (no ".s" suffix)
+
+    def __post_init__(self) -> None:
+        """Refuse a Custom SL ratio outside (0, 1.0] — LOUDLY, at construction.
+
+        The alternative was the shape `_sl_anchor` already had for an unrecognised level: fall
+        through to fib 1.0. That is the wrong answer for a number a human typed. A silent
+        substitution here would run a full backtest against a stop the operator did not choose
+        and report it as theirs — the same class of defect as the lab charging costs it never
+        applied. Failing the run states the problem instead.
+
+        Validated ONLY when the mode reads the field. The optimizer can sweep `exec_sl_custom`
+        while `exec_sl_level` is a fixed level; every combo is then identical and inert, which
+        is a wasted sweep but not an error, and raising on it would kill an otherwise valid grid.
+        """
+        if self.exec_sl_level != "Custom":
+            return
+        v = self.exec_sl_custom
+        if not (0.0 < v <= 1.0):
+            raise ValueError(
+                f"exec_sl_custom must be a fib ratio in (0, 1.0], got {v!r}. "
+                "0 is the swing extreme (the TP3 side of the entry, so no stop exists there) "
+                "and 1.0 is the leg origin, the deepest level the ladder defines."
+            )

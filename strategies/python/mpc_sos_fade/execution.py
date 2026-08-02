@@ -41,6 +41,10 @@ if str(_ROOT) not in sys.path:
 
 from backtest import fills as _fills
 from backtest.portfolio.account import SoloAccount
+# The canonical ratio→price helper, and the only one allowed: `_sl_anchor`'s Custom branch has to
+# land on the exact float the fib engine would have produced for that ratio, and re-deriving
+# `ash - range*ratio` here would be a second implementation free to drift by a bit.
+from engines.fibonacci.geometry import fib_level
 
 from .signals import sos_aware_veto
 
@@ -934,11 +938,27 @@ class Execution:
                     short_edge = p3
         return long_edge, short_edge
 
-    def _sl_anchor(self, sig) -> float:
+    def _sl_anchor(self, sig) -> Optional[float]:
+        """The fib price the stop sits at, before `exec_sl_buf_tk`.
+
+        The five named levels read a fiboP* the fib engine already priced. "Custom" (2026-08-02)
+        prices an arbitrary ratio off the SAME leg anchors those fiboP* were built from, through
+        the canonical `fib_level()` — so "0.886" and Custom 0.886 are the same float, not merely
+        the same number, and switching between them moves nothing.
+
+        None only when the fib is inactive, which is the same bar every fiboP* is None. Callers
+        that place an order are already past `fibs_ready` (an entry edge cannot exist without it),
+        so the None is reachable only from `_record_blocks`, which checks for it.
+        """
+        cfg = self._cfg
+        if cfg.exec_sl_level == "Custom":
+            if sig.fibo_ash is None or sig.fibo_asl is None or sig.fibo_dir == 0:
+                return None
+            return fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir, cfg.exec_sl_custom)
         return {
             "0.618": sig.fibo_p3, "0.702": sig.fibo_p4, "0.786": sig.fibo_p5,
             "0.886": sig.fibo_p6,
-        }.get(self._cfg.exec_sl_level, sig.fibo_p10)
+        }.get(cfg.exec_sl_level, sig.fibo_p10)
 
     # ── minimum stop distance (Pine 3801-3807, execMinStopMode / execMinStopVal) ──
     def _update_atr(self, sig) -> None:

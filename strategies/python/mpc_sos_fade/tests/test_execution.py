@@ -607,6 +607,83 @@ def test_shipped_sl_level_default_is_the_deep_band_edge():
     assert BLegConfig().exec_sl_level == "1.0"
 
 
+# ------------------------------------------- the Custom SL level (2026-08-02) -----------------
+# The fixtures are a BULL leg anchored ash = 110.0 / asl = 100.0, so a ratio v prices at
+# 110 - 10v: 0.886 -> 101.14 (= fibo_p6), 0.9 -> 101.0, 1.0 -> 100.0 (= fibo_p10). The entry edge
+# is fibo_p3 = 103.82 (exec_req_fvg off), which is what every stop distance below is measured to.
+
+def test_a_custom_ratio_prices_a_level_the_dropdown_never_offered():
+    """The whole point: 0.9 sits BETWEEN the 0.886 default and the 1.0 leg origin, and no
+    combination of the five choices can express it."""
+    ex = Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.9))
+    sig = _sig(0, 104.0, 104.5, 103.9, 104.2)
+
+    assert abs(ex._sl_anchor(sig) - 101.0) < 1e-12
+    assert sig.fibo_p10 < ex._sl_anchor(sig) < sig.fibo_p6   # deeper than 0.886, shallower than 1.0
+
+
+def test_custom_at_a_dropdown_value_is_the_SAME_price_to_the_last_bit():
+    """Switching the mode to Custom without moving the number must be a no-op — that is what makes
+    the change safe to make on a live config. Exact float equality is the assertion on purpose:
+    `fib_level` is the engine's own helper, so the Custom branch walks the identical IEEE-754 path
+    the fib engine walked to produce fiboP6, and `_TOUCH_EPS`-scale drift would be a real defect.
+    Checked on a BEAR leg too, where the anchor arithmetic is the mirror (asl + range*v)."""
+    sig = _sig(0, 104.0, 104.5, 103.9, 104.2)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.886))._sl_anchor(sig) \
+        == Execution(_cfg(exec_sl_level="0.886"))._sl_anchor(sig)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=1.0))._sl_anchor(sig) \
+        == Execution(_cfg(exec_sl_level="1.0"))._sl_anchor(sig)
+
+    # The shared fixture hardcodes BULL-leg fib prices, so a bear leg needs its own coherent set:
+    # same anchors, mirrored arithmetic (asl + range*v instead of ash - range*v).
+    bear = _sig(0, 104.0, 104.5, 103.9, 104.2, dir=-1,
+                fibo_p1=103.82, fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.02,
+                fibo_p5=107.86, fibo_p6=108.86, fibo_p7=100.0, fibo_p10=110.0)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.786))._sl_anchor(bear) \
+        == Execution(_cfg(exec_sl_level="0.786"))._sl_anchor(bear)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.9))._sl_anchor(bear) > bear.fibo_p6
+
+
+def test_a_custom_stop_sizes_the_position_off_its_own_distance():
+    """The anchor being right is not enough — it has to reach SIZING. `qty = risk$ / dist`, so a
+    stop the operator moved and a position size that did not follow it is the failure that costs
+    money quietly. Entry 103.82, custom stop 101.0 ⇒ dist 2.82 ⇒ $1,000 of risk buys 354.6 oz."""
+    ex = Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.9))
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
+
+    pend = ex._pend_long
+    assert pend is not None
+    assert abs(pend.sl - 101.0) < 1e-12
+    assert abs(pend.qty - (ex.equity * 10.0 / 100.0) / (103.82 - 101.0)) < 1e-9
+
+
+def test_a_custom_ratio_outside_zero_to_one_is_refused_at_construction():
+    """LOUDLY, and not by falling through to fib 1.0 the way an unrecognised dropdown value does.
+    A number a human typed that silently becomes a different stop would run a whole backtest
+    against a level nobody chose and report it as theirs."""
+    import pytest
+
+    for bad in (0.0, -0.5, 1.2, 2.0):
+        with pytest.raises(ValueError, match="exec_sl_custom"):
+            SosFadeConfig(exec_sl_level="Custom", exec_sl_custom=bad)
+
+
+def test_a_custom_ratio_is_only_validated_when_the_mode_reads_it():
+    """An optimizer may sweep `exec_sl_custom` while `exec_sl_level` is a fixed level — every combo
+    is then identical and the sweep is wasted, but it is not an error, and raising would kill an
+    otherwise valid grid on a param the run never reads."""
+    cfg = SosFadeConfig(exec_sl_level="0.886", exec_sl_custom=99.0)
+
+    assert cfg.exec_sl_custom == 99.0
+    ex = Execution(_cfg(exec_sl_level="0.886", exec_sl_custom=99.0))
+    assert ex._sl_anchor(_sig(0, 104.0, 104.5, 103.9, 104.2)) == 101.14   # still fiboP6
+
+
+def test_the_custom_default_is_the_shipped_level_so_selecting_it_moves_nothing():
+    assert SosFadeConfig().exec_sl_custom == 0.886
+    assert SosFadeConfig().exec_sl_level == "0.886"
+
+
 # ------------------------------------------- minimum stop distance (Pine execMinStop*) --------
 # The fixtures put the long entry edge at fibo_p3 = 103.82 and the stop anchor at fibo_p10 =
 # 100.0, so every test below works against a stop distance of exactly 3.82 (3.68% of the entry

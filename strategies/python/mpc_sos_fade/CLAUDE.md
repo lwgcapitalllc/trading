@@ -22,7 +22,19 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-08-01 — 🔴 **THE FILL BAR WAS STAGING THE STOP — fixed, and it moved every
+**Last reviewed:** 2026-08-02 — **the stop level is no longer limited to the five-value dropdown.**
+`exec_sl_level = "Custom"` reads a new `exec_sl_custom` (any fib ratio in (0, 1.0], default 0.886),
+priced off the leg anchors through the canonical `fib_level()` — so **Custom 0.886 is bit-identical
+to picking "0.886"** and the mode switch alone moves nothing. It opens the half of the range the
+ladder never had (0.886 → 1.0: deeper stop, smaller position) and, being a NUMBER, makes the level a
+real optimizer axis instead of five strings. Out-of-range raises at construction rather than falling
+back to fib 1.0, because a typed number silently becoming a different stop would replay a whole
+backtest against a level nobody chose. ⚠ **No Pine counterpart** — `execSlLevel` is an `input.string`
+with five options, so `compare_strategy.py` can never configure a Custom run (parity is therefore
+structurally unaffected) and **a Custom result is a lab finding, not a validated one**. ⚠ Shallower
+than 0.886 is Run 4's hazard at any ratio, not only at three — turn `exec_min_stop_mode` on first.
+Detail: `### The Custom stop level`. 129 tests green (7 new).
+Earlier: 2026-08-01 — 🔴 **THE FILL BAR WAS STAGING THE STOP — fixed, and it moved every
 number in this file.** `indicators/BUG_exit_fill_price_mismatch.md`, open since 2026-07-14, was not
 a TradingView artifact: `_advance_stage` ran on the ENTRY bar and read that bar's whole high/low.
 A resting limit is reached by price coming to it from the wrong side, so the entry bar's
@@ -328,7 +340,7 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 
 | Stage | What sets it | Switchable? |
 |---|---|---|
-| **Stop loss** | A fib on the deep side of 0.5, `exec_sl_level` ∈ {0.618, 0.702, 0.786, **0.886**, 1.0}, then `exec_sl_buf_tk` ticks beyond it. **Default 0.886 since 2026-07-27** (the deep edge of the entry band, and what Aaron trades); 1.0 = the leg origin. | **0.886 and 1.0 only** — the three shallower levels are unsupported, see the warning below |
+| **Stop loss** | A fib on the deep side of 0.5, `exec_sl_level` ∈ {0.618, 0.702, 0.786, **0.886**, 1.0, **Custom**}, then `exec_sl_buf_tk` ticks beyond it. **Default 0.886 since 2026-07-27** (the deep edge of the entry band, and what Aaron trades); 1.0 = the leg origin. **"Custom" (2026-08-02) reads `exec_sl_custom` instead** — any ratio in (0, 1.0]. | **0.886 → 1.0 only** (the dropdown values or any Custom ratio between them) — anything shallower is unsupported, see the warning below |
 | **TP1 / TP2** | Fibs, chosen AUTOMATICALLY by how deep the entry was. Deep entry → TP1 = 0.5, TP2 = 0.382. Shallow → TP1 = 0.382, TP2 = 0.0 (the swing extreme). | **No** — only the sizes (`exec_tp1_pct` / `exec_tp2_pct`, **both default 0** since 2026-07-27: bank nothing, ride the runner) |
 | **TP3 (the runner)** | No target at all. It rides a trailing stop, and it is where the strategy's money is (>100% of net in every window measured). | **Yes** — see below |
 | **Stop staging** | Three phases, always on: (0) the full stop → (1) after TP1, breakeven + `exec_be_buf_tk` → (2) after TP2, a floor, then the trail. | **No** |
@@ -449,6 +461,46 @@ and where it does fire it fires 2–4 times so you can only ever act on the earl
 ship 0.618 / 0.702 / 0.786** (Run 4, 2026-07-26). The entry is a resting limit inside the
 **0.5–0.886 fib band**, and all four sub-1.0 levels sit inside that SAME band — so the stop can be
 placed at, or past, the entry price. Nothing validates the result.
+
+### The Custom stop level (`exec_sl_custom`, 2026-08-02)
+
+Aaron's ask: *"let me enter a fib level as a stop loss outside of the predefined ones, as long as it
+falls between 0 and 1 — 0.90 instead of 0.886."* The five-value dropdown had no answer, and a stop
+is a PRICE, not a member of a set. `exec_sl_level = "Custom"` reads `exec_sl_custom` (a ratio in
+(0, 1.0], default **0.886**) instead of a fiboP*.
+
+**Where the price comes from.** `Signals` has carried `fibo_ash` / `fibo_asl` — the leg anchors the
+fiboP* were built from — since `e2140c3`, with a comment naming this feature as the one consumer.
+`_sl_anchor` feeds them to the canonical `engines.fibonacci.geometry.fib_level()`, the same helper
+and the same IEEE-754 path the fib engine used, so **Custom 0.886 is bit-identical to picking
+"0.886"** and switching the mode alone moves nothing. That equality is a test
+(`test_custom_at_a_dropdown_value_is_the_SAME_price_to_the_last_bit`), on a bear leg too.
+
+**Which half of the range this opens, and which half it must not.** 0.886 → 1.0 is the safe half and
+the reason it exists: deeper stop, smaller position, more room before the setup is wrong — and it is
+exactly the gap the ladder never covered. **Shallower than 0.886 walks straight back into Run 4's
+hazard**, now reachable at any ratio rather than only at three: a stop shallower than the fill either
+fails `dist > 0` (the order is cancelled, no trade and no tag) or leaves a tiny `dist`, and
+`qty = risk / dist` balloons the position. Turn `exec_min_stop_mode` on first.
+
+**An out-of-range ratio raises at construction, it does not fall back.** `SosFadeConfig.__post_init__`
+refuses anything outside (0, 1.0] when — and only when — the mode reads it. The tempting alternative
+was `_sl_anchor`'s existing shape (an unrecognised level falls through to fib 1.0), and that is the
+wrong answer for a number a human typed: it would replay a whole backtest against a stop nobody
+chose and report it as theirs. Validating only under `"Custom"` is deliberate too — the optimizer may
+sweep `exec_sl_custom` behind a fixed mode, which is a wasted grid but not an error.
+
+⚠ **NO PINE COUNTERPART, so a Custom run is unvalidated.** `mpc_strategy.pine`'s `execSlLevel` is an
+`input.string` with five options; `compare_strategy.py` decodes `cfg_strcodes` into those five and
+can therefore never configure a Custom run, which is also why parity is structurally unaffected by
+this change. **A Custom result is a LAB finding, not a validated one** — port the input to the Pine
+(a new `input.float` + a `cfg_` column + a `_SL_LEVEL` branch) before trading one. Note this is the
+first lever in the exit ladder to be Python-first; every other one landed in the Pine first.
+
+**In the lab:** the Stop level dropdown gains a "Custom" option and a numeric field appears under it
+(`show_if`), the same pattern `exec_min_stop_mode` → `exec_min_stop_val` already uses. Because it is
+a numeric field it is also a real **numeric optimizer axis** — sweep 0.88 → 1.00 step 0.01 and the
+grid walks it, which a list of five strings never could.
 
 **Why 0.886 is nonetheless the shipped default.** It is what Aaron trades, the 2026-07-27 parity
 run went GREEN at it, and Run 6 rode it over the broker's whole intraday history (188 trades,

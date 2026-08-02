@@ -443,6 +443,8 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
       value={String(v)}
       text={widget !== 'number'}
       step={p.step}
+      min={p.min}
+      max={p.max}
       unit={p.unit}
       onFocus={onFocus}
       onInput={raw => onChange?.(p.name, coerceInput(p, raw, v))}
@@ -452,21 +454,27 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
 
 function NumberBox(props: {
   value: string; text?: boolean; disabled?: boolean; readOnly?: boolean; dim?: boolean; fill?: boolean
-  step?: number; unit?: string; onFocus: () => void; onInput: (raw: string) => void
+  step?: number; min?: number; max?: number; unit?: string; onFocus: () => void; onInput: (raw: string) => void
 }) {
-  const { value, text, disabled, readOnly, dim, fill, step, unit, onFocus, onInput } = props
+  const { value, text, disabled, readOnly, dim, fill, step, min, max, unit, onFocus, onInput } = props
   // `fill` = the box shares the control width with a sibling (the optimizer's sweep button)
   return (
     <span className={`inline-flex items-center bg-bg-sunken border border-border-default rounded-lg overflow-hidden ${fill ? 'flex-1 min-w-0' : CONTROL_W} ${CONTROL_H} ${dim ? 'opacity-40' : ''}`}>
       <input
         type={text ? 'text' : 'number'}
         step={text ? undefined : (step ?? 'any')}
+        // The schema has carried `min`/`max` since the scanner was written and nothing read them,
+        // so a bounded param looked unbounded. They are a CUE, not a gate — a native number input
+        // stops the spinner and marks the field `:invalid` but still lets a value be typed or
+        // pasted past the bound, so the strategy's own check is what actually refuses one.
+        min={text ? undefined : min}
+        max={text ? undefined : max}
         value={value}
         disabled={disabled}
         readOnly={readOnly}
         onFocus={onFocus}
         onChange={e => onInput(e.target.value)}
-        className="flex-1 w-full min-w-0 bg-transparent px-2.5 self-stretch text-[13px] font-mono tabular-nums text-text-primary outline-none"
+        className="flex-1 w-full min-w-0 bg-transparent px-2.5 self-stretch text-[13px] font-mono tabular-nums text-text-primary outline-none invalid:text-neg"
       />
       {unit && <span className="text-[11px] text-text-tertiary px-2.5 self-stretch flex items-center border-l border-border-subtle">{unit}</span>}
     </span>

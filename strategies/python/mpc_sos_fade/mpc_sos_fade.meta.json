@@ -178,13 +178,32 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Stop level",
-      "desc": "Which fib level the stop sits at, as a retracement of the SOS leg: 0.618 · 0.702 · 0.786 · 0.886 · 1.0. Default 0.886 = just past the deep edge of the entry band — the tested setting, with 8 years and 188 trades behind it. 1.0 = the leg's origin, the widest and structurally safest: the setup is only wrong once price takes out the level that created it. The three tighter levels risk less per trade but can place the stop on top of the entry, which balloons position size — they are not supported.",
+      "desc": "Which fib level the stop sits at, as a retracement of the SOS leg: 0.618 · 0.702 · 0.786 · 0.886 · 1.0, or Custom for any ratio in between. Default 0.886 = just past the deep edge of the entry band — the tested setting, with 8 years and 188 trades behind it. 1.0 = the leg's origin, the widest and structurally safest: the setup is only wrong once price takes out the level that created it. The three tighter levels risk less per trade but can place the stop on top of the entry, which balloons position size — they are not supported. Pick Custom to type a level the ladder doesn't have (0.9, say) — the box for it appears below.",
       "choices": [
         "0.618",
         "0.702",
         "0.786",
         "0.886",
-        "1.0"
+        "1.0",
+        "Custom"
+      ]
+    },
+    {
+      "name": "exec_sl_custom",
+      "group": "Risk & stop",
+      "core": true,
+      "label": "Custom stop level",
+      "unit": "fib",
+      "step": 0.001,
+      "min": 0.001,
+      "max": 1,
+      "show_if": {
+        "exec_sl_level": "Custom"
+      },
+      "desc": "The exact retracement of the SOS leg to put the stop at, when Stop level is set to Custom. Anything above 0 and up to 1.0 — so 0.9, which the dropdown never offered, sits between the 0.886 default and the 1.0 leg origin. Typing 0.886 here is identical to picking 0.886 above, to the last decimal place, so switching to Custom changes nothing until you move the number. DEEPER (towards 1.0) is the safe direction: a wider stop, a smaller position, more room before the setup is wrong. SHALLOWER than 0.886 is the dangerous half — the entry is a resting limit inside the 0.5-0.886 band, so a stop above the fill either cancels the trade outright or leaves a stop distance so small the position size balloons. Turn Minimum stop distance on before going there. Note this level has no TradingView equivalent yet, so a run using it can't be checked against the chart.",
+      "guide": [
+        "Tighter stop, bigger position, less room to be right",
+        "Wider stop, smaller position, closer to the leg origin"
       ]
     },
     {
