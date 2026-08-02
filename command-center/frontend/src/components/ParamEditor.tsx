@@ -13,7 +13,22 @@ export type ParamValue = number | boolean | string
 export type AxisEdit =
   | { mode: 'range'; min: string; max: string; step: string }
   | { mode: 'fixed'; value: string }
+  | { mode: 'list'; values: string[] }
 export type ParamEditorMode = 'run' | 'tune' | 'optimize'
+
+// The values a NON-numeric param can be swept across. A number takes a from/to/step range; a
+// dropdown already carries its own closed set and a bool has exactly two states, so those are
+// swept as a LIST instead. Anything else (free text, a time) has no set to walk and stays fixed.
+// Values are the raw strings the optimizer will receive — the caller coerces a bool back before it
+// ships, because "false" as a string is truthy everywhere it lands.
+export function sweepChoices(p: ParamSchemaEntry): { value: string; label: string }[] {
+  if (p.choices?.length) return p.choices.map(c => ({ value: c, label: c }))
+  if (p.type === 'bool') return [
+    { value: 'false', label: String(p.options?.off ?? 'Off') },
+    { value: 'true',  label: String(p.options?.on ?? 'On') },
+  ]
+  return []
+}
 
 interface Props {
   schema: ParamSchemaEntry[]
@@ -28,6 +43,11 @@ interface Props {
   onToggleAxis?: (name: string) => void
   onUpdateAxis?: (name: string, field: 'min' | 'max' | 'step', value: string) => void
   intErrors?: Record<string, string>
+  /** Optimize only — let a dropdown / on-off param be swept as a value LIST. Python-runner
+   *  strategies only: NT8 and MT5 hand a Start/Step/End range to their own tester, so there is
+   *  nowhere for a set of strings to go. Off = those rows stay read-only, as before. */
+  allowListSweep?: boolean
+  onToggleListValue?: (name: string, value: string) => void
   /** 'panel'  = explainer as a fixed right column (default, for wide modals);
    *  'inline' = explainer drops in under the focused row;
    *  'coach'  = no per-row explainer — the parent renders a pinned <ParamCoach> footer instead
@@ -276,9 +296,54 @@ function Control(props: Props & { p: ParamSchemaEntry; widget: Widget; onFocus: 
   const v = valueOf(p.name)
 
   if (mode === 'optimize') {
-    // Only numeric params are sweepable; bools/strings/times are inherited from the run.
+    // A non-numeric param has no from/to/step to walk. Where it carries a closed SET of values —
+    // a dropdown's options, a bool's two states — it can still be swept as a list; everything else
+    // is held at the value it inherits from the source run.
     if (widget !== 'number') {
-      return <span className="text-[11.5px] text-text-tertiary italic"><span className="font-mono not-italic mr-2 text-text-secondary">{fmt(v)}</span>inherited · not swept</span>
+      const choices = props.allowListSweep ? sweepChoices(p) : []
+      if (choices.length < 2) {
+        return <span className="text-[11.5px] text-text-tertiary italic"><span className="font-mono not-italic mr-2 text-text-secondary">{fmt(v)}</span>inherited · not swept</span>
+      }
+      const listAx = axes?.[p.name]
+      const listed = listAx?.mode === 'list' ? listAx.values : null
+      return (
+        <>
+          <div className={`flex items-center gap-2 ${CONTROL_W}`}>
+            <span className={`flex-1 min-w-0 inline-flex items-center bg-bg-sunken border border-border-default rounded-lg px-2.5 ${CONTROL_H} ${listed ? 'opacity-40' : ''}`}>
+              <span className="text-[13px] font-mono text-text-primary truncate">{listed ? '' : fmt(v)}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => onToggleAxis?.(p.name)}
+              className={`flex-shrink-0 text-[11px] font-semibold rounded-md px-2.5 py-[6px] border transition-colors ${
+                listed ? 'text-accent border-accent/40 bg-accent/10' : 'text-text-tertiary border-border-default bg-bg-sunken hover:text-text-secondary'
+              }`}
+            >
+              {listed ? '✓ sweep' : '⤢ sweep'}
+            </button>
+          </div>
+          {listed && (
+            <div className="flex items-center gap-1.5 flex-wrap basis-full mt-1.5">
+              {choices.map(c => {
+                const on = listed.includes(c.value)
+                return (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => props.onToggleListValue?.(p.name, c.value)}
+                    className={`text-[11.5px] rounded-md px-2 py-[5px] border transition-colors ${
+                      on ? 'text-accent border-accent/40 bg-accent/10 font-semibold' : 'text-text-tertiary border-border-default bg-bg-sunken hover:text-text-secondary'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                )
+              })}
+              <span className="text-[11px] text-text-tertiary ml-1">{listed.length} of {choices.length}</span>
+            </div>
+          )}
+        </>
+      )
     }
     const ax = axes?.[p.name]
     const swept = ax?.mode === 'range'
@@ -415,7 +480,7 @@ function Explainer({ p, mode, valueOf, axes, inline }: {
   const v = valueOf(p.name)
   const widget = widgetOf(p, v)
   const ax = axes?.[p.name]
-  const swept = mode === 'optimize' && ax?.mode === 'range'
+  const swept = mode === 'optimize' && (ax?.mode === 'range' || ax?.mode === 'list')
 
   return (
     <div>
@@ -425,10 +490,15 @@ function Explainer({ p, mode, valueOf, axes, inline }: {
       {!inline && p.unit && <span className="inline-block text-[10px] font-bold uppercase tracking-wide text-accent bg-accent/15 border border-accent/40 rounded px-1.5 py-[2px] mb-2.5">{p.unit}</span>}
       {descOf(p) && <p className={`text-text-secondary ${inline ? 'text-[12px] mb-2.5' : 'text-[12.5px] mb-3.5'}`}>{descOf(p)}</p>}
 
-      {swept && ax ? (
+      {swept && ax?.mode === 'range' ? (
         <>
           <KV k="Sweeping" v={`${ax.min} → ${ax.max} / ${ax.step}`} />
           <KV k="Values" v={String(sweepCount(ax))} />
+        </>
+      ) : swept && ax?.mode === 'list' ? (
+        <>
+          <KV k="Sweeping" v={ax.values.join(' · ')} />
+          <KV k="Values" v={String(ax.values.length)} />
         </>
       ) : (
         <>

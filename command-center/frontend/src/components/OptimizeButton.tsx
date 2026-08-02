@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Sliders, AlertTriangle, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tier3WarningModal } from '@/components/Tier3WarningModal'
-import { ParamEditor, type ParamValue } from '@/components/ParamEditor'
+import { ParamEditor, sweepChoices, type ParamValue } from '@/components/ParamEditor'
 import { useTriggerOptimization, useFirms, useRunningVpsJob, useOptimizations, useParamTypes, useStrategy } from '@/hooks/useLab'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import type { BacktestDetail, ParamAxisSpec } from '@/types'
@@ -15,6 +15,7 @@ interface Props {
 type AxisEdit =
   | { mode: 'range'; min: string; max: string; step: string }
   | { mode: 'fixed'; value: string }
+  | { mode: 'list'; values: string[] }
 
 // ── Range value counting ───────────────────────────────────────────────────────
 
@@ -86,18 +87,19 @@ function OptimizerModal({
   }
   // True once the user has changed anything from the opened-run defaults.
   const isDirty =
-    Object.values(axes).some(a => a.mode === 'range') ||
+    Object.values(axes).some(a => a.mode !== 'fixed') ||
     firmId !== (evalFirm?.ruleset_id ?? '') ||
     mode !== 'eval' ||
     regimeFilter !== ''
 
-  const rangeParamCount = Object.values(axes).filter(a => a.mode === 'range').length
+  const rangeParamCount = Object.values(axes).filter(a => a.mode !== 'fixed').length
 
   // Total backtests = cartesian product of every swept range's value count.
   // `incomplete` flags ranges still being typed (min/max/step not yet valid).
   let comboCount = 1
   let comboIncomplete = false
   for (const ax of Object.values(axes)) {
+    if (ax.mode === 'list') { comboCount *= Math.max(1, ax.values.length); continue }
     if (ax.mode !== 'range') continue
     const c = rangeValueCount(ax.min, ax.max, ax.step)
     if (c == null) { comboIncomplete = true; continue }
@@ -118,23 +120,52 @@ function OptimizerModal({
     if (hasDecimal) intErrors[name] = 'Must be whole numbers — this param is an integer in the strategy'
   }
 
+  // A dropdown / on-off param is swept as its own value SET, and only the Python runner can walk
+  // one — NT8 and MT5 hand a Start/Step/End range to their own tester (the backend refuses a list
+  // for them too, so this is not the only guard).
+  const listSweepOk = run.runner === 'python'
+  const choicesOf = (name: string) => {
+    const p = strategy?.param_schema?.find(x => x.name === name)
+    return p ? sweepChoices(p) : []
+  }
+
   const toggleAxis = (name: string) => {
     const cur = axes[name]
-    if (!cur || cur.mode === 'fixed') {
-      // Promote to range: use current value as default for min/max. `cur` can be
-      // absent when optimizing from a run whose params predate a schema param.
-      const numVal = Number(cur?.value ?? run.params[name] ?? 0)
-      setAxes(prev => ({
-        ...prev,
-        [name]: { mode: 'range', min: String(numVal), max: String(numVal + 10), step: '5' },
-      }))
-    } else {
+    if (cur && cur.mode !== 'fixed') {
       // Demote back to fixed
-      setAxes(prev => ({
-        ...prev,
-        [name]: { mode: 'fixed', value: prev[name].mode === 'range' ? prev[name].min : String(run.params[name] ?? '') },
-      }))
+      const back = cur.mode === 'range' ? cur.min : String(run.params[name] ?? '')
+      setAxes(prev => ({ ...prev, [name]: { mode: 'fixed', value: back } }))
+      return
     }
+    const choices = listSweepOk ? choicesOf(name) : []
+    if (choices.length >= 2) {
+      // Start with EVERY option ticked, then untick what you don't want — one click is a complete
+      // sweep, which is the point of a closed set.
+      setAxes(prev => ({ ...prev, [name]: { mode: 'list', values: choices.map(c => c.value) } }))
+      return
+    }
+    // Promote to range: use current value as default for min/max. `cur` can be
+    // absent when optimizing from a run whose params predate a schema param.
+    const numVal = Number(cur?.value ?? run.params[name] ?? 0)
+    setAxes(prev => ({
+      ...prev,
+      [name]: { mode: 'range', min: String(numVal), max: String(numVal + 10), step: '5' },
+    }))
+  }
+
+  // Tick / untick one value of a list axis. Never empties it: a swept param with nothing selected
+  // expands to zero combinations, so the whole optimization would run nothing.
+  const toggleListValue = (name: string, value: string) => {
+    const all = choicesOf(name).map(c => c.value)
+    setAxes(prev => {
+      const cur = prev[name]
+      if (cur?.mode !== 'list') return prev
+      const has = cur.values.includes(value)
+      if (has && cur.values.length === 1) return prev
+      const next = has ? cur.values.filter(x => x !== value) : [...cur.values, value]
+      // Keep the schema's order rather than click order, so the grid reads the way the panel does.
+      return { ...prev, [name]: { mode: 'list', values: all.length ? all.filter(x => next.includes(x)) : next } }
+    })
   }
 
   const updateAxis = (name: string, field: string, value: string) => {
@@ -148,11 +179,16 @@ function OptimizerModal({
     for (const [k, ax] of Object.entries(axes)) {
       if (ax.mode === 'range') {
         param_grid[k] = { min: Number(ax.min), max: Number(ax.max), step: Number(ax.step) }
+      } else if (ax.mode === 'list') {
+        // A bool ships as a real boolean — the strategy's config field is typed, and the string
+        // "false" is truthy everywhere it would land.
+        const isBool = strategy?.param_schema?.find(p => p.name === k)?.type === 'bool'
+        param_grid[k] = isBool ? ax.values.map(v => v === 'true') : ax.values
       }
     }
 
     if (!Object.keys(param_grid).length) {
-      toast.error('Expand at least one parameter into a range')
+      toast.error('Mark at least one parameter to sweep')
       return
     }
     if (Object.keys(intErrors).length) {
@@ -264,7 +300,11 @@ function OptimizerModal({
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-[12px] font-semibold text-text-secondary">Parameters</span>
-              <span className="text-[11px] text-text-tertiary">Mark a parameter to sweep it across a range</span>
+              <span className="text-[11px] text-text-tertiary">
+                {listSweepOk
+                  ? 'Mark a parameter to sweep it — a range for numbers, a value set for dropdowns'
+                  : 'Mark a parameter to sweep it across a range'}
+              </span>
             </div>
             <ParamEditor
               schema={strategy?.param_schema ?? []}
@@ -274,6 +314,8 @@ function OptimizerModal({
               onToggleAxis={toggleAxis}
               onUpdateAxis={updateAxis}
               intErrors={intErrors}
+              allowListSweep={listSweepOk}
+              onToggleListValue={toggleListValue}
             />
           </div>
 

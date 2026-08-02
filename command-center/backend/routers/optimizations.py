@@ -42,6 +42,17 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
 
     runner = strategy.get("runner", "ninjatrader")
 
+    # A LIST axis is a closed set of values (a dropdown's options, a bool's two states) that the
+    # optimizer walks itself. Only the Python runner expands the grid locally; NT8 and MT5 hand a
+    # Start/Step/Increment RANGE to their own tester, so a list of strings has nowhere to land
+    # there. Refuse it rather than submit a job that quietly optimizes the wrong thing.
+    listed = sorted(k for k, v in req.param_grid.items() if isinstance(v, list))
+    if listed and runner != "python":
+        raise HTTPException(
+            400,
+            f"{runner} sweeps numeric ranges only — {', '.join(listed)} "
+            "cannot be swept as a list of values.")
+
     try:
         history_limits.validate_window(
             req.instrument, req.start_date, req.end_date,

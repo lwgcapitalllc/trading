@@ -194,6 +194,31 @@ def pick_search_method(param_grid: dict, requested: str) -> str:
     return "brute" if len(param_grid) <= 2 else "genetic"
 
 
+def base_params_for(opt: dict, strategy: dict) -> dict:
+    """The values every NON-SWEPT param is held at for the whole grid.
+
+    Read the SOURCE RUN's params, not just the strategy's scanned defaults. The optimize modal
+    shows the source run's values and labels them "inherited"; until 2026-08-02 this function did
+    not exist and the grid ran on `default_params`, so optimizing from a tuned run silently used
+    a different configuration from the one on screen (measured: run 096432c2ad20 shows TP1/TP2 at
+    30/40 and the grid ran them at the 0/0 defaults).
+
+    Only keys the strategy ALREADY declares are adopted. A run can carry leftovers from an older
+    schema, and for MT5 a fixed_params dict polluted with inputs the EA does not declare makes the
+    tester treat the set file as mismatched and silently run a single backtest instead of the
+    optimization — so this may change a value, never introduce a key.
+    """
+    base = dict(strategy.get("default_params") or {})
+    src_id = opt.get("source_run_id")
+    if not src_id:
+        return base
+    src = lab_db.get_run(src_id)
+    for k, v in ((src or {}).get("params") or {}).items():
+        if k in base:
+            base[k] = v
+    return base
+
+
 def sample_combinations(combos: list[dict], method: str) -> list[dict]:
     """Return the subset to actually run based on method."""
     if method == "genetic":
@@ -434,12 +459,13 @@ async def run_native_optimization(optimization_id: str) -> None:
     runner_str = strategy.get("runner", "ninjatrader")
     firm = lab_db.get_ruleset(opt["ruleset_id"]) if opt.get("ruleset_id") else None
 
-    # Build fixed_params: strategy defaults as baseline, foundational config on top.
-    # Foundational must come last so ruleset values (AccountSize, RiskPerTradePct, etc.)
-    # override strategy sentinel defaults (-1) — not the other way around.
+    # Build fixed_params: the source run's values as baseline (see base_params_for — this is what
+    # makes the modal's "inherited" label true), foundational config on top. Foundational must come
+    # last so ruleset values (AccountSize, RiskPerTradePct, etc.) override strategy sentinel
+    # defaults (-1) — not the other way around.
     param_ranges = opt["param_grid"]
     fixed_params: dict = {}
-    for k, v in (strategy.get("default_params") or {}).items():
+    for k, v in base_params_for(opt, strategy).items():
         if k not in param_ranges:
             fixed_params[k] = v
     # Foundational injection is NinjaScript-only — MQL5 strategies have no
@@ -662,7 +688,7 @@ async def run_optimization(optimization_id: str) -> None:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
 
-        base_params = {**strategy.get("default_params", {}), **combo}
+        base_params = {**base_params_for(opt, strategy), **combo}
         merged_params = (
             runner_dispatch.inject_foundational(base_params, firm) if firm else base_params
         )
