@@ -89,6 +89,12 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
             "size":      t.qty,
             "favorable": _round(getattr(t, "mfe_usd", 0.0)),
             "adverse":   _round(getattr(t, "mae_usd", 0.0)),
+            # Commission + swap + slippage charged to THIS trade, negative. `profit` is already
+            # net of it — this carries what the costs actually WERE, which is otherwise
+            # uninspectable: a run can now be priced (2026-08-01) and a reader had no way to see
+            # how much of a shortfall was friction. 0.0 on a run that stated no costs, which is an
+            # honest "nothing was priced" rather than a claim that trading was free.
+            "costs_usd": _round(getattr(t, "costs_usd", 0.0)),
             # Real fills + which layer traded — the price chart draws the trade box at the exact
             # entry/exit price (not a candle-close guess) and tells primary from secondary. Optional
             # for consumers that don't read them; every other equity-curve reader ignores extra keys.

@@ -570,6 +570,35 @@ or noise (see the ⚠ block in `## The missed-setup watch`), and the final-hour 
 marginal setup displaces a real one, and sizing UP trades already trusted beats adding new ones
 (shipped book at `exec_risk_pct=12.5` = 832x @ 64.2% DD vs 426x @ 64.9% for the loosened book).
 
+### Bar-mode costs — commission and slippage, charged at last (2026-08-01)
+
+Bar mode charging ZERO costs is the parity requirement (deviation 3 above). Bar mode being
+*incapable* of charging any is not, and the two were confused: the command-center lab collected
+`commission_per_side` and `slippage_ticks` on every run, stored them, displayed them, and
+`python_runner` read neither — so every lab run of this bot was frictionless while reporting a
+cost profile it had not applied. The tell was 52 of one run's 54 losers each losing **exactly
+10.00%** of prior equity.
+
+`MpcSosFadeStrategy(..., cost_profile=<AccountProfile>)` now passes a profile straight through to
+`Execution` in bar mode. **Omit it and every path is byte-identical to what it was**, which is
+what keeps `compare_strategy.py` a valid gate — and the harness never passes one, so parity is
+untouched by construction. `mpc_bleg` inherits the kwarg.
+
+Two units, both deliberate, and both would look plausible if wrong:
+
+- **Commission is per LOT per side** — a lot being 100 oz. Charged on the entry and on every
+  ladder rung, through the existing `_charge_commission`, which means it lands inside the trade's
+  own P&L and R rather than beside them.
+- **Slippage is charged on MARKET exits only** (`_charge_slippage`, `_exit_portion(market=...)`).
+  A stop is a market order and pays; the entry limit and the TP rungs are RESTING LIMITS, which
+  fill at their price or better or not at all, so charging them would price a cost that does not
+  exist. It is also skipped entirely in **tick mode**, where the fill price already contains the
+  real slippage off the tape — charging an estimate on top would book it twice.
+
+⚠ **Swap is NOT charged from the lab's fields.** The lab does not collect it, and this runner is
+designed to hold overnight (see deviation 1), so a real overnight cost exists and this path does
+not price it. Tick mode + `account_profile` remains the only way to get it.
+
 ### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
 
 **Read this before reporting "the exit price matches no stop and no target" again.** That symptom

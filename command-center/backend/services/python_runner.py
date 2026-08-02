@@ -40,6 +40,39 @@ _LOCK = threading.Lock()
 _TF_MINUTES = {"D1": 1440, "H4": 240, "H1": 60, "M30": 30, "M15": 15, "M5": 5, "M1": 1}
 
 
+def _cost_profile(spec: dict):
+    """The run's `AccountProfile`, or None when the run stated no costs.
+
+    **This is the seam that was missing until 2026-08-01.** The lab collected
+    `commission_per_side` and `slippage_ticks` at run creation, stored them on the row, showed
+    them on the page — and nothing ever read them, so every Python run was frictionless while
+    reporting a cost profile it had not applied. The tell in the data was 52 losing trades each
+    losing EXACTLY 10.00% of prior equity, which no cost model can produce.
+
+    Two facts the numbers are interpreted against, both stated rather than assumed:
+
+    * **`commission_per_side` is dollars per LOT per side**, a lot being `contract_size` units
+      (100 oz for gold — `AccountProfile`'s default, and the unit every broker quotes gold
+      commission in). It is NOT per unit: reading $3.00 as per-ounce would charge 100x.
+    * **`slippage_ticks` is charged on MARKET exits only** and only in bar mode. A resting limit
+      does not slip, and tick mode measures the real thing off the tape — see
+      `Execution._charge_slippage`.
+
+    Returns None when both are zero, which keeps a costless run byte-identical to every result
+    measured before this landed: no profile means no charge, exactly as before.
+    """
+    commission = float(spec.get("commission_per_side") or 0.0)
+    slippage = int(spec.get("slippage_ticks") or 0)
+    if commission <= 0 and slippage <= 0:
+        return None
+    from backtest.fills import AccountProfile
+    # swap=None deliberately: overnight financing is a broker fact the lab does not collect, and
+    # inventing one here would move every result under the banner of a commission change. Tick
+    # mode (`account_profile`) remains the way to price swap.
+    return AccountProfile(name="lab", commission_per_side_per_lot=commission,
+                          slippage_ticks=slippage, swap=None)
+
+
 def _timeframe_minutes(spec: dict) -> int:
     """The NT8 job_spec's bar_type/bar_value in minutes — the same mapping `_nt8_to_mt5_spec` uses."""
     bar_type = spec.get("bar_type", "Minute")
@@ -89,6 +122,7 @@ def _cancelled(job_id: str) -> bool:
 def _execute(job_id: str, spec: dict) -> None:
     from backtest.data.source import BarSource
     from backtest.output import build_results
+    from backtest.replay import build_strategy
 
     class_name = spec.get("strategy_class")
     found = _resolve(class_name)
@@ -109,7 +143,8 @@ def _execute(job_id: str, spec: dict) -> None:
 
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
     capital = float(spec.get("deposit") or 10_000)
-    strategy = entry["strategy"](config, initial_capital=capital)
+    strategy = build_strategy(entry["strategy"], config, initial_capital=capital,
+                              cost_profile=_cost_profile(spec))
 
     if getattr(config, "exec_secondary", False):
         # Secondary (1m sniper) re-entry is on → replay 15m PRIMARY + 1m SECONDARY on one clock
@@ -369,7 +404,8 @@ def _execute_opt(job_id: str, spec: dict) -> None:
     _set(job_id, pct=8, message=f"sweeping {len(combos)} combos…")
     rows = run_sweep(module_path=f"strategies.python.{pkg_name}", df=df, combos=combos,
                      initial_capital=capital, monorepo_root=str(_MONOREPO),
-                     progress=_progress, should_cancel=lambda: _cancelled(job_id))
+                     progress=_progress, should_cancel=lambda: _cancelled(job_id),
+                     cost_profile=_cost_profile(spec))
 
     if _cancelled(job_id):
         _set(job_id, status="failed_cancelled", pct=100, message="cancelled")

@@ -819,8 +819,25 @@ function RunRow({
       <td className="px-4 py-3"><WorthinessBadge worthiness={run.worthiness} /></td>
       <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{run.trade_count != null ? run.trade_count.toLocaleString() : '—'}</td>
       <td className={`px-4 py-3 font-mono tabular-nums ${pnlClass}`}>{fmtMoney(run.net_pnl)}</td>
+      {/* Dollars ALONE were the misleading part (fixed 2026-08-01): $1.7M of drawdown listed
+          beside $14M of profit reads as ~12%, where the honest peak-relative figure is 56%. The
+          percent leads because it is the comparable number across runs of different sizes; the
+          dollars stay beneath it because that is what a prop-firm limit is written in. */}
       <td className="px-4 py-3 font-mono tabular-nums text-neg-text">
-        {run.max_drawdown != null ? `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}` : '—'}
+        {run.max_drawdown != null ? (
+          <>
+            <div>
+              {run.max_drawdown_pct != null && run.max_drawdown_pct >= 0
+                ? `${run.max_drawdown_pct.toFixed(1)}%`
+                : `$${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+            </div>
+            {run.max_drawdown_pct != null && run.max_drawdown_pct >= 0 && (
+              <div className="text-[10px] text-text-tertiary leading-tight">
+                ${run.max_drawdown.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+              </div>
+            )}
+          </>
+        ) : '—'}
       </td>
       <td className="px-4 py-3 font-mono tabular-nums">{fmtPct(run.win_rate)}</td>
       <td className="px-4 py-3"><ChallengePills verdicts={run.verdicts} /></td>

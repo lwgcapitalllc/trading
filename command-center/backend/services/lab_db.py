@@ -72,6 +72,48 @@ def _restamp_profit_concentration(conn: sqlite3.Connection) -> None:
         )
 
 
+def _backfill_run_shape_metrics(conn: sqlite3.Connection) -> None:
+    """One-time backfill of the three metrics added 2026-08-01.
+
+    They are all derivable from a completed run's stored `equity_curve.json`, so history can carry
+    them and a run does not have to be re-run to be compared honestly. Without this the Runs list
+    would show a drawdown percent for new runs and a blank for every existing one — which reads as
+    "this run had no drawdown", the exact misreading the column was added to prevent.
+
+    `max_drawdown_pct IS NULL` is the marker, and every row is stamped on the way through even when
+    the curve is missing or yields nothing: a row left NULL would re-read a missing file on every
+    startup forever (the lesson from `_restamp_profit_concentration`). -1.0 is that "measured, no
+    answer" sentinel — readers treat any negative as absent, and a real drawdown percent is >= 0.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT run_id, equity_curve_path FROM backtest_runs "
+            "WHERE status = 'complete' AND max_drawdown_pct IS NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return                                    # columns not added yet (fresh DB, first pass)
+    if not rows:
+        return
+
+    from services.metrics import max_drawdown_pct, scratch_count, trade_concentration_pct
+
+    for row in rows:
+        equity: list[dict] = []
+        if row["equity_curve_path"]:
+            try:
+                data = json.loads(Path(row["equity_curve_path"]).read_text())
+                equity = data if isinstance(data, list) else []
+            except (OSError, ValueError):
+                equity = []
+        dd = max_drawdown_pct(equity)
+        conn.execute(
+            "UPDATE backtest_runs SET max_drawdown_pct=?, scratch_count=?, "
+            "trade_concentration_pct=? WHERE run_id=?",
+            (dd if dd is not None else -1.0, scratch_count(equity),
+             trade_concentration_pct(equity), row["run_id"]),
+        )
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -464,6 +506,11 @@ def init_db() -> None:
             # ...and how it was weighted ('return' | 'dollars'). Doubles as the marker the
             # one-time re-stamp below reads: NULL = written before the basis existed.
             "ALTER TABLE backtest_runs ADD COLUMN profit_concentration_basis TEXT",
+            # 2026-08-01 — the three companions to numbers that were true and misread.
+            # See services/metrics.py for what each one exists to stop a reader concluding.
+            "ALTER TABLE backtest_runs ADD COLUMN max_drawdown_pct REAL",
+            "ALTER TABLE backtest_runs ADD COLUMN scratch_count INTEGER",
+            "ALTER TABLE backtest_runs ADD COLUMN trade_concentration_pct REAL",
             # Tradeify corrections — current $50k target is $3,000 (old accounts grandfathered at
             # $2,500); and the $50k/$100k eval trailing MLL locks at start+$100.
             "UPDATE rulesets SET profit_target = 3000 WHERE id = 'tradeify_50k_eval'",
@@ -547,6 +594,7 @@ def init_db() -> None:
         """)
 
         _restamp_profit_concentration(conn)
+        _backfill_run_shape_metrics(conn)
 
         # Pass 1 — backfill foundational config for all existing rulesets where null.
         # Personal-specific overrides must run BEFORE the blanket defaults so the
@@ -1617,6 +1665,7 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
                 worst_day_pnl=?, worst_losing_streak=?,
                 platform_sharpe=?, sharpe_low_sample=?,
                 profit_concentration_pct=?, profit_concentration_basis=?,
+                max_drawdown_pct=?, scratch_count=?, trade_concentration_pct=?,
                 equity_curve_path=?, trades_path=?, daily_pnl_path=?
             WHERE run_id=?
         """, (
@@ -1629,6 +1678,8 @@ def update_run_complete(run_id: str, kpis: dict, file_paths: dict) -> None:
             kpis.get("platform_sharpe"),
             int(kpis["sharpe_low_sample"]) if kpis.get("sharpe_low_sample") is not None else None,
             kpis.get("profit_concentration_pct"), kpis.get("profit_concentration_basis"),
+            kpis.get("max_drawdown_pct"), kpis.get("scratch_count"),
+            kpis.get("trade_concentration_pct"),
             file_paths.get("equity_curve"), file_paths.get("trades"),
             file_paths.get("daily_pnl"), run_id,
         ))

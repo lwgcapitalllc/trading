@@ -252,6 +252,151 @@ def profit_concentration_pct(
     return round((max(quarters) / gross) * 100, 2), basis
 
 
+# ── the three numbers that were true and misread (added 2026-08-01) ──────────────
+#
+# Audit of run f866873aa862 found no arithmetic wrong anywhere on the page. What was wrong was
+# what three headline numbers let a reader CONCLUDE, and none of the three is fixable by relabelling
+# — each needed a companion number that had never been computed.
+#
+#   max drawdown  stored and listed in DOLLARS only. $1.73M against $14.4M of profit reads as
+#                 ~12%; against the running peak it is 55.9%. The detail page had the percentage
+#                 (client-side, off the equity curve); the LIST page, where runs are compared, did
+#                 not, and a list is exactly where a wrong order of magnitude does its damage.
+#   win rate      67.3% — arithmetically right. 45 of the 111 "winners" made under a sixth of a
+#                 typical loss, all exiting at the breakeven-stop buffer. The honest split is
+#                 40% won / 27% scratched / 33% lost.
+#   concentration 34.5%, which is the largest QUARTER's share — a time question. The reader hears
+#                 the trade question, and its answer on that run was that 5 of 165 trades made
+#                 47% of the gross.
+#
+# All three take the equity curve, and all three weight by RETURN when the run compounded, for the
+# same reason `profit_concentration_pct` does: dollars on a compounding account measure the
+# compounding. Each returns None rather than a fabricated value when there is nothing to measure.
+
+
+def _trade_weights(equity_curve: Optional[list[dict]]) -> tuple[list[float], str]:
+    """Each trade's contribution, in the basis that says something about the EDGE.
+
+    Return on the equity it was taken with when the curve carries a real account base (a
+    compounding run), else raw dollars (a unit-size cum-P&L-from-zero curve, where the dollars
+    already are comparable). Identical rule to `profit_concentration_pct` — see its docstring for
+    the measurement that forced it.
+    """
+    if not equity_curve:
+        return [], CONCENTRATION_DOLLARS
+    if _equity_base(equity_curve) <= 0:
+        return ([float(e.get("profit", 0.0) or 0.0) for e in equity_curve],
+                CONCENTRATION_DOLLARS)
+    out = []
+    for e in equity_curve:
+        profit = float(e.get("profit", 0.0) or 0.0)
+        before = float(e.get("equity", 0.0) or 0.0) - profit
+        if before > 0:
+            out.append(profit / before)
+    return out, CONCENTRATION_RETURN
+
+
+def max_drawdown_pct(equity_curve: Optional[list[dict]]) -> Optional[float]:
+    """The worst drawdown as a percent of the equity it fell FROM (the running peak).
+
+    **Not the same episode as the deepest DOLLAR drawdown, and the two must never be conflated.**
+    On the shipped mpc_sos_fade run the biggest dollar drop is $109,665 from a $330,303 peak
+    (33.2%), while the worst percentage drop is 54.9% — $16,748 → $7,551, only $9,198. Dividing
+    the dollar figure by a static account size is what once printed "Max DD 1096.7%" on this
+    strategy; dividing it by the FINAL equity is what makes 55.9% look like 12% on the runs list.
+    A percent of a growing account needs a growing denominator.
+
+    Mirrors the frontend's `maxDrawdownPctOf` exactly — that page computes it live off the curve;
+    this one exists so the LIST can show it without shipping every run's curve to the browser.
+    """
+    if not equity_curve:
+        return None
+    peak = float("-inf")
+    worst: Optional[float] = None
+    base = _equity_base(equity_curve)
+    series = ([base] if base > 0 else []) + \
+             [float(e.get("equity", 0.0) or 0.0) for e in equity_curve]
+    for value in series:
+        peak = max(peak, value)
+        if peak <= 0:                      # a non-positive peak has no meaningful percent
+            continue
+        pct = (peak - value) / peak
+        if worst is None or pct > worst:
+            worst = pct
+    return None if worst is None else round(worst * 100, 2)
+
+
+# A trade this far below the run's own typical loss neither won nor lost meaningfully.
+#
+# 0.15 was picked off the measured shape of run f866873aa862 and then found to be the number
+# `mpc_strategy.pine` already uses for the same idea — `exec_scratch_r = 0.15`, "Scratch band (R)",
+# which grades a closed trade WIN / LOSS / SCRATCH on its stats table. The agreement is not a
+# coincidence: for a fixed-risk strategy the median full loss IS 1R, so "0.15 of the median loss"
+# and "0.15R" are the same bar. That Pine input is a stats-table setting and never reaches the
+# lab, and this metric must work for strategies that have no such concept, so the threshold stays
+# derived here rather than read off a config — but if it is ever made configurable, that field is
+# the one it should follow.
+_SCRATCH_FRACTION = 0.15
+
+
+def scratch_count(equity_curve: Optional[list[dict]]) -> Optional[int]:
+    """How many trades were effectively FLAT — the number the win rate hides.
+
+    A win rate counts a trade that made a sixth of a losing trade as a full win. On run
+    f866873aa862 that is 45 of the 111 "winners", every one of them exiting at exactly the
+    breakeven-stop buffer: the stop doing its job, correctly, and not an edge. 67.3% won becomes
+    40% won / 27% scratched / 33% lost, which is the same data saying something different.
+
+    **The yardstick is the run's own median full loss, not a typed-in dollar figure.** For a
+    fixed-risk strategy that median IS 1R (on this run 52 of 54 losers land within a cent of it),
+    and for any other strategy it is still "what an ordinary adverse outcome costs here" — so the
+    threshold self-scales across strategies, instruments and account sizes with nothing to tune.
+    The median rather than the mean, because one outsized loss must not move the bar.
+
+    Returns None when the run has no losing trade to measure against: with no scale there is no
+    honest answer, and 0 would read as "no scratches" — the opposite of "cannot tell".
+    """
+    weights, _ = _trade_weights(equity_curve)
+    losses = [abs(w) for w in weights if w < 0]
+    if not losses:
+        return None
+    scale = float(np.median(losses))
+    if scale <= 0:
+        return None
+    return sum(1 for w in weights if abs(w) < scale * _SCRATCH_FRACTION)
+
+
+# How many trades "a handful" is. Small enough that hitting the threshold is a real finding.
+TRADE_CONCENTRATION_TOP_N = 5
+
+
+def trade_concentration_pct(
+    equity_curve: Optional[list[dict]],
+    top_n: int = TRADE_CONCENTRATION_TOP_N,
+) -> Optional[float]:
+    """Share of GROSS PROFIT made by the `top_n` biggest winners.
+
+    The companion to `profit_concentration_pct`, and it answers the question that metric's NAME
+    suggests but its definition does not: that one splits the span into quarters and asks whether
+    the edge showed up in one PERIOD, which is a curve-fit-over-time test. This asks whether it
+    came from a handful of TRADES. The two can disagree completely and both be right — run
+    f866873aa862 reads 34.5% by quarter (spread evenly across 6.6 years) while 5 of its 165 trades
+    made 47% of everything won.
+
+    Neither number is a verdict on its own. A runner-based strategy is SUPPOSED to be fat-tailed,
+    and this repo's stated design intent is few high-quality setups — so read a high value as
+    "the edge rests on the tail, size the risk accordingly", not as a defect.
+
+    None when there is no positive profit to concentrate.
+    """
+    weights, _ = _trade_weights(equity_curve)
+    wins = sorted((w for w in weights if w > 0), reverse=True)
+    gross = sum(wins)
+    if gross <= 0:
+        return None
+    return round((sum(wins[:top_n]) / gross) * 100, 2)
+
+
 # Bucket for a day or trade that can't be attributed to a classified regime.
 _REGIME_UNKNOWN = "UNKNOWN"
 

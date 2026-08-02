@@ -105,9 +105,9 @@ class Trade:
     r: float
     entry_ms: int = 0
     exit_ms: int = 0
-    # Commission + swap charged to this trade. `pnl_usd` is already NET of it; this field
-    # exists so a run can report what the costs actually were. Always 0.0 in bar mode, which
-    # charges nothing — an honest zero, not a claim that trading was free.
+    # Commission + swap + slippage charged to this trade. `pnl_usd` is already NET of it; this
+    # field exists so a run can report what the costs actually were. 0.0 when no cost profile was
+    # supplied — an honest zero meaning "nothing was priced", not a claim that trading was free.
     costs_usd: float = 0.0
     exit_price: float = 0.0
     stop_distance: float = 0.0
@@ -399,7 +399,7 @@ class Execution:
         self._resolver = resolver
         self._profile = profile
         self.bar_ms = bar_ms                # bar duration; only tick mode reads it
-        self._costs_usd = 0.0               # this trade's commission + swap so far
+        self._costs_usd = 0.0               # this trade's commission + swap + slippage so far
         self._last_roll_ms: Optional[int] = None   # last rollover already charged
 
         # position state
@@ -1139,7 +1139,7 @@ class Execution:
             if fill.key == "stop":
                 self._close_at(sig, fill.price, "stop", dec)
                 return
-            self._exit_portion(oid, fill.price, qty, sig, dec)
+            self._exit_portion(oid, fill.price, qty, sig, dec, market=False)
             if self._pos_dir == 0:
                 return
 
@@ -1171,7 +1171,7 @@ class Execution:
                 take_target = hit_target
             level = target if take_target else stop
             price = self._fill_price(level, sig.open, take_target)
-            self._exit_portion(oid, price, qty, sig, dec)
+            self._exit_portion(oid, price, qty, sig, dec, market=not take_target)
             if self._pos_dir == 0:
                 return
 
@@ -1212,12 +1212,17 @@ class Execution:
             gapped = open_ <= level if d > 0 else open_ >= level
         return open_ if gapped else level
 
-    def _exit_portion(self, oid, price, qty, sig, dec) -> None:
+    def _exit_portion(self, oid, price, qty, sig, dec, *, market: bool = True) -> None:
+        # `market` says whether this fill was a MARKET order (a stop, or a force-close) rather
+        # than a resting limit (a TP rung). Only the market ones can slip — see _charge_slippage.
+        # It defaults True because every caller that does not pass it is a force-close.
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
         self._equity_realized += pnl
         self._account.book_pnl(self._leg, pnl)   # realize onto the shared balance as it happens
         self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
+        if market:
+            self._charge_slippage(qty)
         self._filled_qty += qty
         self._exit_notional += price * qty
         self._exit_qty += qty
@@ -1284,6 +1289,29 @@ class Execution:
         if self._profile is None:
             return
         self._charge(-self._profile.commission(qty))
+
+    def _charge_slippage(self, qty: float) -> None:
+        """Charge the profile's per-fill slippage ESTIMATE on a market exit.
+
+        Three gates, each of which is the honest answer to a different question:
+
+        * **No profile ⇒ nothing.** Bar mode with no stated costs, which is what
+          `compare_strategy.py` runs and what every historical result was measured at.
+        * **Tick mode ⇒ nothing.** `TickPathResolver` fills at the next price that actually
+          existed, so the slippage is already IN the fill price. Charging an estimate on top
+          would book it twice.
+        * **Market exits only.** The caller says whether this fill was a market order. A resting
+          limit — the entry, and every TP rung — fills at its price or better or not at all, so
+          it does not slip against us (`backtest/fills.py`, module docstring). Only a stop, and
+          the force-closes that behave like one, pay.
+        """
+        if self._profile is None or self._resolver is not None:
+            return
+        ticks = getattr(self._profile, "slippage_ticks", 0)
+        if not ticks:
+            return
+        cfg = self._cfg
+        self._charge(-(ticks * cfg.mintick * abs(qty) * cfg.point_value))
 
     def _charge_swap(self, sig) -> None:
         """Charge financing for every rollover this bar crosses while a position is open.

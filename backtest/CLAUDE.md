@@ -36,10 +36,23 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields
   (`i_confirmed_*` / `ifib_seed_*`) so the Structure fib does not adopt an internal-swing anchor. The
   mpc_sos_fade bot pins it False; the engine parity harnesses keep it True (they validated internal ON).
-- **A2 — Fill & cost model** *(done 2026-07-16)*. `backtest/fills.py` + the tick seam in
-  `mpc_sos_fade/execution.py`. **Two fill models, and the distinction is load-bearing:**
-  `fill_model="bar"` (default) is the strategy's own bar-level intrabar-path GUESS with zero costs —
-  it matches what the Pine assumes, so it is the ONLY model `compare_strategy.py` may diff.
+- **A2 — Fill & cost model** *(done 2026-07-16; bar-mode costs added 2026-08-01)*.
+  `backtest/fills.py` + the tick seam in `mpc_sos_fade/execution.py`. **Two fill models, and the
+  distinction is load-bearing:** `fill_model="bar"` (default) is the strategy's own bar-level
+  intrabar-path GUESS, and it matches what the Pine assumes, so it is the ONLY model
+  `compare_strategy.py` may diff. **Bar mode charges zero costs BY DEFAULT — which is not the same
+  as charging none by construction, and until 2026-08-01 the two were confused.** A caller may
+  now hand `MpcSosFadeStrategy(..., cost_profile=<AccountProfile>)` and have commission and a
+  per-fill slippage estimate charged into each trade's own P&L; omit it and the path is
+  byte-identical to what it has always been, which is what keeps the parity gate valid. Build the
+  strategy through `backtest.replay.build_strategy` rather than calling the class directly — it
+  REFUSES to run a strategy that cannot accept a profile when the caller stated costs, instead of
+  silently dropping them (that silent drop is exactly the lab bug this closed: the command center
+  collected `commission_per_side` / `slippage_ticks` for months, stored them, displayed them, and
+  charged neither). Two units to get right, both stated in `AccountProfile`: commission is per
+  **LOT** per side (a lot is `contract_size` units — 100 oz for gold), and `slippage_ticks` is a
+  **bar-mode-only** estimate charged on **market exits only**, because a resting limit fills at
+  its price or better or not at all and tick mode measures the real thing off the tape.
   `fill_model="tick"` resolves every level against real bid/ask ticks (long enters on the ask, exits
   on the bid), measures stop slippage off the actual next tick rather than assuming a constant, and
   charges commission + swap into the trade's own P&L. **Tick mode is expected to DISAGREE with the

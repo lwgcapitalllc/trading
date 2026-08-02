@@ -61,50 +61,55 @@ function fmtHold(min: number | null | undefined): string {
   return `${(min / 1440).toFixed(1)} d`
 }
 
-function dollarShort(n: number | null | undefined, signed = false): string {
-  if (n == null) return '—'
-  const abs = Math.abs(n)
-  const sign = n < 0 ? '-' : signed ? '+' : ''
-  if (abs >= 1000) return `${sign}$${(abs / 1000).toFixed(1)}k`
-  return `${sign}$${abs.toFixed(0)}`
-}
-
-// Renders a dollar amount at full precision when it fits its cell, abbreviating to $11.5k only when
-// the full string would overflow (the big KPI numbers crop in a narrow card). It never rounds harder
-// than one decimal — $12k for $11,525 reads as a different number. A hidden copy of each form is
-// measured against the cell, so it switches back to full whenever space returns — e.g. when the grid
-// expands and the value font shrinks. Observes the cell and both copies.
-// FIT_SLACK keeps the last glyph off the card's padding edge instead of touching the border. The
-// headline money card also gets a wider grid column (KPI_COLS) so the exact figure fits at 34px.
+// Renders a dollar amount ALWAYS at full precision, with thousand separators. When the string
+// genuinely cannot fit it shrinks the TYPE, it does not abbreviate — `$14.4M` and `$846.3k` are
+// harder to read than the number they replace, and reading them is the whole job of a headline
+// figure (Aaron, 2026-08-01). `dollarShort` is deleted; nothing may reintroduce a `k`/`M` form here.
+//
+// ⚠ **It must measure against the hero ROW, not against itself, and that was the actual bug.**
+// This span is a content-sized flex item (`flex: 0 1 auto`), so its own width IS the text's width —
+// which made `need > avail - FIT_SLACK` true by exactly the slack, on every value, forever. That is
+// why `+$14,387,475` rendered as `$14.4M` in a card with room for it twice over. `CardHero` marks
+// the row `data-fit-box`; measuring anything content-sized reintroduces the bug silently, because
+// the output still looks like a deliberate abbreviation. The repo already recorded this trap for
+// PanelRow values ("do not use FitMoney here") — it applied to the hero too and was missed.
 const FIT_SLACK = 2
+// Below this the headline would be smaller than the rows under it, which reads as an error rather
+// than as a big number. At that point the card is too narrow for this metric at all.
+const FIT_MIN_SCALE = 0.6
 
 function FitMoney({ n, signed = false }: { n: number | null | undefined; signed?: boolean }) {
   const wrapRef = useRef<HTMLSpanElement>(null)
-  const fullRef = useRef<HTMLSpanElement>(null)
-  const abbrRef = useRef<HTMLSpanElement>(null)
-  const [short, setShort] = useState(false)
+  const ghostRef = useRef<HTMLSpanElement>(null)
+  // {scale, width} together: a CSS transform leaves the layout box at its natural size, so without
+  // pinning the width the unit label beside it ("net") would sit where the UNSCALED text ended.
+  const [fit, setFit] = useState<{ scale: number; width: number } | null>(null)
   const full = dollar(n, signed)
-  const abbr = dollarShort(n, signed)
   useEffect(() => {
-    const wrap = wrapRef.current, fullEl = fullRef.current
-    if (!wrap || !fullEl) return
+    const wrap = wrapRef.current, ghost = ghostRef.current
+    if (!wrap || !ghost) return
+    const box = (wrap.closest('[data-fit-box]') as HTMLElement | null) ?? wrap
     const measure = () => {
-      const cell = wrap.getBoundingClientRect().width - FIT_SLACK
-      setShort(fullEl.getBoundingClientRect().width > cell)
+      const avail = box.getBoundingClientRect().width - FIT_SLACK
+      const need = ghost.getBoundingClientRect().width      // always the UNSCALED width
+      if (!(need > 0) || !(avail > 0) || need <= avail) return setFit(null)
+      const scale = Math.max(FIT_MIN_SCALE, avail / need)
+      setFit({ scale, width: need * scale })
     }
     measure()
     const ro = new ResizeObserver(measure)
-    ro.observe(wrap)
-    ro.observe(fullEl)
-    if (abbrRef.current) ro.observe(abbrRef.current)
+    ro.observe(box)
+    ro.observe(ghost)
     return () => ro.disconnect()
-  }, [full, abbr])
+  }, [full])
   if (n == null) return <span>—</span>
   return (
-    <span ref={wrapRef} className="block relative whitespace-nowrap">
-      <span ref={fullRef} aria-hidden className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{full}</span>
-      <span ref={abbrRef} aria-hidden className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{abbr}</span>
-      <span title={short ? full : undefined}>{short ? abbr : full}</span>
+    <span ref={wrapRef} className="inline-block relative whitespace-nowrap"
+          style={fit ? { width: `${fit.width}px` } : undefined}>
+      <span ref={ghostRef} aria-hidden
+            className="invisible absolute left-0 top-0 whitespace-nowrap pointer-events-none">{full}</span>
+      <span className="inline-block origin-left"
+            style={fit ? { transform: `scale(${fit.scale})` } : undefined}>{full}</span>
     </span>
   )
 }
@@ -455,6 +460,75 @@ function computeProfitConcentration(daily: DailyPnlPoint[], equity: EquityPoint[
   return (Math.max(...q) / gross) * 100
 }
 
+// ── The two trade-shape metrics (added 2026-08-01) ────────────────────────────
+//
+// An audit of run f866873aa862 found no arithmetic wrong on this page. What was wrong was what
+// two headline numbers let a reader CONCLUDE, and neither is fixable by relabelling:
+//
+//   Win rate 67.3% is true, and 45 of the 111 "winners" made under a sixth of a typical loss —
+//   every one of them exiting at the breakeven-stop buffer, which is the stop doing its job
+//   correctly and is not an edge. The honest split is 40% won / 27% scratched / 33% lost.
+//
+//   Profit concentration 34.5% is the largest QUARTER's share — a question about TIME. The
+//   reader hears the question about TRADES, and its answer on that run was 47%: five trades of
+//   165 made nearly half of everything won. The two can disagree completely and both be right.
+//
+// Both weight by RETURN when the run compounded, for the same reason `computeProfitConcentration`
+// does. Both are computed HERE rather than read off the run row, matching that function: the
+// stored value is whatever basis was current when a run finished, and the news filter needs the
+// numbers recomputed over a subset anyway.
+function tradeWeights(equity: EquityPoint[]): number[] {
+  if (equity.length === 0) return []
+  if (equityBase(equity) <= 0) return equity.map(e => e.profit ?? 0)
+  return equity.flatMap(e => {
+    const before = (e.equity ?? 0) - (e.profit ?? 0)
+    return before > 0 ? [(e.profit ?? 0) / before] : []
+  })
+}
+
+// A trade this far below the run's own typical loss neither won nor lost meaningfully.
+const SCRATCH_FRACTION = 0.15
+
+function median(xs: number[]): number {
+  const a = [...xs].sort((x, y) => x - y)
+  const mid = Math.floor(a.length / 2)
+  return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2
+}
+
+// How many trades were effectively FLAT. The yardstick is the run's own median full loss, not a
+// typed-in dollar figure: for a fixed-risk strategy that median IS 1R, and for any other it is
+// still "what an ordinary adverse outcome costs here" — so it self-scales across strategies,
+// instruments and account sizes with nothing to tune. Median rather than mean so one outsized
+// loss cannot move the bar. `null` (not 0) when there are no losers to measure against: with no
+// scale there is no honest answer, and 0 would read as "no scratches" — the opposite of
+// "cannot tell". Mirrors services/metrics.scratch_count.
+function computeScratchCount(equity: EquityPoint[]): number | null {
+  const w = tradeWeights(equity)
+  const losses = w.filter(x => x < 0).map(Math.abs)
+  if (losses.length === 0) return null
+  const scale = median(losses)
+  if (!(scale > 0)) return null
+  return w.filter(x => Math.abs(x) < scale * SCRATCH_FRACTION).length
+}
+
+const TRADE_CONCENTRATION_TOP_N = 5
+
+// Share of GROSS PROFIT made by the biggest few winners. Mirrors
+// services/metrics.trade_concentration_pct.
+function computeTradeConcentration(equity: EquityPoint[]): number | null {
+  const wins = tradeWeights(equity).filter(x => x > 0).sort((a, b) => b - a)
+  const gross = wins.reduce((t, x) => t + x, 0)
+  if (!(gross > 0)) return null
+  return (wins.slice(0, TRADE_CONCENTRATION_TOP_N).reduce((t, x) => t + x, 0) / gross) * 100
+}
+
+function tradeConcentrationLabel(c: number | null): string {
+  if (c == null) return `top ${TRADE_CONCENTRATION_TOP_N} winners ÷ gross profit`
+  if (c >= 50) return 'the edge rests on a handful of trades'
+  if (c >= 30) return 'a few trades carry a lot of it'
+  return 'spread across many trades'
+}
+
 function concentrationCls(c: number | null): string {
   if (c == null) return 'text-text-tertiary'
   return c >= 60 ? 'text-warn-text' : 'text-text-primary'
@@ -592,6 +666,10 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
   // old dollar figure and the new one depending on a run's age. Same formula both sides
   // (services/metrics.profit_concentration_pct), so a re-stamped row agrees with this.
   const profitConc = computeProfitConcentration(run.daily_pnl ?? [], equity)
+  // The two trade-shape companions — see their definitions above for what each stops a reader
+  // concluding. Same client-side-recompute rule as profitConc, and for the same reasons.
+  const scratches = computeScratchCount(equity)
+  const tradeConc = computeTradeConcentration(equity)
   // Max drawdown as a % of the equity it fell FROM (peak-relative), which is the drawdown that
   // would actually have ended the account. NOT the dollar drawdown over a static account_size:
   // that reported 1096.7% on a run whose $109,665 drop came off a $330,303 peak, because the
@@ -618,6 +696,7 @@ function deriveKpis(run: Run, fallback: FallbackMetrics, equity: EquityPoint[], 
     netPnl: run.net_pnl, winRate: run.win_rate, avgDur: run.avg_trade_duration_min,
     sharpe, worstDay, worstStreak, recoveryFactor, calmar, expectancyUsd, zScore,
     pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak, rrRatio,
+    scratches, tradeConc,
   }
 }
 type DerivedKpis = ReturnType<typeof deriveKpis>
@@ -794,7 +873,7 @@ function CardHero({ value, unit, cls, tip }: {
   value: React.ReactNode; unit: React.ReactNode; cls: string; tip: string
 }) {
   return (
-    <div className="flex items-baseline gap-2.5 flex-wrap mt-2 mb-0.5">
+    <div data-fit-box className="flex items-baseline gap-2.5 flex-wrap mt-2 mb-0.5">
       <span className={`text-[34px] font-bold font-mono leading-none tracking-[-0.8px] tabular-nums ${cls}`}>{value}</span>
       <span className="text-[12px] text-text-tertiary">{unit}<InfoTip text={tip} /></span>
     </div>
@@ -857,16 +936,29 @@ export function PerformancePanel({
   const dc = compare ? deriveKpis(compare.run, compare.fallback, compare.equity, balance) : null
 
   const { sharpe, worstDay, worstStreak, calmar, expectancyUsd, zScore,
-          pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak } = d
+          pfValue, profitConc, maxDdPct, ddDollar, ddAtWorstPct, ddPeak,
+          scratches, tradeConc } = d
   const sharpeEst = run.sharpe == null && fallback.sharpe != null
   const underwater = computeTimeUnderwater(run.daily_pnl ?? [])
 
-  // The headline is stated in the units this repo already uses for it — CLAUDE.md describes
-  // this strategy as "832x at 64.2% max drawdown", not as a dollar figure. Falls back to net
-  // P&L when there is no balance to multiply.
+  // The headline is the DOLLARS (Aaron's call, 2026-08-01 — "1439.7x on capital doesn't mean
+  // anything to me"). The multiple moved to a row beneath it. A multiple is only meaningful once
+  // you know what it multiplied, and the starting balance appeared NOWHERE on this page, so as a
+  // hero it was a number with no referent. Now the dollars answer "what came out of it" directly
+  // and the multiple sits next to the balance it is a multiple OF.
+  //
+  // ⚠ Keep the caveat on the multiple's tooltip: at a fixed % risk per trade the dollar figure is
+  // the number most distorted by compounding — see the Costs row below, where $50k of charged
+  // slippage costs $1.6M of net purely because early dollars stop compounding.
   const multiple = (balance != null && balance > 0 && run.net_pnl != null)
     ? (balance + run.net_pnl) / balance
     : null
+  // The balance the curve actually STARTED from, taken off the curve itself rather than the
+  // ruleset — a python run opens on its own deposit, and that is what the multiple divides by.
+  const startBal = equity.length > 0 ? (equity[0].equity ?? 0) - (equity[0].profit ?? 0) : null
+  // What friction actually cost. Only meaningful since runs can be priced (2026-08-01); a run
+  // that stated no costs sums to 0, which is "nothing was priced", not "trading was free".
+  const costsTotal = equity.reduce((t, e) => t + (e.costs_usd ?? 0), 0)
 
   const fmtMoney = (x: number) => dollar(x, true)
   const fmtRatio = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(2)}`
@@ -884,11 +976,12 @@ export function PerformancePanel({
     ? run.avg_win / Math.abs(run.avg_loss) : null
 
   const madeRows: PanelRow[] = [
-    { key: 'net', label: 'Net', value: dollar(run.net_pnl, true),
-      // Exception: a NEGATIVE net inside a card labelled "Made" is the unexpected sign.
-      cls: run.net_pnl != null && run.net_pnl < 0 ? 'text-neg-text' : undefined,
-      tip: 'Total profit and loss in dollars across every closed trade, after the run\'s commission and slippage settings.',
-      cmp: k => k.netPnl, fmt: fmtMoney },
+    // Net is the HERO now, so it is not repeated here. The multiple takes its place — the same
+    // number the hero used to be, demoted because it is only meaningful beside the balance it
+    // multiplies, which is now the caption directly above this list.
+    { key: 'mult', label: 'Return on capital',
+      value: multiple != null ? `${multiple.toFixed(1)}x` : '—',
+      tip: `Final balance ÷ starting balance${startBal != null && startBal > 0 ? ` — what ${dollar(startBal)} became` : ''}. Moves with the Account balance slider, since it is measured against whatever capital you tell it. ⚠ At a fixed % risk per trade this is the number most distorted by compounding: a dollar not earned early is a dollar that never compounds, so a small cost early costs many times itself by the end. Compare strategies in R, not here.` },
     { key: 'per', label: 'Per trade', value: expectancyUsd != null ? dollar(expectancyUsd, true) : '—',
       cls: expectancyUsd != null && expectancyUsd < 0 ? 'text-neg-text' : undefined,
       tip: 'Expectancy: net P&L ÷ trade count — what one average trade was worth. Dollars only; expectancy in R needs the risk taken per trade, which stored trades do not carry.',
@@ -898,13 +991,36 @@ export function PerformancePanel({
         run.avg_win != null && run.avg_loss != null ? `: ${dollar(run.avg_win, true)} per win against ${dollar(run.avg_loss)} per loss` : ''}.`,
       cmp: k => k.rrRatio, fmt: fmtRatio, goodWhen: 'higher' },
     { key: 'wr', label: 'Win rate', value: pct(run.win_rate),
-      tip: `Share of trades that closed profitable${wins != null && losses != null ? ` — ${wins} wins, ${losses} losses` : ''}. A low win rate is not a fault on its own; read it against the average win/loss above. This run: ${winRateLabel(run.win_rate)}.`,
+      tip: `Share of trades that closed profitable${wins != null && losses != null ? ` — ${wins} wins, ${losses} losses` : ''}. A low win rate is not a fault on its own; read it against the average win/loss above.${scratches != null && scratches > 0 ? ` Read it against the scratch count below too — ${scratches} of these barely moved.` : ''} This run: ${winRateLabel(run.win_rate)}.`,
       cmp: k => k.winRate, fmt: fmtPct01 },
+    // The row the win rate needed. A trade that made a sixth of a losing trade counts as a full
+    // win above; on the shipped run that is 45 of 111 "winners", every one exiting at the
+    // breakeven-stop buffer. Shown as the honest three-way split so the reader gets the shape,
+    // not just a count. Exception colour past a quarter of the book — at that point the headline
+    // win rate is describing something other than winning.
+    { key: 'scr', label: 'Won / scratched / lost',
+      value: (scratches != null && wins != null && losses != null && run.trade_count)
+        ? `${wins - scratches} / ${scratches} / ${losses}` : '—',
+      cls: (scratches != null && run.trade_count && scratches / run.trade_count >= 0.25)
+        ? 'text-warn-text' : undefined,
+      tip: `The win rate above counts any trade that closed a cent up as a win. A SCRATCH is one whose result came to less than ${Math.round(SCRATCH_FRACTION * 100)}% of this run's median losing trade — usually a stop moved to breakeven doing exactly its job, which is real risk control and is not an edge.${
+        scratches != null && wins != null && run.trade_count
+          ? ` Here ${pct((wins - scratches) / run.trade_count)} genuinely won, ${pct(scratches / run.trade_count)} scratched.`
+          : ' No losing trade in this run, so there is no scale to measure a scratch against.'}` },
     { key: 'pf', label: 'Profit factor', value: kpiNum(pfValue),
       // Exception: below 1.0 the strategy loses money — the one PF value that must shout.
       cls: pfValue != null && isFinite(pfValue) && pfValue < 1 ? 'text-neg-text' : undefined,
       tip: `Gross wins ÷ gross losses. Above 2.0 is strong, 1.5 good, below 1.0 loses money. This run: ${pfLabel(pfValue)}.`,
       cmp: k => k.pfValue, fmt: fmtRatio },
+    // Costs were charged but INVISIBLE until 2026-08-01: the run row carried the settings and
+    // nothing reported what they came to. The row only appears on a priced run — printing
+    // "$0" on every unpriced one would read as "trading was free" rather than "nothing was
+    // priced". The tooltip carries the compounding warning because the raw charge is small and
+    // its effect on the net is not.
+    ...(costsTotal !== 0 ? [{
+      key: 'costs', label: 'Costs charged', value: dollar(costsTotal),
+      tip: `Commission, slippage and swap actually charged across every fill, already deducted from Net above. ⚠ Read this against the RETURN, not the net dollars: at a fixed % risk the account compounds, so a dollar of cost paid early also costs every dollar it would have grown into. On this strategy ${dollar(Math.abs(costsTotal))} of charges moves the final balance by many times that.`,
+    } as PanelRow] : []),
   ]
 
   const riskedRows: PanelRow[] = [
@@ -937,6 +1053,16 @@ export function PerformancePanel({
       cls: exceptionCls(concentrationCls(profitConc)),
       tip: `Share of gross profit earned in the single best quarter of the test span. Above 60% the edge is clustered in one window rather than repeatable — the classic curve-fit signal. Measured in returns, not dollars: on a compounding account the last quarter holds most of the dollars however evenly the edge is spread.${profitConc != null ? ` This run: ${concentrationLabel(profitConc)}.` : ''}`,
       cmp: k => k.profitConc, fmt: fmtPctPt, goodWhen: 'lower' },
+    // The row above splits the span into QUARTERS, so it answers "did the edge show up in one
+    // period". Readers hear the trade question, and the two can disagree completely: run
+    // f866873aa862 is 34% by quarter (spread evenly over 6.6 years) while 5 of its 165 trades
+    // made 47% of everything won. Not a defect on its own — a runner-based strategy is supposed
+    // to be fat-tailed — but it is what says the edge lives in the tail.
+    { key: 'tconc', label: `Top ${TRADE_CONCENTRATION_TOP_N} trades`,
+      value: tradeConc != null ? `${tradeConc.toFixed(0)}%` : '—',
+      cls: tradeConc != null && tradeConc >= 50 ? 'text-warn-text' : undefined,
+      tip: `Share of gross profit made by the ${TRADE_CONCENTRATION_TOP_N} biggest winners. The row above asks whether the edge clustered in one PERIOD; this asks whether it came from a handful of TRADES, and a run can be spread evenly across the years while resting on five of them. High is not automatically bad — a strategy that rides runners is meant to be fat-tailed — but it tells you the edge lives in the tail, so size the risk for that.${tradeConc != null ? ` This run: ${tradeConcentrationLabel(tradeConc)}.` : ''}`,
+      goodWhen: 'lower' },
     { key: 'sharpe', label: 'Sharpe', value: sharpe != null ? sharpe.toFixed(2) : '—',
       // Amber below 1.0 — an EXCEPTION colour, not a sign colour. Green for "positive" would
       // call 0.91 good; amber for "weak" is the threshold that should stop you, which is the
@@ -986,7 +1112,7 @@ export function PerformancePanel({
   const hero = (value: React.ReactNode, unit: React.ReactNode, cls: string, tip: string) =>
     <CardHero value={value} unit={unit} cls={cls} tip={tip} />
 
-  const madeTip = "What the account did over the whole test, stated as a multiple of the capital it started with — the unit CLAUDE.md already uses for this strategy ('832x at 64.2% max drawdown'). Moves with the Account balance slider, because the multiple is net P&L ÷ that balance. With no balance set it falls back to net P&L in dollars."
+  const madeTip = "Total profit and loss in dollars across every closed trade, after whatever commission and slippage the run was priced with. The starting balance is beneath it and the multiple is the first row, so what this grew FROM is on screen. ⚠ Dollars on a compounding account are not comparable between runs — a fixed % risk per trade makes the end figure exponential in the edge, so a small change early shows up as a huge change here. Rank strategies by R or profit factor; read this to know what the run was worth."
   const riskedTip = "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists."
   const trustedTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown — return earned per unit of pain. Both halves compound, so this DOES move with the Account balance slider; they do not cancel. Above 2 is strong, below 0.5 weak.${d.recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${d.recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The rows beneath are the reasons to distrust the number above them: profit clustered in one quarter, a soft Sharpe, or streaking that isn't random.`
 
@@ -1015,17 +1141,22 @@ export function PerformancePanel({
         <div className={cardCls('border-t-2 border-t-pos-text/50')}>
           {head('Made', 'What came out of it')}
           {hero(
-            multiple != null ? `${multiple.toFixed(1)}x` : <FitMoney n={run.net_pnl} signed />,
-            multiple != null ? 'on capital' : 'net',
+            <FitMoney n={run.net_pnl} signed />,
+            'net',
             (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text',
             madeTip,
           )}
           {dc && <div className="mb-1">{heroDelta(d.netPnl, dc.netPnl, fmtMoney, 'higher')}</div>}
-          {/* Collapsed, the multiple has no dollars beside it — so the hero keeps its own
-              caption here rather than losing the figure entirely. */}
-          {collapsed
-            ? (multiple != null && <div className="mt-2 mb-1 font-mono text-[11px] text-text-tertiary">{dollar(run.net_pnl, true)} net</div>)
-            : rows(madeRows)}
+          {/* The starting balance, which this page never stated anywhere — so "1439.7x" was a
+              multiple of a number the reader could not see. It is a caption, not a row: it is
+              the run's INPUT, not a result, and it survives the collapse for the same reason
+              (the multiple in the rows below is meaningless without it). */}
+          {startBal != null && startBal > 0 && (
+            <div className="mt-2 mb-1 font-mono text-[11px] text-text-tertiary">
+              from {dollar(startBal)}
+            </div>
+          )}
+          {!collapsed && rows(madeRows)}
         </div>
 
         <div className={cardCls('border-t-2 border-t-neg-text/50')}>
@@ -3209,16 +3340,24 @@ export type NewsFilter = ReturnType<typeof useNewsFilter>
 // of the run's numbers twice for the same reason — first its own 200px equity curve, then its own
 // five KPI tiles. Each time the answer was the same: reshape the page's real readout, don't ship a
 // smaller second one beside it.
-function useNewsFilter(run: Run | undefined, avoidNews: boolean) {
-  // null = follow the strategy's own default (avoidNews); once the user clicks, their choice sticks.
+function useNewsFilter(run: Run | undefined) {
+  // BOTH rules default OFF (2026-08-01, Aaron's call). The page opens on the run EXACTLY AS TRADED
+  // and every number on it is the backtest's own — turning a rule on is then a deliberate what-if
+  // rather than something already applied before you looked.
+  //
+  // This replaces two different defaults, and the reason is the same for both: a filtered default
+  // means the headline figure on screen is not the run's result, and nothing about a checkbox
+  // further down the page makes that obvious. Holidays defaulted ON (they were hardcoded always-on
+  // until 2026-07-30 and merely became visible then), and news followed the strategy's own
+  // `avoid_news` flag, so the default silently differed BETWEEN strategies — two runs of the same
+  // window could open on different trade counts with no indication why.
+  //
+  // `strategy.avoid_news` is still real metadata off the strategy's meta.json; it just no longer
+  // decides what you see first. Do not re-wire it here without asking — "the page shows the run"
+  // is the property being protected.
   const [removeNewsChoice, setRemoveNewsChoice] = useState<boolean | null>(null)
-  const removeNews = removeNewsChoice ?? avoidNews
-  // Bank holidays: DEFAULT on, but a real choice (2026-07-30). It used to be hardcoded always-on and
-  // invisible, which is what made the whole panel unreadable — the pill counted trades being removed
-  // while the only visible switch said the news ones were kept, and nothing on screen accounted for
-  // the difference. Excluding them stays the default because it is still the standing rule; it is
-  // now a rule you can see and, when you want the run exactly as traded, switch off.
-  const [removeHolidays, setRemoveHolidays] = useState(true)
+  const removeNews = removeNewsChoice ?? false
+  const [removeHolidays, setRemoveHolidays] = useState(false)
   const [pre, setPre]   = useState(15)                 // block window before an event (minutes)
   const [post, setPost] = useState(30)                 // block window after an event (minutes)
   const enabled = (run?.equity_curve.length ?? 0) > 0
@@ -3485,7 +3624,7 @@ export function BacktestDetail() {
   const { data: strategy } = useStrategy(run?.strategy_id ?? null)
   // Owned here, not in the card, so the main Equity chart can redraw on the kept trades (see
   // useNewsFilter). The card renders the controls and the before/after comparison off this too.
-  const news = useNewsFilter(run, strategy?.avoid_news ?? false)
+  const news = useNewsFilter(run)
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('bt_params_panel') === 'collapsed' } catch { return false }
   })

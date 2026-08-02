@@ -265,3 +265,102 @@ def test_no_positive_profit_is_none_never_zero():
     daily = [{"date": d, "pnl": p} for d, p in rows]
     pct, _ = profit_concentration_pct(daily, _curve(rows, base=10_000.0))
     assert pct is None
+
+
+# ── the three shape metrics (2026-08-01) ─────────────────────────────────────────
+#
+# Each exists because a TRUE number was letting a reader conclude something false. The tests
+# below pin the conclusion each one restores, not just the arithmetic.
+
+from services.metrics import (                                    # noqa: E402
+    max_drawdown_pct,
+    scratch_count,
+    trade_concentration_pct,
+)
+
+
+def _trades(profits: list[float], base: float = 10_000.0) -> list[dict]:
+    """An equity curve in the compounding shape — `equity` running, `profit` per trade."""
+    out, eq = [], base
+    for p in profits:
+        eq += p
+        out.append({"equity": eq, "profit": p})
+    return out
+
+
+def test_max_drawdown_is_relative_to_the_peak_it_fell_from():
+    """$10k → $20k → $10k is a 50% drawdown, not 100% of the starting balance and not the 42%
+    it would read as against the final equity. The denominator has to grow with the account."""
+    assert max_drawdown_pct(_trades([10_000.0, -10_000.0])) == pytest.approx(50.0)
+
+
+def test_max_drawdown_counts_a_fall_from_the_opening_balance():
+    """A run that loses on trade 1 has drawn down before its first equity point exists. Measuring
+    only the points would miss it entirely and report 0%."""
+    assert max_drawdown_pct(_trades([-2_500.0])) == pytest.approx(25.0)
+
+
+def test_max_drawdown_pct_and_dollars_can_name_different_episodes():
+    """The whole reason both are reported. Here the deepest DOLLAR fall ($4k) comes off a $24k
+    peak = 17%, while the worst PERCENTAGE fall is the early $2.5k off $10k = 25%."""
+    curve = _trades([-2_500.0, 16_500.0, -4_000.0])
+    assert max_drawdown_pct(curve) == pytest.approx(25.0)
+
+
+def test_max_drawdown_of_an_undefeated_curve_is_zero_not_none():
+    assert max_drawdown_pct(_trades([100.0, 100.0])) == 0.0
+
+
+def test_a_breakeven_scratch_is_not_counted_as_a_win():
+    """The defect this row exists for: four full losses set the scale, and a +$1 exit is a
+    scratch rather than a win however green it looks in the trade list."""
+    curve = _trades([-1_000.0] * 4 + [1.0, 5_000.0])
+    assert scratch_count(curve) == 1
+
+
+def test_the_scratch_scale_is_the_median_loss_so_one_outlier_cannot_move_it():
+    """A mean would be dragged to $2,600 by the single -$10k, making the -$300 trade a
+    'scratch' (it is 12% of the mean, under the 15% bar). The median holds at $1,000."""
+    curve = _trades([-1_000.0, -1_000.0, -1_000.0, -10_000.0, -300.0])
+    assert scratch_count(curve) == 0
+
+
+def test_scratch_count_is_none_with_no_losers_never_zero():
+    """No losing trade means no scale. 0 would read as 'no scratches' — the opposite of
+    'cannot tell'."""
+    assert scratch_count(_trades([100.0, 200.0])) is None
+    assert scratch_count([]) is None
+
+
+def test_trade_concentration_finds_a_tail_that_the_quarter_metric_cannot():
+    """20 even winners plus one that is 4x the rest: the top-5 share is well past half even
+    though nothing about the CALENDAR is clustered."""
+    curve = _trades([100.0] * 20 + [2_000.0])
+    pct = trade_concentration_pct(curve)
+    assert pct is not None and pct > 50
+
+
+def test_trade_concentration_is_low_when_the_edge_is_spread():
+    # Unit-size shape (a curve accumulating from 0), so the dollars ARE the weights: 100 equal
+    # wins put exactly 5 of them in the top 5.
+    assert trade_concentration_pct(_trades([100.0] * 100, base=0.0)) == pytest.approx(5.0)
+    # The same 100 wins on a COMPOUNDING account are mildly front-loaded and that is correct,
+    # not a bug: $100 is a bigger share of a $10k account than of the $20k it later becomes.
+    # It must still read as spread, nowhere near the tail-carried threshold.
+    spread = trade_concentration_pct(_trades([100.0] * 100))
+    assert spread is not None and 5.0 < spread < 10.0
+
+
+def test_trade_concentration_ignores_losers_and_is_none_with_no_profit():
+    assert trade_concentration_pct(_trades([-100.0, -200.0])) is None
+
+
+def test_all_three_weight_by_return_on_a_compounding_run():
+    """Two trades of identical SIZE relative to the account they were taken with — the first
+    $1,000 on $10k, the second $10,000 on $100k. In dollars the second looks 10x the edge; as
+    returns they are equal, so neither dominates the concentration. Same basis rule as
+    profit_concentration_pct, and the same reason: dollars measure the compounding."""
+    curve = [{"equity": 11_000.0, "profit": 1_000.0},
+             {"equity": 100_000.0, "profit": 0.0},        # a deposit-shaped jump, no P&L
+             {"equity": 110_000.0, "profit": 10_000.0}]
+    assert trade_concentration_pct(curve, top_n=1) == pytest.approx(50.0)

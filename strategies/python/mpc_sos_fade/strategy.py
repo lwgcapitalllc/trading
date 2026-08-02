@@ -33,21 +33,30 @@ from .signals import SignalAdapter
 
 class MpcSosFadeStrategy:
     def __init__(self, config: Optional[SosFadeConfig] = None,
-                 initial_capital: float = 1_000_000.0, tick_source=None) -> None:
+                 initial_capital: float = 1_000_000.0, tick_source=None,
+                 cost_profile=None) -> None:
         self.config = config or SosFadeConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
-        resolver, profile = self._fill_model(tick_source)
+        resolver, profile = self._fill_model(tick_source, cost_profile)
         self.execution = Execution(self.config, initial_capital=initial_capital,
                                    resolver=resolver, profile=profile)
         self.decisions: List[Decision] = []
 
-    def _fill_model(self, tick_source):
+    def _fill_model(self, tick_source, cost_profile=None):
         """Build the A2 resolver + cost profile from config. `(None, None)` is bar mode — the
-        Pine's guess with no costs, which is what `compare_strategy.py` must run."""
+        Pine's guess with no costs, which is what `compare_strategy.py` must run.
+
+        `cost_profile` is the caller's own `AccountProfile`, and it is how a BAR-mode run gets
+        priced: bar mode is the Pine's fill guess, not a claim that trading is free, so a caller
+        that knows its commission and slippage may state them and have them charged. It is
+        ignored in tick mode, where the profile is a property of the account being simulated and
+        the slippage is measured off the tape. Omit it (the default) and bar mode is byte-identical
+        to what it has always been — which is what keeps `compare_strategy.py` a valid gate.
+        """
         cfg = self.config
         if cfg.fill_model == "bar":
-            return None, None
+            return None, cost_profile
         if cfg.fill_model != "tick":
             raise ValueError(f"fill_model must be 'bar' or 'tick', got {cfg.fill_model!r}")
         from backtest.fills import PROFILES, TickPathResolver

@@ -45,7 +45,8 @@ class Combo:
 _W: Dict[str, Any] = {}
 
 
-def _init_worker(monorepo_root: str, module_path: str, df, capital: float) -> None:
+def _init_worker(monorepo_root: str, module_path: str, df, capital: float,
+                 cost_profile=None) -> None:
     """Runs once per worker process. Its args are plain values (str/float/DataFrame) on purpose:
     they are unpickled BEFORE this body runs, so they must not need `sys.path` to already be set.
     Task args (the Combos, carrying a strategy config class) are unpickled after — by then the path
@@ -55,14 +56,16 @@ def _init_worker(monorepo_root: str, module_path: str, df, capital: float) -> No
     if monorepo_root and monorepo_root not in sys.path:
         sys.path.insert(0, monorepo_root)
     entry = getattr(importlib.import_module(module_path), "LAB_STRATEGY")
-    _W.update(strategy_cls=entry["strategy"], df=df, capital=capital)
+    _W.update(strategy_cls=entry["strategy"], df=df, capital=capital,
+              cost_profile=cost_profile)
 
 
 def _run_in_worker(combo: Combo) -> dict:
-    return _replay_one(_W["strategy_cls"], _W["df"], _W["capital"], combo)
+    return _replay_one(_W["strategy_cls"], _W["df"], _W["capital"], combo,
+                       _W.get("cost_profile"))
 
 
-def _replay_one(strategy_cls, df, capital: float, combo: Combo) -> dict:
+def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=None) -> dict:
     """Replay the whole frame under one config and return {params, kpis}.
 
     Each combo gets a FRESH strategy and a FRESH engine stack. Reusing either across combos would
@@ -70,9 +73,10 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo) -> dict:
     of grid order, which is the kind of bug that produces a plausible number and no error.
     """
     from backtest.output import build_kpis
-    from backtest.replay import EngineStack, iter_bars
+    from backtest.replay import EngineStack, build_strategy, iter_bars
 
-    strategy = strategy_cls(combo.config, initial_capital=capital)
+    strategy = build_strategy(strategy_cls, combo.config,
+                              initial_capital=capital, cost_profile=cost_profile)
     if len(df.index) > 1:
         strategy.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
@@ -105,6 +109,7 @@ def run_sweep(
     max_workers: Optional[int] = None,
     progress: Optional[Callable[[int, int], None]] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
+    cost_profile=None,
 ) -> List[dict]:
     """Replay `df` once per combo and return [{params, kpis}] — one row per combo, in combo order.
 
@@ -112,6 +117,12 @@ def run_sweep(
     `LAB_STRATEGY` for the strategy class. `progress(done, total)` is called from the collecting
     thread only. `should_cancel()` is polled between completions — a cancelled sweep returns the
     rows finished so far rather than raising, because a partial grid is still a real answer.
+
+    `cost_profile` is an optional `backtest.fills.AccountProfile` charged into every combo's P&L.
+    It must be threaded here rather than left to the caller: a sweep that silently ignored the
+    run's stated costs would rank combos on a frictionless book and then hand the winner to a
+    validation run that is not — which is the same defect this parameter exists to close on the
+    single-run path. It is a frozen dataclass, so it pickles to the worker processes unchanged.
     """
     combos = list(combos)
     if not combos:
@@ -122,12 +133,14 @@ def run_sweep(
     root = monorepo_root or str(_monorepo_root())
 
     if workers <= 1:
-        return _sweep_serial(module_path, root, df, combos, initial_capital, progress, should_cancel)
+        return _sweep_serial(module_path, root, df, combos, initial_capital, progress,
+                             should_cancel, cost_profile)
 
     results: List[Optional[dict]] = [None] * total
     done = 0
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker,
-                             initargs=(root, module_path, df, initial_capital)) as pool:
+                             initargs=(root, module_path, df, initial_capital,
+                                       cost_profile)) as pool:
         futures = {pool.submit(_run_in_worker, c): i for i, c in enumerate(combos)}
         pending = set(futures)
         while pending:
@@ -145,7 +158,8 @@ def run_sweep(
     return [r for r in results if r is not None]
 
 
-def _sweep_serial(module_path, root, df, combos, capital, progress, should_cancel) -> List[dict]:
+def _sweep_serial(module_path, root, df, combos, capital, progress, should_cancel,
+                  cost_profile=None) -> List[dict]:
     """The single-worker path — also what the tests drive, since it needs no pickling or spawn."""
     import importlib
 
@@ -158,7 +172,7 @@ def _sweep_serial(module_path, root, df, combos, capital, progress, should_cance
     for i, combo in enumerate(combos, 1):
         if should_cancel is not None and should_cancel():
             break
-        out.append(_replay_one(strategy_cls, df, capital, combo))
+        out.append(_replay_one(strategy_cls, df, capital, combo, cost_profile))
         if progress is not None:
             progress(i, len(combos))
     return out

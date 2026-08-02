@@ -318,6 +318,73 @@ Two traps this creates, both guarded:
 
 Because the figure is stored, `init_db` carries a one-time `_restamp_profit_concentration` that re-reads each completed run's `equity_curve.json` and rewrites it; `profit_concentration_basis IS NULL` is the marker that makes it run exactly once. A run whose file is missing is stamped `'dollars'` — that IS what its stored number is, and leaving it NULL would re-read a missing file on every startup forever. It restamped all 78 completed runs in the live DB. The frontend recomputes client-side rather than reading the column (`frontend/CLAUDE.md` → *Profit concentration measures the edge*), so a page never depends on this migration having run.
 
+### The Python runner's costs were collected and never charged (fixed 2026-08-01)
+
+`commission_per_side` and `slippage_ticks` are collected in the Run modal, stored on
+`backtest_runs`, shown on the run page — and `services/python_runner.py` read neither. Every
+Python run was **frictionless** while reporting a cost profile it had not applied. The tell in the
+data was 52 of one run's 54 losing trades each losing **exactly 10.00%** of prior equity, which no
+cost model can produce; the values themselves (2.25/1) came from a FUTURES prop-firm ruleset and
+were never meaningful for spot gold.
+
+`python_runner._cost_profile(spec)` is the seam: it turns the run's stated costs into a
+`backtest.fills.AccountProfile`, passed to both the single-run path and `run_sweep` (so the
+optimizer cannot rank combos on a frictionless book and then hand the winner to a run that is
+not). Four rules, each of which fails silently if broken:
+
+- **0/0 returns `None`, not a zero-valued profile.** No profile means no charge path is entered at
+  all, which is what keeps every result measured before this date reproducible.
+- **Either number alone builds one.** An `and` there would drop slippage-only runs back to
+  frictionless — the same bug, one level down.
+- **Commission is per LOT per side** (a lot = `contract_size` units, 100 oz for gold). Reading the
+  field as per-unit overcharges gold 100x and nothing downstream looks wrong.
+- **`swap=None` deliberately.** Overnight financing is a broker fact the lab does not collect, and
+  inventing one would move every result under the banner of a commission change. Tick mode
+  (`account_profile`) is still the way to price swap.
+
+Strategies are constructed through **`backtest.replay.build_strategy`**, never by calling the
+class: `LAB_STRATEGY` is an open contract, so a strategy may predate the `cost_profile` kwarg, and
+that helper **raises** rather than dropping a stated cost on the floor. Defaults on every request
+model are now **0/0** (`models.py`), and `RunBacktestModal` resolves its primary ruleset across
+BOTH the futures and forex lists — searching futures only is why a forex run's 0/0 ruleset default
+never reached the form.
+
+### Three numbers that were true and got misread
+
+Auditing run `f866873aa862` found **no arithmetic wrong anywhere** — every stored KPI reproduced
+from the raw trades, Sharpe included. What was wrong was what three headline numbers let a reader
+conclude, and none was fixable by relabelling; each needed a companion that had never been
+computed. All three live in `services/metrics.py`, are stored on `backtest_runs`, and are
+backfilled onto history by `lab_db._backfill_run_shape_metrics`.
+
+| stored | what it fixes |
+|---|---|
+| `max_drawdown_pct` | the drawdown was stored and LISTED in dollars only. $1.73M beside $14.4M of profit reads as ~12%; against the running peak it is **55.9%**. `BacktestDetail` always computed the percentage client-side — the RUNS LIST, which is where runs get compared, did not, and a list is exactly where a wrong order of magnitude does its damage. |
+| `scratch_count` | the win rate counts a trade that made a cent as a win. 45 of that run's 111 "winners" made under a sixth of a typical loss, every one exiting at the breakeven-stop buffer — the stop doing its job, which is risk control and not an edge. Honest split: 40% won / 27% scratched / 33% lost. |
+| `trade_concentration_pct` | `profit_concentration_pct` is the largest QUARTER's share — a question about time. Readers hear the question about TRADES, and the two can disagree completely: that run is 34.5% by quarter (spread evenly over 6.6 years) while **5 of 165 trades made 47%** of everything won. |
+
+Three rules they share, and each is load-bearing:
+
+- **All three weight by RETURN when the run compounded** (`_trade_weights`, the same
+  `_equity_base` switch `profit_concentration_pct` uses). Dollars on a compounding account measure
+  the compounding.
+- **The scratch yardstick is the run's own MEDIAN full loss**, not a typed-in figure. For a
+  fixed-risk strategy that median IS 1R, so the bar self-scales across strategies, instruments and
+  account sizes with nothing to tune; the median rather than the mean so one outsized loss cannot
+  move it. (It landed on the same 0.15 that `mpc_strategy.pine`'s own `exec_scratch_r` uses — not
+  a coincidence, since 0.15 of the median loss and 0.15R are the same bar at fixed risk.)
+- **`None` is never rounded to 0.** No losing trade means no scale to measure a scratch against,
+  and `0` would read as "no scratches" — the opposite of "cannot tell". The backfill stamps
+  `max_drawdown_pct = -1.0` for a run whose curve is missing, for the same reason
+  `_restamp_profit_concentration` stamps `'dollars'`: a row left NULL is re-read on every startup
+  forever.
+
+**A high `trade_concentration_pct` is not a verdict.** A runner-based strategy is supposed to be
+fat-tailed and this repo's stated design intent is few high-quality setups, so read it as "the
+edge lives in the tail, size the risk for that" rather than as a defect. The frontend recomputes
+both trade-shape metrics client-side (same rule as profit concentration — the stored value is
+whatever basis was current when a run finished, and the news filter needs them over a subset).
+
 **Backfill:** `scripts/backfill_metrics.py` recomputes the file-derivable columns (Sharpe trio, profit concentration + basis, contract status) on old runs — idempotent, only touches what's derivable from stored result files.
 
 **Capital-based scores stay client-side** (BacktestDetail). Calmar / Max-DD-% need an account balance (the ruleset's `account_size` or the what-if slider); they're computed in the browser by rebasing the equity, never persisted, and never feed the verdict. **Both are measured against the RUNNING PEAK, not the starting balance (2026-07-30)** — the same defect `dd_basis` fixed for Monte Carlo, found in a second file: dividing a late dollar drawdown by a static `account_size` reported **1096.7%** and a red **Calmar 0.11** on a run whose honest figures are 54.9% and 2.25. If you add another percent-of-capital metric anywhere, the denominator has to grow with the account. Detail: `frontend/CLAUDE.md` → *Drawdown is peak-relative*.
@@ -721,13 +788,13 @@ matches today's mpc build is proven separately by `engines/fair_value_gaps/tools
 
 ## News filter (post-run)
 
-The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time gate: the lab runs every backtest RAW (news is never wired into the C#/MQL5 strategy), so removing news-window trades is pure arithmetic on the finished trade list — instant, no VPS re-run. Design decision (Aaron 2026-07-05): **run raw + toggle after.** Window default **15 min before / 30 min after** a high-impact USD release (asymmetric — liquidity dies only in the last minutes before; the spike/reversal/move run 15–30 min after). **Two rules, both switchable, holidays ticked by default** (changed 2026-07-30): bank holidays were previously hardcoded always-excluded and had no control at all, which made the UI unreadable rather than merely opinionated — the panel could report trades being removed while its only visible switch said the news ones were kept, and nothing on screen accounted for the difference. Excluding holidays remains the DEFAULT because it is still the standing preference; it is now a rule you can see and, when you want the run exactly as traded, switch off. The backend was already reporting `in_news` and `in_holiday` separately, so this was a frontend-only change.
+The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time gate: the lab runs every backtest RAW (news is never wired into the C#/MQL5 strategy), so removing news-window trades is pure arithmetic on the finished trade list — instant, no VPS re-run. Design decision (Aaron 2026-07-05): **run raw + toggle after.** Window default **15 min before / 30 min after** a high-impact USD release (asymmetric — liquidity dies only in the last minutes before; the spike/reversal/move run 15–30 min after). **Two rules, both switchable, and BOTH DEFAULT OFF** (2026-08-01, Aaron's call): the page opens on the run exactly as traded, so every number on it is the backtest's own and turning a rule on is a deliberate what-if. That replaced two different defaults for one reason — a filtered default means the headline figure on screen is not the run's result, and no checkbox further down the page makes that obvious. Holidays had defaulted ON (hardcoded always-excluded with no control at all until 2026-07-30, when they became a visible checkbox but stayed ticked), and news followed the strategy's own `avoid_news`, so the default silently DIFFERED BETWEEN STRATEGIES — two runs over the same window could open on different trade counts with nothing on screen explaining why. The backend reports `in_news` and `in_holiday` separately and always has; every default here has been a frontend-only decision.
 
 - **`services/news_filter.py`** — composes the canonical `engines/news/` engine (imported by bare name after adding `engines/` to `sys.path`, same pattern as regime; **never a second calendar impl**). `build_report(trades, pre, post, ...)` loads the `EventStore` cache, builds a lab `NewsPolicy` (high-impact USD, holidays always), and walks each trade's `entry_ms` through the engine → per-trade `{in_coverage, in_news, in_holiday, title}` + coverage boundary + counts. Reads `in_news` (a high-impact window) and `in_holiday` **separately** so the UI keeps them separable. 9 unit tests (synthetic events, no network). Coverage honesty: outside the fetched calendar range trades come back untagged (never guess) — backfill months via `engines/news/tools/backfill.py`.
 - **`GET /backtests/runs/{id}/news?pre=&post=`** → `RunNewsReport` (models.py `RunNewsReport`/`NewsTradeTag`). Pure off the stored `equity_curve` — no VPS. `pre`/`post` are the window minutes (sliders re-call to re-tag). Old runs with no `entry_ms` come back untagged.
 - **Trade entry time capture:** `parse_trades_csv` now stores each trade's `entry_ms` (UTC epoch ms) on its equity-curve point, from the NT8 "Entry time" column via `_parse_nt8_dt`. The VPS **NinjaTrader Time zone is UTC** (confirmed) → naive value treated as UTC, no offset. Old NT8 runs predate this → re-pull with **Reload charts** (or rerun). Python runs carry it from `backtest/output.py` and never needed either.
 - **`entry_ms` AND `exit_ms` MUST be declared on `models.EquityPoint`** (entry fixed 2026-07-28, exit 2026-07-30 — the SAME omission, caught twice, which is why this is written as a rule and not an anecdote). `exit_ms` had likewise always been in `equity_curve.json` and was likewise stripped on the way out; with both present a consumer can compute trade duration over any SUBSET of trades, which is what lets the News filter report **Avg Trade** instead of a dash once it removes something. Pydantic drops any field a model doesn't declare — so the value reached disk and the `/news` endpoint (which reads `equity_curve.json` directly, and therefore tagged correctly all along) but was stripped on the way to the browser. The card's `hasEntryTimes` check then failed for EVERY run and it showed "made before trade times were recorded" universally, which reads as an old-run problem and is not one. Same trap the `favorable`/`adverse` comment two lines below it warns about. **Nothing that reaches the frontend can rely on a field being in the JSON on disk — only on it being in the model.**
-- **Strategy sets the toggle's start:** `strategies.avoid_news` (INTEGER col, migration; default 0) overlaid from `<Strategy>.meta.json` top-level `"avoid_news"` by `strategy_scanner._read_strategy_overview`, exposed on `Strategy.avoid_news`. `true` → the News toggle starts "Removed". `ORB.meta.json` ships `avoid_news:true` (gold avoids news). **Scanner fix:** the `.cs` skip now also re-scans on meta.json **mtime** (mirrors the `.mq5` path) — before this, a meta-only edit on an unchanged `.cs` source (avoid_news, edge/steps, param labels) never took effect. A **Scan** picks up the new value.
+- **`avoid_news` is metadata, not a default:** `strategies.avoid_news` (INTEGER col, migration; default 0) overlaid from `<Strategy>.meta.json` top-level `"avoid_news"` by `strategy_scanner._read_strategy_overview`, exposed on `Strategy.avoid_news`. ⚠ **It no longer sets the News toggle's default** (2026-08-01 — both rules default OFF; see above). It remains real strategy metadata read off meta.json and is still exposed on the API; nothing in the UI consumes it today. Re-wiring it to a default would restore the per-strategy divergence that change removed — raise it before doing so. `ORB.meta.json` ships `avoid_news:true` (gold avoids news). **Scanner fix:** the `.cs` skip now also re-scans on meta.json **mtime** (mirrors the `.mq5` path) — before this, a meta-only edit on an unchanged `.cs` source (avoid_news, edge/steps, param labels) never took effect. A **Scan** picks up the new value.
 - **Runner support:** NT8 and **PYTHON** both work (python verified end-to-end 2026-07-28 on a 142-trade XAUUSD run — 142/142 in coverage, 11 news-window trades at a 15-min pre-window). **TODO (#3, still not built): the MT5/forex path** — `runner_dispatch._normalize_mt5_results` needs its own `entry_ms`, and the **MT5 broker server clock is NOT UTC** (offset + DST), so it needs its own timezone handling (a confirming step like the NT8 one).
 - **Calendar coverage is the real gate, not the code.** The engine reports `has_coverage=False` outside the fetched range and the filter goes inert there — so a correctly-wired filter over an unbackfilled period looks identical to a broken one. Backfill first (`engines/news/tools/backfill.py --from YYYY-MM`), then judge. The cache is git-ignored, so it is per-machine and a fresh clone starts empty.
 

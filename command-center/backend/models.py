@@ -45,6 +45,11 @@ class EquityPoint(BaseModel):
     # this model drops any field it doesn't declare, so these MUST be here to reach the equity chart.
     favorable: Optional[float] = None
     adverse: Optional[float] = None
+    # Commission + swap + slippage charged to this trade (negative). `profit` is already net of
+    # it. Declared here for the SAME reason entry_ms/exit_ms above had to be: this model drops any
+    # field it does not declare, so a value that reaches equity_curve.json still never reaches the
+    # browser. Third time that trap has been hit — treat it as a rule, not an anecdote.
+    costs_usd: Optional[float] = None
 
 
 class SizedTimelineDay(BaseModel):
@@ -531,8 +536,11 @@ class BacktestRunRequest(BaseModel):
     bar_value: int = 5
     start_date: str                 # 'YYYY-MM-DD'
     end_date: str
-    commission_per_side: float = 2.25
-    slippage_ticks: int = 1
+    # 0/0 by design (2026-08-01, Aaron's call). A request model's default is what ships when the
+    # caller states nothing, and a silent 2.25/1 — a FUTURES prop-firm figure — was reaching forex
+    # and Python runs that have no such cost. State the costs you want charged; nothing is assumed.
+    commission_per_side: float = 0.0
+    slippage_ticks: int = 0
     evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
     source_run_id: Optional[str] = None # run this was derived from (e.g. a tuning iteration)
@@ -595,6 +603,11 @@ class BacktestSummary(BaseModel):
     completed_at: Optional[datetime] = None
     net_pnl: Optional[float] = None
     max_drawdown: Optional[float] = None
+    # The SAME worst drawdown as a percent of the peak it fell from. Shipped on the summary
+    # because the list is where runs get compared, and $1.7M of drawdown beside $14M of profit
+    # reads as ~12% when the honest figure is 56%. A negative value is the backfill's
+    # "measured, no answer" sentinel — see lab_db._backfill_run_shape_metrics.
+    max_drawdown_pct: Optional[float] = None
     profit_factor: Optional[float] = None
     win_rate: Optional[float] = None
     trade_count: Optional[int] = None
@@ -683,6 +696,13 @@ class BacktestDetail(BaseModel):
     platform_sharpe: Optional[float] = None     # NT8/MT5's own reported Sharpe (reference)
     sharpe_low_sample: bool = False             # < 10 trading days — daily Sharpe is noisy
     profit_concentration_pct: Optional[float] = None  # largest quarter's share of gross profit
+    # Added 2026-08-01 — the companions to three numbers that were true and got misread.
+    # Reasoning for each is in services/metrics.py; in one line: a drawdown in dollars only hides
+    # its own magnitude, a win rate counts a breakeven scratch as a win, and a concentration
+    # measured over QUARTERS answers a different question from the one its name suggests.
+    max_drawdown_pct: Optional[float] = None      # worst drop as % of the peak it fell from
+    scratch_count: Optional[int] = None           # trades under 15% of the run's median full loss
+    trade_concentration_pct: Optional[float] = None   # top-5 winners' share of gross profit
     sortino: Optional[float] = None
     cagr: Optional[float] = None
     avg_win: Optional[float] = None
@@ -788,8 +808,11 @@ class SweepRequest(BaseModel):
     bar_value: int = 5
     start_date: str
     end_date: str
-    commission_per_side: float = 2.25
-    slippage_ticks: int = 1
+    # 0/0 by design (2026-08-01, Aaron's call). A request model's default is what ships when the
+    # caller states nothing, and a silent 2.25/1 — a FUTURES prop-firm figure — was reaching forex
+    # and Python runs that have no such cost. State the costs you want charged; nothing is assumed.
+    commission_per_side: float = 0.0
+    slippage_ticks: int = 0
     ruleset_ids: list[str] = []
     firm_ids: list[str] = []            # backward-compat alias
     instruments: list[str]
@@ -957,8 +980,11 @@ class OptimizationRequest(BaseModel):
     bar_value: int = 5
     start_date: str
     end_date: str
-    commission_per_side: float = 2.25
-    slippage_ticks: int = 1
+    # 0/0 by design (2026-08-01, Aaron's call). A request model's default is what ships when the
+    # caller states nothing, and a silent 2.25/1 — a FUTURES prop-firm figure — was reaching forex
+    # and Python runs that have no such cost. State the costs you want charged; nothing is assumed.
+    commission_per_side: float = 0.0
+    slippage_ticks: int = 0
     ruleset_id: Optional[str] = None    # null for MT5 / "raw" mode
     mode: str = "eval"                  # "eval" | "funded" | "raw"
     search_method: str = "native"

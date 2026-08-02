@@ -38,11 +38,12 @@ from .execution import BLegExecution  # noqa: E402
 
 class MpcBLegStrategy(MpcSosFadeStrategy):
     def __init__(self, config: Optional[BLegConfig] = None,
-                 initial_capital: float = 1_000_000.0, tick_source=None) -> None:
+                 initial_capital: float = 1_000_000.0, tick_source=None,
+                 cost_profile=None) -> None:
         self.config = config or BLegConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
-        resolver, profile = self._fill_model(tick_source)
+        resolver, profile = self._fill_model(tick_source, cost_profile)
         self.execution = BLegExecution(self.config, initial_capital=initial_capital,
                                        resolver=resolver, profile=profile)
         self.tracker: Optional[BLegTracker] = None   # built in run() once the timeframe is known

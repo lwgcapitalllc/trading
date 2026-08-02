@@ -143,6 +143,14 @@ class AccountProfile:
 
     `latency_ms` is the ONE assumption in the whole cost model (see the module docstring): the time
     an order takes to reach the broker, during which price drifts. Everything else is measured.
+
+    `slippage_ticks` is the deliberate exception, and it is **BAR MODE ONLY**. Tick mode MEASURES
+    slippage off the tape (see the module docstring), so a stated estimate there would double-charge
+    it and is ignored — every profile below leaves this at 0 for that reason. Bar mode cannot see
+    the path inside a bar, so it has no basis to measure anything; stating a per-fill estimate is
+    the only way to price it there, and 0 honestly means "not priced" rather than "none occurred".
+    It is charged on MARKET exits only: a resting limit fills at your price or better or not at
+    all, so entries and take-profit rungs do not slip against you.
     """
 
     name: str
@@ -151,6 +159,7 @@ class AccountProfile:
     mintick: float = 0.01
     latency_ms: int = 75                # ~1 median tick spacing; the single assumption
     swap: Optional[SwapModel] = None
+    slippage_ticks: int = 0             # BAR MODE ONLY — see below
 
     def __post_init__(self) -> None:
         if self.commission_per_side_per_lot == SENTINEL:
@@ -164,6 +173,8 @@ class AccountProfile:
             raise CostsNotConfigured("commission_per_side_per_lot must be >= 0")
         if self.latency_ms < 0:
             raise CostsNotConfigured("latency_ms must be >= 0")
+        if self.slippage_ticks < 0:
+            raise CostsNotConfigured("slippage_ticks must be >= 0")
 
     def lots(self, qty: float) -> float:
         """Position size in LOTS. Commission and swap are quoted per lot; the strategy sizes in

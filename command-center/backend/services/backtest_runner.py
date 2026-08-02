@@ -28,7 +28,8 @@ if str(_ENGINES) not in sys.path:
 
 from regime import classify_regime
 from services.ohlc_fetcher import get_ohlc
-from services.metrics import apply_canonical_sharpe, profit_concentration_pct
+from services.metrics import (apply_canonical_sharpe, max_drawdown_pct, profit_concentration_pct,
+                              scratch_count, trade_concentration_pct)
 
 log = logging.getLogger("backtest_runner")
 
@@ -526,6 +527,15 @@ async def _handle_complete(
     # growth instead of clustering. The basis is stored beside the number so the row says which.
     kpis["profit_concentration_pct"], kpis["profit_concentration_basis"] = \
         profit_concentration_pct(daily_pnl, equity_curve)
+    # The three companions to numbers that are true and get misread (2026-08-01) — the drawdown
+    # as a percent of the PEAK it fell from (the list page had dollars only, and $1.7M against
+    # $14M of profit reads as 12% where the honest figure is 56%), how many "wins" were really
+    # scratches, and how much of the gross a handful of trades made. All three are stored rather
+    # than computed on the page because the RUNS LIST is where runs get compared, and it holds no
+    # equity curves. See services/metrics.py for each one's reasoning.
+    kpis["max_drawdown_pct"] = max_drawdown_pct(equity_curve)
+    kpis["scratch_count"] = scratch_count(equity_curve)
+    kpis["trade_concentration_pct"] = trade_concentration_pct(equity_curve)
     lab_db.update_run_complete(run_id, kpis, {
         "equity_curve": str(equity_path),
         "trades":       None,

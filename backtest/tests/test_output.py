@@ -43,15 +43,16 @@ class FakeTrade:
     exit_reason: str
     mfe_usd: float = 0.0
     mae_usd: float = 0.0
+    costs_usd: float = 0.0
 
 
 def _t(pnl, *, day=1, dir=1, entry=100.0, exit=110.0, qty=1.0, reason="L-TP1",
-       stop=5.0, hour=12, mfe=0.0, mae=0.0) -> FakeTrade:
+       stop=5.0, hour=12, mfe=0.0, mae=0.0, costs=0.0) -> FakeTrade:
     return FakeTrade(dir=dir, entry_index=0, entry_price=entry, exit_index=1, qty=qty,
                      risk_usd=5.0, pnl_usd=pnl, r=pnl / 5.0,
                      entry_ms=_ms(2026, 1, day, hour), exit_ms=_ms(2026, 1, day, hour + 1),
                      exit_price=exit, stop_distance=stop, exit_reason=reason,
-                     mfe_usd=mfe, mae_usd=mae)
+                     mfe_usd=mfe, mae_usd=mae, costs_usd=costs)
 
 
 # ── equity curve ──────────────────────────────────────────────────────────────
@@ -86,9 +87,18 @@ def test_long_plus_short_equals_trade_count():
 def test_equity_curve_point_has_exactly_the_lab_contract_keys():
     p = build_equity_curve([_t(100.0)])[0]
     assert set(p) == {"index", "equity", "date", "entry_ms", "exit_ms", "direction",
-                      "profit", "exit_name", "size", "favorable", "adverse",
+                      "profit", "exit_name", "size", "favorable", "adverse", "costs_usd",
                       "entry_price", "exit_price", "kind",
                       "mfe_price", "mae_price", "stop_price", "legs", "tp_targets"}
+
+
+def test_equity_curve_carries_what_the_trade_was_CHARGED():
+    """A run can be priced since 2026-08-01, and what the costs came to was uninspectable — the
+    run row carried the SETTINGS and nothing reported the resulting charge. `profit` is already
+    net of it, so this is reporting only. 0.0 on an unpriced run is "nothing was priced", which
+    is why the page hides the row rather than printing $0 (that would read as "free")."""
+    assert build_equity_curve([_t(100.0, costs=-8.25)])[0]["costs_usd"] == -8.25
+    assert build_equity_curve([_t(100.0)])[0]["costs_usd"] == 0.0
 
 
 def test_equity_curve_carries_trade_excursion():

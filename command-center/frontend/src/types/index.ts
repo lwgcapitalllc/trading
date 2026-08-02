@@ -28,6 +28,7 @@ export interface EquityPoint {
   exit_name?: string
   favorable?: number   // most this trade was ever showing in profit before it closed (≥0)
   adverse?: number     // deepest it sat against us before it closed (≤0)
+  costs_usd?: number   // commission + swap + slippage charged to this trade (negative)
 }
 
 // Post-run news/holiday tagging of a run's trades (GET /backtests/runs/{id}/news).
@@ -524,6 +525,8 @@ export interface BacktestSummary {
   completed_at: string | null
   net_pnl: number | null
   max_drawdown: number | null
+  /** The same worst drawdown as a % of the PEAK it fell from. Negative = measured, no answer. */
+  max_drawdown_pct: number | null
   profit_factor: number | null
   win_rate: number | null
   trade_count: number | null
@@ -618,6 +621,9 @@ export interface BacktestDetail {
   platform_sharpe: number | null      // NT8/MT5's own reported Sharpe (reference)
   sharpe_low_sample: boolean          // < 10 trading days — daily Sharpe is noisy
   profit_concentration_pct: number | null  // backend-persisted; frontend prefers it when present
+  max_drawdown_pct: number | null          // worst drop as % of the peak it fell from
+  scratch_count: number | null             // trades under 15% of the run's median full loss
+  trade_concentration_pct: number | null   // top-5 winners' share of gross profit
   sortino: number | null
   cagr: number | null
   avg_win: number | null

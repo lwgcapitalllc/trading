@@ -148,6 +148,9 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   // foundational params are all NT8-only. MT5 and Python both trade the broker's spot symbols.
   const scope     = runnerScope(strategy.runner)
   const isNt8     = isNt8Runner(strategy.runner)
+  // Python is the one runner whose cost units we OWN (backtest/fills.AccountProfile), so it is
+  // the one that can state them exactly rather than in the platform's general terms.
+  const isPython  = strategy.runner === 'python'
   const isFutures = runnerMarket(strategy.runner) === 'futures'
 
   const inputCls = 'bg-bg-sunken border border-border-subtle rounded-md px-3 py-[6px] text-[13px] text-text-primary w-full focus:outline-none focus:border-accent transition-colors'
@@ -269,15 +272,23 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   }
 
   // ── Primary ruleset (first selected — drives foundational config display) ─────
+  // Looked up across BOTH lists on purpose (fixed 2026-08-01). It searched `futuresFirms` only,
+  // so on a forex run — where the selection is always a forex ruleset — this was null, the effect
+  // below never fired, and the cost fields shipped their initial state instead of the ruleset's
+  // 0/0. That is how run f866873aa862 came to be stored with a FUTURES prop-firm cost profile.
   const primaryRuleset = useMemo(() => {
     if (selectedFirms.size === 0) return null
     const firstId = Array.from(selectedFirms)[0]
-    return futuresFirms.find(f => f.id === firstId) ?? null
-  }, [selectedFirms, futuresFirms])
+    return futuresFirms.find(f => f.id === firstId)
+        ?? forexFirms.find(f => f.id === firstId)
+        ?? null
+  }, [selectedFirms, futuresFirms, forexFirms])
 
   // ── Advanced — pre-filled from primary ruleset, user-editable ────────────────
-  const [commPerSide, setCommPerSide]     = useState(2.25)
-  const [slippageTicks, setSlippageTicks] = useState(1)
+  // 0/0 is the floor, not a placeholder: a cost you did not state must never be charged, and
+  // the old 2.25/1 was a FUTURES prop-firm figure landing on forex and Python runs.
+  const [commPerSide, setCommPerSide]     = useState(0)
+  const [slippageTicks, setSlippageTicks] = useState(0)
 
   useEffect(() => {
     if (primaryRuleset?.default_commission_per_side != null) {
@@ -740,7 +751,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Commission / side ($)</label>
-                  <InfoTooltip content={!isNt8 ? "Commission per side in account currency. Applied to every fill." : "Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill."} />
+                  <InfoTooltip content={isPython ? "Dollars per LOT, per side — a lot being 100 units (100 oz of gold). Charged on the entry and on every exit rung. Leave at 0 for a demo account, which charges none; a live Vantage RAW ECN is $3.00/side/lot." : !isNt8 ? "Commission per side in account currency. Applied to every fill." : "Round-trip cost per contract, per side. NinjaTrader typically charges ~$2.25/side for micro futures at most brokers. Applied to every fill."} />
                 </div>
                 <input
                   type="number" step="0.01" min="0" value={commPerSide}
@@ -751,7 +762,7 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
               <div>
                 <div className="flex items-center mb-1">
                   <label className={labelCls.replace(' mb-1', '')}>Slippage (ticks)</label>
-                  <InfoTooltip content={!isNt8 ? "Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs." : "Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks."} side="left" />
+                  <InfoTooltip content={isPython ? "Ticks of adverse slippage on MARKET exits only — a stop, or a force-close. Entries and take-profit rungs are resting limits, which fill at your price or better or not at all, so they never slip. 1 tick = $0.01 on gold." : !isNt8 ? "Additional points deducted per fill to model spread and slippage. Conservative backtests use 1–3 points for major forex pairs." : "Additional ticks deducted per fill to model market impact and bid/ask spread. 1 tick = $0.50 for MNQ, $1.25 for MES. Conservative backtests use 1–2 ticks."} side="left" />
                 </div>
                 <input
                   type="number" step="1" min="0" value={slippageTicks}

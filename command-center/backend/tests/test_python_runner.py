@@ -186,3 +186,35 @@ def test_enum_defaults_are_legal_choices():
             actual = getattr(defaults, p["name"])
             assert actual in p["choices"], (
                 f"{p['name']}: default {actual!r} is not one of {p['choices']}")
+
+
+# ── run costs (2026-08-01) ───────────────────────────────────────────────────────
+#
+# The lab collected `commission_per_side` / `slippage_ticks` at run creation, stored them on the
+# row and displayed them — and `python_runner` never read either, so every Python run was
+# frictionless while reporting a cost profile it had not applied. `_cost_profile` is the seam
+# that closes it; these pin the two things about it that would fail silently.
+
+def test_a_run_that_states_no_costs_builds_no_profile():
+    """0/0 must yield None, not a zero-valued profile. None is what leaves the charge paths
+    unentered, and that is what keeps every result measured before this landed reproducible."""
+    from services.python_runner import _cost_profile
+
+    assert _cost_profile({}) is None
+    assert _cost_profile({"commission_per_side": 0, "slippage_ticks": 0}) is None
+    assert _cost_profile({"commission_per_side": None, "slippage_ticks": None}) is None
+
+
+def test_either_cost_alone_still_builds_a_profile():
+    """Either number on its own is a real cost — an `and` here would silently drop a
+    slippage-only run back to frictionless, which is the exact bug being fixed."""
+    from services.python_runner import _cost_profile
+
+    assert _cost_profile({"slippage_ticks": 1}) is not None
+    assert _cost_profile({"commission_per_side": 3.0}) is not None
+
+    p = _cost_profile({"commission_per_side": 3.0, "slippage_ticks": 2})
+    assert (p.commission_per_side_per_lot, p.slippage_ticks) == (3.0, 2)
+    # Swap is a broker fact the lab does not collect. Inventing one here would move every
+    # result under the banner of a commission change; tick mode remains the way to price it.
+    assert p.swap is None
