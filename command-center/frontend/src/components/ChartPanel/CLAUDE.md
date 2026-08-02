@@ -3,7 +3,16 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-01 — **Step (`◀ Loss 12/60 ▶`), a header pill that walks the markers.**
+**Last reviewed:** 2026-08-02 — **the fib tool anchored its ladder the wrong way round, and had
+since it shipped.** It put **0 on the first click and 1 on the second**, so dragging up from a swing
+low placed 0 at the low and 1 at the high — the ladder mirrored, and every retracement level on the
+wrong side of the move. It is now **1 on the first click (the leg's ORIGIN), 0 on the second (its
+EXTREME)**: `p1 + (p0 - p1) * ratio`. That is how a retracement is read — price retraces from 0 back
+toward 1 — and, more to the point, it is what every other fib in this repo means:
+`mpc_strategy.pine` prices its levels off the same convention (`fiboP7 = ash - range*0.0` is the
+extreme, `fiboP10 = ash - range*1.0` is the origin), so a hand-drawn fib and the bot's own levels
+were reading opposite. One line of maths; extensions past 1 / below 0 still fall out of it for free,
+now on the sides TradingView puts them on. Earlier: 2026-08-01 — **Step (`◀ Loss 12/60 ▶`), a header pill that walks the markers.**
 Reading a run's losers back to back was a scroll hunt across years of bars. The arrows (and ← / →
 while the pointer is over the panel) jump to the previous / next marker and centre it, paging older
 history in on the way via the SAME `goToDate` the date pill drives. The design decision worth keeping:
@@ -548,6 +557,13 @@ here**, so the chart shows exactly what the strategy saw.
   level labels** (`chipBg` via `extendData`, `withAlpha` border in the level colour) so it reads over
   candles. Prices come from `overlay.points[i].value` via `yAxis.convertToPixel`, so they track the
   axis. `precision` (label decimals) is inferred from instrument magnitude in `index.tsx`.
+  **Direction (fixed 2026-08-02):** the ladder anchors **1 on the FIRST click and 0 on the second** —
+  `p1 + (p0 - p1) * ratio`. Drag from a swing low up to a swing high and 1 is the low, 0 the high.
+  It shipped the other way round (`p0 + (p1 - p0) * ratio`, 0 on the first click), which is the whole
+  ladder backwards: a retracement is read from its EXTREME (0) back toward its ORIGIN (1), and it is
+  what every fib in this repo means — `mpc_strategy.pine` prices the same way (`fiboP7 = ash -
+  range*0.0` = the extreme, `fiboP10 = ash - range*1.0` = the origin), so a hand-drawn fib and the
+  bot's own levels now line up instead of mirroring each other.
   **Delete (gotcha):**
   klinecharts REMOVES an overlay on right-click whenever its `onRightClick` returns falsy (source:
   `_figureMouseRightClickEvent`) — which silently deleted a fib on right-click. The fix: the fib's
@@ -571,7 +587,9 @@ here**, so the chart shows exactly what the strategy saw.
   - **The ladder persists** (`localStorage: chartpanel_fib_levels`) — it is a setting. A fib DRAWING
     is still session-only, which is unchanged and deliberate.
   - **Ratios past 1 or below 0 draw extensions** for free: the level price is
-    `p0 + (p1 - p0) * ratio`, which never assumed a 0–1 range.
+    `p1 + (p0 - p1) * ratio`, a straight-line map that never assumed a 0–1 range. On a low→high
+    drag an extension past 1 sits BELOW the low (past the origin) and one below 0 sits above the
+    high — the same sides TradingView puts them on.
   - **Gotchas, both measured.** (1) The overlay picks the ladder with `Array.isArray(d.levels)`, NOT
     `.length` — an EMPTY set means the user switched every level off and must draw nothing; the old
     `.length` test would answer "delete them all" with the factory set back. (2) `FibSettings`

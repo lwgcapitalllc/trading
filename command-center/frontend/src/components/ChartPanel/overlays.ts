@@ -476,7 +476,13 @@ export function registerChartOverlays(): void {
   })
 
   // ── Fibonacci retracement (USER-DRAWN) ────────────────────────────────────────
-  // Two anchor points (swing A → swing B) define the 0↔1 price range; each configured level draws a
+  // Two anchor points (swing A → swing B) define the price range, and the DIRECTION matters:
+  // **1 sits on the first anchor (where the drag started), 0 on the second (where it ended)**.
+  // Drag from a swing low up to a swing high and 1 is the low, 0 the high — the leg's ORIGIN is 1
+  // and its EXTREME is 0, which is how a retracement is read (price retraces from 0 back toward 1)
+  // and what every fib in this repo means: `mpc_strategy.pine` prices the same way
+  // (`fiboP7 = ash - range*0.0` = the extreme, `fiboP10 = ash - range*1.0` = the origin), so a
+  // hand-drawn fib and the bot's own levels line up. Each configured level draws a
   // thin horizontal line spanning EXACTLY the box the user dragged (both anchor x's — width AND
   // height follow the drag) plus a right-aligned "<ratio> (<price>)" chip in the level's colour.
   // Unlike the other overlays this one is NOT lock:true — it's interactive: drawn, selected/moved by
@@ -505,7 +511,11 @@ export function registerChartOverlays(): void {
       const xRight = Math.max(a.x, b.x)
       const figures: OverlayFigure[] = []
       for (const lvl of levels) {
-        const price = p0 + (p1 - p0) * lvl.ratio
+        // p0 = ratio 1 (the leg's origin, where the drag started), p1 = ratio 0 (its extreme).
+        // Deliberately NOT `p0 + (p1 - p0) * ratio`, which anchors 0 on the first click and puts
+        // the whole ladder on backwards. Ratios past 1 / below 0 still draw extensions for free —
+        // this is a straight-line map either way, it just runs the other direction.
+        const price = p1 + (p0 - p1) * lvl.ratio
         const y = yAxis.convertToPixel(price)
         figures.push({
           type: 'line',
