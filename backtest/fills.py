@@ -168,6 +168,12 @@ class AccountProfile:
     tick mode does, at bar resolution. Default OFF, because it moves the trade list and a run that
     moves the trade list must be asked for. It lives on the profile rather than in the strategy
     config so it travels with the `spread` it is meaningless without.
+
+    ⚠ **`spread` and `bid_ask_fills` are ALTERNATIVES, not layers that stack** — running both bills
+    one spread twice. They also do not agree, and the disagreement is informative rather than a
+    bug: a flat charge is the market-order intuition, while a strategy whose entries and exits are
+    all PRICED ORDERS feels the spread as fill timing instead. Full reasoning, with the long-vs-
+    short asymmetry worked through: `strategies/python/mpc_sos_fade/execution.py::_charge_spread`.
     """
 
     name: str

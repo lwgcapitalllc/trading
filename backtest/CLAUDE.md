@@ -7,7 +7,7 @@ local optimizer. It does NOT cover the engines it replays (`engines/`), the stra
 **Status:** **Deliverable A COMPLETE 2026-07-16.** A0 (data layer) + A1 (replay loop) landed
 2026-07-15; A2 (fill & cost model), A3 (output adapter), the lab's `runner="python"` adapter, and A4
 (local optimizer) all landed 2026-07-16. See `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
-**Last reviewed:** 2026-07-31 — `EngineConfig`'s FVG defaults reconciled to the ENGINE (`fvg_max_count` 6→8, `fvg_threshold_pct` 0.1→0.0), and doing it exposed that `mpc_sos_fade` had been reading the old `0.1` **unpinned** — a stale-looking default that was actually load-bearing. The unpinned-engine-input rule below gained that second example and its corollary: never tidy an `EngineConfig` default without checking which consumers read it unpinned. Both strategy parity gates re-verified green afterwards. Earlier: 2026-07-29 — `run_report.py --start` now defaults to the MEASURED broker floor instead of a hardcoded `2022-01-01`, and `backtest/archive/` was added for committed multi-year trade data. Earlier: 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`; 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
+**Last reviewed:** 2026-08-02 — **`AccountProfile` learned the two costs BAR MODE could always have priced and never did: the SPREAD and the OVERNIGHT SWAP.** Two new fields, `spread` (price units) and `bid_ask_fills`, both bar-mode-only (tick mode has the real book) and both defaulting to the honest zero, so a profile built before they existed is byte-identical and no historical result moves. Swap needed **no new code at all** — `_charge_swap` has run on every bar since A2 and was dead only because callers passed `swap=None`. ⚠ **The two spread fields are ALTERNATIVES, not layers that stack**: a flat charge, or transacting on the real side of the book. Running both bills one spread twice, and the strategy's `_charge_spread` refuses the second. ⚠ **They do not agree, and the gap is the finding rather than a defect** — a flat charge is the MARKET-ORDER intuition, and a strategy whose entries and exits all name a PRICE feels the spread as fill TIMING instead; measured on `mpc_sos_fade` the flat charge costs 5.7R and the fill model costs none, because the whole burden lands on shorts (which buy the ask to exit). ⚠ **Spread is a fact about the SYMBOL as much as the account** — the `PROFILES` values are XAUUSD's, measured per broker off that broker's own cached ticks (**Vantage 0.22 over 1.49M ticks, PU Prime 0.33 over 688k**; quoting one for the other is a 50% error), exactly as `swap` already was. `bid_ask_fills` validates that `spread > 0`, because an ask equal to the bid would silently do nothing while claiming the fills are modelled. 386 tests green. Earlier: 2026-07-31 — `EngineConfig`'s FVG defaults reconciled to the ENGINE (`fvg_max_count` 6→8, `fvg_threshold_pct` 0.1→0.0), and doing it exposed that `mpc_sos_fade` had been reading the old `0.1` **unpinned** — a stale-looking default that was actually load-bearing. The unpinned-engine-input rule below gained that second example and its corollary: never tidy an `EngineConfig` default without checking which consumers read it unpinned. Both strategy parity gates re-verified green afterwards. Earlier: 2026-07-29 — `run_report.py --start` now defaults to the MEASURED broker floor instead of a hardcoded `2022-01-01`, and `backtest/archive/` was added for committed multi-year trade data. Earlier: 2026-07-27 — `build_results` gained `blocked_setups` and `missed_setups`; 2026-07-26 — `EngineConfig` gained `fvg_require_close` (see the unpinned-engine-input rule below); `verify_parity.py` gained a veto column and now runs the B-LEG parity check too
 
 ---
 
@@ -53,6 +53,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   **LOT** per side (a lot is `contract_size` units — 100 oz for gold), and `slippage_ticks` is a
   **bar-mode-only** estimate charged on **market exits only**, because a resting limit fills at
   its price or better or not at all and tick mode measures the real thing off the tape.
+  **Bar mode learned the SPREAD and the SWAP on 2026-08-02**, which were the two costs bar mode
+  could have priced all along and did not: `AccountProfile` gained `spread` (price units, bar-mode
+  only — tick mode has the real book) and `bid_ask_fills`. Both default to the honest zero, so a
+  profile built before they existed is byte-identical. Swap needed no new code at all — the charge
+  path has always run in bar mode and was dead only because callers passed `swap=None`.
+  ⚠ **The two spread fields are ALTERNATIVES, not layers** — a flat charge, or transacting on the
+  real side of the book; running both bills one spread twice, and `_charge_spread` refuses the
+  second. ⚠ **They do not agree, and the gap is the finding, not a defect**: a flat charge assumes
+  market orders, and a strategy whose entries and exits all name a PRICE feels the spread as fill
+  TIMING instead — measured on `mpc_sos_fade`, the flat charge costs 5.7R and the fill model costs
+  none, because the whole burden lands on shorts (which buy the ask to exit). ⚠ **Spread is a fact
+  about the SYMBOL as much as the account** — the values in `PROFILES` are XAUUSD's, measured per
+  broker off that broker's own cached ticks (**Vantage 0.22 over 1.49M ticks, PU Prime 0.33 over
+  688k**; quoting one for the other is a 50% error), exactly as `swap` already was.
   `fill_model="tick"` resolves every level against real bid/ask ticks (long enters on the ask, exits
   on the bid), measures stop slippage off the actual next tick rather than assuming a constant, and
   charges commission + swap into the trade's own P&L. **Tick mode is expected to DISAGREE with the

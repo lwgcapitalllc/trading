@@ -702,6 +702,41 @@ change IS the signal here.
 
 ---
 
+## Costs are chosen BEFORE the run, and the run page only reports them
+
+**Built 2026-08-02. `RunBacktestModal` owns the switches; `BacktestDetail` owns nothing.**
+
+The **Run backtest modal** (opened from `Strategies` or `StrategyDetail`) carries a **Costs** block —
+one row per layer in `python_runner.COST_LAYERS`, every one **OFF by default**, and the whole block
+gated on `strategy.runner === 'python'` because only the local runner can charge them. `BacktestDetail`
+renders a read-only **Costs charged for** row and no control at all.
+
+That split is not a UI convenience, it is the same rule the rest of this app runs on. **A cost is part
+of how a run was MEASURED, so it is frozen with the trades.** A toggle on the detail page would flip a
+number while the trade list under it stayed put — the page would be showing a book nothing had ever
+replayed. Compare the News & Holiday filter directly above, which legitimately IS a page-level toggle:
+it only ever REMOVES trades the run already made, so every number it produces is still derived from
+that run. A cost changes what the trades would have been, which is a different run.
+
+Four things that would each silently mislead if changed:
+
+- **The spread is never typed.** `useBrokerProfiles` (`staleTime: Infinity`) fetches
+  `GET /backtests/broker-profiles` and every detail string on those rows — the `$0.22` spread, the
+  swap per night — is rendered FROM that response. A number hardcoded into a form is a second claim
+  about what the backend charges, and that exact defect (the Run modal's old futures 2.25/1 reaching
+  a forex run) is why this whole area was rebuilt.
+- **Spread and "model bid/ask fills" are mutually exclusive**, enforced in `toggleLayer` by unticking
+  the other. They are two ways of pricing one spread; both on bills it twice.
+- **`cost_layers: []` and `cost_layers: null` must render DIFFERENTLY.** The detail row is gated on
+  `run.cost_layers != null`: `[]` means the run was asked to charge nothing, `null` means the run
+  predates the switches. Showing "no costs" for both would claim a deliberate free run where there
+  was only an older contract.
+- **Two rows are tagged, and the tags are the point.** Slippage says it is a guess (it is the one
+  cost history cannot measure), and bid/ask fills says it moves trades (it is the only layer that
+  changes which setups fill). A reader ticking either should know that before the run, not after.
+
+---
+
 ## What's built (status)
 
 | Module | Status | Notes |

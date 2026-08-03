@@ -55,7 +55,21 @@ resets them to defaults on every chart he has the script on.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-08-02 — **every trade now RECORDS the fib leg it was priced off, so the lab
+**Last reviewed:** 2026-08-02 — **this bot can be charged the SPREAD and the OVERNIGHT SWAP now**,
+which are the two costs bar mode always knew and never billed, and it matters here more than on most
+strategies because this runner is DESIGNED to hold overnight (deviation 1). Both come from a broker
+profile rather than a typed number, behind layers that are **ALL OFF by default** — the baseline run
+stays free so it stays comparable to the TradingView Strategy Tester. **MEASURED over 155,431 M15
+bars (2020 → 2026-07-31) at the shipped defaults: free 161 trades / 135.94R / $28.26M · +spread
+130.27R / $16.27M · +spread+swap 123.90R / $10.09M · bid/ask fills 159 trades / 141.93R / $29.48M.**
+⚠ **A small charge is not a small effect — 12.04R of cost turns $28.3M into $10.1M, 64% of the
+balance for 9% of the R**, because at fixed % risk a dollar not earned early never compounds; read a
+cost against the R, never the net dollars. ⚠ **The bid/ask row is HIGHER than free, and that is what
+a limit-entry strategy does with a spread** — every order here names a PRICE, so the spread moves
+fill TIMING and lands almost entirely on SHORTS. Full table, the long-vs-short reasoning and the
+"treat it as a lab finding" caveat: *Layered costs* below. ✅ The free path reproduces the documented
+161 / +135.94R baseline to the cent and `compare_strategy.py` is exit 0. Earlier the same day:
+**every trade now RECORDS the fib leg it was priced off, so the lab
 chart can draw the exact ladder the entry, stop and targets came from.** Aaron's brother asked to
 see, on each plotted trade, the fib run on the points that trade used — i.e. which retracement
 levels it went into. `Trade.fib` (a `TradeFib`: the eight `(ratio, price)` pairs plus the bar the
@@ -753,9 +767,57 @@ Two units, both deliberate, and both would look plausible if wrong:
   exist. It is also skipped entirely in **tick mode**, where the fill price already contains the
   real slippage off the tape — charging an estimate on top would book it twice.
 
-⚠ **Swap is NOT charged from the lab's fields.** The lab does not collect it, and this runner is
-designed to hold overnight (see deviation 1), so a real overnight cost exists and this path does
-not price it. Tick mode + `account_profile` remains the only way to get it.
+⚠ ~~**Swap is NOT charged from the lab's fields.**~~ **Closed 2026-08-02 — see below.**
+
+### Layered costs — spread and swap, and the one that moves trades (2026-08-02)
+
+Aaron's ask: *"you know the spread… the only thing we don't know is slippage."* Correct, and bar
+mode was pricing neither the spread nor the swap. Both are now chargeable, from a broker profile
+rather than a typed number, behind independent switches that are **all OFF by default** — the
+baseline run stays frictionless so it stays comparable to the TradingView Strategy Tester, and
+every cost is something you deliberately turned on. Lab contract: `python_runner.COST_LAYERS`.
+
+**Swap needed almost nothing** — `_charge_swap` has run on every bar in bar mode since A2 and was
+dead only because the lab passed `swap=None`. It matters here more than on most strategies: this
+runner is designed to hold overnight (deviation 1) and gold swap is **−74.84 points/lot/night**
+long on the Vantage demo.
+
+**The spread is measured, and the number this repo had was the wrong broker's.** `$0.33` is PU
+Prime's (688k ticks). Vantage — the broker every backtest here replays — measures **$0.22**
+(median, over 1,494,459 cached ticks spanning 2025-08 → 2026-07; p90 0.27, p99 0.31). Using 0.33
+would have overstated every backtest cost by 50%.
+
+**MEASURED over 155,431 M15 bars, 2020-01-01 → 2026-07-31, at the shipped defaults:**
+
+| run | trades | sum R | final equity | charged |
+|---|---|---|---|---|
+| free (the shipped baseline) | 161 | 135.94R | $28.26M | $0 |
+| + spread as a cost | 161 | 130.27R | $16.27M | −$266,948 |
+| + spread + swap | 161 | 123.90R | $10.09M | −$333,110 |
+| **bid/ask fills + swap** | **159** | **141.93R** | **$29.48M** | −$361,835 |
+
+Two things to take from that table, and the second is the one worth remembering.
+
+⚠ **A small charge is not a small effect.** 12.04R of cost turns $28.3M into $10.1M — **64% of the
+final balance for 9% of the R** — because at a fixed % risk a dollar not earned early never
+compounds. Always read a cost against the R, never against the net dollars.
+
+⚠ **The last row is HIGHER than the free baseline, and that is not a bug — it is what a
+limit-entry strategy does with a spread.** A flat spread charge is the market-order intuition (buy
+the ask, sell the bid, lose the spread), and nothing here is a market order: every entry and exit
+names a PRICE, so the spread changes WHEN an order fills rather than what it fills at. On a long
+the buy limit fills at its own price and the stop sells at its own price — identical cash result,
+the limit is simply harder to reach. The cost lands almost entirely on SHORTS, which sell the bid
+to get in and buy the ask to get out, so their stops arrive a spread early and their targets a
+spread late. On this book that traded 6 marginal entries away and, because there is one position
+slot, let 4 different setups through in their place — the queue effect Run 12 already measured.
+**So read the flat charge as a conservative UPPER BOUND and `bid_ask_fills` as the real question.**
+⚠ It is also the newest and least-validated path here: it is unit-tested per order side and
+measured once. Treat a `bid_ask_fills` result as a lab finding until it has been read on a chart.
+
+Everything else is unchanged and deliberately so: **omit the profile and every path is
+byte-identical** (the free row above reproduces the documented 161 / +135.94R exactly), the
+harness never passes one, and `compare_strategy.py` is still **exit 0**.
 
 ### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
 

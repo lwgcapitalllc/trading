@@ -1515,17 +1515,31 @@ class Execution:
         however many rungs the ladder fills — charging a whole spread per fill would bill a
         three-leg exit three times.
 
-        ⚠ **This is the ALTERNATIVE to `bid_ask_fills`, never its companion.** There are two
-        coherent ways to price a spread and they are mutually exclusive:
+        ⚠ **This is the ALTERNATIVE to `bid_ask_fills`, never its companion**, and the two are
+        answering the same question two different ways:
 
-        * charge it as a cost and leave every fill on the bid (here) — moves money, moves no
-          trades, and is directly comparable to a run with no costs at all;
-        * transact on the real side of the book (`bid_ask_fills`) — the entry books at the ask
-          and the exit at the bid, so the spread is paid BY CONSTRUCTION, exactly as tick mode
-          pays it.
+        * **Here** — bill a flat spread per round turn and leave every fill where it was. Moves
+          money, moves no trades, and stays directly comparable to a run with no costs at all.
+        * **`bid_ask_fills`** — put every order on the side of the book it really transacts on,
+          and let the cost fall wherever the order structure puts it.
 
-        Doing both bills the same spread twice. So this returns early when the fills are already
-        modelled, which keeps one spread per round turn true in either mode."""
+        Running both bills the spread twice, so this returns early when the fills are modelled.
+
+        ⚠ **They do NOT converge, and the reason matters more than the arithmetic.** A flat charge
+        is the MARKET-ORDER intuition — buy the ask, sell the bid, lose the spread — and this
+        strategy places neither side as a market order. Every order here names a PRICE, and a
+        named price is reached when the relevant side of the book gets to it, so the spread
+        changes WHEN you fill rather than what you are filled at. Worked through on a long: the
+        buy limit fills at its own price (the ask got there) and the stop sells at its own price
+        (the bid got there), so the cash result is identical and the whole effect is that the
+        limit is harder to reach. A SHORT is where it really bites — it sells the bid to get in
+        and BUYS THE ASK to get out, so its stop arrives a spread early and its targets a spread
+        late, every time.
+
+        So the flat charge is a deliberately CONSERVATIVE approximation for this strategy, not a
+        cheaper version of the same answer: measured over 2020-2026 it takes 5.7R off the book
+        while the fill model does not. Treat it as an upper bound on what the spread can cost,
+        and `bid_ask_fills` as the question of what it actually does."""
         s = self._spread()
         if s <= 0 or getattr(self._profile, "bid_ask_fills", False):
             return
