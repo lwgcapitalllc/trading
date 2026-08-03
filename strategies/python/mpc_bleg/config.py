@@ -41,6 +41,19 @@ class BLegConfig(SosFadeConfig):
     #   Pine is the contract, so the value is pinned here rather than inherited. It is also unused
     #   on this path — a B leg's stop is the frozen band's origin, never the fib anchor — so the
     #   pin costs nothing and only stops a silent drift between this config and its export.
+    #   ── the 2026-08-02 A+ entry model — PINNED to the pre-2026-08-02 behaviour ──────────────
+    #   `mpc_b_leg_strategy.pine` has none of these inputs and still ships `execDeepFib = true`,
+    #   so this fork must keep Method 3 and nothing else, or it drifts from its OWN Pine.
+    #   NOT inert, which is why they are pinned rather than left to the parent's defaults: this
+    #   fork overrides `_place_entries` but NOT `_entry_edges`, and the edges it produces feed
+    #   `_armed()` — the "A+ has priority, stand the B leg down" gate. A different A+ entry edge
+    #   therefore changes which bars the B leg is allowed to trade on.
+    exec_deep_fib: bool = True        # the parent defaulted this True → False on 2026-08-02
+    exec_fib_nearest: bool = False    # rule 3 — the parent's new default, absent from this Pine
+    exec_fib_overlap: bool = False    # rule 1 — absent from this Pine
+    exec_fib_deep_edge: bool = False  # rule 2 — absent from this Pine
+    exec_fvg_pre_zone: bool = False   # the pre-zone gate — absent from this Pine
+    exec_sl_deep: bool = False        # the deep-entry stop override — absent, and unused here
     exec_min_stop_mode: str = "Off"   # "Minimum stop distance" — pinned OFF, and INERT here
     #   Inherited from the parent, which added it 2026-07-30 as the guard for a stop that collapses
     #   onto the entry. It does NOT apply on this path: the floor is enforced in the parent's

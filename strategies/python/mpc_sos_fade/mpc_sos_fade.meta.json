@@ -84,27 +84,60 @@
       "desc": "Only count a gap that sits fully beyond the 0.5 retracement. ON by default — part of the deep-entry combo. Demands a deeper pullback, so you get a better price on fewer fills. Note this still filters gaps even when 'Require an FVG' is off — it changes which gap becomes the entry price."
     },
     {
-      "name": "exec_deep_fib",
+      "name": "exec_fvg_pre_zone",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Gap must pre-date the zone",
+      "options": {
+        "off": "Any live gap",
+        "on": "Only older gaps"
+      },
+      "desc": "Only count a gap that was already alive on the bar price first tagged 0.5. A gap printed by the reversal candle AFTER price is already inside the zone is the retrace confirming itself — it manufactures the confluence the setup is judged on, and it re-prices the limit to a level nothing justified. OFF by default. Measured over 2020-2026 it removes 17 setups worth +4.0R in total (noise) plus one +16.5R trade, so judge it on the logic rather than the R."
+    },
+    {
+      "name": "exec_fib_overlap",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Gap on a fib → enter on the fib",
+      "options": {
+        "off": "Gap edge",
+        "on": "The fib level"
+      },
+      "desc": "Rule 1, and the only one that fires on a gap whose BODY holds a fib level. ON, the limit rests on that level (the shallowest, if several are inside) rather than at the gap's edge — so the order sits inside the imbalance the setup was justified by instead of in front of it. Independent of the three rules below; 0.886 is never a target, because the stop sits there and a zero stop distance cancels the order."
+    },
+    {
+      "name": "exec_fib_deep_edge",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Floating gap → its own deep edge",
+      "options": {
+        "off": "Off",
+        "on": "Gap's far edge"
+      },
+      "desc": "Rule 2, for a gap that holds NO fib level and floats deeper than 0.618. ON, the limit rests at the gap's own FAR edge — the side nearest the level below it. The only deep rule that always fills: the limit is INSIDE the gap, so price entering the imbalance at all fills you. Measured WORSE than 'Nearest fib either side' over 2020-2026, so it ships OFF; it overrides the two rules below when on."
+    },
+    {
+      "name": "exec_fib_nearest",
       "group": "Entry zone",
       "core": true,
       "widget": "toggle",
-      "label": "Deep gap → nearest fib",
-      "options": {
-        "off": "Gap edge",
-        "on": "Nearest fib"
-      },
-      "desc": "When a qualifying gap floats deep in the zone (its near edge past 0.618), rest the limit at the nearest fib just shallower — 0.618 / 0.702 / 0.786 — instead of chasing the gap's own edge. ON by default: it recovers the deep setups that used to miss when price stalled at a fib and turned back before ever tapping the gap. A gap sitting on a fib, or shallower than 0.618, is unchanged."
-    },
-    {
-      "name": "exec_fvg_50",
-      "group": "Entry zone",
-      "widget": "toggle",
-      "label": "0.5-straddling gap entry (not supported)",
+      "label": "Floating gap → nearest fib",
       "options": {
         "off": "Off",
-        "on": "On"
+        "on": "Nearest either side"
       },
-      "desc": "Pine-only for now. In TradingView this qualifies a gap that STRADDLES the 0.5 line (its bottom below, its top above) and rests the limit at 0.5 itself — the least favourable of the entry methods, ranked last behind the deep-gap edge, the deep-fib re-price and the Sniper Zone. NOT ported to this bot — leave it OFF; turning it on has no effect on a lab run (and the Pine-parity check refuses an export taken with it on)."
+      "desc": "Rule 3, the shipped default. For a gap holding no fib level and floating deeper than 0.618, measure both distances — up to the level above it and down to the level below it — and rest on whichever is CLOSER. It fixes the old behaviour where a gap sitting just short of 0.702 was still entered way back at 0.618. Not free: when the deeper level wins, the limit sits PAST the gap, so a setup that only tags the gap and turns never fills. Deeper entry and a tighter stop, bought with fill rate."
+    },
+    {
+      "name": "exec_deep_fib",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Floating gap → nearest fib ABOVE",
+      "options": {
+        "off": "Off",
+        "on": "Shallower fib only"
+      },
+      "desc": "Method 3 — the original one-sided form of the two rules above, kept so any historical result reproduces. A floating gap deeper than 0.618 rests at the nearest fib just SHALLOWER than it (0.618 / 0.702 / 0.786), the level price reaches first. It never looks at the level below the gap however much closer that one is, which is exactly what 'Floating gap → nearest fib' fixes. Only reachable with both rules above OFF; defaulted off on 2026-08-02 when rule 3 replaced it."
     },
     {
       "name": "exec_htf_weekly",
@@ -207,6 +240,17 @@
       ]
     },
     {
+      "name": "exec_sl_deep",
+      "group": "Risk & stop",
+      "widget": "toggle",
+      "label": "Deep entries stop at 1.0",
+      "options": {
+        "off": "Always the level above",
+        "on": "1.0 past 0.786"
+      },
+      "desc": "An entry that fills at or deeper than the 0.786 fib puts its stop at the leg origin (1.0) instead of the level chosen above; 0.702 and shallower keeps that level. It exists because the entry band and the stop share the 0.886 line, so the deep end of the band is priced against a stop it is nearly touching — 0.100 of the leg at a 0.786 entry, and nothing at all at 0.886. OFF by default. It costs R on every trade it touches: a 0.786 entry goes from a 0.100 stop to a 0.214 stop, so the runner falls from 7.86R to 3.67R and the position is less than half the size. You are buying a stop that survives spread and noise and paying for it in reward — measure it, don't assume it."
+    },
+    {
       "name": "exec_sl_buf_tk",
       "group": "Risk & stop",
       "label": "Stop buffer",
@@ -237,7 +281,11 @@
       "desc": "The floor value, in the unit of the mode above: a percent in '% of price', dollars of price in 'Fixed $', a multiple in 'x ATR(14)'. Ignored when the mode is Off. Measured over 8 years of gold 15m: mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.",
       "step": 0.05,
       "show_if": {
-        "exec_min_stop_mode": ["% of price", "Fixed $", "x ATR(14)"]
+        "exec_min_stop_mode": [
+          "% of price",
+          "Fixed $",
+          "x ATR(14)"
+        ]
       },
       "guide": [
         "Almost nothing is refused",

@@ -442,21 +442,29 @@ def test_a_setup_that_traded_is_never_a_miss():
 # Leg fibs (from _sig): 0.5=105.0  0.618=103.82  0.702=102.8  0.786=102.0  0.886=101.14.
 # A gap qualifies for the entry band when bot<=0.5 and top>=0.886. "Near edge" for a
 # long is the gap TOP (price reaches it first on the way down).
+#
+# Method 3 sits at the BOTTOM of the 2026-08-02 cascade, so every test here has to switch
+# rules 2 and 3 off to reach it. `_m3` says that once instead of four times.
+
+def _m3(**kw):
+    return _cfg(exec_req_fvg=True, exec_fib_overlap=False, exec_fib_deep_edge=False,
+                exec_fib_nearest=False, **kw)
+
 
 def test_deep_fib_reprices_a_deep_long_gap_to_the_nearest_shallower_fib():
     """Method 3 ON: a gap floating deep in the zone (near edge below 0.618) rests at the
     fib just SHALLOWER, not the gap edge. Gap top 102.5 sits between 0.786 and 0.702, so
     the limit re-prices to 0.702 = 102.8 (the level price reaches first)."""
-    fvg = [(102.5, 101.5, True)]   # (top, bot, is_bull) — deep, floats between 0.786 and 0.702
-    ex_on = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))
+    fvg = [(102.5, 101.5, True, 0)]   # (top, bot, is_bull, born) — deep, between 0.786 and 0.702
+    ex_on = Execution(_m3(exec_deep_fib=True))
     le, _ = ex_on._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))
     assert abs(le - 102.8) < 1e-9          # 0.702, not the 102.5 gap edge
 
 
 def test_deep_fib_off_keeps_the_gap_edge_entry():
-    """Same gap, Method 3 OFF: unchanged — the limit rests at the gap's own near edge."""
-    fvg = [(102.5, 101.5, True)]
-    ex_off = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=False))
+    """Same gap, EVERY snap rule OFF: unchanged — the limit rests at the gap's own near edge."""
+    fvg = [(102.5, 101.5, True, 0)]
+    ex_off = Execution(_m3(exec_deep_fib=False))
     le, _ = ex_off._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))
     assert abs(le - 102.5) < 1e-9          # min(top, 0.5) = the gap edge
 
@@ -464,24 +472,155 @@ def test_deep_fib_off_keeps_the_gap_edge_entry():
 def test_deep_fib_leaves_a_shallow_gap_unchanged():
     """A gap whose near edge is SHALLOWER than 0.618 (top 104.0, between 0.5 and 0.618) is
     not a Method 3 case — it enters at the gap edge whether the toggle is on or off."""
-    fvg = [(104.0, 101.5, True)]
-    on = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))._entry_edges(
+    fvg = [(104.0, 101.5, True, 0)]
+    on = Execution(_m3(exec_deep_fib=True))._entry_edges(
         _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))[0]
-    off = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=False))._entry_edges(
+    off = Execution(_m3(exec_deep_fib=False))._entry_edges(
         _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))[0]
     assert abs(on - 104.0) < 1e-9 and abs(off - 104.0) < 1e-9
 
 
+def _bear_sig(fvg):
+    """Short-side leg: 0.5=105 0.618=106.18 0.702=107.2 0.786=108.0 0.886=108.86."""
+    return _sig(0, 106, 106.1, 105.5, 105.8, dir=-1, fvgs=fvg,
+                fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.2, fibo_p5=108.0,
+                fibo_p6=108.86, fibo_p1=103.82, fibo_p7=100.0, fibo_p10=110.0)
+
+
 def test_deep_fib_reprices_a_deep_short_gap():
-    """Short mirror: near edge is the gap BOTTOM. With short-side fibs 0.5=105 0.618=106.18
-    0.702=107.2 0.786=108.0 0.886=108.86, a gap bottom 107.5 (between 0.702 and 0.786)
-    re-prices to 0.702 = 107.2."""
-    fvg = [(108.0, 107.5, False)]
-    sig = _sig(0, 106, 106.1, 105.5, 105.8, dir=-1, fvgs=fvg,
-               fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.2, fibo_p5=108.0,
-               fibo_p6=108.86, fibo_p1=103.82, fibo_p7=100.0, fibo_p10=110.0)
-    _, se = Execution(_cfg(exec_req_fvg=True, exec_deep_fib=True))._entry_edges(sig)
+    """Short mirror: near edge is the gap BOTTOM. A gap bottom 107.5 (between 0.702 and
+    0.786) re-prices to 0.702 = 107.2."""
+    sig = _bear_sig([(108.0, 107.5, False, 0)])
+    _, se = Execution(_m3(exec_deep_fib=True))._entry_edges(sig)
     assert abs(se - 107.2) < 1e-9
+
+
+# ------------------------------------------- the 2026-08-02 entry model (rules 1-3) ----
+# Long leg fibs again: 0.5=105.0  0.618=103.82  0.702=102.8  0.786=102.0  0.886=101.14.
+# A gap running 102.7 -> 102.05 FLOATS between 0.702 and 0.786 — its body holds no level —
+# and is deliberately NOT equidistant: 0.05 down to 0.786, 0.10 up to 0.702. That asymmetry
+# is what separates rule 3 from Method 3, which only ever looks upward.
+
+_FLOAT_GAP = [(102.7, 102.05, True, 0)]
+
+
+def _entry(cfg, fvg=None, sig=None):
+    return Execution(cfg)._entry_edges(sig or _sig(0, 104, 104.5, 103.9, 104.2,
+                                                   fvgs=fvg or _FLOAT_GAP))[0]
+
+
+def test_nearest_fib_takes_the_DEEPER_level_when_it_is_closer():
+    """Rule 3, the shipped default, and the whole reason it exists: the level BELOW the gap
+    is 0.05 away while the one above is 0.10, so the limit rests at 0.786. Method 3 would
+    take 0.702 however far away it was — that is the bug Aaron caught on 30 Jul 2026."""
+    assert abs(_entry(_cfg(exec_req_fvg=True)) - 102.0) < 1e-9
+    assert abs(_entry(_m3(exec_deep_fib=True)) - 102.8) < 1e-9   # the old answer, same gap
+
+
+def test_nearest_fib_takes_the_SHALLOWER_level_when_that_one_is_closer():
+    """The other half of rule 3 — and a tie goes to the shallower level, because that is the
+    one price reaches first, so an equal price is bought without giving up the fill."""
+    near_top = [(102.75, 102.3, True, 0)]     # 0.05 up to 0.702, 0.30 down to 0.786
+    assert abs(_entry(_cfg(exec_req_fvg=True), near_top) - 102.8) < 1e-9
+    tie = [(102.7, 102.1, True, 0)]           # 0.10 each way
+    assert abs(_entry(_cfg(exec_req_fvg=True), tie) - 102.8) < 1e-9
+
+
+def test_deep_edge_rests_inside_the_gap_and_overrides_rule_3():
+    """Rule 2 rests at the gap's OWN far edge — inside the imbalance, so price entering the
+    gap at all fills you — and it wins over rule 3 even with rule 3 also on."""
+    cfg = _cfg(exec_req_fvg=True, exec_fib_deep_edge=True, exec_fib_nearest=True)
+    assert abs(_entry(cfg) - 102.05) < 1e-9
+
+
+def test_deep_edge_falls_back_when_the_gap_reaches_the_band_FLOOR():
+    """A gap whose far edge clamps onto 0.886 would rest ON the stop — a zero stop distance
+    and a cancelled order. Rule 2 sends it to the level above instead (0.786)."""
+    on_the_floor = [(101.8, 101.0, True, 0)]      # far clamps to 0.886 = 101.14
+    cfg = _cfg(exec_req_fvg=True, exec_fib_deep_edge=True)
+    assert abs(_entry(cfg, on_the_floor) - 102.0) < 1e-9
+
+
+def test_overlap_rests_on_the_SHALLOWEST_level_inside_the_gap_body():
+    """Rule 1 fires only on a gap whose BODY holds a level, and takes the shallowest of them
+    — the one price reaches first. It is independent of rules 2/3, so it wins with both on."""
+    holds_two = [(103.0, 102.0, True, 0)]         # body holds 0.702 and 0.786
+    cfg = _cfg(exec_req_fvg=True, exec_fib_overlap=True)
+    assert abs(_entry(cfg, holds_two) - 102.8) < 1e-9
+    # …and this is the case rule 1 exists for. Rule 3 does not ask whether the body holds a
+    # level, so on its own it snaps this gap to 0.618 — ABOVE the whole imbalance, filling
+    # before price has traded into the thing the setup was justified by.
+    assert abs(_entry(_cfg(exec_req_fvg=True), holds_two) - 103.82) < 1e-9
+
+
+def test_no_rule_ever_snaps_an_entry_onto_0_886():
+    """0.886 is the STOP. An entry resting there has a stop distance of zero, `dist > 0`
+    fails, the order is cancelled and the setup vanishes with no trade and no block tag — so
+    every scan stops at 0.786. This gap floats between 0.786 and 0.886, where the nearest
+    level below it IS 0.886, and no toggle combination may reach it."""
+    between = [(101.8, 101.3, True, 0)]
+    for cfg in (_cfg(exec_req_fvg=True),                                    # rule 3
+                _cfg(exec_req_fvg=True, exec_fib_overlap=True),             # rule 1 + 3
+                _m3(exec_deep_fib=True)):                                   # Method 3
+        assert _entry(cfg, between) > 101.14
+
+
+def test_the_entry_model_mirrors_on_a_bear_leg():
+    """Short mirror of rule 3: gap 107.3 -> 107.95 floats between 0.702 (107.2) and 0.786
+    (108.0); 0.05 deeper vs 0.10 shallower, so the deeper level 0.786 wins."""
+    sig = _bear_sig([(107.95, 107.3, False, 0)])
+    _, se = Execution(_cfg(exec_req_fvg=True))._entry_edges(sig)
+    assert abs(se - 108.0) < 1e-9
+
+
+# ------------------------------------------------ the pre-zone gate (execFvgPreZone) ----
+
+def test_pre_zone_gate_refuses_a_gap_the_retrace_itself_printed():
+    """A gap born ON or AFTER the bar price first tagged 0.5 is the retrace manufacturing its
+    own confluence. STRICTLY earlier survives: born on the zone-entry bar was still forming
+    as price arrived, so it was not present."""
+    ex = Execution(_cfg(exec_req_fvg=True, exec_fvg_pre_zone=True))
+    for born, kept in ((9, True), (10, False), (11, False)):
+        sig = _sig(0, 104, 104.5, 103.9, 104.2, fibo_half_bar=10,
+                   fvgs=[(102.7, 102.05, True, born)])
+        assert (ex._entry_edges(sig)[0] is not None) is kept, born
+
+
+def test_pre_zone_gate_is_inert_when_off_and_before_the_zone_is_reached():
+    """Off = the original condition exactly. And with the toggle ON but price not yet in the
+    zone (`fibo_half_bar` None) every gap trivially pre-dates a moment that has not happened,
+    so nothing is refused — that is what keeps the gate from suppressing the arm itself."""
+    late = [(102.7, 102.05, True, 99)]
+    assert _entry(_cfg(exec_req_fvg=True, exec_fvg_pre_zone=False),
+                  fvg=late, sig=_sig(0, 104, 104.5, 103.9, 104.2,
+                                     fibo_half_bar=10, fvgs=late)) is not None
+    assert _entry(_cfg(exec_req_fvg=True, exec_fvg_pre_zone=True),
+                  fvg=late, sig=_sig(0, 104, 104.5, 103.9, 104.2,
+                                     fibo_half_bar=None, fvgs=late)) is not None
+
+
+# ----------------------------------------------- the deep-entry stop (execSlDeep) ----
+
+def test_sl_deep_moves_the_stop_to_the_leg_origin_only_for_a_deep_fill():
+    """AT OR PAST 0.786 -> fib 1.0 (the leg origin, the only level beyond the whole entry
+    band). 0.702 and shallower keeps the chosen level. The test is inclusive at 0.786 on
+    purpose: rule 3 assigns that fib to the edge directly, so the comparison is exact."""
+    sig = _sig(0, 104, 104.5, 103.9, 104.2)
+    on = Execution(_cfg(exec_sl_level="0.886", exec_sl_deep=True))
+    assert on._sl_anchor(sig, 102.0, True) == sig.fibo_p10     # exactly 0.786 -> 1.0
+    assert on._sl_anchor(sig, 101.5, True) == sig.fibo_p10     # deeper still -> 1.0
+    assert on._sl_anchor(sig, 102.8, True) == sig.fibo_p6      # 0.702 -> the chosen level
+    off = Execution(_cfg(exec_sl_level="0.886", exec_sl_deep=False))
+    assert off._sl_anchor(sig, 102.0, True) == sig.fibo_p6     # toggle off: never moves
+
+
+def test_sl_deep_mirrors_on_a_bear_leg_and_treats_a_missing_edge_as_shallow():
+    bear = _bear_sig([])
+    on = Execution(_cfg(exec_sl_level="0.886", exec_sl_deep=True))
+    assert on._sl_anchor(bear, 108.0, False) == bear.fibo_p10  # exactly 0.786 -> 1.0
+    assert on._sl_anchor(bear, 107.2, False) == bear.fibo_p6   # 0.702 -> the chosen level
+    # An unknown edge must never silently WIDEN the stop.
+    assert on._sl_anchor(bear, None, False) == bear.fibo_p6
 
 
 # ---------------------------------------------- runner trail + TP2 stop floor ----

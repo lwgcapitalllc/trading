@@ -91,7 +91,7 @@ class BosExecution(Execution):
 
         # 1 + 2 — the FVG edge, optionally re-priced to the nearest shallower fib
         if cfg.bos_use_fvg:
-            for top, bot, is_bull in sig.fvgs:
+            for top, bot, is_bull, _born in sig.fvgs:
                 if (L.on and L.fibs_ready and is_bull and bot <= L.p2 and top >= L.p6
                         and (not cfg.exec_fvg_deep_only or top <= L.p2)):
                     self._l_from_fvg = True
@@ -122,7 +122,7 @@ class BosExecution(Execution):
 
         # 4 — the least-favourable gap entry: a body straddling 0.5 (Pine 3503-3513)
         if cfg.bos_use_fvg and cfg.exec_fvg_50:
-            for top, bot, is_bull in sig.fvgs:
+            for top, bot, is_bull, _born in sig.fvgs:
                 if long_edge is None and L.on and L.fibs_ready and is_bull \
                         and bot <= L.p2 and top >= L.p2:
                     long_edge, self._l_from_fvg = L.p2, True

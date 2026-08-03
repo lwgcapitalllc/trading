@@ -14,7 +14,21 @@ identical decision stream. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** the validated windows have produced 2–5 trades each, far too thin
 to tune against. See "The parity gate".
-**Last reviewed:** 2026-08-01 — 🔴 **THIS BOT INHERITED THE PHANTOM-EXIT BUG AND IS FIXED WITH THE
+**Last reviewed:** 2026-08-02 — **the parent's new A+ entry model is PINNED OFF here, and unlike the
+minimum-stop guard it is NOT inert.** `mpc_sos_fade` gained rules 1-3 (`exec_fib_overlap` /
+`exec_fib_deep_edge` / `exec_fib_nearest`), the pre-zone gate (`exec_fvg_pre_zone`) and the
+deep-entry stop (`exec_sl_deep`), and flipped `exec_deep_fib` **True → False**.
+`mpc_b_leg_strategy.pine` has none of those inputs and still ships `execDeepFib = true`, so
+`BLegConfig` pins all six. **Why the pins are load-bearing rather than tidiness:** this fork
+overrides `_place_entries` but **NOT `_entry_edges`**, and the A+ edges it produces are passed to
+`_armed()` — the "A+ has priority, stand the B leg down" gate. A different A+ entry edge therefore
+changes which bars the B leg is allowed to trade on, so inheriting the parent's new defaults would
+have moved B-LEG trades with no Pine change behind it. The pins keep this fork byte-identical to its
+own Pine; nothing in this package's code changed and the parity run below still stands. Un-pin only
+in the same commit that ports the model into `mpc_b_leg_strategy.pine`, then re-run `compare_bleg.py`.
+⚠ One additive change did reach here: `Signals.fvgs` is now a 4-tuple carrying each gap's born bar,
+and `Signals` gained `fibo_half_bar`. Both are read only by the pinned-off gate, so no B-LEG decision
+moves. Earlier: 2026-08-01 — 🔴 **THIS BOT INHERITED THE PHANTOM-EXIT BUG AND IS FIXED WITH THE
 A+ — it reuses `mpc_sos_fade/execution.py`, so the fix arrived here without a line changing in this
 folder.** `indicators/BUG_exit_fill_price_mismatch.md`: the FILL BAR was allowed to stage the stop,
 which put the stop through the market on a trade that had gone nowhere and market-closed every leg

@@ -92,8 +92,20 @@ class Signals:
     fibo_618_ever_reached: bool
     fibo7_touched: bool
 
-    # active FVGs overlapping consideration — (top, bottom, is_bullish)
-    fvgs: List[Tuple[float, float, bool]] = field(default_factory=list)
+    # active FVGs overlapping consideration — (top, bottom, is_bullish, born_index).
+    # `born_index` is the bar the gap PRINTED, read only by the `exec_fvg_pre_zone` gate
+    # (Pine's parallel `fvgBorn` array). It shares an origin with `index` and with
+    # `fibo_half_bar` below — every comparison is between two bars of the SAME run, so the
+    # origin itself never matters (which is what keeps this safe against a partial export).
+    fvgs: List[Tuple[float, float, bool, int]] = field(default_factory=list)
+
+    # The bar price first tagged 0.5 on THIS leg (Pine `fiboHalfBar`) — i.e. the bar price
+    # entered the entry zone. Latched once and reset with the leg, exactly like
+    # `fibo_half_reached`, so it is scoped to the same fib whose band a gap is judged against.
+    # `None` = price has not reached the zone yet, which makes `exec_fvg_pre_zone` inert
+    # (every gap trivially pre-dates a moment that has not happened). It defaults None rather
+    # than being required so a hand-built Signals in a test gets that inert behaviour.
+    fibo_half_bar: Optional[int] = None
 
     # Macro-fib POI (confluence flag only; on at <=5m)
     poi_long_now: bool = False
@@ -201,6 +213,11 @@ class SignalAdapter:
         # created, i.e. on every BOS. The engine reports the creation as an EVENT, so the
         # bar has to be latched here.
         self._sz_bar: Optional[int] = None
+
+        # Zone-entry bar (Pine `var int fiboHalfBar`) — the bar 0.5 was first tagged on the
+        # current leg. Latched here for the same reason as `_sz_bar`: the fib engine reports
+        # `half_reached` as a state, not the bar it flipped on.
+        self._half_bar: Optional[int] = None
 
     # ── liquidity helpers ──────────────────────────────────────────────────────
     _HIGH_NAME = {"h4": "H4 High", "day": "Day High", "asia": "Asia High",
@@ -350,8 +367,17 @@ class SignalAdapter:
         fibo7_touched = "TP3" in touched      # 0.0 hit
         fibo_half = fib.half_reached
 
-        # active FVGs (top, bottom, is_bullish)
-        fvgs = [(g.top, g.bottom, g.is_bullish) for g in _active_fvgs(state.fvg)]
+        # Pine 2649-2650: latch the bar 0.5 was first tagged, never refresh it. Pine clears it in
+        # the same block that clears `fiboHalfReached` on a new leg (`fiboOriginChanged`), and
+        # `f_checkTouch` only ever SETS that flag — so "clear whenever half_reached is false" is
+        # the same rule stated from this side, without needing the engine to expose the leg change.
+        if not fibo_half:
+            self._half_bar = None
+        elif self._half_bar is None:
+            self._half_bar = index
+
+        # active FVGs (top, bottom, is_bullish, born_index)
+        fvgs = [(g.top, g.bottom, g.is_bullish, g.born_index) for g in _active_fvgs(state.fvg)]
 
         # Macro POI (Pine 3700-3706): bull discount 0.618-0.886, short premium 0.382+
         poi_long = poi_short = False
@@ -385,7 +411,7 @@ class SignalAdapter:
             fibo_ash=(fib.ash if fib.active else None),
             fibo_asl=(fib.asl if fib.active else None),
             fibo_half_reached=fibo_half, fibo_618_ever_reached=fibo_618_ever,
-            fibo7_touched=fibo7_touched,
+            fibo7_touched=fibo7_touched, fibo_half_bar=self._half_bar,
             fvgs=fvgs, poi_long_now=poi_long, poi_short_now=poi_short,
             bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
             bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,

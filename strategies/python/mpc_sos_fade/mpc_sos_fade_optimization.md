@@ -2269,3 +2269,130 @@ band alone, so report that slice on its own rather than only the aggregate.
 
 **Not built, not measured, nothing adopted.** Recorded with the ambiguity unresolved on purpose —
 answer "nearest shallower or nearest by distance" before writing the branch.
+
+---
+
+# FVG TIMING — 2026-08-02 — **MEASURED. A gap born INSIDE the zone confirms its own entry.**
+
+**Aaron found it on the chart, from one trade: 30 Sep 2025.** Price traded into the 0.5-0.886 band,
+flipped violently while it was in there, and that flip printed a fair value gap. The strategy then
+used that gap as the entry confirmation — the retrace manufacturing the confluence it is judged on.
+His rule: **a gap must already exist when price arrives at the zone.**
+
+## The defect
+
+Neither the Pine nor the Python asks WHEN a gap was born. The entry-edge loop only asks whether a
+live gap OVERLAPS the band on the current bar:
+
+| where | what |
+|---|---|
+| `mpc_strategy.pine` | the entry-edge loop (`longEdge`/`shortEdge`) + the `aplus*_fvg` confluence flag |
+| `execution.py` | `_entry_edges()` |
+| `sequence.py` | the `l_fvg`/`s_fvg` confluence flag |
+
+Both sides already STORE the birth bar (`fvgBorn`, `FvgGap.born_index`). Nothing reads it. What was
+missing is a "bar price entered the zone" marker — the Pine's own `fiboHalfReached` latch is exactly
+that event, it just never recorded the bar.
+
+## How it was measured
+
+Full replay, `backtest/cache/XAUUSD__M15.csv`, **2020-01-01 → 2026-07-31, 155,431 M15 bars**, shipped
+defaults, post-Run-13 build. Two passes over the same bars: shipped, then with every gap whose
+`born_index` is not STRICTLY earlier than the leg's 0.5-tag bar removed from `sig.fvgs`. Trades
+paired on `(dir, sos_bar, day)` so a trade can be classified rather than just counted.
+
+**Zone entry is the Pine's OWN `fiboHalfReached` latch, not a raw price test.** That matters: a first
+pass using `low <= fiboP2` directly gave 149 trades / +104.22R. The faithful definition gives
+148 / +105.22R. Use the latch — it is what the A+ stage machine already calls "in the zone", and it
+resets with the fib leg, which is the leg the gap is being judged against.
+
+## The result
+
+| | trades | R | W / scratch / L |
+|---|---|---|---|
+| shipped | 165 | **+126.68** | 66 / 45 / 54 |
+| rule enforced | 148 | **+105.22** | 60 / 38 / 51 |
+
+The baseline reconciles with Run 13's post-fix figure (125.56R / 164 trades to 2026-07-29) — this run
+just carries two more days. **Read the DELTA, not the totals.**
+
+**20 baseline trades are touched:** 18 vanish, 2 survive on an older gap at a different limit (both
+lost either way), and **1 NEW trade appears** — the one position slot, freed by a removed trade.
+
+| year | shipped R | rule R | delta |
+|---|---|---|---|
+| 2020 | 32.56 | 27.03 | −5.53 |
+| 2021 | 7.46 | 7.97 | **+0.51** |
+| 2022 | −3.03 | −4.88 | −1.85 |
+| 2023 | 20.63 | 20.57 | −0.06 |
+| 2024 | 17.95 | 19.94 | **+1.99** |
+| 2025 | 34.79 | 18.75 | −16.04 |
+| 2026 | 16.31 | 15.84 | −0.47 |
+
+## The whole cost is ONE trade
+
+The 18 removed trades are +20.47R at 6 wins / 7 scratches / 5 losses. **2025-10-21 alone is +16.49R.**
+Strip it and the other 17 are **+3.98R over six and a half years** — noise, on a 126R book.
+
+So this is a rule to decide on the LOGIC. The R says almost nothing either way, and the one trade it
+does say something about is the one examined below.
+
+## ⚠ The cross-analysis, and a claim that was WRONG on the first pass
+
+The first read of the counterfactual was reported as *"18 vanish because no other gap was in the
+zone"*. **That was the replay's conclusion restated, not an inspection, and it is false.** Every zone
+was then enumerated gap by gap:
+
+| why no pre-zone gap qualified | trades (they overlap) |
+|---|---|
+| **nothing alive at all** | **0** |
+| some pre-zone gap was the **wrong direction** | 14 |
+| pre-zone gap **outside the 0.5-0.886 band** | 9 |
+| right direction, in band, rejected only by **`exec_fvg_deep_only`** | 4 |
+| a gap **fully qualified** and still no trade followed | 3 |
+
+**There is never an empty zone** — every one of the 18 had 3-6 gaps alive. The dominant disqualifier
+is DIRECTION, and that is structural rather than incidental: price ran one way into the zone, so the
+gaps it left behind point away from the fade being taken.
+
+**The 4 in the deep-only row are the actionable finding.** Those setups had a legitimate
+right-direction gap sitting in the band, and `exec_fvg_deep_only` rejected it for straddling 0.5 —
+not this rule. **The two toggles compound**, and that interaction has never been swept.
+
+## The +16.49R trade, in full — it is not what it looked like
+
+2025-10-21 short. **Two bearish gaps DID pre-date the zone** (born bars 136913 / 136921), and they
+rested a short limit at **4293.55** from well before price arrived. Price then traded up through it.
+
+It never filled because the **divergence / extreme-RSI veto was blocking the short** — armed on **0 of
+51 bars** while those gaps were alive. Bar 137008 then ripped 4292 → 4323.67 and mitigated both. From
+there NO bearish gap existed until the reversal candle at 137056 printed the one that took the trade.
+
+So the honest reading: this rule does not reject a setup that had no confirmation. It rejects one
+whose confirmation the veto stopped it taking, and which the market then destroyed. The other two
+qualified-gap cases are simpler — the limit rested at a different price and price never returned
+(2024-01-29 at 2044.19, armed all 13 bars; 2026-02-15 at 5067.65, armed 32 of 36).
+
+## Status — ⚠ BUILT, THEN LOST IN A TRADINGVIEW ROUND-TRIP
+
+The toggle was written into `mpc_strategy.pine` on 2026-08-02: `execFvgPreZone` (default OFF), a
+`fiboHalfBar` latch set beside `fiboHalfReached` and reset with the leg, and one helper
+(`f_gapPreZone`) ANDed onto every consumer of the gap arrays. **A paste from the TradingView side
+overwrote the file the same day and none of it survives** — same failure as `execFvgDeepest` in the
+2026-07-26 entry of `indicators/CLAUDE.md`. Rebuild from this record, and **commit repo-side Pine work
+before the next round-trip**.
+
+Nothing was ported to Python, so `mpc_sos_fade` still takes all 18 trades. Parity is unaffected —
+the toggle defaults OFF and byte-identical, and the export carries no `cfg_` column for it, so a run
+with it ON would be a TradingView finding, not a validated one.
+
+## What was NOT measured
+
+- **Drawdown.** Only trade count, R, and the per-year split. The removed trades include four −1R
+  losers, so DD could move either way and this run cannot say.
+- **The interaction with `exec_fvg_deep_only`**, which the category table shows is doing part of the
+  same job on 4 setups. Sweep the two together before adopting either.
+- **The inclusive variant** (`born <= zone entry`) is identical to the strict one under the Pine
+  latch — 148 trades both ways — so the boundary is not a live question here. It was NOT identical
+  under the raw-price definition (145 vs 149), which is one more reason to keep the latch.
+- **`mpc_bleg`** is structurally unaffected — its trigger is the band tap and it never reads an FVG.

@@ -38,17 +38,37 @@ class SosFadeConfig:
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require FVG overlap in zone"
     exec_fvg_deep_only: bool = True    # "Entry: FVG must sit fully past 0.5"
-    exec_deep_fib: bool = True         # "Entry: deep gap enters on nearest fib (not gap edge)"
-    #   Method 3 (Pine execDeepFib). OFF (default) = rest the limit at the gap's own edge (current
-    #   behaviour, keeps compare_strategy.py parity). ON = when a qualifying gap's NEAR edge sits
-    #   deeper than 0.618, rest at the nearest fib just SHALLOWER (0.618/0.702/0.786) — the level
-    #   price reaches first — instead of chasing an edge price may never tap. See execution._entry_edges.
-    exec_fvg_50: bool = False          # "Entry (least favorable): FVG must touch the 0.5 line"
-    #   Added to `mpc_strategy.pine` 2026-07-24. NOT PORTED YET — same pattern as `exec_conf_sz`:
-    #   the field exists so `compare_strategy.py` can REFUSE an export taken with it on rather than
-    #   silently diffing against logic this bot does not have. Porting it means qualifying a gap
-    #   that STRADDLES 0.5 (bottom <= 0.5 <= top) and resting the limit AT 0.5, ranked LAST behind
-    #   the deep-FVG edge, deep-fib and Sniper Zone — see execution._entry_edges.
+    exec_fvg_pre_zone: bool = False    # "Entry: FVG must exist BEFORE price enters the zone"
+    #   Pine execFvgPreZone (2026-08-02). ON = a gap only counts if it was already alive on the bar
+    #   price first tagged 0.5. A gap BORN inside the 0.5-0.886 band, printed by the flip once price
+    #   is already there, is the retrace manufacturing the confluence it is judged on. It gates BOTH
+    #   gap consumers — the confluence flag in `sequence.py` and the entry-edge loop here — so a gap
+    #   the entry may not use can never be labelled as the confluence that armed the setup.
+    #
+    #   ── The 2026-08-02 entry model: WHERE a qualifying gap's limit rests ──────────────────────
+    #   Four toggles, and the shape matters. Rule 1 is INDEPENDENT (it fires only on a gap whose
+    #   BODY holds a level). Rules 2 / 3 / Method 3 all answer the SAME question — where does a
+    #   FLOATING gap rest? — so they CASCADE, each overriding the one below it. Every level scan
+    #   stops at 0.786: 0.886 is the stop, so an entry resting there is a zero stop distance and a
+    #   cancelled order. Ported from Pine `f_fibEntry`.
+    exec_fib_overlap: bool = False     # "Entry: gap OVERLAPPING a fib level enters ON that level"
+    exec_fib_deep_edge: bool = False   # "Entry: floating gap enters on ITS OWN deep edge"
+    #   Rule 2, MEASURED WORSE than rule 3 alone over 2020-2026, hence OFF. The only deep rule that
+    #   ALWAYS fills (the limit sits INSIDE the gap). Overrides rule 3 and Method 3.
+    exec_fib_nearest: bool = True      # "Entry: floating gap enters on the NEAREST fib (either side)"
+    #   Rule 3, the SHIPPED default. Measures the near edge up to the level above and the far edge
+    #   down to the level below, and rests on whichever is closer (ties go to the shallower). Not
+    #   free: when the deeper level wins the limit rests PAST the gap, so a setup that only tags the
+    #   gap and turns never fills. Deeper entry and a tighter stop, bought with fill rate.
+    exec_deep_fib: bool = False        # "Entry: floating gap enters on the nearest fib SHALLOWER than it"
+    #   Method 3 (Pine execDeepFib) — the original one-sided form of rules 2 and 3, kept so any
+    #   historical result reproduces. Reachable only with rules 2 AND 3 both off. It never looks at
+    #   the level BELOW the gap however much closer that one is, which is the bug rule 3 fixes.
+    #   ⚠ Defaulted True → False on 2026-08-02 in lockstep with the Pine: rule 3 replaced it.
+    #   (`exec_fvg_50` lived here from 2026-07-24 to 2026-08-02 — the Pine's "Entry (least
+    #   favorable): FVG must touch the 0.5 line". It was never ported and never used, and Aaron
+    #   had the Pine input DELETED, so the field went with it. `compare_strategy.py` still
+    #   refuses an ARCHIVED export carrying cfg_bits bit 65536, reading the bit directly.)
     exec_respect_veto: bool = True     # "Respect divergence/extreme veto"
     exec_close_opp_sos: bool = False   # "Close on opposite SOS"
     exec_htf_exhaust_only: bool = False  # "Only fade HTF exhaustion, not breakouts"
@@ -90,6 +110,17 @@ class SosFadeConfig:
     #   options, so a Custom run has nothing to diff against and `compare_strategy.py` can never
     #   configure one (it decodes `cfg_strcodes` into those five). A Custom result is a LAB finding,
     #   not a validated one — port the input to the Pine before trading it.
+    exec_sl_deep: bool = False         # "↳ entries at 0.786 or deeper stop at 1.0 instead"
+    #   Pine execSlDeep (2026-08-02). OFF = every trade's stop is `exec_sl_level`, whatever the fill.
+    #   ON = an entry that fills AT OR DEEPER THAN the 0.786 fib puts its stop at the leg origin (1.0)
+    #   instead; 0.702 and shallower keeps the chosen level. It exists because the entry band and the
+    #   stop share the 0.886 line, so the band's deep end is priced against a stop it is nearly
+    #   touching — 0.100 of the leg at a 0.786 entry, and nothing at all at 0.886.
+    #   ⚠ IT COSTS R ON EVERY TRADE IT TOUCHES: a 0.786 entry goes from a 0.100 stop to a 0.214 stop,
+    #   so the runner falls 7.86R to 3.67R and the position is less than half the size. You buy a stop
+    #   that survives spread and noise, and pay for it in reward. Measure it, do not assume it.
+    #   The test is INCLUSIVE (<= / >=) because 0.786 is a SNAP TARGET — rule 3 assigns fiboP5 to the
+    #   edge directly with no arithmetic in between, so the comparison is exact.
     exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
     exec_min_stop_mode: str = "Off"    # "Minimum stop distance" (Pine execMinStopMode)
     #   ∈ {"Off", "% of price", "Fixed $", "x ATR(14)"}. An ENTRY filter, nothing to do with the

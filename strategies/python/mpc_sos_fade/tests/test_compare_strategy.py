@@ -44,7 +44,11 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
          + int(cfg.exec_no_late_day) * 512 + int(cfg.show_div) * 1024 + int(cfg.div_veto) * 2048
          + int(cfg.exec_conf_sz) * 4096 + int(cfg.exec_deep_fib) * 8192
          + int(cfg.exec_aplus) * 16384 + int(cfg.exec_bleg) * 32768
-         + int(cfg.exec_fvg_50) * 65536)
+         # the 2026-08-02 entry model; 65536 is skipped because it is RETIRED, not free
+         + int(cfg.exec_fib_overlap) * 131072 + int(cfg.exec_fib_deep_edge) * 262144
+         + int(cfg.exec_fib_nearest) * 524288 + int(cfg.exec_fvg_pre_zone) * 1048576
+         + int(cfg.exec_sl_deep) * 2097152)
+    # bit 65536 (execFvg50) is retired — see compare_strategy._toggles_from_export
     sc = (_SL[cfg.exec_sl_level] * 1000 + _SRC[cfg.exec_htf_source] * 100
           + _REQ[cfg.exec_htf_weekly] * 10 + _REQ[cfg.exec_htf_daily])
     di = (cfg.div_extreme_os + cfg.div_extreme_ob * 1000 + cfg.div_rsi_len * 1_000_000

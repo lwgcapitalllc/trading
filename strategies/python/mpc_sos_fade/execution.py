@@ -49,6 +49,32 @@ from engines.fibonacci.geometry import fib_level
 from .signals import sos_aware_veto
 
 
+def _first(pred, values):
+    """The first value satisfying `pred`, skipping None — Pine's `a ? a : b ? b : na` chain.
+
+    A None level is skipped rather than tested because a comparison against Pine's `na` is
+    itself `na`, which reads as false and falls through to the next branch. Order is the
+    caller's: these chains encode which end of the fib ladder is scanned first.
+    """
+    for v in values:
+        if v is not None and pred(v):
+            return v
+    return None
+
+
+def _nearest(shallow, deep, deep_dist, shallow_dist):
+    """Pine `na(_D) ? _S : na(_S) ? _D : deep_dist < shallow_dist ? _D : _S`.
+
+    Ties go to the SHALLOWER level, which is the one price reaches first — so an exact tie
+    keeps the fill rather than trading it for an identical entry price.
+    """
+    if deep is None:
+        return shallow
+    if shallow is None:
+        return deep
+    return deep if deep_dist < shallow_dist else shallow
+
+
 @dataclass
 class Fill:
     """One order fill this bar — an entry or a (partial) exit."""
@@ -824,14 +850,18 @@ class Execution:
         # setup refused on PRICE gets a record like every other refusal (Pine 4167-4172). A
         # missing fib leaves the anchor unknown, which reads as "not tight" — the same way na
         # propagates through the Pine's comparison.
-        anchor = self._sl_anchor(sig)
+        # Per SIDE, not once: with `exec_sl_deep` on, the anchor depends on that side's own
+        # entry edge (Pine 4264-4265 calls f_slAnchor twice for the same reason).
         buf = cfg.exec_sl_buf_tk * cfg.mintick
         tight_l = tight_s = False
-        if anchor is not None:
-            if long_edge is not None:
-                tight_l = self._stop_is_tight(long_edge - (anchor - buf), long_edge)
-            if short_edge is not None:
-                tight_s = self._stop_is_tight((anchor + buf) - short_edge, short_edge)
+        if long_edge is not None:
+            anchor_l = self._sl_anchor(sig, long_edge, True)
+            if anchor_l is not None:
+                tight_l = self._stop_is_tight(long_edge - (anchor_l - buf), long_edge)
+        if short_edge is not None:
+            anchor_s = self._sl_anchor(sig, short_edge, False)
+            if anchor_s is not None:
+                tight_s = self._stop_is_tight((anchor_s + buf) - short_edge, short_edge)
 
         codes = (
             _block_codes(not cfg.exec_longs, not arm_ok_l, late,
@@ -868,7 +898,7 @@ class Execution:
             long_armed = short_armed = False
 
         if long_armed:
-            sl = self._sl_anchor(sig) - cfg.exec_sl_buf_tk * cfg.mintick
+            sl = self._sl_anchor(sig, long_edge, True) - cfg.exec_sl_buf_tk * cfg.mintick
             dist = long_edge - sl
             deep = long_edge <= sig.fibo_p3       # at/below 0.618
             tp1 = sig.fibo_p2 if deep else sig.fibo_p1   # deep 0.5 / shallow 0.382
@@ -882,7 +912,7 @@ class Execution:
             self._pend_long = None
 
         if short_armed:
-            sl = self._sl_anchor(sig) + cfg.exec_sl_buf_tk * cfg.mintick
+            sl = self._sl_anchor(sig, short_edge, False) + cfg.exec_sl_buf_tk * cfg.mintick
             dist = sl - short_edge
             deep = short_edge >= sig.fibo_p3
             tp1 = sig.fibo_p2 if deep else sig.fibo_p1
@@ -895,40 +925,118 @@ class Execution:
         else:
             self._pend_short = None
 
-    def _deep_fib_edge(self, gb, gt, is_bull, sig) -> Optional[float]:
-        """Method 3 (Pine f_deepFibEdge) — the re-priced entry for a DEEP gap whose NEAR edge
-        sits below 0.618, or None when the near edge is shallower (those keep the exact-edge
-        entry). ONLY the near edge's position decides it — a gap tall enough to span 0.702/0.786
-        is fine; what the body crosses is irrelevant. Long near edge = gap top (gt); short = gap
-        bottom (gb). The re-priced level is the fib just SHALLOWER than the near edge — the one
-        price reaches first (0.618-0.702 -> 0.618, 0.702-0.786 -> 0.702, 0.786-0.886 -> 0.786)."""
-        p3, p4, p5 = sig.fibo_p3, sig.fibo_p4, sig.fibo_p5
-        if is_bull and gt < p3:            # long: near edge deeper than the 0.618 line
-            return p3 if gt >= p4 else (p4 if gt >= p5 else p5)
-        if (not is_bull) and gb > p3:      # short: near edge deeper than the 0.618 line
-            return p3 if gb <= p4 else (p4 if gb <= p5 else p5)
+    def _gap_pre_zone(self, born: int, sig) -> bool:
+        """Pine `f_gapPreZone` — did this gap exist BEFORE price entered the zone?
+
+        A gap is only confluence if it was already sitting in the band when price arrived. One
+        printed by the reversal candle AFTER price is inside the 0.5-0.886 band is the retrace
+        confirming itself, and it re-prices the resting limit to a level the setup never
+        justified. `fibo_half_bar is None` = price has not reached the zone yet, so every gap
+        trivially pre-dates it and the gate is inert. STRICTLY earlier: a gap born ON the
+        zone-entry bar was still forming as price arrived, so it was not "present".
+
+        Read by BOTH gap consumers — the confluence flag in `sequence.py` and the entry-edge
+        loop below. Add the call to any future consumer of `sig.fvgs`, or that path becomes a
+        way around this gate.
+        """
+        return (not self._cfg.exec_fvg_pre_zone
+                or sig.fibo_half_bar is None
+                or born < sig.fibo_half_bar)
+
+    def _fib_snap(self, gb, gt, is_bull, sig) -> Optional[float]:
+        """Pine `f_fibEntry` (2026-08-02; named `_fib_snap` here because `mpc_bos` already
+        has an unrelated `_fib_entry`) — the FIB-SNAP entry price for a qualifying gap, or
+        None for "leave the limit at the gap's own clamped edge". One function for the whole
+        entry model, because its rules are decided off the same two numbers.
+
+        The gap is first CLAMPED into the 0.5-0.886 band: `near` = the shallowest tradeable
+        price (long = gap top, short = gap bottom), `far` = the deepest. A gap running past
+        either end is therefore judged on the part of it that can actually be entered.
+
+        Three levels are read off the ladder, all with 0.886 EXCLUDED (see the ⚠ below):
+          `_l` = the SHALLOWEST level at or deeper than `near`. Because the ladder is ordered,
+                 if that one is not ALSO at or shallower than `far` then no level is inside the
+                 gap at all — so one comparison decides "does the body hold a level".
+          `_s` = the nearest level SHALLOWER than the gap (price reaches it first).
+          `_d` = the nearest level DEEPER than the gap (reached last, and only after trading
+                 through the whole imbalance).
+
+        Rule 1 (`exec_fib_overlap`) is independent. Rules 2 / 3 / Method 3 answer the SAME
+        question — where does a FLOATING gap rest? — so they cascade, each overriding the next:
+        `exec_fib_deep_edge` -> the gap's own deep edge · `exec_fib_nearest` -> whichever of
+        `_s`/`_d` is closer (ties to `_s`) · `exec_deep_fib` -> `_s`, always (Method 3 exactly).
+        A gap shallower than 0.618 that holds no level is untouched by all three.
+
+        ⚠ `far` FALLS BACK TO `_s` WHEN THE GAP REACHES THE BAND FLOOR. A gap floating between
+        0.786 and 0.886 clamps its deep edge onto fiboP6 — which is the STOP — so the guard
+        sends it to 0.786 instead. Without it that gap is a zero stop distance and no order.
+
+        ⚠ 0.886 IS DELIBERATELY NOT A SNAP TARGET in any rule. The stop is a fixed fib
+        (`exec_sl_level`, default 0.886), so an entry resting AT 0.886 has a stop distance of
+        zero: `dist > 0` fails, the order is cancelled, and the setup vanishes with no trade and
+        no block tag. Stopping every scan at 0.786 hands those gaps what Method 3 already gave
+        them, so no rule here can ever REMOVE a trade.
+
+        p4/p5 may be None on a bar p2/p3/p6 are priced (`fibs_ready` does not check them, and
+        neither does Pine's `fibsReady`); `_first` skips them, which is what Pine's `na`
+        propagation through the ternary chain does.
+        """
+        cfg = self._cfg
+        p2, p3, p4, p5, p6 = (sig.fibo_p2, sig.fibo_p3, sig.fibo_p4, sig.fibo_p5, sig.fibo_p6)
+        if is_bull:
+            near, far = min(gt, p2), max(gb, p6)
+            _l = _first(lambda v: v <= near, (p2, p3, p4, p5))
+            _s = _first(lambda v: v > near, (p6, p5, p4, p3, p2))
+            _d = _first(lambda v: v < far, (p2, p3, p4, p5))
+            _n = _nearest(_s, _d, far - _d if _d is not None else None,
+                          _s - near if _s is not None else None)
+            if cfg.exec_fib_overlap and _l is not None and _l >= far:
+                return _l
+            if near > p3:                       # gap shallower than 0.618 — plain edge
+                return None
+            if cfg.exec_fib_deep_edge:
+                return far if far > p6 else _s
+        else:
+            near, far = max(gb, p2), min(gt, p6)
+            _l = _first(lambda v: v >= near, (p2, p3, p4, p5))
+            _s = _first(lambda v: v < near, (p6, p5, p4, p3, p2))
+            _d = _first(lambda v: v > far, (p2, p3, p4, p5))
+            _n = _nearest(_s, _d, _d - far if _d is not None else None,
+                          near - _s if _s is not None else None)
+            if cfg.exec_fib_overlap and _l is not None and _l <= far:
+                return _l
+            if near < p3:
+                return None
+            if cfg.exec_fib_deep_edge:
+                return far if far < p6 else _s
+        if cfg.exec_fib_nearest:
+            return _n
+        if cfg.exec_deep_fib:
+            return _s
         return None
 
     def _entry_edges(self, sig) -> Tuple[Optional[float], Optional[float]]:
-        """The resting-limit price on each side (Pine 4264-4293): the near edge of an
+        """The resting-limit price on each side (Pine 3937-3959): the near edge of an
         FVG overlapping the 0.5-0.886 band, clamped into the band; the first one price
-        reaches (highest for longs). With Require-FVG off it falls back to 0.618. With
-        Method 3 (exec_deep_fib) on, a gap whose near edge is deeper than 0.618 is
-        re-priced to the nearest shallower fib instead of its own edge."""
+        reaches (highest for longs). With Require-FVG off it falls back to 0.618. The entry
+        model (`_fib_snap`) may re-price a qualifying gap onto a fib instead of its own edge."""
         cfg = self._cfg
         p2, p3, p6 = sig.fibo_p2, sig.fibo_p3, sig.fibo_p6
         fibs_ready = None not in (sig.fibo_p1, p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
         long_edge = short_edge = None
         if fibs_ready:
-            for top, bot, is_bull in sig.fvgs:
+            for top, bot, is_bull, born in sig.fvgs:
                 l_deep_ok = not cfg.exec_fvg_deep_only or top <= p2
                 s_deep_ok = not cfg.exec_fvg_deep_only or bot >= p2
-                if is_bull and sig.fibo_dir == 1 and bot <= p2 and top >= p6 and l_deep_ok:
-                    df = self._deep_fib_edge(bot, top, True, sig) if cfg.exec_deep_fib else None
-                    e = min(top, p2) if df is None else df   # Method 3 override, else shallowest touch
+                # ANDed onto both sides rather than skipping the loop iteration, so with the
+                # toggle off the condition is the original one exactly.
+                pre_ok = self._gap_pre_zone(born, sig)
+                if is_bull and sig.fibo_dir == 1 and bot <= p2 and top >= p6 and l_deep_ok and pre_ok:
+                    df = self._fib_snap(bot, top, True, sig)
+                    e = min(top, p2) if df is None else df   # snap override, else shallowest touch
                     long_edge = e if long_edge is None else max(long_edge, e)
-                if (not is_bull) and sig.fibo_dir == -1 and top >= p2 and bot <= p6 and s_deep_ok:
-                    df = self._deep_fib_edge(bot, top, False, sig) if cfg.exec_deep_fib else None
+                if (not is_bull) and sig.fibo_dir == -1 and top >= p2 and bot <= p6 and s_deep_ok and pre_ok:
+                    df = self._fib_snap(bot, top, False, sig)
                     e = max(bot, p2) if df is None else df
                     short_edge = e if short_edge is None else min(short_edge, e)
             if not cfg.exec_req_fvg:
@@ -938,19 +1046,29 @@ class Execution:
                     short_edge = p3
         return long_edge, short_edge
 
-    def _sl_anchor(self, sig) -> Optional[float]:
-        """The fib price the stop sits at, before `exec_sl_buf_tk`.
+    def _sl_anchor(self, sig, edge: Optional[float] = None, is_bull: bool = True) -> Optional[float]:
+        """The fib price the stop sits at, before `exec_sl_buf_tk` (Pine `f_slAnchor`).
 
         The five named levels read a fiboP* the fib engine already priced. "Custom" (2026-08-02)
         prices an arbitrary ratio off the SAME leg anchors those fiboP* were built from, through
         the canonical `fib_level()` — so "0.886" and Custom 0.886 are the same float, not merely
         the same number, and switching between them moves nothing.
 
+        `exec_sl_deep` (2026-08-02) makes the anchor depend on WHERE THE LIMIT RESTS, which is
+        why this takes the entry edge. AT OR PAST the 0.786 line -> fib 1.0, the leg origin, the
+        only level beyond the whole 0.5-0.886 entry band; 0.702 and shallower keeps the chosen
+        level. A missing edge is treated as SHALLOW, so an unknown edge can never silently widen
+        a stop. The test is inclusive (<= / >=) because 0.786 is a snap target — `_fib_entry`
+        assigns fiboP5 to the edge directly, with no arithmetic in between, so it is exact.
+
         None only when the fib is inactive, which is the same bar every fiboP* is None. Callers
         that place an order are already past `fibs_ready` (an entry edge cannot exist without it),
         so the None is reachable only from `_record_blocks`, which checks for it.
         """
         cfg = self._cfg
+        if cfg.exec_sl_deep and edge is not None and sig.fibo_p5 is not None and (
+                edge <= sig.fibo_p5 if is_bull else edge >= sig.fibo_p5):
+            return sig.fibo_p10
         if cfg.exec_sl_level == "Custom":
             if sig.fibo_ash is None or sig.fibo_asl is None or sig.fibo_dir == 0:
                 return None

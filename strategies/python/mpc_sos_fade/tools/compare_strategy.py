@@ -91,7 +91,13 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
             show_div=bool(b & 1024), div_veto=bool(b & 2048),
             exec_conf_sz=bool(b & 4096), exec_deep_fib=bool(b & 8192),
             exec_aplus=bool(b & 16384), exec_bleg=bool(b & 32768),
-            exec_fvg_50=bool(b & 65536),
+            # The 2026-08-02 entry model. Bit 65536 is RETIRED (execFvg50) — see the guard
+            # below — so these start at 131072. An export taken BEFORE that date has all five
+            # clear, which decodes to Method 3 alone with the pre-zone gate off: exactly the
+            # build it was taken from, so an archived export still replays correctly.
+            exec_fib_overlap=bool(b & 131072), exec_fib_deep_edge=bool(b & 262144),
+            exec_fib_nearest=bool(b & 524288), exec_fvg_pre_zone=bool(b & 1048576),
+            exec_sl_deep=bool(b & 2097152),
         )
         # Bit 4096 (Pine execConfSZ, added 2026-07-21) turns the Sniper Zone into a second
         # accepted entry confirmation. The Python bot has NOT ported that path yet, so an
@@ -103,15 +109,20 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
                 "(cfg_bits bit 4096). That Pine path is not ported to the Python bot yet, so "
                 "the comparison would be meaningless. Re-export with it OFF, or port it first."
             )
-        # Bit 65536 (Pine execFvg50, added 2026-07-24) qualifies a gap that STRADDLES 0.5 and
-        # rests the limit at 0.5. Same situation as execConfSZ — not ported, so refuse rather
-        # than diff against logic this bot does not have.
-        if vals.get("exec_fvg_50"):
+        # Bit 65536 carried Pine execFvg50 (a gap STRADDLING 0.5, limit resting at 0.5) from
+        # 2026-07-24 until that input was DELETED from mpc_strategy.pine on 2026-08-02 — it was
+        # never ported here, and never used. A fresh export cannot set the bit any more, so this
+        # guard only fires on an ARCHIVED export taken while the input still existed and was on.
+        # That is exactly why it is kept, and why it is read straight off the bit rather than
+        # through a config field the bot no longer has: without it an old export would be
+        # diffed against logic this bot has never had, and report a meaningless mismatch.
+        if b & 65536:
             raise SystemExit(
                 "This export was taken with 'Entry (least favorable): FVG must touch the 0.5 "
-                "line' ON (cfg_bits bit 65536). That Pine path is not ported to the Python bot "
-                "yet, so the comparison would be meaningless. Re-export with it OFF, or port it "
-                "first."
+                "line' ON (cfg_bits bit 65536). That Pine input was removed on 2026-08-02 and "
+                "was never ported to the Python bot, so this export predates the current build "
+                "and the comparison would be meaningless. Re-export from the current "
+                "mpc_strategy_export.pine."
             )
         # Bit 32768 (Pine execBLeg) turns on a SECOND setup type the A+ bot does not implement
         # at all — those trades live in `strategies/python/mpc_bleg/`. An export with it on

@@ -19,10 +19,55 @@ a single Nov-2025 runner (an intrabar trail-fill guess, not a decision). See `##
 shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through `cfg_exitmode`/
 `cfg_trail_pct` — exit 0 at warmup 100 and at every warmup up to 2000. See
 `### PARITY GREEN 2026-07-29`.
+**RE-VALIDATED GREEN 2026-08-02** on a fresh 21,710-bar `VANTAGE_XAUUSD, 15m` export carrying the
+new ENTRY MODEL through `cfg_bits` (decoded 544375, **bit 524288 set** = rule 3 live on both sides)
+— exit 0 at warmups 100 / 500 / 1000 / 2000. That is the run that validates the port; an export
+taken before 2026-08-02 has every new bit clear and proves nothing about it.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-08-02 — **the stop level is no longer limited to the five-value dropdown.**
+**Last reviewed:** 2026-08-02 — **the 2026-08-02 ENTRY MODEL is ported, and it changes the shipped
+default.** Five new config fields, in lockstep with `mpc_strategy.pine`: `exec_fvg_pre_zone` (False),
+`exec_fib_overlap` (False), `exec_fib_deep_edge` (False), **`exec_fib_nearest` (True)** and
+`exec_sl_deep` (False) — and `exec_deep_fib` flipped **True → False**, because rule 3 replaces it.
+⚠ **THAT LAST PAIR MOVES TRADES: the default entry PRICE changed.** Method 3 only ever looked at the
+level ABOVE a floating gap, so a gap sitting a hair short of 0.702 was still entered way back at
+0.618 (Aaron caught it on the 30 Jul 2026 trade); rule 3 measures BOTH sides and rests on whichever
+is closer. Where the deeper level wins, the limit now sits PAST the gap, so it is a deeper entry and
+a tighter stop **bought with fill rate** — a setup that only tags the gap and turns no longer fills
+at all. **MEASURED on 155,431 cached M15 bars, 2020-01-01 → 2026-07-31: 165 trades / +126.68R
+becomes 161 / +135.94R** — the fill-rate cost is real (4 trades gone) and the deeper entries more
+than pay for it. That 126.68R baseline reproduces the Pine's own stated figure for the same window
+**to the cent**, which is an independent cross-check that this port replays the build the Pine
+measurement was taken against. ⚠ **Every other number in this file predates the change.** The rules
+CASCADE (`_fib_snap`, Pine `f_fibEntry`):
+rule 1 is independent and fires only on a gap whose BODY holds a level; rules 2 / 3 / Method 3 all
+answer "where does a FLOATING gap rest?" so each overrides the next. **Every scan stops at 0.786 —
+0.886 is the stop, so an entry resting there is a zero stop distance and a cancelled order**, which
+is also why no rule here can ever REMOVE a trade. `exec_fvg_pre_zone` needed two new pieces of state
+that had no Python home: `Signals.fvgs` is now a **4-tuple carrying each gap's born bar**, and
+`Signals.fibo_half_bar` latches the bar price first tagged 0.5 (Pine `fiboHalfBar`, reset with the
+leg). It gates **BOTH** gap consumers — the entry-edge loop AND `sequence.py`'s confluence flag —
+because a gap the entry may not use must never be reported as the confluence that armed the setup;
+add the call to any future reader of `sig.fvgs` or that path becomes a way around the gate.
+`_sl_anchor` now takes `(edge, is_bull)` for `exec_sl_deep`, and `_record_blocks` computes it **per
+side** rather than once, because the anchor is a function of that side's own entry edge.
+⚠ **Two sibling forks had to PIN the old behaviour**, since neither of their Pines has this model:
+`BLegConfig` pins all five plus `exec_deep_fib=True` (it does not override `_entry_edges`, and those
+edges feed the "A+ has priority" gate, so this is NOT inert there), and `BosConfig` pins
+`exec_deep_fib=True`. **Defaults verified mechanically against the Pine, not by eye** — all 23
+execution inputs in the panel diffed programmatically, 0 mismatches. 140 tests green (11 new).
+✅ **PARITY RE-VALIDATED GREEN THE SAME DAY, and the run is not vacuous.**
+`compare_strategy.py "VANTAGE_XAUUSD, 15_cfa13.csv"` → **exit 0 at warmups 100 / 200 / 500 / 1000 /
+2000**, 21,702 bars, 2025-08-31 → 2026-08-02. `cfg_bits` gained bits 131072 / 262144 / 524288 /
+1048576 / 2097152 (65536 stays RETIRED, never reused) and the export **decoded 544375 — bit 524288
+SET** — so the Pine really was running rule 3 and the Python was configured to it from the export,
+rather than the two agreeing on a model neither had switched on. That is what makes this the run the
+port needed: an export taken before today has all five bits clear, which decodes to Method 3 with
+the gate off — exactly the build it came from, so archived exports still replay correctly, but a
+green from one would have said nothing about this change. Also decoded: SL 0.886, TP rungs 0/0,
+`cfg_exitmode = 20` (the ratchet), min-stop Off.
+Earlier the same day: **the stop level is no longer limited to the five-value dropdown.**
 `exec_sl_level = "Custom"` reads a new `exec_sl_custom` (any fib ratio in (0, 1.0], default 0.886),
 priced off the leg anchors through the canonical `fib_level()` — so **Custom 0.886 is bit-identical
 to picking "0.886"** and the mode switch alone moves nothing. It opens the half of the range the
@@ -348,6 +393,7 @@ in `mpc_strategy_export.pine`, and in `compare_strategy.py` in ONE commit.
 | **The runner trail** | `exec_runner_trail`: "Fixed step" (a `exec_trail_step` grid ratchet anchored on TP2) / "Structure (swing)" (park the stop at the structure engine's last confirmed swing low/high, offset by `exec_struct_trail_buf_tk`) / **"Structure + % ratchet"** (same anchor, then climb one `exec_trail_pct`-of-price step per step of favourable move). | **Yes** — dropdown |
 | **The ratchet step** | `exec_trail_pct`, default **1.0**. Only read in "Structure + % ratchet" mode. A PERCENT of price, never dollars — see below. | **Yes** |
 | **Early bail-out** | `exec_close_opp_sos` (default OFF) force-closes on an opposite SOS instead of riding to the stop. **Measured INERT** (Run 5): turning it on produced a byte-identical trade list — an opposite SOS never fires before SL/TP has already resolved the position. There is nothing on the other end of this lever. | toggle exists, **does nothing** |
+| **Deep-entry stop override** | `exec_sl_deep` (default **OFF**, Pine `execSlDeep`, 2026-08-02). An entry filling AT OR DEEPER THAN 0.786 puts its stop at the leg origin (1.0) instead of `exec_sl_level`; 0.702 and shallower keeps the chosen level. It exists because the entry band and the stop share the 0.886 line, so the band's deep end is priced against a stop it is nearly touching. ⚠ **It costs R on every trade it touches** — a 0.786 entry goes from a 0.100 stop to a 0.214 stop, so the runner falls 7.86R → 3.67R and the position is less than half the size. Measure it. | **Yes** — toggle |
 | **Minimum stop distance** | `exec_min_stop_mode` ∈ {**"Off"**, "% of price", "Fixed $", "x ATR(14)"} + `exec_min_stop_val` (0.10). An ENTRY filter, not an exit lever — it lives in this table only because it is the guard for the `exec_sl_level` hazard two rows up. A setup whose stop lands closer to the entry than the floor places no order and records block code 7. | **Yes** — dropdown + floor; ported 2026-07-30 |
 
 The floor and the trail compose: past TP2 the stop is the floor, and the trail may only tighten

@@ -35,6 +35,11 @@ class BosConfig(SosFadeConfig):
     exec_fvg_50: bool = False      # Pine execFvg50 — a gap STRADDLING 0.5 enters at 0.5
     #   Spec §5 wanted this ON here; the shipped Pine has it OFF, so the config matches the
     #   Pine. It is a live sweep candidate — see `exec_fvg_deep_only`, its mirror image.
+    exec_deep_fib: bool = True     # Pine execDeepFib — PINNED, this fork's Pine still ships true
+    #   The parent defaulted it True → False on 2026-08-02 when the new entry model (rules 1-3)
+    #   replaced Method 3, but `mpc_bos_strategy.pine` line 3313 still ships `true` and has none
+    #   of those rules. `BosExecution` fully overrides `_entry_edges` and reads this flag itself,
+    #   so inheriting the parent's new default would silently switch Method 3 off here.
     exec_runner_trail: str = "Structure (swing)"   # PINNED — this fork's Pine has no ratchet
     #   The parent moved to "Structure + % ratchet" on 2026-07-28, but `mpc_bos_strategy.pine`
     #   still ships the TWO-option dropdown ("Fixed step" / "Structure (swing)"). Inheriting

@@ -300,15 +300,21 @@ class SosFadeSequence:
         elif self._s_sweep_bar is not None:
             s_stage = 1
 
-        # ── FVG confluence: a live gap overlapping the entry band (Pine 3959-3972) ──
+        # ── FVG confluence: a live gap overlapping the entry band (Pine 3644-3659) ──
+        # The `exec_fvg_pre_zone` gate is applied HERE as well as in the entry-edge loop,
+        # because Pine gates both consumers with the same `f_gapPreZone` — otherwise a gap the
+        # entry may not use could still be reported as the confluence that armed the setup.
         l_fvg = s_fvg = False
         if sig.fibo_p2 is not None and sig.fibo_p6 is not None:
-            for top, bot, is_bull in sig.fvgs:
+            for top, bot, is_bull, born in sig.fvgs:
+                gap_ok = (not self._cfg.exec_fvg_pre_zone
+                          or sig.fibo_half_bar is None
+                          or born < sig.fibo_half_bar)
                 if is_bull:
-                    if sig.fibo_dir == 1 and bot <= sig.fibo_p2 and top >= sig.fibo_p6:
+                    if sig.fibo_dir == 1 and bot <= sig.fibo_p2 and top >= sig.fibo_p6 and gap_ok:
                         l_fvg = True
                 else:
-                    if sig.fibo_dir == -1 and top >= sig.fibo_p2 and bot <= sig.fibo_p6:
+                    if sig.fibo_dir == -1 and top >= sig.fibo_p2 and bot <= sig.fibo_p6 and gap_ok:
                         s_fvg = True
 
         # ── arm-source snapshot (Pine exec 4318-4342) ──

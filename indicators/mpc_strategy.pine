@@ -22,9 +22,12 @@
 //   • "Show FVG (REQUIRED)"                      -> the entry edges (limit price)
 //   • "Show All Liquidity Levels (REQUIRED)"     -> arms setups via sweeps
 //   • "Track RSI Divergence (REQUIRED)"          -> arms setups via divergence + veto
-// Everything else (Sessions, Kill Zones, VWAP, MV, Order Blocks, Internal/Cycle
-// Fib, Sniper, structure labels) is cosmetic and defaults OFF — safe to toggle
-// freely, it never affects trade firing.
+// Everything else (Sessions, Internal Fib, Sniper, structure labels) is cosmetic
+// and defaults OFF — safe to toggle freely, it never affects trade firing.
+// Kill Zones, VWAP, MV, Order Blocks and the Cycle Fib DRAWING have been deleted
+// outright (2026-07-22 / 07-24 / 07-25 / 08-02) to stay under Pine's compile
+// caps. The Cycle Fib's TRACKING survives and is not optional — it is the A+
+// sequence's HTF POI. All of them still draw in mpc_assistant.pine.
 // ============================================================================
 strategy("MPC A+ Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 var GRP_TABLE = "Confirmation Table"
@@ -324,45 +327,21 @@ f_fiboLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
 
 //============================================================
-//  MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
+//  MACRO / CYCLE FIB — DRAWING REMOVED 2026-08-02 (Aaron's call)
 //============================================================
-var GRP_MACRO = "Cycle Fib"
-bool   showMacroFibInput      = input.bool(false,        "Show Cycle Fib",             group = GRP_MACRO, display = display.none)
-bool showMacroFib = marketStructureOnly ? false : showMacroFibInput
-int    macroLineExtend   = input.int(180,            "Line Extension (bars)",      group = GRP_MACRO, minval = 10, maxval = 500, display = display.none)
-int    macroMaxTfMin     = input.int(30,             "Draw Up To Timeframe (min)", group = GRP_MACRO, minval = 1, maxval = 240, tooltip = "The Cycle Fib is drawn on charts up to this timeframe (in minutes). Tracking runs on every timeframe regardless — the fib's discount/premium zones feed the A+ setup's POI even when the lines aren't drawn. Note the cycle recalculates per chart timeframe: a 15m chart tracks the 15m-scale cycle, not the 5m one.", display = display.none)
-
-bool   showMacro0        = input.bool(true,   "TP3 / 0.000",   group = GRP_MACRO, inline = "mFibo0",   active = showMacroFibInput, display = display.none)
-color  macro0Color       = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo0",   display = display.none)
-string macro0Style       = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo0",   options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro382      = input.bool(true,   "TP2 / 0.382",   group = GRP_MACRO, inline = "mFibo382", active = showMacroFibInput, display = display.none)
-color  macro382Color     = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo382", display = display.none)
-string macro382Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo382", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro50       = input.bool(true,   "TP1 / 0.500",   group = GRP_MACRO, inline = "mFibo50",  active = showMacroFibInput, display = display.none)
-color  macro50Color      = input.color(#4caf50, "",             group = GRP_MACRO, inline = "mFibo50",  display = display.none)
-string macro50Style      = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo50",  options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro618      = input.bool(true,   "E1 / 0.618",    group = GRP_MACRO, inline = "mFibo618", active = showMacroFibInput, display = display.none)
-color  macro618Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo618", display = display.none)
-string macro618Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo618", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro702      = input.bool(true,   "E2 / 0.702",    group = GRP_MACRO, inline = "mFibo702", active = showMacroFibInput, display = display.none)
-color  macro702Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo702", display = display.none)
-string macro702Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo702", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro786      = input.bool(true,   "E3 / 0.786",    group = GRP_MACRO, inline = "mFibo786", active = showMacroFibInput, display = display.none)
-color  macro786Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo786", display = display.none)
-string macro786Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo786", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro886      = input.bool(true,   "E4 / 0.886",    group = GRP_MACRO, inline = "mFibo886", active = showMacroFibInput, display = display.none)
-color  macro886Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo886", display = display.none)
-string macro886Style     = input.string("┈",   "",              group = GRP_MACRO, inline = "mFibo886", options = ["─","┈","╌"], display = display.none)
-
-bool   showMacro100      = input.bool(true,   "1.000",         group = GRP_MACRO, inline = "mFibo100", active = showMacroFibInput, display = display.none)
-color  macro100Color     = input.color(#2196F3, "",             group = GRP_MACRO, inline = "mFibo100", display = display.none)
-string macro100Style     = input.string("─",   "",              group = GRP_MACRO, inline = "mFibo100", options = ["─","┈","╌"], display = display.none)
+// The whole "Cycle Fib" input group is gone: 27 inputs (the master toggle, line
+// extension, the draw-up-to-timeframe cap, and a show / colour / style trio for
+// each of the eight levels) plus the drawing block, its two style helpers, its
+// eight line+label handles and the touched-flags that only ever coloured them.
+// Cosmetic, defaulted OFF, and read by NOTHING in the execution layer — the same
+// test the Kill Zones, VWAP, Order Blocks and SVP removals were made on.
+//
+// ⚠ THE TRACKING STAYS, AND MUST NOT BE REMOVED WITH IT. The cycle's anchors
+// (macro_origin / macro_extreme, locked and extended further down) are the A+
+// sequence's HTF POI: poiLongNow / poiShortNow are computed off them, and the
+// B-LEG log line reports its premium/discount zone off them too. Only the
+// DRAWING was deleted, so every value the strategy reads is byte-identical and
+// no trade moves.
 
 //============================================================
 //  SNIPER FIB INPUTS
@@ -423,8 +402,16 @@ bool  execRespectVeto = input.bool(true, "Respect divergence/extreme veto", grou
 // three gap rules below is greyed out by it; they all stay live either way.
 bool  execReqFVG  = input.bool(true,  "Require FVG overlap in zone",    group = GRP_EXEC, tooltip = "On = only enter when a live FVG overlaps the 0.5-0.886 zone (your A+ rule). Off = fall back to the 0.618 fib and enter on the retrace into the zone alone. NOTE: off does NOT disable the three gap rules below — a qualifying gap still prices the entry first.")
 bool  execFvgDeepOnly = input.bool(true, "Entry: FVG must sit fully past 0.5", group = GRP_EXEC, tooltip = "On = a setup only enters when the ENTIRE fair value gap sits on the DEEP side of the 0.5 retracement (between 0.5 and 0.886), never straddling or in front of it. Long: the whole gap at or below the 0.5 line. Short: the whole gap at or above it. Off = the current rule (any gap overlapping the 0.5-0.886 band qualifies). Flip it to compare deep-only entries against the default.")
-bool  execDeepFib = input.bool(true, "Entry: deep gap enters on nearest fib (not gap edge)", group = GRP_EXEC, tooltip = "Method 3. On = when a qualifying gap's near edge sits deeper than 0.618 and floats between two fib levels, rest the limit at the nearest fib just shallower than the gap (the level price reaches first) instead of the gap edge — recovers deep gaps that never get tapped. A gap on a fib level or shallower than 0.618 still enters at its exact edge. Off = enter at the gap edge.")
-bool  execFvg50   = input.bool(false, "Entry (least favorable): FVG must touch the 0.5 line", group = GRP_EXEC, tooltip = "Lowest-priority fallback (default OFF). Qualifies a gap that STRADDLES 0.5 (bottom at/below 0.5 AND top at/above 0.5) and rests the limit AT 0.5. Ranks last — only prices a leg no more-favorable source already did, so existing trades are unchanged.")
+bool  execFvgPreZone = input.bool(false, "Entry: FVG must exist BEFORE price enters the zone", group = GRP_EXEC, tooltip = "DEFAULT OFF (Aaron's call, 2026-08-02 — it was briefly defaulted ON the same day and reverted to match the panel he trades), so nothing historical moves until you flip it. ON = a gap only counts if it was already alive on the bar price first tagged 0.5. A gap BORN inside the 0.5-0.886 band, printed by the violent flip once price is already there, no longer confirms anything — the retrace would be manufacturing the confluence it is judged on. ⚠ MEASURED, XAUUSD 15m 2020-2026 (155,431 bars): 165 trades / +126.68R becomes 148 / +105.22R. 20 trades touched — 18 vanish, 2 survive on an older gap (both losers either way). The entire cost is ONE trade: 21 Oct 2025, +16.49R off a gap born on the reversal bar itself. Strip it and the other 17 are +3.98R over 6.5 years, i.e. noise, at 6 wins / 7 scratches / 5 losses. Judge this on the logic, not the R. 2021 and 2024 both IMPROVE — removing a bad trade frees the one position slot. ⚠ Of the 18, NONE had an empty zone: every one had 3-6 gaps alive, they just did not qualify — usually the WRONG DIRECTION (price ran one way into the zone, so the gaps it left point away from the fade), sometimes outside the band, and in 4 cases a right-direction in-band gap that only 'FVG must sit fully past 0.5' rejected, so these two toggles compound. In 3 cases a gap DID qualify and no trade followed anyway: twice the limit rested and price never returned, and on 21 Oct the veto blocked the setup while the gap was alive, after which the rally mitigated it. The zone-entry bar is per fib LEG and resets with the leg, same as the EARLY / 0.5 latch.")
+bool  execFibOverlap = input.bool(false, "Entry: gap OVERLAPPING a fib level enters ON that level", group = GRP_EXEC, tooltip = "Rule 1 of the entry model (2026-08-02), and it is INDEPENDENT of rule 2 below — they answer different questions. This one only ever fires on a gap whose BODY holds a level. On = rest the limit on that level instead of the gap's edge; if several are inside, the SHALLOWEST, because that is the one price reaches first. Off = rest at the gap's edge, which means the order sits clear of the gap and fills before price has traded into the imbalance the setup was justified by. ⚠ 0.886 is deliberately NOT a snap target — the stop is a fixed fib (0.886 by default), so an entry resting there has a stop distance of zero and the order is CANCELLED, losing the setup with no trade and no tag. A gap holding only 0.886 falls through to rule 2.")
+bool  execFibDeepEdge = input.bool(false, "Entry: floating gap enters on ITS OWN deep edge", group = GRP_EXEC, tooltip = "Rule 2 of the entry model (2026-08-02), MEASURED WORSE than rule 3 alone over 2020-2026 and now defaults OFF. Independent of rule 1 above; it OVERRIDES rule 3 and Method 3 below, which answer the same question differently. Fires only on a gap that holds NO level and whose near edge sits deeper than 0.618 — i.e. it floats between two levels, touching neither. On = rest the limit at the gap's OWN FAR edge, the side nearest the level below it (gap bottom for a long, gap top for a short). Example: a long whose gap runs 0.65-0.68 rests at 0.68, not at 0.618 and not at 0.702. ⚠ THIS IS THE ONLY DEEP RULE THAT ALWAYS FILLS. The limit sits INSIDE the gap, so price entering the imbalance at all fills you — a ping that turns before reaching the level below still gets the trade, which rule 3 would miss entirely. It is deliberately the middle option: deeper (tighter stop, more R) than Method 3's level-above, shallower than rule 3's level-below, and it never trades fill rate for entry price. ⚠ A gap floating between 0.786 and 0.886 falls back to 0.786 — its deep edge clamps onto the stop itself, which is a zero stop distance and a cancelled order.")
+bool  execFibNearest = input.bool(true, "Entry: floating gap enters on the NEAREST fib (either side)", group = GRP_EXEC, active = not execFibDeepEdge, tooltip = "Rule 3 of the entry model (2026-08-02). Same trigger as rule 2 above — a gap holding no level, near edge deeper than 0.618 — but it snaps to a FIB rather than to the gap. On = measure BOTH distances (near edge up to the level above it, far edge down to the level below it) and rest on whichever is CLOSER. Method 3 always takes the level above however far away it is, which is why a gap sitting just short of 0.702 was still entered at 0.618. Off = Method 3's behaviour. ⚠ NOT free, and this is why rule 2 exists: when the deeper level wins, the limit rests PAST the gap (below it for a long, above for a short), so price must trade through the WHOLE imbalance and beyond to fill. A setup that only tags the gap and turns never fills at all. Deeper entry and a tighter stop, bought with fill rate. GREYED OUT while rule 2 is on. ⚠ 0.886 is excluded as a target for the zero-stop reason in rule 1, so a gap floating between 0.786 and 0.886 still enters at 0.786.")
+bool  execDeepFib = input.bool(false, "Entry: floating gap enters on the nearest fib SHALLOWER than it", group = GRP_EXEC, active = not execFibDeepEdge and not execFibNearest, tooltip = "Method 3 — the original, one-sided form of rules 2 and 3 above, kept so any historical result can be reproduced. On = a floating gap whose near edge sits deeper than 0.618 rests at the nearest fib just SHALLOWER than it (0.618 / 0.702 / 0.786), the level price reaches first, instead of the gap edge. It never looks at the level below the gap, however much closer that one is, and it always fills ABOVE the gap — before price has traded into the imbalance the setup was justified by. Off = enter at the gap's shallow edge. GREYED OUT while rule 2 or rule 3 is on. Untick both to A/B back to this.")
+// (execFvg50 — "Entry (least favorable): FVG must touch the 0.5 line" — REMOVED
+//  2026-08-02, Aaron's call: never used. It was the bottom-tier fallback that let
+//  a gap STRADDLING 0.5 rest its limit AT 0.5, and it defaulted OFF for its whole
+//  life, so nothing historical moves. Recover from git if the shallowest entry
+//  tier is ever wanted back — it was one input and one loop.)
 bool  execConfSZ  = input.bool(false, "Allow Sniper Zone as entry confirmation", group = GRP_EXEC, tooltip = "Adds the Sniper Zone (0.5-0.618 pocket) as a fallback entry confirmation, used only on a leg with no qualifying FVG. The limit rests at the far side (~0.618). Existing trades are unchanged; any new one is a leg that previously logged 'NO FVG'.")
 
 // ── 4. WHAT CAN REFUSE IT (filters) ────────────────────────────────────────
@@ -436,7 +423,28 @@ bool  execNoLateDay = input.bool(true, "No entries in final hour (16:00-17:00 NY
 
 // ── 5. SIZE & STOP ─────────────────────────────────────────────────────────
 float execRiskPct = input.float(10,   "Risk % per trade",              group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1)
-string execSlLevel = input.string("0.886", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5. DEFAULT 0.886 — the deep edge of the entry band, and what Aaron actually trades (8 years / 188 trades behind it). 1.0 = the leg origin, the widest and structurally safest. The three shallower levels (0.618-0.786) can place the stop ON TOP OF the entry: nothing validates that, and a stop distance near zero balloons position size — turn 'Minimum stop distance' on before using them.")
+// ⚠ An "SL follows entry depth" input (0.886 for shallow entries, 1.0 for deep
+// ones) was added on 2026-08-02 and REMOVED the same day. It measured much worse
+// live, and the repo's own Run 11 sweep says why: at a fixed 10% risk the whole
+// book is 109.5R at 0.886 and 75.7R at 1.0. A wider stop with fib targets that do
+// not move means every winner is worth fewer R while every loss is still −1R.
+// Do not re-add it without re-reading that run.
+string execSlLevel = input.string("0.886", "SL fib level (deep side of 0.5)", options = ["0.618", "0.702", "0.786", "0.886", "1.0"], group = GRP_EXEC, tooltip = "Where the stop sits, as a fib on the deep side of 0.5, for EVERY trade. DEFAULT 0.886 — the deep edge of the entry band, and what Aaron trades (8 years / 188 trades behind it). 1.0 = the leg origin, the widest and structurally safest, but measured at 75.7R vs 0.886's 109.5R over the full history at the same risk %. The three shallower levels (0.618-0.786) can place the stop ON TOP OF the entry: nothing validates that, and a stop distance near zero balloons position size — turn 'Minimum stop distance' on before using them.")
+// The entry band runs 0.5-0.886 and the stop is ALSO 0.886, so the band's own deep
+// end contradicts the stop: an entry at 0.786 leaves a stop of 0.100 of the leg,
+// and an entry AT 0.886 leaves ZERO. That is why 0.886 had to be excluded as a
+// snap target — a workaround for the contradiction rather than a fix for it. This
+// toggle fixes it: an entry AT OR PAST 0.786 drops its stop to the leg origin
+// (1.0), which is the only level genuinely beyond the whole entry band. Entries
+// SHALLOWER than 0.786 — 0.702 included — are untouched.
+// ⚠ 0.786 IS THE BOUNDARY ON PURPOSE, AND IT HAS ALREADY BEEN WRONG TWICE.
+// A version reverted on 2026-08-02 put 0.702 AND 0.786 in the wide-stop group and
+// measured much worse; a first cut of this toggle used "deeper than 0.702", which
+// swept up raw gap-edge entries around 0.75 as well. Aaron's call, both times:
+// 0.702 against an 0.886 stop is still 0.184 of the leg, which is a real stop and
+// worth 3.82R on the runner — widening it to 1.0 cuts that to 2.36R for nothing.
+// Only 0.786-and-deeper is thin enough to be worth paying for. Sweep before moving.
+bool  execSlDeep  = input.bool(false, "   ↳ entries at 0.786 or deeper stop at 1.0 instead", group = GRP_EXEC, active = execSlLevel != "1.0", tooltip = "OFF by default, so nothing historical moves until you flip it. ON = any entry that fills AT OR DEEPER THAN the 0.786 fib puts its stop at the leg origin (1.0) rather than at the level chosen above; 0.702 and everything shallower keeps that level. Why it exists: the entry band and the stop share the 0.886 line, so the band's deep end is priced against a stop it is almost touching — 0.100 of the leg at a 0.786 entry, and nothing at all at 0.886. Measured on 188 real trades, a 0.786 entry gives a median stop of $3.51 but $1.09 at the 10th percentile and $0.38 at worst, so a $0.30 gold spread eats over a quarter of the stop on 26 of them. That is not a real stop, and it balloons position size (qty = risk / stop distance). By contrast 0.702 keeps 0.184 of the leg and does NOT need this. ⚠ IT COSTS R ON EVERY TRADE IT TOUCHES: a 0.786 entry goes from a 0.100 stop to a 0.214 stop, so the runner falls 7.86R to 3.67R and the position is less than half the size. You are buying a stop that survives spread and noise, and paying for it in reward. Measure it, do not assume it.")
 float execSlBufTk = input.float(0.0,  "SL buffer beyond chosen level (ticks)",  group = GRP_EXEC, minval = 0)
 // Minimum stop distance — refuse a setup whose stop lands so close to the entry
 // that the position is degenerate. The $-risk is unchanged but SIZE balloons,
@@ -452,6 +460,12 @@ float execMinStopVal = input.float(0.10, "   ↳ floor value (unit = mode above)
 // ── 6. TARGETS (the TP ladder) ─────────────────────────────────────────────
 float execTp1Pct  = input.float(0,    "TP1 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. DEFAULT 0 = bank nothing, ride the whole position to the runner — the tested best setting. The TP1 PRICE still matters at 0: touching it is what stages the stop to breakeven. Raise it only to scale out.")
 float execTp2Pct  = input.float(0,    "TP2 size %",                    group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP2 limit banks. DEFAULT 0 = bank nothing (see TP1). Touching TP2 still lifts the stop to the TP2 floor and hands the runner to the trail.")
+// ⚠ A "shallow-entry TP2 level" input offering 0.236 instead of 0.0 was added on
+// 2026-08-02 and REMOVED the same day — it measured worse. 0.236 is a NEARER
+// target, and with the 0/0 rungs a nearer TP2 banks nothing sooner; it just hands
+// the runner to the trail sooner, because touching TP2 is what installs the stop
+// floor. Every tightening experiment in this strategy's history has cost 20-90%
+// for that same reason. The runner is the edge. Shallow TP2 is fiboP7 (0.0).
 float execBeBufTk = input.float(30,   "Breakeven buffer (ticks)",      group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits at entry + this buffer (longs) / entry - this buffer (shorts) so a scratch still covers slippage + commission. This is why TradingView reports 0 breakevens — the exit books a few cents of profit, so it is filed as a WINNER. The trade label and the diagnostic log re-count those honestly.")
 
 // ── 7. THE RUNNER — everything here starts only AFTER TP2 is hit ───────────
@@ -2485,7 +2499,6 @@ var int   fibo_dir     = 0
 
 // ── Touched tracking: each level goes grey until price reaches it ──
 color FIBO_GREY  = color.new(#888888, 0)
-color MACRO_GREY = color.new(#888888, 0)
 var bool fiboOriginChanged = false
 fiboOriginChanged := false   // reset every bar — only true on the specific bar origin changes
 var bool fibo1Touched  = false
@@ -2502,6 +2515,11 @@ var bool fiboResetActive    = false  // true once TP3 has been hit — suppresse
 // the A+ sequence's EARLY entry tier. Distinct from fibo2Touched, which tests the
 // same price on the way back OUT (as TP1) and is gated behind 0.618.
 var bool fiboHalfReached    = false
+// The BAR price first tagged 0.5 on this leg — i.e. the bar price entered the entry
+// zone. Read only by execFvgPreZone, to decide whether a gap pre-dates the retrace or
+// was printed by it. Latched once and reset with the leg (see fiboOriginChanged below),
+// so it is scoped to exactly the fib whose 0.5-0.886 band the gap is judged against.
+var int  fiboHalfBar        = na
 
 // Prices of each level (persistent so touched check works outside the draw block)
 var float fiboP1  = na, var float fiboP2  = na, var float fiboP3  = na
@@ -2606,6 +2624,7 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
         fibo618EverReached := false
         fiboResetActive    := false
         fiboHalfReached    := false
+        fiboHalfBar        := na
         i_confirmed_low_price  := na
         i_confirmed_low_loc    := na
         i_confirmed_high_price := na
@@ -2626,6 +2645,9 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
 
         // Inbound 0.5 touch — ungated; A+ EARLY entry tier as price retraces in
         fiboHalfReached := f_checkTouch(fiboHalfReached, fiboP2, fibo_dir == 1 ? low <= fiboP2 : high >= fiboP2)
+        // ...and the bar it happened on, for execFvgPreZone. Latched, never refreshed.
+        if fiboHalfReached and na(fiboHalfBar)
+            fiboHalfBar := bar_index
 
         if fibo618Reached
             // 0.618 — mark itself on the bar it's first hit
@@ -2699,13 +2721,6 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fibo7Line := l7
     fibo7Label := lb7
 
-f_macroLineStyle(string opt) =>
-    opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
-
-f_macroLabel(float val, string tpLabel, string entryLabel) =>
-    sharedLabelMode == "TP/Entry"    ? tpLabel    + "  (" :
-     str.tostring(val) + "  ("
-
 // macro_dir tracks the OVERALL trend direction we are currently in.
 //   1  = overall trend is up (we are accumulating the highest high of the whole up-cycle)
 //  -1  = overall trend is down (we are accumulating the lowest low of the whole down-cycle)
@@ -2713,32 +2728,14 @@ f_macroLabel(float val, string tpLabel, string entryLabel) =>
 // not on every internal BOS/SOS within the same direction. This lets the fib span multiple
 // BOS legs that all belong to the same larger move (e.g. wave 1->2->3 as one up-cycle).
 var int   macro_dir         = 0
-var int   macro_prev_st_dir = 0
 var float macro_origin      = na   // fixed anchor: the extreme of the PRIOR opposite cycle
 var int   macro_origin_loc  = na
 var float macro_extreme     = na   // running extreme of the CURRENT cycle (keeps extending across multiple BOS)
 var int   macro_extreme_loc = na
-
-var line  macroLine0   = na, var label macroLabel0   = na
-var line  macroLine382 = na, var label macroLabel382 = na
-var line  macroLine50  = na, var label macroLabel50  = na
-var line  macroLine618 = na, var label macroLabel618 = na
-var line  macroLine702 = na, var label macroLabel702 = na
-var line  macroLine786 = na, var label macroLabel786 = na
-var line  macroLine886 = na, var label macroLabel886 = na
-var line  macroLine100 = na, var label macroLabel100 = na
-
-// ── Macro fib touched tracking ──
-var bool macro0Touched    = false   // HH / 0.0
-var bool macro382Touched  = false   // TP2
-var bool macro50Touched   = false   // TP1 / FFT
-var bool macro618Touched  = false   // E1
-var bool macro702Touched  = false   // E2
-var bool macro786Touched  = false   // E3
-var bool macro886Touched  = false   // E4
-var bool macro100Touched  = false   // LL / 1.0
-var bool macro618EverReached = false  // gates TP checks from next bar after E1 hit
-var float macro_prev_extreme = na   // detects when extreme changes (new HH)
+// (The eight line/label handles, the eight touched-flags, macro_prev_extreme and
+//  macro_prev_st_dir were REMOVED 2026-08-02 with the Cycle Fib drawing — every
+//  one of them existed only to draw or colour a line. macro_origin/_extreme and
+//  their _loc bars stay: the A+ HTF POI reads them.)
 
 // ── EXACT RULE (per latest instructions) ──
 // BOTTOM anchor (extreme LL):
@@ -2760,15 +2757,14 @@ var float macro_prev_extreme = na   // detects when extreme changes (new HH)
 
 var bool  macro_origin_locked  = false
 var float macro_last_conf_high = na
-var bool  macro_visible        = false
 var int   macro_last_bear_sos_bar = na
 var float macro_ll_since_bear_sos = na   // lowest low seen since the last bearish SOS — used as bottom anchor
 var int   macro_ll_since_bear_sos_bar = na
 
-// Cycle Fib TRACKING always runs — its discount zone doubles as the HTF POI for
-// the A+ sequence on ANY timeframe. Only the DRAWING is gated to 5m-and-under
-// charts (macroFibAllowed), where the fib's scale fits the chart.
-bool macroFibAllowed = timeframe.in_seconds() <= macroMaxTfMin * 60
+// Cycle Fib TRACKING always runs, on every timeframe — its discount zone IS the
+// HTF POI the A+ sequence reads. The drawing that used to sit alongside it (and
+// the timeframe cap that gated it) was removed 2026-08-02; this block is what
+// survived, and it is load-bearing.
 
 if bar_index >= 0
 
@@ -2790,22 +2786,6 @@ if bar_index >= 0
 
     // ── RESET: price closed below the locked bottom ──
     if macro_origin_locked and not na(macro_origin) and close < macro_origin
-        line.delete(macroLine0),   label.delete(macroLabel0)
-        line.delete(macroLine382), label.delete(macroLabel382)
-        line.delete(macroLine50),  label.delete(macroLabel50)
-        line.delete(macroLine618), label.delete(macroLabel618)
-        line.delete(macroLine702), label.delete(macroLabel702)
-        line.delete(macroLine786), label.delete(macroLabel786)
-        line.delete(macroLine886), label.delete(macroLabel886)
-        line.delete(macroLine100), label.delete(macroLabel100)
-        macroLine0 := na,   macroLabel0 := na
-        macroLine382 := na, macroLabel382 := na
-        macroLine50 := na,  macroLabel50 := na
-        macroLine618 := na, macroLabel618 := na
-        macroLine702 := na, macroLabel702 := na
-        macroLine786 := na, macroLabel786 := na
-        macroLine886 := na, macroLabel886 := na
-        macroLine100 := na, macroLabel100 := na
         macro_dir            := 0
         macro_origin          := na
         macro_origin_loc      := na
@@ -2813,7 +2793,6 @@ if bar_index >= 0
         macro_extreme_loc     := na
         macro_origin_locked   := false
         macro_last_conf_high  := na
-        macro_visible         := false
         // Restart tracking from current bar so next cycle can begin
         macro_last_bear_sos_bar    := bar_index
         macro_ll_since_bear_sos    := low
@@ -2830,150 +2809,18 @@ if bar_index >= 0
         macro_extreme_loc     := st.last_conf_high_loc
         macro_origin_locked   := true
         macro_last_conf_high  := st.last_conf_high
-        macro_visible         := true
-        macro_prev_extreme    := st.last_conf_high
-        // Reset all touched flags for new cycle
-        macro0Touched   := false
-        macro382Touched := false
-        macro50Touched  := false
-        macro618Touched := false
-        macro702Touched := false
-        macro786Touched := false
-        macro886Touched := false
-        macro100Touched := false
-        macro618EverReached := false
 
-    // ── TOP EXTENDS on every new confirmed HH — reset touched flags, fib reappears ──
+    // ── TOP EXTENDS on every new confirmed HH ──
     bool macroNewHH = macro_origin_locked and not na(st.last_conf_high) and st.last_conf_high > macro_last_conf_high
     if macroNewHH
         macro_extreme         := st.last_conf_high
         macro_extreme_loc      := st.last_conf_high_loc
         macro_last_conf_high   := st.last_conf_high
-        macro_visible         := true
-        macro_prev_extreme    := st.last_conf_high
-        // New HH = new fib range, reset all touched
-        macro0Touched   := false
-        macro382Touched := false
-        macro50Touched  := false
-        macro618Touched := false
-        macro702Touched := false
-        macro786Touched := false
-        macro886Touched := false
-        macro100Touched := false
-        macro618EverReached := false
 
-    // ── Macro touched tracking (same logic as regular fib) ──
-    if macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
-        float mH = macro_extreme
-        float mL = macro_origin
-        float mR = mH - mL
-        if mR > 0
-            float mP618 = mH - mR * 0.618
-            float mP702 = mH - mR * 0.702
-            float mP786 = mH - mR * 0.786
-            float mP886 = mH - mR * 0.886
-            float mP100 = mH - mR * 1.0
-            float mP50  = mH - mR * 0.5
-            float mP382 = mH - mR * 0.382
-            float mP0   = mH - mR * 0.0
-
-            bool macroExtChanged = macro_extreme != macro_prev_extreme
-            bool macro618Reached = low <= mP618
-
-            if not macroExtChanged
-                if macro618Reached
-                    macro618Touched := true
-                    macro702Touched := f_checkTouch(macro702Touched, mP702, low <= mP702)
-                    macro786Touched := f_checkTouch(macro786Touched, mP786, low <= mP786)
-                    macro886Touched := f_checkTouch(macro886Touched, mP886, low <= mP886)
-                    macro100Touched := f_checkTouch(macro100Touched, mP100, low <= mP100)
-
-                if macro618EverReached
-                    macro50Touched  := f_checkTouch(macro50Touched,  mP50,  high >= mP50)
-                    macro382Touched := f_checkTouch(macro382Touched, mP382, high >= mP382)
-                    macro0Touched   := f_checkTouch(macro0Touched,   mP0,   high >= mP0)
-
-                if macro618Reached and not macro618EverReached
-                    macro618EverReached := true
-
-    // ── HIDE when price closes back above the locked top ──
-    if macro_origin_locked and macro_visible and not na(macro_extreme) and close > macro_extreme
-        line.delete(macroLine0),   label.delete(macroLabel0)
-        line.delete(macroLine382), label.delete(macroLabel382)
-        line.delete(macroLine50),  label.delete(macroLabel50)
-        line.delete(macroLine618), label.delete(macroLabel618)
-        line.delete(macroLine702), label.delete(macroLabel702)
-        line.delete(macroLine786), label.delete(macroLabel786)
-        line.delete(macroLine886), label.delete(macroLabel886)
-        line.delete(macroLine100), label.delete(macroLabel100)
-        macroLine0 := na,   macroLabel0 := na
-        macroLine382 := na, macroLabel382 := na
-        macroLine50 := na,  macroLabel50 := na
-        macroLine618 := na, macroLabel618 := na
-        macroLine702 := na, macroLabel702 := na
-        macroLine786 := na, macroLabel786 := na
-        macroLine886 := na, macroLabel886 := na
-        macroLine100 := na, macroLabel100 := na
-        macro_visible         := false
-
-macro_prev_st_dir := st.dir
-
-// ── Draw / update the macro fib ──
-if showMacroFib and macroFibAllowed and macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
-    float mHigh   = macro_extreme
-    float mLow    = macro_origin
-    float mRange  = mHigh - mLow
-    int   mStart  = math.max(0, bar_index - macroLineExtend)
-    int   mEnd    = bar_index + macroLineExtend
-
-    if mRange > 0
-        float p0 = mHigh - mRange * 0.0
-        color cm0 = macro0Touched ? macro0Color : MACRO_GREY
-        string txm0 = f_macroLabel(0.0, "TP3", "TP3") + str.tostring(p0, format.mintick) + ")"
-        [nml0, nmlb0] = f_fibLevel(showMacro0, macroLine0, macroLabel0, mStart, p0, mEnd, cm0, f_macroLineStyle(macro0Style), txm0)
-        macroLine0 := nml0, macroLabel0 := nmlb0
-
-        float p382 = mHigh - mRange * 0.382
-        color cm382 = macro382Touched ? macro382Color : MACRO_GREY
-        string txm382 = f_macroLabel(0.382, "TP2", "TP2") + str.tostring(p382, format.mintick) + ")"
-        [nml382, nmlb382] = f_fibLevel(showMacro382, macroLine382, macroLabel382, mStart, p382, mEnd, cm382, f_macroLineStyle(macro382Style), txm382)
-        macroLine382 := nml382, macroLabel382 := nmlb382
-
-        float p50 = mHigh - mRange * 0.5
-        color cm50 = macro50Touched ? macro50Color : MACRO_GREY
-        string txm50 = (macro50Touched ? "FFT  (" : f_macroLabel(0.5, "TP1", "TP1")) + str.tostring(p50, format.mintick) + ")"
-        [nml50, nmlb50] = f_fibLevel(showMacro50, macroLine50, macroLabel50, mStart, p50, mEnd, cm50, f_macroLineStyle(macro50Style), txm50)
-        macroLine50 := nml50, macroLabel50 := nmlb50
-
-        float p618 = mHigh - mRange * 0.618
-        color cm618 = macro618Touched ? macro618Color : MACRO_GREY
-        string txm618 = f_macroLabel(0.618, "E1", "E1") + str.tostring(p618, format.mintick) + ")"
-        [nml618, nmlb618] = f_fibLevel(showMacro618, macroLine618, macroLabel618, mStart, p618, mEnd, cm618, f_macroLineStyle(macro618Style), txm618)
-        macroLine618 := nml618, macroLabel618 := nmlb618
-
-        float p702 = mHigh - mRange * 0.702
-        color cm702 = macro702Touched ? macro702Color : MACRO_GREY
-        string txm702 = f_macroLabel(0.702, "E2", "E2") + str.tostring(p702, format.mintick) + ")"
-        [nml702, nmlb702] = f_fibLevel(showMacro702, macroLine702, macroLabel702, mStart, p702, mEnd, cm702, f_macroLineStyle(macro702Style), txm702)
-        macroLine702 := nml702, macroLabel702 := nmlb702
-
-        float p786 = mHigh - mRange * 0.786
-        color cm786 = macro786Touched ? macro786Color : MACRO_GREY
-        string txm786 = f_macroLabel(0.786, "E3", "E3") + str.tostring(p786, format.mintick) + ")"
-        [nml786, nmlb786] = f_fibLevel(showMacro786, macroLine786, macroLabel786, mStart, p786, mEnd, cm786, f_macroLineStyle(macro786Style), txm786)
-        macroLine786 := nml786, macroLabel786 := nmlb786
-
-        float p886 = mHigh - mRange * 0.886
-        color cm886 = macro886Touched ? macro886Color : MACRO_GREY
-        string txm886 = f_macroLabel(0.886, "E4", "E4") + str.tostring(p886, format.mintick) + ")"
-        [nml886, nmlb886] = f_fibLevel(showMacro886, macroLine886, macroLabel886, mStart, p886, mEnd, cm886, f_macroLineStyle(macro886Style), txm886)
-        macroLine886 := nml886, macroLabel886 := nmlb886
-
-        float p100 = mHigh - mRange * 1.0
-        color cm100 = macro100Touched ? macro100Color : MACRO_GREY
-        string txm100 = f_macroLabel(1.0, "1.0", "1.0") + str.tostring(p100, format.mintick) + ")"
-        [nml100, nmlb100] = f_fibLevel(showMacro100, macroLine100, macroLabel100, mStart, p100, mEnd, cm100, f_macroLineStyle(macro100Style), txm100)
-        macroLine100 := nml100, macroLabel100 := nmlb100
+// (The "HIDE when price closes back above the locked top" block went with the
+//  drawing on 2026-08-02, and macro_visible with it. It only ever hid LINES — it
+//  was never read by the A+ POI or the B-LEG context line, both of which gate on
+//  macro_origin_locked alone, so nothing the strategy reads changes.)
 
 
 //============================================================
@@ -3197,10 +3044,22 @@ plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable =
 //============================================================
 //  MPC - JARVIS CONFIRMATION TABLE
 //============================================================
-// (Confirmation table REMOVED 2026-07-24 to free compile tokens — CE10117. The
-//  setup state it displayed on-chart is all in the Pine Logs. Only JARVIS_BLACK
-//  survives, for the watermark below.)
+// RESTORED 2026-08-02 (Aaron's call — he reads it during bar replay). It was cut
+// 2026-07-24 for compile tokens (CE10117); the 28 unused toggles and the Cycle Fib
+// drawing removed earlier today freed ~207 lines, which is where the budget for it
+// came from. Recovered from `b25789d~1`, NOT rewritten from memory — this is the A+
+// file's OWN table, not the near-identical fork that survives in
+// `mpc_b_leg_strategy.pine`, so its rows describe A+ state exactly as they used to.
+// ⚠ COSMETIC ONLY: every line below READS state and writes none of it back, so no
+// fill, exit or stat can move. The one thing that is NOT free is compile budget — if
+// CE10117 returns, this block is the first thing to cut again.
+color JARVIS_YELLOW = #fbe35e
+color JARVIS_BLUE   = #17578e
+color JARVIS_WHITE  = #ffffff
 color JARVIS_BLACK  = #000000
+color JARVIS_BSL    = color.new(#ff4444, 0)
+color JARVIS_SSL    = color.new(#00cc66, 0)
+color JARVIS_NEUTRAL = color.new(#888888, 0)
 
 // ── 1. LIQUIDITY slots ──
 var string liq_h4h = "", var string liq_h4l = ""
@@ -3255,8 +3114,72 @@ if h4BarChanged
     liq_h4h := "", liq_h4h_px := na, liq_h4h_bar := na
     liq_h4l := "", liq_h4l_px := na, liq_h4l_bar := na
 
-// (STRUCTURE + SNIPER-ZONE table slots and the JARVIS table drawing were removed
-//  2026-07-24 to free compile tokens — they only fed the confirmation table.)
+// ── 2. STRUCTURE slots — most recent external and internal ──
+// RESTORED 2026-08-02 with the table. The SNIPER-ZONE slot was NOT restored: the
+// table never read `sz_status` / `sniperZoneActive`, so it was dead weight even
+// before the cut.
+var string ext_struct = ""
+var string int_struct = ""
+
+// External — update on every BOS/SOS, most recent always wins
+if st.bull_sos
+    ext_struct := "▲ SOS"
+else if st.bear_sos
+    ext_struct := "▼ SOS"
+else if st.bull_bos
+    ext_struct := "▲ BOS"
+else if st.bear_bos
+    ext_struct := "▼ BOS"
+
+// Internal — track the bar index so the row can be validated against the current swing
+var int int_struct_bar = na
+
+// An external break ends the current internal swing and (unless historic internals
+// are enabled) wipes its drawings from the chart. Clear the table's INT state on the
+// same bar so the row can never show an iBOS/iSOS that has no drawing behind it.
+if extBreakThisBar
+    int_struct     := ""
+    int_struct_bar := na
+
+if int_bull_sos
+    int_struct := "▲ iSOS", int_struct_bar := bar_index
+else if int_bear_sos
+    int_struct := "▼ iSOS", int_struct_bar := bar_index
+else if int_bull_bos
+    int_struct := "▲ iBOS", int_struct_bar := bar_index
+else if int_bear_bos
+    int_struct := "▼ iBOS", int_struct_bar := bar_index
+
+// Valid whenever a live internal break exists for the CURRENT external swing.
+// (The external-break clear above is what scopes it — no fib-origin comparison
+// needed, since fiboStartIndex tracks the swing anchor, not the break bar, and
+// could sit far enough back to let a stale internal break slip through.)
+bool int_struct_valid = int_struct != "" and not na(int_struct_bar)
+
+// ── Draw table ──
+var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 3, 18,
+  bgcolor      = color.new(#0a0a14, 5),
+  border_color = color.new(JARVIS_BLUE, 50),
+  border_width = 1,
+  frame_color  = JARVIS_YELLOW,
+  frame_width  = 2)
+
+f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
+    table.cell(t, 0, row, sec,
+      text_color  = color.new(JARVIS_WHITE, 20),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_left)
+    table.cell(t, 1, row, val,
+      text_color  = vc,
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_center)
+    table.cell(t, 2, row, detail,
+      text_color  = color.new(JARVIS_WHITE, 40),
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = color.new(#0a0a14, 15),
+      text_halign = text.align_center)
 
 // Most recent BSL/SSL source — priority: NY > London > Asia > Daily > H4
 bool showSessH = liq_dh == ""
@@ -3780,6 +3703,20 @@ bool shortVetoA = showDiv and divVeto and (divRsi <= divExtremeOS or (bullDivAct
 f_w23Arm(mwL, aplusL_stage >= 2 and aplusL_stage[1] < 2, aplusL_sweepBar, aplusL_sosBar, armHolderL, recentSSL)
 f_w23Arm(mwS, aplusS_stage >= 2 and aplusS_stage[1] < 2, aplusS_sweepBar, aplusS_sosBar, armHolderS, recentBSL)
 
+// ── execFvgPreZone — did this gap exist BEFORE price entered the zone? ───────
+// A gap is only confluence if it was already sitting in the band when price arrived.
+// One printed by the reversal candle AFTER price is already inside the 0.5-0.886 band
+// is the retrace confirming itself, and it re-prices the resting limit to a level the
+// setup never justified. `na(fiboHalfBar)` = price has not reached the zone yet, so
+// every gap trivially pre-dates it and the gate is inert. STRICTLY earlier: a gap born
+// on the zone-entry bar was still forming as price arrived, so it was not "present".
+// Read by BOTH gap consumers below — the confluence flag and the entry-edge loop — so a
+// gap the entry may not use can never be labelled as the confluence that armed it. Add
+// the call to any future consumer of fvgTops/fvgBots, or that path becomes a way around
+// this gate. (The old execFvg50 0.5-straddle fallback was a third consumer; it was
+// removed with the input on 2026-08-02.)
+f_gapPreZone(int _born) => not execFvgPreZone or na(fiboHalfBar) or _born < fiboHalfBar
+
 // FVG confluence — a live clean gap overlapping the entry zone (0.5 to 0.886)
 bool aplusL_fvg = false
 bool aplusS_fvg = false
@@ -3787,20 +3724,114 @@ if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
     for _fi = 0 to array.size(fvgBoxes) - 1
         float _gT = array.get(fvgTops, _fi)
         float _gB = array.get(fvgBots, _fi)
+        bool  _gOk = f_gapPreZone(array.get(fvgBorn, _fi))
         if array.get(fvgIsBull, _fi)
             // bullish zone: prices from fiboP6 (0.886, lower) up to fiboP2 (0.5)
-            if fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6
+            if fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _gOk
                 aplusL_fvg := true
         else
             // bearish zone: prices from fiboP2 (0.5) up to fiboP6 (0.886)
-            if fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6
+            if fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _gOk
                 aplusS_fvg := true
 
-// (f_drawTable REMOVED 2026-07-24 — the on-chart JARVIS confirmation table. It
-//  read aplus*_stage / veto / recentBSL/SSL / wEst/dEst and drew status rows;
-//  none of that fed a trade, so removing it changes no fill, exit or stat. The
-//  same state prints to the Pine Logs. Freed the compile tokens the split R:R
-//  exit + B-leg colour/context needed.)
+// The whole render lives in a function, including its own barstate gate, so the
+// main body pays for exactly ONE statement instead of ~60. Pine caps how many
+// statements the main body may hold (CE10295: "The main body of the script is
+// too long"), and this table is by far the largest block in it. Same trick as
+// f_drawStats / f_posBox below. Everything it reads is a global declared above.
+f_drawTable() =>
+    if showConfTable and barstate.islast
+        // Header
+        table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
+          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
+          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+        table.cell(jarvisTable, 1, 0, "STATUS",
+          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
+          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+        table.cell(jarvisTable, 2, 0, "SOURCE",
+          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
+          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+
+        int r = 1
+
+        // Everything below (A+ SETUP, CONT, Weekly, Daily, LIQ BSL/SSL) is hidden in
+        // Market Structure mode — only EXT/INT print then.
+        if not marketStructureOnly
+            // A+ SETUP — the reversal sequence ONLY (sweep → SOS → entry). Once TP3
+            // completes, this row goes back to Pass; what tracks afterward is the CONT
+            // row below — a different trade type, displayed separately so the two can
+            // never be confused. Divergence/extreme-RSI veto: a side with live opposing
+            // divergence or an extreme RSI reading is suppressed and flagged instead of
+            // displayed as a tradeable setup, even if the entry zone is reached.
+            // FVG is a REQUIRED confirmation for READY (not just a tag) — reaching 0.618
+            // without a live matching FVG holds the row at "awaiting FVG" instead of
+            // declaring the setup ready. POI (Cycle Fib discount/premium) is a separate,
+            // optional confirmation — it does not substitute for the FVG requirement.
+            bool aplusL_ok = aplusL_stage > 0 and not longVetoA
+            bool aplusS_ok = aplusS_stage > 0 and not shortVetoA
+            bool aplusL_blocked = aplusL_stage > 0 and longVetoA
+            bool aplusS_blocked = aplusS_stage > 0 and shortVetoA
+            if aplusL_ok or aplusS_ok
+                bool seqIsLong = aplusL_ok and (not aplusS_ok or aplusL_stage >= aplusS_stage)
+                int  seqStage  = seqIsLong ? aplusL_stage : aplusS_stage
+                color seqCol = seqIsLong ? JARVIS_SSL : JARVIS_BSL
+                string seqSide = seqIsLong ? "LONG" : "SHORT"
+                bool  seqFvg  = seqIsLong ? aplusL_fvg : aplusS_fvg
+                bool  seqPoi  = seqIsLong ? aplusL_poi : aplusS_poi
+                bool  seqDiv  = seqIsLong ? bullDivActive : bearDivActive
+                string poiTag = seqPoi ? " + POI" : ""
+                string divTag = seqDiv ? " + DIV" : ""
+                if seqStage == 4 and seqFvg
+                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
+                else if seqStage == 4
+                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
+                else if seqStage == 3
+                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
+                else if seqStage == 2
+                    f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
+                else
+                    f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
+                r := r + 1
+            else if aplusL_blocked or aplusS_blocked
+                f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+                r := r + 1
+            else
+                f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
+                r := r + 1
+
+            // WEEKLY — Established Context (last closed week vs the one before)
+            f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
+            r := r + 1
+
+            // DAILY — Established Context (last closed day vs the one before)
+            f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
+            r := r + 1
+
+            // LIQ BSL
+            if recentBSL != ""
+                f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
+                r := r + 1
+
+            // LIQ SSL
+            if recentSSL != ""
+                f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
+                r := r + 1
+
+        // STRUCTURE — EXT always, INT only if within current fib range
+        if ext_struct != ""
+            f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
+            r := r + 1
+        if int_struct_valid
+            f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
+            r := r + 1
+
+        // Wipe any leftover cells below the last drawn row. Without this, a tick
+        // that draws FEWER rows than the previous one leaves the old rows visible
+        // (e.g. a ghost duplicate of the final row after a row above disappears).
+        if r <= 17
+            table.clear(jarvisTable, 0, r, 2, 17)
+
+f_drawTable()
 
 //============================================================
 //  MPC- JARVIS WATERMARK
@@ -3952,16 +3983,27 @@ color BLEG_BLUE_L = color.new(#2962FF, 0)
 
 float execSlBuf = execSlBufTk * syminfo.mintick
 
-// Stop anchor — the fib price the SL is placed at, per the "SL fib level" input.
-// All choices sit on the deep side of 0.5, so the stop is always beyond the entry
-// band. 1.0 (default) = the leg origin.
-f_slAnchor() =>
-    switch execSlLevel
+// Stop anchor — the fib price the SL is placed at, per the "SL fib level" input,
+// the same for every trade. All choices sit on the deep side of 0.5, so the stop
+// is beyond the entry band; four of the five also sit INSIDE it, which is the
+// hazard that dropdown carries. 0.886 (default) is the deep edge of the band.
+// execSlDeep (2026-08-02) makes the anchor depend on WHERE THE LIMIT FILLED, which
+// is why this now takes the entry edge. AT OR PAST the 0.786 line -> fib 1.0, the
+// leg origin, the only level beyond the whole 0.5-0.886 entry band. 0.702 and
+// everything shallower keeps the chosen level. `na(_edge)` is treated as shallow,
+// so a missing edge can never silently widen a stop.
+// The test is inclusive (<= / >=) because 0.786 is a SNAP TARGET: rule 3 assigns
+// fiboP5 to the edge directly, with no arithmetic in between, so the comparison is
+// exact and an entry resting ON 0.786 is inside the rule rather than one tick shy.
+f_slAnchor(float _edge, bool _bull) =>
+    float _base = switch execSlLevel
         "0.618" => fiboP3
         "0.702" => fiboP4
         "0.786" => fiboP5
         "0.886" => fiboP6
         => fiboP10
+    bool _deep = execSlDeep and not na(_edge) and not na(fiboP5) and (_bull ? _edge <= fiboP5 : _edge >= fiboP5)
+    _deep ? fiboP10 : _base
 
 // The minimum-stop floor, in PRICE, for whichever mode is selected. `ta.atr` has
 // to run on EVERY bar to stay a valid series, so it is hoisted out of the
@@ -3976,21 +4018,81 @@ f_minStopFloor(float px) =>
         => 0.0
 bool  fibsReady = not na(fiboP1) and not na(fiboP2) and not na(fiboP3) and not na(fiboP6) and not na(fiboP7) and not na(fiboP10)
 
-// Method 3 (execDeepFib) — the entry price for a DEEP gap whose NEAR EDGE sits
-// below the 0.618 line, or na when the near edge is shallower than 0.618 (those
-// keep the normal exact-edge entry). The re-priced entry is the fib level just
-// SHALLOWER than the gap's near edge — the level price reaches first on the way
-// in. ONLY the near edge's position decides it: a real gap is often tall enough
-// to span 0.702/0.786, and an earlier "gap body contains a level" exception was
-// WRONG — it silently disqualified exactly these deep, multi-level gaps (the miss
-// this is built to catch). What the body crosses is irrelevant; where the near
-// edge lands is everything. Long near edge = gap top (_gT); short = gap bottom.
-f_deepFibEdge(float _gB, float _gT, bool _bull) =>
+// The FIB-SNAP entry price (2026-08-02) — where a qualifying gap's resting limit
+// actually sits, or `na` for "leave it at the gap's own clamped edge". Returns
+// one price for the whole entry model, because its three rules are decided off
+// the same two numbers and Pine's statement budget in this file is tight.
+//
+// The gap is first CLAMPED into the 0.5-0.886 band: _near = the shallowest
+// tradeable price (long = gap top, short = gap bottom), _far = the deepest. A
+// gap running past either end is therefore judged on the part of it that can
+// actually be entered, never on the part outside the band.
+//
+// Three levels are then read off the ladder, all with 0.886 excluded (see the ⚠):
+//   _L = the SHALLOWEST level at or deeper than _near. Because the ladder is
+//        ordered, if that one is not ALSO at or shallower than _far then no level
+//        is inside the gap at all — every deeper one is further past _far. So one
+//        comparison decides "does the body hold a level".
+//   _S = the nearest level SHALLOWER than the gap (price reaches it first).
+//   _D = the nearest level DEEPER than the gap (price reaches it last, and only
+//        after trading through the whole imbalance).
+//
+// and the toggles resolve them. Rule 1 is independent; rules 2 / 3 / Method 3 all
+// answer the SAME question (where does a FLOATING gap rest?) so they cascade,
+// each greying the one below it:
+//   1. execFibOverlap and a level is INSIDE the gap  -> rest on _L.
+//   2. else the gap FLOATS between two levels, and only if it is deeper than
+//      0.618, in this order:
+//        execFibDeepEdge -> _far, the gap's OWN deep edge (the default);
+//        execFibNearest  -> whichever of _S / _D is closer (ties go to _S);
+//        execDeepFib     -> _S, always, which is Method 3 exactly;
+//        none            -> na, the plain shallow gap edge.
+//   3. a gap shallower than 0.618 that holds no level is untouched by all three —
+//      it keeps the exact-edge entry it has always had.
+//
+// ⚠ WHY THIS IS A LADDER, NOT ONE RULE. Method 3 only ever looked at _S, so a gap
+// sitting a hair short of 0.702 was still entered at 0.618 — the limit filled well
+// above the gap and price then ran past 0.702 anyway. Aaron caught it on the
+// 30 Jul 2026 trade. The two fixes trade off against each other and BOTH are here
+// so they can be measured against each other rather than argued about:
+//   _far (rule 2) is inside the gap, so price entering the imbalance AT ALL fills
+//        you. Deeper than _S, and it never costs a fill. This is the default.
+//   _D   (rule 3) is past the gap, so it is deeper still — but a setup that only
+//        pings the gap and turns never fills. It buys entry price with fill rate.
+// Neither is free and neither is proven; run all three and compare.
+//
+// ⚠ _far FALLS BACK TO _S WHEN THE GAP REACHES THE BAND FLOOR. A gap floating
+// between 0.786 and 0.886 clamps its deep edge onto fiboP6 — which is the STOP —
+// so the guard below (`_far > fiboP6`, mirrored for shorts) sends it to 0.786
+// instead. Without it that gap is a zero stop distance and a cancelled order.
+//
+// ⚠ 0.886 IS DELIBERATELY NOT A SNAP TARGET in any of the three rules. The stop
+// is a FIXED fib (execSlLevel, default 0.886), so an entry resting AT 0.886 has a
+// stop distance of zero: `slDist > 0` fails, `strategy.cancel()` fires, and the
+// setup vanishes with no trade and no tag. Stopping every scan at 0.786 hands
+// those gaps exactly what Method 3 already gave them, so no rule here can ever
+// remove a trade. (0.886 only becomes enterable if the stop moves to 1.0 — tried
+// on 2026-08-02 and reverted, see the execSlLevel comment.)
+f_fibEntry(float _gB, float _gT, bool _bull) =>
     float _out = na
-    if _bull and _gT < fiboP3          // long: near edge deeper than the 0.618 line
-        _out := _gT >= fiboP4 ? fiboP3 : _gT >= fiboP5 ? fiboP4 : fiboP5
-    if (not _bull) and _gB > fiboP3    // short: near edge deeper than the 0.618 line
-        _out := _gB <= fiboP4 ? fiboP3 : _gB <= fiboP5 ? fiboP4 : fiboP5
+    if _bull
+        float _near = math.min(_gT, fiboP2)
+        float _far  = math.max(_gB, fiboP6)
+        float _L = fiboP2 <= _near ? fiboP2 : fiboP3 <= _near ? fiboP3 : fiboP4 <= _near ? fiboP4 : fiboP5 <= _near ? fiboP5 : na
+        float _S = fiboP6 > _near ? fiboP6 : fiboP5 > _near ? fiboP5 : fiboP4 > _near ? fiboP4 : fiboP3 > _near ? fiboP3 : fiboP2 > _near ? fiboP2 : na
+        float _D = fiboP2 < _far  ? fiboP2 : fiboP3 < _far  ? fiboP3 : fiboP4 < _far  ? fiboP4 : fiboP5 < _far  ? fiboP5 : na
+        float _N = na(_D) ? _S : na(_S) ? _D : (_far - _D) < (_S - _near) ? _D : _S
+        bool  _in = execFibOverlap and not na(_L) and _L >= _far
+        _out := _in ? _L : _near > fiboP3 ? na : execFibDeepEdge ? (_far > fiboP6 ? _far : _S) : execFibNearest ? _N : execDeepFib ? _S : na
+    else
+        float _near = math.max(_gB, fiboP2)
+        float _far  = math.min(_gT, fiboP6)
+        float _L = fiboP2 >= _near ? fiboP2 : fiboP3 >= _near ? fiboP3 : fiboP4 >= _near ? fiboP4 : fiboP5 >= _near ? fiboP5 : na
+        float _S = fiboP6 < _near ? fiboP6 : fiboP5 < _near ? fiboP5 : fiboP4 < _near ? fiboP4 : fiboP3 < _near ? fiboP3 : fiboP2 < _near ? fiboP2 : na
+        float _D = fiboP2 > _far  ? fiboP2 : fiboP3 > _far  ? fiboP3 : fiboP4 > _far  ? fiboP4 : fiboP5 > _far  ? fiboP5 : na
+        float _N = na(_D) ? _S : na(_S) ? _D : (_D - _far) < (_near - _S) ? _D : _S
+        bool  _in = execFibOverlap and not na(_L) and _L <= _far
+        _out := _in ? _L : _near < fiboP3 ? na : execFibDeepEdge ? (_far < fiboP6 ? _far : _S) : execFibNearest ? _N : execDeepFib ? _S : na
     _out
 
 // ── Entry EDGE — the exact price a resting limit sits at ───────────────────
@@ -4012,12 +4114,16 @@ if fibsReady and array.size(fvgTops) > 0
         // long: gap top at/below 0.5; short: gap bottom at/above 0.5 (no straddle).
         bool _lDeepOk = not execFvgDeepOnly or _gT <= fiboP2
         bool _sDeepOk = not execFvgDeepOnly or _gB >= fiboP2
-        if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk
-            float _df = execDeepFib ? f_deepFibEdge(_gB, _gT, true) : na
-            float _e = na(_df) ? math.min(_gT, fiboP2) : _df       // Method 3 override, else shallowest touch
+        // Pre-zone gate: with execFvgPreZone on, a gap the retrace itself printed cannot
+        // price this entry. It is ANDed onto both sides rather than skipping the loop
+        // iteration, so with the toggle off the condition is the original one exactly.
+        bool _preOk = f_gapPreZone(array.get(fvgBorn, _i))
+        if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk and _preOk
+            float _df = f_fibEntry(_gB, _gT, true)
+            float _e = na(_df) ? math.min(_gT, fiboP2) : _df       // snap override, else shallowest touch
             longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
-        if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk
-            float _df = execDeepFib ? f_deepFibEdge(_gB, _gT, false) : na
+        if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk and _preOk
+            float _df = f_fibEntry(_gB, _gT, false)
             float _e = na(_df) ? math.max(_gB, fiboP2) : _df
             shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
 // ── SNIPER ZONE — the SECOND accepted confirmation ─────────────────────────
@@ -4051,23 +4157,10 @@ if not execReqFVG and fibsReady
     if na(shortEdge) and fibo_dir == -1
         shortEdge := fiboP3
 
-// ── FVG TOUCHES 0.5 — the LEAST-FAVORABLE entry, a bottom-tier fallback ──────
-// A gap that STRADDLES the 0.5 line — the 0.5 must fall INSIDE the gap body
-// (gap bottom at/below 0.5 AND gap top at/above 0.5), not merely an edge near
-// it. This is the shallowest possible entry, so it ranks LAST: it only prices a
-// leg that no more-favorable source above already did (deep FVG edge, deep-fib
-// re-price, Sniper Zone, reqFVG-off). The limit rests AT 0.5 (the level the gap
-// touches). With "FVG must sit fully past 0.5" on, straddling gaps are otherwise
-// rejected by the main loop, so this is the only path that trades them.
-if execFvg50 and fibsReady and array.size(fvgTops) > 0
-    for _j = 0 to array.size(fvgTops) - 1
-        float _gT = array.get(fvgTops, _j)
-        float _gB = array.get(fvgBots, _j)
-        bool  _gBull = array.get(fvgIsBull, _j)
-        if na(longEdge)  and _gBull       and fibo_dir == 1  and _gB <= fiboP2 and _gT >= fiboP2
-            longEdge  := fiboP2
-        if na(shortEdge) and (not _gBull) and fibo_dir == -1 and _gB <= fiboP2 and _gT >= fiboP2
-            shortEdge := fiboP2
+// (The "FVG TOUCHES 0.5" fallback loop was REMOVED 2026-08-02 with its execFvg50
+//  input — see the note in the STRATEGY EXECUTION INPUTS block. It was the last
+//  and shallowest tier of the entry ladder, gated OFF by default for its whole
+//  life, so every historical result reproduces unchanged.)
 
 // ── Arm-source filter — isolate WHICH Stage-1 confluence is allowed to arm ────
 // The engine treats a sweep and a divergence as interchangeable Stage-1 triggers
@@ -4337,8 +4430,8 @@ bool sBlkReady = not na(aplusS_sosBar) and fibo_dir == -1 and not na(shortEdge) 
 // a setup refused on PRICE gets a chart tag like every other refusal. `> 0` keeps
 // an inverted stop (dist <= 0, already handled by its own cancel) from being
 // mislabelled as a floor refusal. na propagates, so a missing fib tags nothing.
-float lBlkDist  = longEdge - (f_slAnchor() - execSlBuf)
-float sBlkDist  = (f_slAnchor() + execSlBuf) - shortEdge
+float lBlkDist  = longEdge - (f_slAnchor(longEdge, true) - execSlBuf)
+float sBlkDist  = (f_slAnchor(shortEdge, false) + execSlBuf) - shortEdge
 bool  lBlkTight = lBlkDist > 0 and lBlkDist < f_minStopFloor(longEdge)
 bool  sBlkTight = sBlkDist > 0 and sBlkDist < f_minStopFloor(shortEdge)
 int  lBlkCode  = f_blkCode(not execLongs,  not armOkL, lateDayBlock, longVetoA  and execRespectVeto, htfBlockLong,  htfBiasBlockLong,  lBlkTight)
@@ -4366,7 +4459,7 @@ bool bLegShortArm = execBLeg and execShorts and not shortArmed and bLegS_on and 
 
 // ── Long: rest / refresh a buy-limit at the edge (cancel when disarmed) ──
 if longArmed
-    lSL  := f_slAnchor() - execSlBuf
+    lSL  := f_slAnchor(longEdge, true) - execSlBuf
     float slDist = longEdge - lSL
     lTP1 := longDeep ? fiboP2 : fiboP1   // deep → 0.5, shallow → 0.382
     lTP2 := longDeep ? fiboP1 : fiboP7   // deep → 0.382, shallow → 0.0 (swing extreme)
@@ -4383,7 +4476,7 @@ else if strategy.position_size == 0 and not bLegLongArm
 
 // ── Short: rest / refresh a sell-limit at the edge ──
 if shortArmed
-    sSL  := f_slAnchor() + execSlBuf
+    sSL  := f_slAnchor(shortEdge, false) + execSlBuf
     float slDist = sSL - shortEdge
     sTP1 := shortDeep ? fiboP2 : fiboP1
     sTP2 := shortDeep ? fiboP1 : fiboP7
