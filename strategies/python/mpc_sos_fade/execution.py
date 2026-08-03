@@ -193,7 +193,7 @@ _BLOCK_LABEL = {
 }
 # The hover text, word-for-word from Pine `f_blkWhy` so the chart and TradingView agree.
 _BLOCK_REASON = {
-    1: "'Trade Longs' / 'Trade Shorts' is OFF for this side.",
+    1: "'Trade longs' / 'Trade shorts' is OFF for this side.",
     2: "Arm source OFF — this setup was armed by the sweep or divergence trigger you disabled.",
     3: "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close.",
     4: "Divergence / extreme-RSI veto — opposing divergence live at the SOS, or RSI at an extreme.",

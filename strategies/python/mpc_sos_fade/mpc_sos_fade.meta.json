@@ -1,5 +1,5 @@
 {
-  "_comment": "Editor UI metadata for MPC SOS Fade — labels, groups, plain-English descriptions, the 'essentials' (core) flag, conditional visibility (show_if), toggle option labels, and tuning guides. Read by the command-center scanner (strategies/python/<pkg>/<pkg>.meta.json) and overlaid onto the schema built from SosFadeConfig. UI ONLY: it never touches a trade decision or the source hash, so editing it needs no re-parity — but DO click Scan Strategies after editing. Param order here is the canonical UI order. Every show_if below was verified against the code, not assumed: exec_fvg_deep_only deliberately has NO condition (it still filters which FVGs qualify when Require FVG is off), and div_rsi_len/div_pivot_len have none either (they drive the divergence that ARMS the setup, which show_div does not gate — show_div only gates the veto and the live DIV flag).",
+  "_comment": "Editor UI metadata for MPC SOS Fade — labels, groups, plain-English descriptions, the 'essentials' (core) flag, conditional visibility (show_if), toggle option labels, and tuning guides. Read by the command-center scanner (strategies/python/<pkg>/<pkg>.meta.json) and overlaid onto the schema built from SosFadeConfig. UI ONLY: it never touches a trade decision or the source hash, so editing it needs no re-parity — but DO click Scan Strategies after editing. Param order here is the canonical UI order. Every show_if below was verified against the code, not assumed: exec_fvg_deep_only deliberately has NO condition (it still filters which FVGs qualify when Require FVG is off), and div_rsi_len/div_pivot_len have none either (they drive the divergence that ARMS the setup, which show_div does not gate — show_div only gates the veto and the live DIV flag). LABELS AND DESCRIPTIONS ARE SHARED WITH THE PINE (2026-08-02): every `label` here is byte-identical to that input's title in indicators/mpc_strategy.pine (minus Pine's leading '   ↳ ' indent marker), and every `desc` is that input's tooltip verbatim. One parameter, one name, one explanation, two UIs. Change a label or a desc and change the Pine in the same commit, or the two panels start teaching different things. The ONE allowed deviation is a suffix stating a fact true only of THIS runner — exec_conf_sz carries '(not supported)' because the Sniper-Zone entry is Pine-only.",
   "edge": "It fades exhaustion, but only after structure agrees. Price grabs liquidity (a sweep of a known high/low) or prints a momentum divergence at an extreme; a shift of structure (SOS) confirms the tide actually turned; then it waits for a DEEP pullback into the fib zone and buys/sells the imbalance left behind on a clean fib line. Nothing is chased — every entry is a resting limit into a retracement. The default is the deep-entry combo: arm on liquidity sweeps, require the gap to sit fully past 0.5, and re-price a deep gap to the nearest fib (0.618/0.702/0.786) rather than its own edge. That combo measured about +237% at PF 6.2 / 85% win / 13% max drawdown over ~2 years of gold at 84 trades. The other lever is the HTF bias filter, which currently does nothing (both set to Ignore): this bot shorted a +75% bull market and won, so shorts carry most of the profit. That concentration is the open question.",
   "steps": [
     {
@@ -29,12 +29,12 @@
       "group": "What arms a setup",
       "core": true,
       "widget": "toggle",
-      "label": "Arm on divergence",
+      "label": "Arm on RSI divergence",
       "options": {
         "off": "Ignore",
         "on": "Arms setups"
       },
-      "desc": "Let an RSI divergence start a setup. OFF by default now — the default combo arms on liquidity sweeps instead. Divergence-armed setups skew heavily short (in a rising market, sell divergences outnumber buy divergences about 2 to 1). Turn it on to trade the divergence pool on its own, or alongside sweeps."
+      "desc": "Stage 1 trigger. Lets a setup arm on a confirmed RSI divergence. Both arm sources off means no trades at all. This does not control the veto — that has its own toggle."
     },
     {
       "name": "exec_arm_sweep",
@@ -46,14 +46,14 @@
         "off": "Ignore",
         "on": "Arms setups"
       },
-      "desc": "Let a liquidity sweep (price running stops past a known high/low) start a setup. ON by default — it is the arming trigger for the current deep-entry combo (sweep-arm + deep-gaps-only + deep-gap→fib entry), which measured about +237% at PF 6.2 / 85% win / 13% max drawdown over ~2 years of gold at 84 trades. That result is the COMBO, not sweep-arm alone: pair it with the two Entry-zone deep toggles below. Sweep-arm with shallow gaps allowed is much weaker."
+      "desc": "Stage 1 trigger. Lets a setup arm on a liquidity sweep — H4, previous day, or a session high/low. Turn this off and leave divergence on to test divergence-armed setups alone."
     },
     {
       "name": "aplus_window",
       "group": "What arms a setup",
-      "label": "Arm → SOS timeout",
+      "label": "Max time: sweep → SOS (minutes)",
       "unit": "minutes",
-      "desc": "How long an armed setup waits for structure to confirm before it gives up. Default is 4320 minutes — 3 days. This is a staleness backstop, not a trigger: it only throws away setups whose confirmation never came.",
+      "desc": "How long an armed sweep stays valid. The SOS must fire within this many minutes of it. The real kill switch is narrative — an opposite SOS disarms the setup — so this only filters very old sweeps. 4320 = 3 days.",
       "guide": [
         "Only fresh confirmations count — fewer setups",
         "Stale exhaustion can still trigger days later"
@@ -64,24 +64,24 @@
       "group": "Entry zone",
       "core": true,
       "widget": "toggle",
-      "label": "Require an FVG",
+      "label": "Require an FVG in the zone",
       "options": {
         "off": "0.618 limit",
         "on": "Gap required"
       },
-      "desc": "Whether a fair-value gap must overlap the fib zone for an entry to exist. On, the resting limit goes at the gap's near edge. Off, it falls back to a plain 0.618 limit — more trades, less confluence behind each one."
+      "desc": "On = only enter when a live gap overlaps the 0.5-0.886 zone. Off = fall back to the 0.618 fib and enter on the retrace alone. Off does not switch off the gap rules below — a qualifying gap still prices the entry first."
     },
     {
       "name": "exec_fvg_deep_only",
       "group": "Entry zone",
       "core": true,
       "widget": "toggle",
-      "label": "Deep gaps only",
+      "label": "Gap must sit fully past 0.5",
       "options": {
         "off": "Any gap",
         "on": "Past 0.5 only"
       },
-      "desc": "Only count a gap that sits fully beyond the 0.5 retracement. ON by default — part of the deep-entry combo. Demands a deeper pullback, so you get a better price on fewer fills. Note this still filters gaps even when 'Require an FVG' is off — it changes which gap becomes the entry price."
+      "desc": "On = the whole gap must sit past 0.5, on the deep side. Off = any gap touching the 0.5-0.886 band counts. On is stricter and takes fewer setups."
     },
     {
       "name": "exec_fvg_pre_zone",
@@ -92,7 +92,7 @@
         "off": "Any live gap",
         "on": "Only older gaps"
       },
-      "desc": "Only count a gap that was already alive on the bar price first tagged 0.5. A gap printed by the reversal candle AFTER price is already inside the zone is the retrace confirming itself — it manufactures the confluence the setup is judged on, and it re-prices the limit to a level nothing justified. OFF by default. Measured over 2020-2026 it removes 17 setups worth +4.0R in total (noise) plus one +16.5R trade, so judge it on the logic rather than the R."
+      "desc": "On = a gap only counts if it was already there when price first tagged 0.5. A gap printed by the reversal candle itself is the retrace confirming itself. Off by default. Measured 2020-2026: 165 trades / +126.68R becomes 148 / +105.22R, and nearly all of that gap is one +16.5R trade — the other 17 setters it removes are worth +4R between them. Judge it on the logic, not the R."
     },
     {
       "name": "exec_fib_overlap",
@@ -103,7 +103,7 @@
         "off": "Gap edge",
         "on": "The fib level"
       },
-      "desc": "Rule 1, and the only one that fires on a gap whose BODY holds a fib level. ON, the limit rests on that level (the shallowest, if several are inside) rather than at the gap's edge — so the order sits inside the imbalance the setup was justified by instead of in front of it. Independent of the three rules below; 0.886 is never a target, because the stop sits there and a zero stop distance cancels the order."
+      "desc": "Fires only when a fib level sits inside the gap body. On = rest the limit on that level — the shallowest if there are several — instead of at the gap edge, so the order sits inside the imbalance rather than in front of it. 0.886 is never used as a target: the stop sits there, and a zero stop distance cancels the order."
     },
     {
       "name": "exec_fib_deep_edge",
@@ -114,37 +114,37 @@
         "off": "Off",
         "on": "Gap's far edge"
       },
-      "desc": "Rule 2, for a gap that holds NO fib level and floats deeper than 0.618. ON, the limit rests at the gap's own FAR edge — the side nearest the level below it. The only deep rule that always fills: the limit is INSIDE the gap, so price entering the imbalance at all fills you. Measured WORSE than 'Nearest fib either side' over 2020-2026, so it ships OFF; it overrides the two rules below when on."
+      "desc": "For a gap that holds no fib level and floats deeper than 0.618. On = rest at the gap's own far edge. It is the only deep rule that always fills, because the limit sits inside the gap. Measured worse than nearest-fib over 2020-2026, so it ships off. It overrides the two rules below."
     },
     {
       "name": "exec_fib_nearest",
       "group": "Entry zone",
       "core": true,
       "widget": "toggle",
-      "label": "Floating gap → nearest fib",
+      "label": "Floating gap → nearest fib (either side)",
       "options": {
         "off": "Off",
         "on": "Nearest either side"
       },
-      "desc": "Rule 3, the shipped default. For a gap holding no fib level and floating deeper than 0.618, measure both distances — up to the level above it and down to the level below it — and rest on whichever is CLOSER. It fixes the old behaviour where a gap sitting just short of 0.702 was still entered way back at 0.618. Not free: when the deeper level wins, the limit sits PAST the gap, so a setup that only tags the gap and turns never fills. Deeper entry and a tighter stop, bought with fill rate."
+      "desc": "Same gap as the rule above. On = measure the distance to the fib above and the fib below, and rest on whichever is closer. This fixes a gap sitting just short of 0.702 being entered way back at 0.618. Not free: when the deeper level wins, the limit sits past the gap, so a setup that only tags the gap never fills. Deeper entry and a tighter stop, paid for in fill rate."
     },
     {
       "name": "exec_deep_fib",
       "group": "Entry zone",
       "widget": "toggle",
-      "label": "Floating gap → nearest fib ABOVE",
+      "label": "Floating gap → nearest fib shallower",
       "options": {
         "off": "Off",
         "on": "Shallower fib only"
       },
-      "desc": "Method 3 — the original one-sided form of the two rules above, kept so any historical result reproduces. A floating gap deeper than 0.618 rests at the nearest fib just SHALLOWER than it (0.618 / 0.702 / 0.786), the level price reaches first. It never looks at the level below the gap however much closer that one is, which is exactly what 'Floating gap → nearest fib' fixes. Only reachable with both rules above OFF; defaulted off on 2026-08-02 when rule 3 replaced it."
+      "desc": "The original one-sided version of the two rules above, kept so old results reproduce. A floating gap rests at the nearest fib shallower than it — the level price reaches first. It never looks at the level below the gap, however much closer that one is. Only reachable with both rules above off."
     },
     {
       "name": "exec_htf_weekly",
       "group": "Higher-timeframe filter",
       "core": true,
-      "label": "Weekly bias rule",
-      "desc": "Require the weekly trend to agree, not oppose, or oppose the trade. One of: Ignore · Must agree · Must not oppose · Must oppose (reversal). Default Ignore, which means the bot has NO trend filter at all — that's why it happily shorted a bull market.",
+      "label": "Weekly bias requirement",
+      "desc": "A separate gate from the exhaustion filter, and it works whether that is on or off. Judges the weekly bias against the trade direction. Ignore = off. Must agree = weekly matches the trade. Must not oppose = neutral passes. Must oppose = weekly must be against the trade. Weekly must-oppose plus daily must-agree is a forming reversal.",
       "guide": [
         "Ignore = no filter, trade every setup",
         "Must agree = only with the weekly trend"
@@ -159,8 +159,8 @@
     {
       "name": "exec_htf_daily",
       "group": "Higher-timeframe filter",
-      "label": "Daily bias rule",
-      "desc": "Same four options as the weekly rule, applied to the daily trend: Ignore · Must agree · Must not oppose · Must oppose (reversal). Both rules are checked, so a setup must satisfy each one that isn't set to Ignore.",
+      "label": "Daily bias requirement",
+      "desc": "The same four choices as weekly, judged on the daily bias. Ignore = off.",
       "choices": [
         "Ignore",
         "Must agree",
@@ -172,18 +172,18 @@
       "name": "exec_htf_exhaust_only",
       "group": "Higher-timeframe filter",
       "widget": "toggle",
-      "label": "Fade exhaustion only",
+      "label": "Only fade HTF exhaustion, not breakouts",
       "options": {
         "off": "Any setup",
         "on": "Exhaustion"
       },
-      "desc": "Block a trade that would fade a FRESH higher-timeframe breakout — the theory being an exhausted move is worth fading but a breaking one isn't. Blocks longs into a fresh breakdown and shorts into a fresh breakout."
+      "desc": "On = block a reversal that fights a fresh higher-timeframe breakout, while still allowing one that fades an exhaustion sweep. Off = no HTF filter, and the source below is greyed out."
     },
     {
       "name": "exec_htf_source",
       "group": "Higher-timeframe filter",
-      "label": "Exhaustion timeframe",
-      "desc": "Which timeframe counts as a fresh breakout for the rule above: Weekly · Daily · Either. 'Either' is the strictest — a breakout on either timeframe blocks the trade.",
+      "label": "HTF exhaustion source",
+      "desc": "Which higher timeframe the breakout block reads. Weekly blocks the fewest trades. Either — a weekly or a daily breakout — blocks the most.",
       "show_if": {
         "exec_htf_exhaust_only": true
       },
@@ -197,10 +197,10 @@
       "name": "exec_risk_pct",
       "group": "Risk & stop",
       "core": true,
-      "label": "Risk per trade",
+      "label": "Risk % per trade",
       "unit": "% of balance",
       "step": 0.5,
-      "desc": "How much of the account balance each trade risks — this bot sizes ITSELF, so this is the sizing knob and the lab's Sizing Mode does not apply to it. It compounds: 5% means 5% of the balance at that trade. The default of 10% is the Pine's own and is aggressive; it's what makes the raw backtest numbers look enormous.",
+      "desc": "How much of the account each trade risks. Position size is worked back from this and the stop distance, so a tighter stop buys a bigger position at the same risk.",
       "guide": [
         "Smaller swings, slower growth",
         "Bigger swings — 10% is already aggressive"
@@ -210,8 +210,8 @@
       "name": "exec_sl_level",
       "group": "Risk & stop",
       "core": true,
-      "label": "Stop level",
-      "desc": "Which fib level the stop sits at, as a retracement of the SOS leg: 0.618 · 0.702 · 0.786 · 0.886 · 1.0, or Custom for any ratio in between. Default 0.886 = just past the deep edge of the entry band — the tested setting, with 8 years and 188 trades behind it. 1.0 = the leg's origin, the widest and structurally safest: the setup is only wrong once price takes out the level that created it. The three tighter levels risk less per trade but can place the stop on top of the entry, which balloons position size — they are not supported. Pick Custom to type a level the ladder doesn't have (0.9, say) — the box for it appears below.",
+      "label": "Stop fib level (deep side of 0.5)",
+      "desc": "Which fib level the stop sits at, measured on the SOS leg. Default 0.886 is just past the deep edge of the entry band, and is the tested setting. 1.0 is the leg origin — widest and safest structurally, but measured 75.7R against 0.886's 109.5R. The three tighter levels can put the stop on top of the entry, which balloons position size, so turn on the minimum stop distance first. Custom takes any ratio you type.",
       "choices": [
         "0.618",
         "0.702",
@@ -225,7 +225,7 @@
       "name": "exec_sl_custom",
       "group": "Risk & stop",
       "core": true,
-      "label": "Custom stop level",
+      "label": "Custom stop fib level",
       "unit": "fib",
       "step": 0.001,
       "min": 0.001,
@@ -243,19 +243,19 @@
       "name": "exec_sl_deep",
       "group": "Risk & stop",
       "widget": "toggle",
-      "label": "Deep entries stop at 1.0",
+      "label": "Entries at 0.786 or deeper stop at 1.0",
       "options": {
         "off": "Always the level above",
         "on": "1.0 past 0.786"
       },
-      "desc": "An entry that fills at or deeper than the 0.786 fib puts its stop at the leg origin (1.0) instead of the level chosen above; 0.702 and shallower keeps that level. It exists because the entry band and the stop share the 0.886 line, so the deep end of the band is priced against a stop it is nearly touching — 0.100 of the leg at a 0.786 entry, and nothing at all at 0.886. OFF by default. It costs R on every trade it touches: a 0.786 entry goes from a 0.100 stop to a 0.214 stop, so the runner falls from 7.86R to 3.67R and the position is less than half the size. You are buying a stop that survives spread and noise and paying for it in reward — measure it, don't assume it."
+      "desc": "On = an entry that fills at 0.786 or deeper puts its stop at the leg origin (1.0) instead. Why: the entry band and the stop share the 0.886 line, so a 0.786 entry has only 0.100 of the leg behind it, and a 30-cent gold spread eats a quarter of the tightest ones. It costs R on every trade it touches — a 0.786 entry goes from a 7.86R runner to 3.67R at under half the size. Off by default."
     },
     {
       "name": "exec_sl_buf_tk",
       "group": "Risk & stop",
-      "label": "Stop buffer",
+      "label": "Stop buffer beyond the level (ticks)",
       "unit": "ticks",
-      "desc": "Extra room beyond the chosen stop level, so a wick that grazes the level doesn't take you out. 1 tick = $0.01 on gold.",
+      "desc": "Extra room beyond the chosen stop level, in ticks, so a wick through it does not clip you.",
       "guide": [
         "Stop sits exactly on the level",
         "More room for wicks, wider risk per trade"
@@ -266,7 +266,7 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Minimum stop distance",
-      "desc": "Refuse a setup whose stop lands too close to the entry. Position size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less — it buys an enormous position that ordinary noise takes out, and price can travel straight past the stop inside one bar for a loss far bigger than the 1R you agreed to. '% of price' scales itself as gold runs 1,200 to 3,300. 'Fixed $' is one flat number at both ends of that range. 'x ATR(14)' is the only one that reacts to a quiet vs violent market at the same price. This is an entry filter and has nothing to do with the runner trail. Off is the historical default; turn it on for live trading.",
+      "desc": "Skip a setup whose stop sits closer to the entry than the floor below. Percent of price scales itself as gold runs 1200 to 3300. Fixed dollars is one flat number at both ends. ATR multiple is the only one that reacts to a quiet versus a violent market at the same price. This is an entry filter and has nothing to do with the runner trail.",
       "choices": [
         "Off",
         "% of price",
@@ -277,8 +277,8 @@
     {
       "name": "exec_min_stop_val",
       "group": "Risk & stop",
-      "label": "Minimum stop floor",
-      "desc": "The floor value, in the unit of the mode above: a percent in '% of price', dollars of price in 'Fixed $', a multiple in 'x ATR(14)'. Ignored when the mode is Off. Measured over 8 years of gold 15m: mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start eating winners.",
+      "label": "Minimum stop floor (unit = mode above)",
+      "desc": "The unit follows the mode above: a percent, dollars of price, or an ATR multiple. Mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive. Harder floors start eating winners.",
       "step": 0.05,
       "show_if": {
         "exec_min_stop_mode": [
@@ -295,9 +295,9 @@
     {
       "name": "exec_tp1_pct",
       "group": "Exit ladder",
-      "label": "TP1 size",
+      "label": "TP1 size %",
       "unit": "% of position",
-      "desc": "How much of the position comes off at the first target. Taking TP1 also moves the stop to breakeven, so this is the trade-off: bank early and de-risk, or keep size on for the runner.",
+      "desc": "How much of the position the TP1 limit banks. Default 0 = bank nothing and ride the whole position to the runner, which tested best. The TP1 price still matters at 0 — touching it is what moves the stop to breakeven.",
       "guide": [
         "More size left for the runner",
         "Bank more early, smaller runner"
@@ -306,9 +306,9 @@
     {
       "name": "exec_tp2_pct",
       "group": "Exit ladder",
-      "label": "TP2 size",
+      "label": "TP2 size %",
       "unit": "% of position",
-      "desc": "How much comes off at the second target, which also drags the stop up to TP1. Whatever is left after TP1 and TP2 is the runner — and the runner makes more than 100% of this bot's net profit, so shrinking it is not free.",
+      "desc": "How much of the position the TP2 limit banks. Default 0 = bank nothing. Touching TP2 still lifts the stop to its floor and hands the runner to the trail.",
       "guide": [
         "Bigger runner",
         "Bank more at TP2, smaller runner"
@@ -317,9 +317,9 @@
     {
       "name": "exec_be_buf_tk",
       "group": "Exit ladder",
-      "label": "Breakeven buffer",
+      "label": "Breakeven buffer (ticks)",
       "unit": "ticks",
-      "desc": "How far past entry the stop goes when TP1 moves it to breakeven. A buffer means a 'breakeven' stop actually banks a little instead of scratching.",
+      "desc": "The breakeven stop sits this far past the entry, so a scratch still covers costs. This is why TradingView reports no breakevens — the exit books a few cents, so it files as a winner. The trade label counts them honestly.",
       "guide": [
         "True breakeven",
         "Locks in more, stopped out sooner"
@@ -335,7 +335,7 @@
         "Structure (swing)",
         "Structure + % ratchet"
       ],
-      "desc": "How the runner is trailed once TP2 is banked. Fixed step ratchets a fixed dollar distance behind price. Structure parks the stop at the last confirmed swing — it breathes with the trend but the swing lags, so a big run hands a lot back at the turn. Structure + % ratchet (default) uses the same swing anchor and then climbs it a percent at a time as price runs, which is what stops the give-back. The runner is where this strategy's money is, so this is the highest-leverage setting on the page.",
+      "desc": "How the runner is trailed once TP2 is hit, and which setting below is live. Fixed step is a dollar grid. Structure parks the stop at the last confirmed swing — it breathes with the trend, but a swing lags, so it hands a lot back at the turn. Structure + % ratchet is the default: the same anchor, but the stop climbs one step per step of favourable move. Measured over 6.6 years, that lifted the share of each run actually banked from 43% to 53% on the same 164 trades.",
       "guide": [
         "Fixed step — mechanical, worst on a multi-year price range",
         "Structure + % ratchet — keeps ~53% of each run instead of ~43%"
@@ -345,8 +345,8 @@
       "name": "exec_struct_trail_buf_tk",
       "group": "Exit ladder",
       "unit": "ticks",
-      "label": "Structure trail buffer",
-      "desc": "How far below the confirmed swing low (or above the swing high) the runner's stop sits, so an ordinary wick through the swing doesn't clip it. Used by both Structure modes; ignored in Fixed step.",
+      "label": "Structure trail buffer (ticks)",
+      "desc": "Used by both structure trail methods. The runner stop sits this many ticks beyond the last confirmed swing, so a wick through the swing does not clip it.",
       "guide": [
         "Tight to the swing — clipped by wicks",
         "Wide of the swing — survives noise, gives back more"
@@ -356,13 +356,13 @@
       "name": "exec_trail_pct",
       "group": "Exit ladder",
       "core": true,
-      "label": "Runner ratchet step",
+      "label": "Runner ratchet step (% of price)",
       "unit": "% of price",
       "step": 0.05,
       "show_if": {
         "exec_runner_trail": "Structure + % ratchet"
       },
-      "desc": "How fast the runner's stop climbs off the swing anchor — one step of this size for every step of favourable move. A percent rather than a dollar amount on purpose: gold ran 1,500 to 3,400 over the backtest, so no fixed dollar step is right at both ends. Measured over 6.6 years of 15m gold, 1.0 lifted the share of each run actually banked from 43% to 53% on the same trades and the same drawdown.",
+      "desc": "The stop starts at the last confirmed swing and climbs one step of this size for every step of favourable move. A percent rather than dollars because gold ran 1,500 to 3,400 — $20 is a 1.3% trail at one end and 0.6% at the other. Below about 0.5 it starts clipping runners.",
       "guide": [
         "Below 0.5 — clips runners, costs real edge",
         "Above 2.5 — barely binds, back to the plain structure trail"
@@ -371,13 +371,13 @@
     {
       "name": "exec_trail_step",
       "group": "Exit ladder",
-      "label": "Runner trail step",
+      "label": "Runner trail step ($ of price)",
       "unit": "$ of price",
       "step": 0.5,
       "show_if": {
         "exec_runner_trail": "Fixed step"
       },
-      "desc": "How tightly the runner's stop ratchets behind price once TP2 is done. Fixed-step mode only.",
+      "desc": "Read by two settings, so it is never greyed out: the fixed-step trail, and the one-trail-step-behind stop floor. On gold 1 pip is 10 cents of price, so 50 pips = 5.0.",
       "guide": [
         "Tighter trail — banks sooner, cuts runners short",
         "Looser trail — lets winners breathe, gives back more"
@@ -392,7 +392,7 @@
         "Breakeven",
         "One trail step behind"
       ],
-      "desc": "Where the stop jumps the moment TP2 fills, before the trail takes over. TP1 price is tight and can scratch the runner on the first pullback. Breakeven gives the runner the most room. One trail step behind sits in between.",
+      "desc": "What the stop floor becomes the moment TP2 is hit, before the runner trail takes over. TP1 price is tight and can scratch the runner on the first pullback. Breakeven gives it the most room. One trail step behind keeps it under the high-water mark. The trail can still tighten past this floor.",
       "guide": [
         "TP1 price — protects the gain, scratches runners",
         "Breakeven — maximum room for the runner"
@@ -407,25 +407,25 @@
         "off": "Hold",
         "on": "Exit on flip"
       },
-      "desc": "Close an open trade early if structure shifts against it. Off by default — the ladder and the stop already manage the trade, and exiting on every structure flip cuts runners short."
+      "desc": "On = force-close the trade if an opposite SOS fires before the stop or a target, on the view that an opposite SOS is early proof the reversal failed. Off = let the stop or a target resolve every trade."
     },
     {
       "name": "show_div",
       "group": "RSI divergence",
       "widget": "toggle",
-      "label": "Track divergence",
+      "label": "Track RSI divergence (REQUIRED — arms setups + veto)",
       "options": {
         "off": "Off",
         "on": "Track"
       },
-      "desc": "Master switch for the divergence veto and the live DIV confluence flag. Careful: turning this OFF does not stop divergences from arming setups — it only silences the veto and the flag."
+      "desc": "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold, or the overbought mirror. Confirmation lags by the pivot width, so the signal prints a few bars after the actual extreme. Entries need this — turning it off disarms the divergence trigger and the veto."
     },
     {
       "name": "div_rsi_len",
       "group": "RSI divergence",
       "label": "RSI length",
       "unit": "bars",
-      "desc": "Lookback for the RSI that finds divergences. 14 is the standard Wilder setting.",
+      "desc": "The RSI lookback. 14 is standard. Shorter reacts faster and prints more divergences.",
       "guide": [
         "Twitchier RSI, more divergences",
         "Smoother RSI, fewer but cleaner"
@@ -434,9 +434,9 @@
     {
       "name": "div_pivot_len",
       "group": "RSI divergence",
-      "label": "Pivot width",
+      "label": "Pivot width (bars)",
       "unit": "bars",
-      "desc": "How many bars either side of a high/low are needed to confirm it as a pivot. This is also the lag: a divergence can only be confirmed this many bars after the fact — by design, so it never repaints.",
+      "desc": "How many bars either side of a turn confirm it as a pivot. This is also the lag — a divergence cannot print until this many bars after the extreme. Wider means fewer and cleaner signals.",
       "guide": [
         "Confirms sooner, more noise",
         "Confirms later, only real pivots"
@@ -445,9 +445,9 @@
     {
       "name": "div_valid_bars",
       "group": "RSI divergence",
-      "label": "Divergence shelf life",
+      "label": "Divergence valid for (bars)",
       "unit": "bars",
-      "desc": "How long a confirmed divergence keeps the veto/DIV flag alive before it's considered stale.",
+      "desc": "How long a divergence keeps counting as live confluence on a setup.",
       "show_if": {
         "show_div": true
       },
@@ -460,12 +460,12 @@
       "name": "div_veto",
       "group": "RSI divergence",
       "widget": "toggle",
-      "label": "Veto on extremes",
+      "label": "Veto setups on extreme/divergence",
       "options": {
         "off": "No veto",
         "on": "Veto"
       },
-      "desc": "Block a setup when the opposite divergence is live, or when RSI is at an extreme — i.e. don't buy into a live sell-divergence.",
+      "desc": "On = block a long when bearish divergence is live or RSI is extremely overbought, and the mirror for shorts. This is where the veto is built; the execution toggle only decides whether entries obey it.",
       "show_if": {
         "show_div": true
       }
@@ -474,18 +474,18 @@
       "name": "exec_respect_veto",
       "group": "RSI divergence",
       "widget": "toggle",
-      "label": "Obey the veto",
+      "label": "Respect divergence/extreme veto",
       "options": {
         "off": "Ignore veto",
         "on": "Obey veto"
       },
-      "desc": "Whether execution actually honours the veto above. Two switches because the veto can be computed and shown while you test trading through it."
+      "desc": "On = an opposing divergence live at the SOS, or RSI at an extreme, blocks that side. The veto itself is built in the RSI divergence group — switch it off there and this has nothing to obey."
     },
     {
       "name": "div_extreme_ob",
       "group": "RSI divergence",
-      "label": "Overbought line",
-      "desc": "RSI at or above this counts as an extreme and vetoes longs.",
+      "label": "Extreme overbought",
+      "desc": "RSI at or above this counts as extremely overbought, which vetoes longs. Higher = fewer vetoes.",
       "show_if": {
         "show_div": true,
         "div_veto": true
@@ -498,8 +498,8 @@
     {
       "name": "div_extreme_os",
       "group": "RSI divergence",
-      "label": "Oversold line",
-      "desc": "RSI at or below this counts as an extreme and vetoes shorts.",
+      "label": "Extreme oversold",
+      "desc": "RSI at or below this counts as extremely oversold, which vetoes shorts. Lower = fewer vetoes.",
       "show_if": {
         "show_div": true,
         "div_veto": true
@@ -518,7 +518,7 @@
         "off": "No A+",
         "on": "A+ on"
       },
-      "desc": "Trade the A+ reversal — the fade of a structure break, which is this bot's whole edge. Off, no A+ entry ever fires. The only reason to switch it off is to read another setup in isolation, which is what the separate B-LEG bot does."
+      "desc": "On = the A+ reversal setup trades normally. Off = no A+ entry ever fires. Turn it off with B-Leg on to read the B leg on its own."
     },
     {
       "name": "exec_bleg",
@@ -529,7 +529,7 @@
         "off": "No B legs",
         "on": "B legs on"
       },
-      "desc": "Trade the B-Leg setup — the late retrace of an SOS, which takes far longer to play out. OFF here by design: the A+ bot never places a B-leg order, and its own Pine ships it off. The separate B-LEG bot (mpc_bleg) is where it runs, so the two setups stay in their own runs and their trades can never be confused."
+      "desc": "Adds the B leg as a second setup type. It arms when a reversal setup dies on a continuation break before it retraced, freezes the 0.382-0.5 band of that leg, and rests a limit at the 0.5 edge. Stop beyond fib 1.0. A+ has priority. Off by default."
     },
     {
       "name": "exec_longs",
@@ -540,7 +540,7 @@
         "off": "No longs",
         "on": "Longs on"
       },
-      "desc": "Allow long trades. Longs are rare here (7 of 40 over 2 years) but they win 86% of the time — they aren't broken, there just aren't many buy divergences in a rising market."
+      "desc": "On = long setups may trade. Off = shorts only."
     },
     {
       "name": "exec_shorts",
@@ -551,13 +551,13 @@
         "off": "No shorts",
         "on": "Shorts on"
       },
-      "desc": "Allow short trades. Shorts are ~83% of this bot's trades and carry 89% of its profit."
+      "desc": "On = short setups may trade. Off = longs only."
     },
     {
       "name": "exec_secondary",
       "group": "Direction & sessions",
       "widget": "toggle",
-      "label": "1m re-entry",
+      "label": "Secondary re-entries (1m SOS)",
       "options": {
         "off": "Primary only",
         "on": "Secondary on"
@@ -568,23 +568,23 @@
       "name": "exec_conf_sz",
       "group": "Direction & sessions",
       "widget": "toggle",
-      "label": "Sniper Zone entry (not supported)",
+      "label": "Allow Sniper Zone as entry confirmation (not supported)",
       "options": {
         "off": "Off",
         "on": "On"
       },
-      "desc": "Pine-only for now. In TradingView this lets the Sniper Zone's 0.5–0.618 pocket act as a second entry confirmation on a leg with no qualifying FVG. NOT ported to this bot — leave it OFF; turning it on has no effect on a lab run (and the Pine-parity check refuses an export taken with it on)."
+      "desc": "On = the Sniper Zone (the 0.5-0.618 pocket) also counts as entry confirmation, but only on a leg with no qualifying gap. The limit rests at the far side, around 0.618. Existing trades do not change; any new one is a leg that previously logged no FVG. NOT ported to this bot — leave it off; turning it on changes nothing on a lab run, and the Pine-parity check refuses an export taken with it on."
     },
     {
       "name": "exec_no_late_day",
       "group": "Direction & sessions",
       "widget": "toggle",
-      "label": "No late-day entries",
+      "label": "No entries in the final hour (16:00-17:00 NY)",
       "options": {
         "off": "Any hour",
         "on": "Skip 16–18 NY"
       },
-      "desc": "Refuse new entries in the last hours before the gold close, when liquidity thins out and spreads widen."
+      "desc": "On = no new entries in the last hour before the daily close. Gold closes 17:00 New York and reopens at 18:00, so this bars 16:00-17:00 New York. It stops trades that get gapped out over the break."
     },
     {
       "name": "flat_by_close",

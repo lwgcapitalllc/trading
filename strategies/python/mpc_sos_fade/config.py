@@ -26,7 +26,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (mpc_strategy.pine 4159-4183) ──────────────
-    exec_longs: bool = True            # "Trade Longs"
+    exec_longs: bool = True            # "Trade longs"
     exec_shorts: bool = True           # "Trade Shorts"
     exec_aplus: bool = True            # "Trade A+ setups" (Pine execAplus)
     #   On (default) = the A+ reversal sequence arms normally. Off = no A+ entry ever fires —
@@ -36,9 +36,9 @@ class SosFadeConfig:
     #   overrides it to True to match `indicators/mpc_b_leg_strategy.pine`'s own default.
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
-    exec_req_fvg: bool = True          # "Require FVG overlap in zone"
-    exec_fvg_deep_only: bool = True    # "Entry: FVG must sit fully past 0.5"
-    exec_fvg_pre_zone: bool = False    # "Entry: FVG must exist BEFORE price enters the zone"
+    exec_req_fvg: bool = True          # "Require an FVG in the zone"
+    exec_fvg_deep_only: bool = True    # "Gap must sit fully past 0.5"
+    exec_fvg_pre_zone: bool = False    # "Gap must pre-date the zone"
     #   Pine execFvgPreZone (2026-08-02). ON = a gap only counts if it was already alive on the bar
     #   price first tagged 0.5. A gap BORN inside the 0.5-0.886 band, printed by the flip once price
     #   is already there, is the retrace manufacturing the confluence it is judged on. It gates BOTH
@@ -51,16 +51,16 @@ class SosFadeConfig:
     #   FLOATING gap rest? — so they CASCADE, each overriding the one below it. Every level scan
     #   stops at 0.786: 0.886 is the stop, so an entry resting there is a zero stop distance and a
     #   cancelled order. Ported from Pine `f_fibEntry`.
-    exec_fib_overlap: bool = False     # "Entry: gap OVERLAPPING a fib level enters ON that level"
-    exec_fib_deep_edge: bool = False   # "Entry: floating gap enters on ITS OWN deep edge"
+    exec_fib_overlap: bool = False     # "Gap on a fib → enter on the fib"
+    exec_fib_deep_edge: bool = False   # "Floating gap → its own deep edge"
     #   Rule 2, MEASURED WORSE than rule 3 alone over 2020-2026, hence OFF. The only deep rule that
     #   ALWAYS fills (the limit sits INSIDE the gap). Overrides rule 3 and Method 3.
-    exec_fib_nearest: bool = True      # "Entry: floating gap enters on the NEAREST fib (either side)"
+    exec_fib_nearest: bool = True      # "Floating gap → nearest fib (either side)"
     #   Rule 3, the SHIPPED default. Measures the near edge up to the level above and the far edge
     #   down to the level below, and rests on whichever is closer (ties go to the shallower). Not
     #   free: when the deeper level wins the limit rests PAST the gap, so a setup that only tags the
     #   gap and turns never fills. Deeper entry and a tighter stop, bought with fill rate.
-    exec_deep_fib: bool = False        # "Entry: floating gap enters on the nearest fib SHALLOWER than it"
+    exec_deep_fib: bool = False        # "Floating gap → nearest fib shallower"
     #   Method 3 (Pine execDeepFib) — the original one-sided form of rules 2 and 3, kept so any
     #   historical result reproduces. Reachable only with rules 2 AND 3 both off. It never looks at
     #   the level BELOW the gap however much closer that one is, which is the bug rule 3 fixes.
@@ -77,7 +77,7 @@ class SosFadeConfig:
     exec_htf_daily: str = "Ignore"     # "Daily bias requirement"
     #   HTF-bias options: Ignore | Must agree | Must not oppose | Must oppose (reversal)
     exec_risk_pct: float = 10.0        # "Risk % per trade"
-    exec_sl_level: str = "0.886"       # "SL fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
+    exec_sl_level: str = "0.886"       # "Stop fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
     #   **Defaulted "1.0" → "0.886" on 2026-07-27** (Aaron's call, and how his TradingView chart is
     #   configured), in lockstep with both A+ Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886
     #   entry band, so the stop sits just past the deepest price a limit may rest at. Evidence: the
@@ -91,7 +91,7 @@ class SosFadeConfig:
     #   **"Custom" (added 2026-08-02, Aaron's request)** frees the level from the five-value dropdown
     #   and reads `exec_sl_custom` instead — the ladder never had a 0.90, and a stop is a price, not
     #   a member of a set. It is the ONE value here with no Pine counterpart; see the field below.
-    exec_sl_custom: float = 0.886      # "↳ Custom SL fib level", read ONLY when exec_sl_level == "Custom"
+    exec_sl_custom: float = 0.886      # "Custom stop fib level", read ONLY when exec_sl_level == "Custom"
     #   The retracement ratio of the SOS leg, priced through the canonical `engines.fibonacci`
     #   `fib_level()` off the leg anchors the fiboP* were built from — so 0.886 here is the SAME
     #   price to the last bit as picking "0.886" from the dropdown, and the two are interchangeable.
@@ -121,7 +121,7 @@ class SosFadeConfig:
     #   that survives spread and noise, and pay for it in reward. Measure it, do not assume it.
     #   The test is INCLUSIVE (<= / >=) because 0.786 is a SNAP TARGET — rule 3 assigns fiboP5 to the
     #   edge directly with no arithmetic in between, so the comparison is exact.
-    exec_sl_buf_tk: float = 0.0        # "SL buffer beyond chosen level (ticks)"
+    exec_sl_buf_tk: float = 0.0        # "Stop buffer beyond the level (ticks)"
     exec_min_stop_mode: str = "Off"    # "Minimum stop distance" (Pine execMinStopMode)
     #   ∈ {"Off", "% of price", "Fixed $", "x ATR(14)"}. An ENTRY filter, nothing to do with the
     #   runner trail: refuse a setup whose stop lands closer to the entry than this floor.
@@ -134,7 +134,7 @@ class SosFadeConfig:
     #   measured `"% of price"` at 0.10 as the best of three independent definitions — it refuses
     #   6 of 188 trades over 8 years, is +2.5R (noise-level, so adopt it for SAFETY not for the
     #   money), and leaves 2021/2024/2025/2026 byte-identical. **Turn it on for live trading.**
-    exec_min_stop_val: float = 0.10    # "↳ floor value (unit = mode above)"
+    exec_min_stop_val: float = 0.10    # "Minimum stop floor (unit = mode above)"
     #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
     #   Read only when the mode is not "Off". Mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of
     #   188 trades and are slightly positive; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start
@@ -178,7 +178,7 @@ class SosFadeConfig:
     #   identical to the bar). Only 11 exits change — 8 better, 3 worse, net +1.7R, i.e. the EDGE
     #   is unchanged within noise and what improves is how much of each run survives to the close.
     #   Below ~0.5 it starts clipping runners and costs real edge (0.25% → 43.6R vs 109.3R at 1.0).
-    exec_tp2_stop_mode: str = "TP1 price"   # "TP2 → stop floor (delay the jump)"
+    exec_tp2_stop_mode: str = "TP1 price"   # "TP2 → stop floor"
     #   ∈ {"TP1 price", "Breakeven", "One trail step behind"}. What the stop FLOOR becomes the
     #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop
     #   up to TP1; "Breakeven" holds at entry ± the BE buffer (most room); "One trail step behind"
@@ -200,14 +200,14 @@ class SosFadeConfig:
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
 
     # ── GRP_APLUS — A+ sequence (156) ───────────────────────────────────────────
-    aplus_window: int = 4320           # "Max Time: Sweep → SOS (minutes)" — staleness backstop
+    aplus_window: int = 4320           # "Max time: sweep → SOS (minutes)" — staleness backstop
 
     # ── GRP_DIV — RSI divergence: feeds the veto + the live DIV confluence (169-180) ─
     show_div: bool = True              # "Track RSI Divergence" (showDivInput; marketStructureOnly off)
     div_rsi_len: int = 14              # "RSI Length"
     div_pivot_len: int = 5             # "Pivot Width (bars)"
-    div_valid_bars: int = 100          # "Divergence Valid For (bars)"
-    div_veto: bool = True              # "Veto Setups on Extreme/Divergence"
+    div_valid_bars: int = 100          # "Divergence valid for (bars)"
+    div_veto: bool = True              # "Veto setups on extreme/divergence"
     div_extreme_ob: int = 80           # "Extreme Overbought"
     div_extreme_os: int = 20           # "Extreme Oversold"
 

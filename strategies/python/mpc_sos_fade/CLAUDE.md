@@ -23,6 +23,32 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 new ENTRY MODEL through `cfg_bits` (decoded 544375, **bit 524288 set** = rule 3 live on both sides)
 — exit 0 at warmups 100 / 500 / 1000 / 2000. That is the run that validates the port; an export
 taken before 2026-08-02 has every new bit clear and proves nothing about it.
+**RE-RUN GREEN 2026-08-02 after the label/tooltip sync** (same export, same four warmups) — that
+change touched Pine input TITLES and tooltips, `config.py` comments and one display string, so a
+green run here is the evidence it was cosmetic, not an argument that it must have been.
+
+### `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
+
+Every `label` in the meta file is byte-identical to that input's title in
+`indicators/mpc_strategy.pine`, minus Pine's leading `   ↳ ` indent marker. Every `desc` is that
+input's tooltip **verbatim**. One parameter, one name, one explanation, two UIs.
+
+**Change a label or a desc and change the Pine in the same commit.** Otherwise the lab and
+TradingView start teaching different things about the same setting, which is exactly how the
+old `exec_deep_fib` row came to be labelled "nearest fib ABOVE" — true for a long, wrong for a
+short, and contradicting its own Pine tooltip four inches away.
+
+The ONE allowed deviation is a suffix stating something true only of THIS runner: `exec_conf_sz`
+reads "Allow Sniper Zone as entry confirmation **(not supported)**" in the lab, because the
+Sniper-Zone entry is Pine-only and turning it on changes nothing on a lab run.
+
+Verify with a diff, not by eye — the check is mechanical: pull every `input.*` title out of the
+Pine, join on the field name, and compare. As of 2026-08-02 that is **42 of 43 shared params
+identical** and **43 of 43 descs identical**.
+
+⚠ **Rename titles, never reorder an `input.*` call.** TradingView keys a chart's saved input
+values off declaration order, so a rename carries Aaron's settings forward and a reorder silently
+resets them to defaults on every chart he has the script on.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
@@ -167,7 +193,7 @@ use, not what it does, and "A+" would collide the moment a second MPC bot also t
 
 **"A+" is still correct vocabulary and is deliberately kept** wherever it names the brother's own
 Pine concept — the A+/B/C/D grade dropdown, the "A+ SETUP SEQUENCE" block this ports, and the
-`aplus_window` config field (which mirrors the Pine input "Max Time: Sweep → SOS (minutes)" and is
+`aplus_window` config field (which mirrors the Pine input "Max time: sweep → SOS (minutes)" and is
 a lab param-grid key). Renaming those would break the line-for-line traceability to the Pine, and
 `aplus_window` is also an optimizer grid key. The Pine files themselves are NEVER renamed: they are
 the brother's source and the parity reference.
@@ -933,8 +959,9 @@ Pine changes, so any diff it produced was July-15 drift, not a bug. Regenerated 
    it on rather than diffing against logic this bot lacks. Port = read `BarState.sniper`'s
    0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
 3. **CONT trades removed** from the Pine — the export used to carry `contL_ok`/`contS_ok`.
-4. **`execDeepFib`** (Method 3, added 2026-07-23) — "Entry: deep gap enters on nearest fib (not gap
-   edge)". A qualifying FVG whose NEAR edge (long = gap top, short = gap bottom) sits deeper than
+4. **`execDeepFib`** (Method 3, added 2026-07-23) — "Floating gap → nearest fib shallower" (titled
+   "Entry: deep gap enters on nearest fib (not gap edge)" until the 2026-08-02 label sync).
+   A qualifying FVG whose NEAR edge (long = gap top, short = gap bottom) sits deeper than
    0.618 rests its limit at the nearest fib just SHALLOWER (0.618/0.702/0.786) — the level price
    reaches first — instead of chasing a gap edge price may never tap. **PORTED here**: `config.exec_deep_fib`
    (default **True** as of 2026-07-23 — see the prime-combo defaults note below), `execution._deep_fib_edge()`

@@ -179,20 +179,20 @@ bool  fvgKeepUntilBroken = input.bool(true, "FVG: keep until broken through (not
 //  RSI DIVERGENCE INPUTS
 //============================================================
 var GRP_DIV = "RSI Divergence"
-bool showDivInput     = input.bool(true, "Track RSI Divergence (REQUIRED — arms setups + veto)", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold (bullish), or price a higher high while RSI a lower high from overbought (bearish). Drawn on the chart and tagged as confluence on the A+ setup row. Pivot confirmation lags by the pivot width — the signal prints a few bars after the actual extreme.", display = display.none)
+bool showDivInput     = input.bool(true, "Track RSI divergence (REQUIRED — arms setups + veto)", group = GRP_DIV, tooltip = "Detects regular divergence at the extremes: price makes a lower low while RSI makes a higher low from oversold (bullish), or price a higher high while RSI a lower high from overbought (bearish). Drawn on the chart and tagged as confluence on the A+ setup row. Pivot confirmation lags by the pivot width — the signal prints a few bars after the actual extreme.", display = display.none)
 bool showDiv = marketStructureOnly ? false : showDivInput
-bool showDivHistory   = input.bool(true, "Show Divergence History", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
+bool showDivHistory   = input.bool(true, "Show divergence history", group = GRP_DIV, active = showDivInput, tooltip = "Off = only show divergences from the last 3 days. On = show as far back as possible.", display = display.none)
 int  divMaxCount = 10
-int  divRsiLen   = input.int(14, "RSI Length", minval = 2, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
-int  divPivotLen = input.int(5,  "Pivot Width (bars)", minval = 1, maxval = 20, group = GRP_DIV, active = showDivInput, display = display.none)
-int  divOS       = input.int(25, "Oversold Level", minval = 5, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
-int  divOB       = input.int(75, "Overbought Level", minval = 50, maxval = 95, group = GRP_DIV, active = showDivInput, display = display.none)
-int  divValidBars = input.int(100, "Divergence Valid For (bars)", minval = 10, maxval = 500, group = GRP_DIV, active = showDivInput, tooltip = "How long a divergence counts as live confluence for the A+ setup row.", display = display.none)
+int  divRsiLen   = input.int(14, "RSI length", minval = 2, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divPivotLen = input.int(5,  "Pivot width (bars)", minval = 1, maxval = 20, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divOS       = input.int(25, "Oversold level", minval = 5, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divOB       = input.int(75, "Overbought level", minval = 50, maxval = 95, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divValidBars = input.int(100, "Divergence valid for (bars)", minval = 10, maxval = 500, group = GRP_DIV, active = showDivInput, tooltip = "How long a divergence counts as live confluence for the A+ setup row.", display = display.none)
 // (`divVeto` deleted 2026-07-31 — it was the A+'s veto switch and nothing here
 //  read it. The BOS veto is "F5 · Divergence blocks a new entry" in Strategy
 //  Execution; the two levels below are what it reads.)
-int  divExtremeOB = input.int(80, "Extreme Overbought", minval = 50, maxval = 100, group = GRP_DIV, active = showDivInput, display = display.none)
-int  divExtremeOS = input.int(20, "Extreme Oversold", minval = 0, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divExtremeOB = input.int(80, "Extreme overbought", minval = 50, maxval = 100, group = GRP_DIV, active = showDivInput, display = display.none)
+int  divExtremeOS = input.int(20, "Extreme oversold", minval = 0, maxval = 50, group = GRP_DIV, active = showDivInput, display = display.none)
 
 //============================================================
 //  TRADING SESSIONS INPUTS
@@ -3285,8 +3285,8 @@ if barstate.islast
 var GRP_EXEC = "Strategy Execution"
 
 // ── 1. WHAT TRADES ─────────────────────────────────────────────────────────
-bool   execLongs   = input.bool(true,  "Trade Longs",  group = GRP_EXEC)
-bool   execShorts  = input.bool(true,  "Trade Shorts", group = GRP_EXEC)
+bool   execLongs   = input.bool(true,  "Trade longs",  group = GRP_EXEC)
+bool   execShorts  = input.bool(true,  "Trade shorts", group = GRP_EXEC)
 
 // ── 2. WHAT ARMS IT (the break) ────────────────────────────────────────────
 // Spec §4 calls these F1/F2/F3/F4/F6/F9. The numbers are kept in comments only —
@@ -3327,7 +3327,7 @@ string bosSlModel = input.string("Fib 1.0 (leg origin)", "Stop model", options =
 float  bosSlAtr   = input.float(1.5, "   ↳ ATR multiple", minval = 0.1, maxval = 10, step = 0.1, group = GRP_EXEC, active = bosSlModel == "ATR", tooltip = "Only used when the stop model above is 'ATR'. The stop sits this many ATR from the entry price.")
 float  execSlBufTk = input.float(0.0, "Extra room beyond the stop (ticks)", group = GRP_EXEC, minval = 0, tooltip = "Pushes the stop this many ticks further away than the level chosen above, so a wick through the level doesn't take you out.")
 string execMinStopMode = input.string("Off", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Refuse a setup whose stop lands too close to the entry. This matters more than it looks: size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less — it buys an enormous position that ordinary noise runs straight through. '% of price' (try 0.10) keeps scaling as gold rises. Off greys out the floor below.")
-float  execMinStopVal  = input.float(0.10, "   ↳ floor value (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.05, active = execMinStopMode != "Off", tooltip = "A PERCENT in '% of price' mode, DOLLARS of price in 'Fixed $', a MULTIPLE in 'x ATR(14)'.")
+float  execMinStopVal  = input.float(0.10, "   ↳ Minimum stop floor (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.05, active = execMinStopMode != "Off", tooltip = "A PERCENT in '% of price' mode, DOLLARS of price in 'Fixed $', a MULTIPLE in 'x ATR(14)'.")
 string execMoveStop    = input.string("Off", "Moving stop (trails from entry)", options = ["Off", "$ of price", "Structure (swing)"], group = GRP_EXEC, tooltip = "A trail that runs from the moment you are FILLED, instead of waiting for TP2 like the runner trail in section 7. It follows the best price the trade has seen and can only ever pull the stop TIGHTER — it never loosens breakeven or the TP2 floor, and the two can run together. Off = the stop stays put until TP1 moves it to breakeven. ⚠ It only starts on the bar AFTER the fill: on the fill bar itself the high-water mark is the whole bar's high, including the move the position was never in, so trailing off it would stage a stop out of thin air.")
 float  execMoveStopVal = input.float(5.0, "   ↳ trail distance (unit = mode above)", group = GRP_EXEC, minval = 0.1, step = 0.5, active = execMoveStop != "Off", tooltip = "How far the moving stop sits behind the best price seen. DOLLARS of price in '$ of price' (on gold 1 pip = $0.10, so 5.0 = 50 pips), and TICKS behind the last confirmed swing in 'Structure (swing)'. Too tight and normal noise scratches every trade before it can work — start wide and walk it in.")
 
@@ -3847,7 +3847,7 @@ f_blkCode(bool dirOff, bool late, bool veto, bool htfBias, bool capped, bool tig
 
 f_blkWhy(int c) =>
     switch c
-        1 => "'Trade Longs' / 'Trade Shorts' is OFF for this side."
+        1 => "'Trade longs' / 'Trade shorts' is OFF for this side."
         2 => "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close."
         3 => "Divergence KILL — an opposing divergence is live, or RSI is at an extreme. For a continuation that is the fakeout signature."
         4 => "HTF bias requirement — your Weekly / Daily bias gate is not satisfied."

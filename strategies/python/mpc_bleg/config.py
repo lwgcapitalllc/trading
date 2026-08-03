@@ -5,7 +5,7 @@ engine stack + A+ SEQUENCE tracker (it arms off the A+ death), and it keeps the 
 priority" gate — so every A+ input still matters (the priority gate reads the A+ arm
 sources, edges, veto, HTF filters). Inheriting keeps the two in lockstep: a new A+ toggle
 lands here for free. The only NEW field is `bleg_max_days` — how long a frozen B-LEG band
-watches for the late retrace before it goes stale (Pine input "B-Leg: days to activate").
+watches for the late retrace before it goes stale (Pine input "Days to watch for the late retrace").
 
 The exit ladder / sizing / cost fields (`exec_risk_pct`, `exec_tp1_pct`, `exec_be_buf_tk`,
 `exec_trail_step`, `fill_model`, `account_profile`, …) are reused verbatim — the B-LEG
@@ -35,7 +35,7 @@ class BLegConfig(SosFadeConfig):
     #   only to prove the bot trades nothing without it. `exec_aplus` is inherited and still
     #   matters: A+ never PLACES an order here, but it holds the priority gate — set it False
     #   to drop that gate and read the B leg completely on its own.
-    exec_sl_level: str = "1.0"    # "SL fib level" — pinned, NOT inherited
+    exec_sl_level: str = "1.0"    # "Stop fib level" — pinned, NOT inherited
     #   The parent defaulted this "1.0" → "0.886" on 2026-07-27 to match the A+ Pine. This fork's
     #   Pine (`mpc_b_leg_strategy.pine`) still ships "1.0", and toggle-default parity with its OWN
     #   Pine is the contract, so the value is pinned here rather than inherited. It is also unused

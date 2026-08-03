@@ -14,8 +14,17 @@ identical decision stream. The harness is `tools/compare_bleg.py` +
 `indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
 open question, not correctness:** the validated windows have produced 2–5 trades each, far too thin
 to tune against. See "The parity gate".
-**Last reviewed:** 2026-08-02 — **the parent's new A+ entry model is PINNED OFF here, and unlike the
-minimum-stop guard it is NOT inert.** `mpc_sos_fade` gained rules 1-3 (`exec_fib_overlap` /
+**Last reviewed:** 2026-08-02 — **this bot's lab labels and descriptions are now shared with
+`indicators/mpc_b_leg_strategy.pine`.** All 11 params in `mpc_bleg.meta.json` carry that input's
+Pine title byte-for-byte and its tooltip verbatim as the `desc`; change one and change the Pine in
+the same commit. Two of them are deliberately the FORK's own wording, not the A+ parent's —
+`exec_aplus` is "A+ has priority (stand the B-leg down)" because in this file A+ never places an
+order, and `exec_sl_buf_tk` says "beyond fib 1.0" because that is where this bot's stop always
+sits. Nothing behavioural moved: the only Python edits were two comment strings in `config.py`.
+⚠ **`compare_bleg.py` was NOT re-run — there is no B-LEG export in `engines/` right now.** No B-LEG
+logic changed, so parity is expected to hold, but that is an argument, not a measurement; re-export
+before trusting it. Earlier the same day: **the parent's new A+ entry model is PINNED OFF here, and
+unlike the minimum-stop guard it is NOT inert.** `mpc_sos_fade` gained rules 1-3 (`exec_fib_overlap` /
 `exec_fib_deep_edge` / `exec_fib_nearest`), the pre-zone gate (`exec_fvg_pre_zone`) and the
 deep-entry stop (`exec_sl_deep`), and flipped `exec_deep_fib` **True → False**.
 `mpc_b_leg_strategy.pine` has none of those inputs and still ships `execDeepFib = true`, so
