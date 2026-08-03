@@ -6,11 +6,22 @@ to a temp path before any lab_db function runs.
 
 VPS isolation: client fixture stubs out all runner_dispatch calls and the async
 background job (run_backtest_job), so unit tests never open network connections.
+
+The agent supervisor is disabled process-wide (see below) — the `client` fixture
+runs the real startup hook, and a supervisor loose in a test run would restart
+the SSH tunnel and fire scheduled tasks on the live VPS.
 """
 
+import os
 import time
 import pytest
 from unittest.mock import patch, AsyncMock
+
+# Set before `main` is ever imported: the startup hook reads it, and every
+# endpoint test triggers that hook via TestClient. A module-scope env write is
+# the only thing that lands early enough — a fixture runs too late for a module
+# imported at collection time.
+os.environ["CC_DISABLE_SUPERVISOR"] = "1"
 
 
 # ── DB isolation ──────────────────────────────────────────────────────────────

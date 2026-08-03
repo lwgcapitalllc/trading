@@ -773,9 +773,18 @@ class LabProgress(BaseModel):
 
 class SystemHealth(BaseModel):
     backend: bool = True
+    # Both LocalForwards are bound — i.e. the tunnel process is really holding
+    # them. Until 2026-08-02 this field carried a fresh `ssh echo ok`, which has
+    # nothing to do with the forwards and could report green over a dead tunnel.
     ssh_tunnel: bool = False
+    vps_reachable: bool = False   # the VPS answers SSH at all — separates a dead tunnel from a dead network
     nt8_agent: bool = False    # NT8 agent (port 8765)
     mt5_agent: bool = False    # MT5 agent (port 8766)
+    # MT5 TERMINAL state, not the agent's. None = the agent could not be asked,
+    # which is not the same as a disconnected terminal and must not render as one.
+    mt5_connected: Optional[bool] = None
+    mt5_server: Optional[str] = None
+    mt5_account: Optional[int] = None
     nt8_running: bool = False
     nt8_sa_visible: bool = False
     last_compile_ok: bool = False

@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from models import SystemHealth, LabProgress
-from services import runner_dispatch, mt5_agent_client
+from services import runner_dispatch, mt5_agent_client, agent_supervisor
 from services.backtest_runner import read_progress, clear_progress
 
 import config as cfg
@@ -26,42 +26,48 @@ _health_cache: Optional[dict] = None
 _health_cache_at: float = 0.0
 _HEALTH_TTL = 10  # seconds
 
-_ssh_ok: Optional[bool] = None
-_ssh_checked_at: float = 0.0
-_SSH_TTL = 30  # seconds
+_vps_ok: Optional[bool] = None
+_vps_checked_at: float = 0.0
+_VPS_TTL = 30  # seconds
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ── SSH tunnel check ───────────────────────────────────────────────────────────
+# ── VPS reachability (NOT the tunnel — see below) ──────────────────────────────
 
-def _check_ssh() -> bool:
-    global _ssh_ok, _ssh_checked_at
+def _check_vps() -> bool:
+    """Cached `ssh forexvps echo ok`.
+
+    ⚠ This is a BRAND NEW connection and says nothing about the port forwards.
+    Until 2026-08-02 it was what the "SSH" dot reported, so the dot could sit
+    green with a dead tunnel and two red agents — which sends you looking at the
+    VPS when the problem is on this laptop. The tunnel is now measured directly
+    (`agent_supervisor.tunnel_up`, port binding) and this answers the separate
+    question of whether the VPS is reachable at all, which is what tells a dead
+    tunnel apart from a dead network.
+    """
+    global _vps_ok, _vps_checked_at
     now = time.time()
-    if _ssh_ok is not None and (now - _ssh_checked_at) < _SSH_TTL:
-        return _ssh_ok
-    try:
-        result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes",
-             cfg.SSH_ALIAS, "echo ok"],
-            capture_output=True, text=True, timeout=5,
-        )
-        _ssh_ok = result.returncode == 0 and "ok" in result.stdout
-    except Exception:
-        _ssh_ok = False
-    _ssh_checked_at = now
-    return _ssh_ok
+    if _vps_ok is not None and (now - _vps_checked_at) < _VPS_TTL:
+        return _vps_ok
+    _vps_ok = agent_supervisor.vps_reachable()
+    _vps_checked_at = now
+    return _vps_ok
 
 
 # ── Health aggregation ─────────────────────────────────────────────────────────
 
 def _build_health() -> dict:
-    ssh_ok = _check_ssh()
+    tunnel_ok = agent_supervisor.tunnel_up()
+    vps_ok_host = _check_vps()
 
     vps_ok = False
     mt5_ok = False
+    mt5_connected: Optional[bool] = None
+    mt5_server: Optional[str] = None
+    mt5_account: Optional[int] = None
     nt8_running = False
     nt8_sa_visible = False
     last_compile_ok = False
@@ -79,6 +85,18 @@ def _build_health() -> dict:
         mt5_ok = h5.get("status") == "ok"
     except Exception:
         pass
+
+    if mt5_ok:
+        # An agent that answers /health is not the same as a terminal that can
+        # serve bars. Left unasked until 2026-08-02, so an MT5_Lab that had
+        # dropped its broker connection showed green and failed at fetch time.
+        # `None` stays None when the call fails — an unanswered question is not
+        # a disconnected terminal.
+        st = agent_supervisor.mt5_terminal_status()
+        if st is not None:
+            mt5_connected = st["connected"]
+            mt5_server = st["server"]
+            mt5_account = st["account"]
 
     if vps_ok:
         try:
@@ -103,9 +121,13 @@ def _build_health() -> dict:
 
     return {
         "backend":              True,
-        "ssh_tunnel":           ssh_ok,
+        "ssh_tunnel":           tunnel_ok,
+        "vps_reachable":        vps_ok_host,
         "nt8_agent":            vps_ok,
         "mt5_agent":            mt5_ok,
+        "mt5_connected":        mt5_connected,
+        "mt5_server":           mt5_server,
+        "mt5_account":          mt5_account,
         "nt8_running":          nt8_running,
         "nt8_sa_visible":       nt8_sa_visible,
         "last_compile_ok":      last_compile_ok,
@@ -160,57 +182,56 @@ def lab_stop() -> dict:
     return {"stopped": stopped, "job_id": job_id}
 
 
-def _restart_tunnel() -> None:
-    """Kill any stale ssh -N tunnel and spawn a fresh one with both port forwards."""
-    subprocess.run(["pkill", "-f", r"ssh -N.*forexvps"], capture_output=True)
-    subprocess.Popen(
-        ["ssh", "-N",
-         "-L", "8765:127.0.0.1:8765",
-         "-L", "8766:127.0.0.1:8766",
-         "-o", "ServerAliveInterval=30",
-         "-o", "ServerAliveCountMax=3",
-         cfg.SSH_ALIAS],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(2)  # let the port-forwards establish before first use
+# `_restart_tunnel` and `_schtasks_run` moved to services/agent_supervisor.py on
+# 2026-08-02. They are subprocess calls, which the layering rules put in
+# services/ — and main.py was reaching ACROSS into this router to call one,
+# which is how a second copy would eventually appear. These aliases stay so the
+# manual dot-click path reads the same as it always did.
+_restart_tunnel = agent_supervisor.restart_tunnel
 
 
 def _schtasks_run(task_name: str) -> dict:
-    """Fire a Windows scheduled task via SSH. Returns {status, output}."""
     try:
-        result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
-             cfg.SSH_ALIAS, f"schtasks /run /tn {task_name}"],
-            capture_output=True, text=True, timeout=15,
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="SSH timed out")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    if result.returncode != 0:
-        raise HTTPException(status_code=502, detail=f"schtasks failed: {result.stderr.strip()}")
-    return {"status": "ok", "output": result.stdout.strip()}
+        return agent_supervisor.schtasks_run(task_name)
+    except agent_supervisor.SchtaskError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+
+
+def _start_agent(task_name: str) -> dict:
+    """Rebuild the tunnel, then fire the agent's task.
+
+    The tunnel restart is not belt-and-braces: an `ssh -N -L` can survive
+    holding both ports while forwarding into a dead agent, so restarting the
+    agent alone leaves the dot red and looks like the click did nothing.
+    """
+    global _health_cache
+    _restart_tunnel()
+    out = _schtasks_run(task_name)
+    _health_cache = None
+    return out
 
 
 @router.post("/system/nt8-agent/start")
 def start_nt8_agent():
     """Restart SSH tunnel (ports 8765 + 8766) and fire the NT8 agent scheduled task."""
-    global _health_cache
-    _restart_tunnel()
-    out = _schtasks_run("NT8Agent")
-    _health_cache = None
-    return out
+    return _start_agent(agent_supervisor.NT8_TASK)
 
 
 @router.post("/system/mt5-agent/start")
 def start_mt5_agent():
     """Restart SSH tunnel (ports 8765 + 8766) and fire the MT5 agent scheduled task."""
-    global _health_cache
-    _restart_tunnel()
-    out = _schtasks_run("MT5AgentRDP")
-    _health_cache = None
-    return out
+    return _start_agent(agent_supervisor.MT5_TASK)
+
+
+@router.get("/system/readiness")
+def system_readiness() -> dict:
+    """The silently-degrading dependencies — news calendar cache, Telegram credentials.
+
+    Reported at startup too; this endpoint exists so the answer is reachable
+    without going back through the log.
+    """
+    from services import readiness
+    return {"warnings": readiness.check(), "checked_at": _now_iso()}
 
 
 @router.get("/nt8/agent/log", response_class=PlainTextResponse)

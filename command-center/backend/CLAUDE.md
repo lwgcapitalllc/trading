@@ -3,7 +3,7 @@
 **Purpose:** FastAPI backend (`:8000`) — owns all SQLite state, talks to the VPS via SSH + HTTP agents, runs the smart-money pipeline via subprocess, and drives NT8/MT5 backtests.
 **Scope:** This covers backend conventions, routers, services, DB, and VPS interaction. It does NOT cover the frontend (see `../frontend/CLAUDE.md`) or `algos/`/`smart-money/` source.
 **Status:** Live — lab (strategies, rulesets, backtests, sweeps, optimizations, stress tests, MT5 runner, Python runner) all shipped.
-**Last reviewed:** 2026-07-31 — **profit concentration had been measuring the account, not the edge.** The largest-quarter share was weighted in DOLLARS, which on a compounding run reports the compounding: the last quarter of an 85x account holds nearly all the dollars however evenly the edge is spread. Run `d2ab68f9e884` read **88.94%** — past the 60% "overfit risk" threshold — where the same trades weighted by RETURN read **39.97%**. `profit_concentration_pct` now takes the equity curve (that is what says whether a run compounded), stores a `profit_concentration_basis` beside the number, and `init_db` re-stamps history; all 78 completed runs were converted. See `## Metrics` → *Profit concentration*. Same day: **`unconstrained` had been returning PASS on every run, including one that lost 95% of the account.** `_evaluate_personal` ended `DISCARD if failures else PASS`, and both its checks are guarded on limits that row deliberately does not set, so `failures` was empty by construction — a vacuous pass, and the exact opposite of what `lab_db.py`'s seed note on that row says ("a run against it cannot be graded"). It now returns `INFO` ("Not graded" in the UI). Verdicts are **stored**, so `init_db` also carries an idempotent migration rewriting the affected `PASS` rows — every evaluation row in the live DB was this case. See `## Ruleset types` → *Nothing checked is not a pass*. Earlier: 2026-07-30 — **the stress-test engine was measuring the wrong things, and the D grade on `630cefbebd8347db` was the engine's fault, not the strategy's.** Four defects fixed, all generic (Aaron's scoping rule: fix what is inaccurate for ANY strategy, never tune the engine to this one). (1) Monte Carlo shuffled a DOLLAR P&L series on a compounding run — trade size drifts 17.7x across that run, so the shuffle simulated a strategy that never existed; it now switches to the per-trade RETURN series and compounds when the dollars actually drift, and the worst-1% drawdown went $41,970 → $359,886. (2) Drawdown is now compared PERCENT-to-percent on such runs — the dollar view had reported a 100% breach of total ruin across 20,000 simulations that never once wiped out the account. (3) Sensitivity scores on PROFIT FACTOR, not net P&L, so a sizing knob is no longer graded as fragility (`exec_risk_pct`: 85.8% on profit vs 11.8% on PF, and it alone set the run's score); no-op shifts are skipped, which is where ~50 of the run's 80 minutes went (43 of 60 backtests reproduced the baseline exactly). (4) Walk-forward now drops windows under 20 trades, and an unassessable WF caps the grade at B instead of being silently free. Also: a `None` grade is now a first-class outcome — **D used to be the CEILING for a ruleset stating no drawdown limit** — and `personal_forex_risk` (55%) was seeded so forex runs have a bar to be graded against. ⚠ Grading no-limit rulesets against total RUIN was built, measured, and removed — see the walk-back in `## Robustness grading`. Earlier: 2026-07-29 — `entry_ms` added to `models.EquityPoint`, which is what had the News filter reporting every run as "made before trade times were recorded"; the filter now works on Python runs too. 2026-07-27 — missed setups (how close the ones that died came) plumbed alongside blocked setups, strategy → output → run dir → chart spec; `chart_spec` now ships the run's own timeframe and caps the WINDOW instead of coarsening the bars
+**Last reviewed:** 2026-08-02 — 🔴 **the "SSH" health check never touched the tunnel, and `/health` on the MT5 agent never touched MT5.** `_check_ssh` ran `ssh forexvps "echo ok"` — a brand-new connection unrelated to the port forwards — so the dot went green over a dead tunnel; and the MT5 agent answers `ok` whether or not its terminal is running or logged in, so a disconnected MT5_Lab showed green while every python run needing uncached bars failed at fetch time. Both are measured properly now (`ssh_tunnel` = the forwards are bound, `vps_reachable` = the old question, `mt5_connected`/`mt5_server`/`mt5_account` off the agent's `/status`), and `mt5_connected` is `Optional[bool]` because **`None` = could not ask, which is not the same as disconnected**. With them, `main._auto_start_agents` — a one-shot thread 8s after boot — became **`services/agent_supervisor.py`**, a 60s loop whose first pass is identical to every later one; see *The agent supervisor* below for the two-probe table, the job-lock guard, and the deliberate unbound-vs-stale asymmetry. `restart_tunnel`/`schtasks_run` moved out of `routers/system.py` into that service (subprocess calls belong in `services/`, and `main.py` had been reaching across into the router to call one). Also new: `services/readiness.py`, the boot report for dependencies that fail silently. 330 tests green (31 new). Earlier: 2026-07-31 — **profit concentration had been measuring the account, not the edge.** The largest-quarter share was weighted in DOLLARS, which on a compounding run reports the compounding: the last quarter of an 85x account holds nearly all the dollars however evenly the edge is spread. Run `d2ab68f9e884` read **88.94%** — past the 60% "overfit risk" threshold — where the same trades weighted by RETURN read **39.97%**. `profit_concentration_pct` now takes the equity curve (that is what says whether a run compounded), stores a `profit_concentration_basis` beside the number, and `init_db` re-stamps history; all 78 completed runs were converted. See `## Metrics` → *Profit concentration*. Same day: **`unconstrained` had been returning PASS on every run, including one that lost 95% of the account.** `_evaluate_personal` ended `DISCARD if failures else PASS`, and both its checks are guarded on limits that row deliberately does not set, so `failures` was empty by construction — a vacuous pass, and the exact opposite of what `lab_db.py`'s seed note on that row says ("a run against it cannot be graded"). It now returns `INFO` ("Not graded" in the UI). Verdicts are **stored**, so `init_db` also carries an idempotent migration rewriting the affected `PASS` rows — every evaluation row in the live DB was this case. See `## Ruleset types` → *Nothing checked is not a pass*. Earlier: 2026-07-30 — **the stress-test engine was measuring the wrong things, and the D grade on `630cefbebd8347db` was the engine's fault, not the strategy's.** Four defects fixed, all generic (Aaron's scoping rule: fix what is inaccurate for ANY strategy, never tune the engine to this one). (1) Monte Carlo shuffled a DOLLAR P&L series on a compounding run — trade size drifts 17.7x across that run, so the shuffle simulated a strategy that never existed; it now switches to the per-trade RETURN series and compounds when the dollars actually drift, and the worst-1% drawdown went $41,970 → $359,886. (2) Drawdown is now compared PERCENT-to-percent on such runs — the dollar view had reported a 100% breach of total ruin across 20,000 simulations that never once wiped out the account. (3) Sensitivity scores on PROFIT FACTOR, not net P&L, so a sizing knob is no longer graded as fragility (`exec_risk_pct`: 85.8% on profit vs 11.8% on PF, and it alone set the run's score); no-op shifts are skipped, which is where ~50 of the run's 80 minutes went (43 of 60 backtests reproduced the baseline exactly). (4) Walk-forward now drops windows under 20 trades, and an unassessable WF caps the grade at B instead of being silently free. Also: a `None` grade is now a first-class outcome — **D used to be the CEILING for a ruleset stating no drawdown limit** — and `personal_forex_risk` (55%) was seeded so forex runs have a bar to be graded against. ⚠ Grading no-limit rulesets against total RUIN was built, measured, and removed — see the walk-back in `## Robustness grading`. Earlier: 2026-07-29 — `entry_ms` added to `models.EquityPoint`, which is what had the News filter reporting every run as "made before trade times were recorded"; the filter now works on Python runs too. 2026-07-27 — missed setups (how close the ones that died came) plumbed alongside blocked setups, strategy → output → run dir → chart spec; `chart_spec` now ships the run's own timeframe and caps the WINDOW instead of coarsening the bars
 
 Auto-loaded by Claude Code when editing any file inside `backend/`.
 
@@ -81,8 +81,18 @@ backend/
 │   │                      which routers turn into a 400. PYTHON RUNNER ONLY — NT8/MT5 read history from their
 │   │                      own terminals, so a Vantage floor must never be imposed on them (see "History floors")
 │   ├── calendar_service.py  live News Calendar tab — calls engines/news/ TradingViewSource.fetch_window() (never a 2nd impl), 60s in-memory cache keyed on (from,to,countries), computes beat/miss "surprise" server-side via _LOWER_IS_BETTER. Read-only: does NOT touch the shared EventStore cache. Returns the whole week; the frontend filters client-side (see "Live calendar tab")
+│   ├── agent_supervisor.py  keeps the SSH tunnel + both VPS agents up — one 60s loop, identical on
+│   │                      every pass, so a cold start and a wake-from-sleep are the same code path.
+│   │                      Owns `restart_tunnel()` / `schtasks_run()` (moved out of routers/system.py,
+│   │                      where main.py was reaching across to call one). Probes the TUNNEL by port
+│   │                      binding and the AGENTS by HTTP, because `ssh -L` binds the local port
+│   │                      itself — see "The agent supervisor" below
+│   ├── readiness.py       boot-time report of the dependencies that fail SILENTLY (news calendar
+│   │                      cache, Telegram credentials). Reports, never acts; `GET /system/readiness`
 │   ├── runner_dispatch.py      typed HTTP wrapper over NT8 nt8_agent; runner dispatcher (routes mt5 → mt5_agent_client)
-│   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel)
+│   ├── mt5_agent_client.py  typed HTTP wrapper over MT5 agent (port 8766 via SSH tunnel). `health()`
+│   │                      is the AGENT; `status()` is the TERMINAL (mt5_connected/account/server) —
+│   │                      two different questions, and only the second says a run can fetch bars
 │   ├── python_runner.py     local Python runner — runs strategies/python/ packages in-process via the top-level backtest/ package (backtests + A4 optimizer sweep). No VPS, no agent. Resolves strategies by `strategy_class` (the class `__name__` the scanner stored) — NEVER by package id
 │   └── notify.py            Telegram notifier (urllib, no extra deps). Holds NO token: it reads env vars, else the git-ignored `algos/credentials.json`, by PATH (`cfg.MONOREPO_ROOT / "algos" / "credentials.json"`) — the same file `algos/shared/credentials.py` reads, without importing across the app boundary, which the subsystem-independence rule forbids. `routers/bots.py` delegates here; it must never grow its own sender again. `telegram_configured()` answers whether a send would go anywhere
 ├── data/lab.db            strategies, rulesets, runs, evaluations, optimizations, stress_tests
@@ -189,6 +199,12 @@ Lab backtests use the same pattern but the "worker" is the NT8 agent over HTTP.
 - Synchronous SSH in request handlers — background it
 - Introduce an ORM or new framework without raising it first
 - Write `progress.json` non-atomically — always write `.tmp` then `os.replace`
+- Treat a `/health` response as a statement about the thing BEHIND the agent. The MT5 agent answers
+  `ok` while its terminal is disconnected, and `schtasks /run` answers SUCCESS for a task Windows
+  refuses to launch. Probe the thing you are actually claiming, and re-probe after any action
+- Let the agent supervisor run in a test process. `CC_DISABLE_SUPERVISOR=1` is set at module scope
+  in `tests/conftest.py`; a fixture is too late, because `main` is imported at collection. Without it
+  a plain `pytest tests/` restarts the SSH tunnel and fires two scheduled tasks on the live VPS
 - Commit credentials (Telegram tokens, API keys, `.env`)
 - Add a prop firm without filling in `docs_url` — rules drift, the link is how you verify
 
@@ -429,9 +445,100 @@ Rulesets carry 10 foundational fields (risk %, halt fraction, consecutive loss l
 | Live calendar tab | ✅ Live | `routers/calendar.py` (`GET /calendar?from&to`) → `services/calendar_service.py` → `engines/news/` `TradingViewSource.fetch_window()` (never a 2nd impl). Returns the whole week's events unfiltered + `server_now_ms` (drives the frontend "now" line off the server clock); 60s in-memory cache; beat/miss `surprise` computed server-side (`_LOWER_IS_BETTER`). Read-only — does NOT write the shared EventStore cache (separate path from the post-run news filter). Feed only, no DB. |
 | History floors | ✅ Live | `services/history_limits.py` + `GET /backtests/history-limit`. Refuses (400) any backtest window starting before the broker's REAL history for that timeframe — MT5 silently substitutes coarser bars, which would produce a plausible but fictional run. Floor is MEASURED off the live terminal (probed by bar density, cached per broker) via the canonical `backtest/data/history.py`, so a broker swap re-measures instead of inheriting. Enforced at run / retry / sweep / optimization / stack, and again in `BarSource.load`. Python runner only. |
 | Settings | ✅ Live | Config read/write. `nt8_agent_tunnel` and `mt5_agent_tunnel` both present. |
-| Startup — auto-start agents | ✅ Live | Daemon thread on startup (8s delay): `/health` each agent, fires schtask for any that don't respond. |
+| Startup — agent supervisor | ✅ Live | `services/agent_supervisor.py` — 60s loop, guarded on the per-platform job lock. Replaces the one-shot startup thread. See *The agent supervisor* below. |
+| Startup — readiness report | ✅ Live | `services/readiness.py` — one boot-time line per silently-degrading dependency; `GET /system/readiness`. |
 
 ---
+
+## The agent supervisor — and the two indicators that were lying
+
+**Added 2026-08-02. `services/agent_supervisor.py`.** Replaces `main._auto_start_agents`, a one-shot
+thread that ran 8 seconds after boot and never again: it worked on a cold start and did nothing for
+every case after it, which is why the MT5 agent had to be started by hand after every laptop sleep.
+There is no separate startup path now — the first pass is the same pass as every later one, so
+"it works on launch" and "it recovers from sleep" cannot diverge.
+
+**Two probes, because `ssh -L` binds the local port ITSELF.** A TCP connect to 127.0.0.1:8766
+succeeds for as long as the ssh process holds the forward, whether or not anything is alive at the
+far end. That gives two independent signals, and the pair is what tells the failures apart:
+
+| ports bound | agents answering | diagnosis | action |
+|---|---|---|---|
+| neither | — | the tunnel is dead (laptop slept) | rebuild it |
+| both | **neither** | stale tunnel forwarding into nothing, **or** both agents really down | rebuild, then fire both tasks |
+| both | one | the tunnel is fine | fire that agent's task only |
+
+🔴 **The old health check answered neither question.** `_check_ssh` ran `ssh forexvps "echo ok"` — a
+BRAND NEW connection that has nothing to do with the forwards — and that is what the sidebar's "SSH"
+dot reported. So after a sleep the dot sat green beside two red agent dots, which sends you to the
+VPS when the problem is on the laptop. `SystemHealth.ssh_tunnel` now measures the forwards;
+`vps_reachable` is a new field carrying the old question, and it is what separates a dead tunnel
+from a dead network. (The agent-start endpoints already rebuilt the tunnel before firing a schtask —
+the workaround was in the code, the indicator just could not say so.)
+
+🔴 **`/health` on the MT5 agent is not a statement about MT5.** It returns `ok` if Flask is alive,
+which it is whether or not the terminal is running or logged in — so an MT5_Lab that had dropped its
+broker connection showed a green dot and every python run needing uncached bars failed at fetch time
+instead. `mt5_agent_client.status()` wraps the agent's `/status` and health now carries
+`mt5_connected` / `mt5_server` / `mt5_account`. **`mt5_connected` is `Optional[bool]` and `None`
+means the agent could not be asked** — an unanswered question is not a disconnected terminal, and
+rendering it as one invents a measurement. The terminal is not probed at all when the agent is down.
+
+**The guard is the point, not the loop.** Every action is skipped when the scope it would disturb
+has a job running (`lab_db.get_running_job`), and a **python run counts as MT5 traffic** — the local
+runner pulls its bars through port 8766 (`backtest/data/mt5_agent.py`), so restarting the tunnel
+mid-fetch kills a run that never touched the VPS directly. `busy_scopes()` returns **all three
+scopes** when the DB cannot be read: doing nothing is always safe, and the wrong guess in the other
+direction kills a live run.
+
+**One deliberate asymmetry, and it is not an oversight.** An **unbound** port is rebuilt even under a
+running job — nothing can connect, so every call that job makes is already failing and rebuilding is
+its only route back. A merely **stale** tunnel (ports bound, agents silent) is not, because that
+reading has a real false positive: an agent driving a heavy backtest stops answering `/health` while
+working perfectly. The NT8 agent does exactly this under pywinauto.
+
+**`schtasks /run` is not evidence.** It reports SUCCESS for a task Windows refuses to launch (see
+`algos/CLAUDE.md` → the stored-password trap), so every fire is followed by a re-probe and the
+outcome is logged either way — `nt8-started` or `nt8-fired-but-still-down`. Silence after a fire
+used to read as success.
+
+⚠ **It will not rescue an agent whose death left a job marked `running`.** "Dead" and "busy driving
+my job and too loaded to answer" are indistinguishable from here, and the wrong guess kills a live
+run — so the skip NAMES the deadlock (`nt8-DOWN-with-a-job-running (lock held by nt8 — Stop it or
+restart the backend)`) rather than retrying silently forever. Observed live on 2026-08-02: the NT8
+agent died on a backtest submission, the run row stayed `running`, and the loop correctly refused to
+touch it. Clear the lock and the next pass restarts the agent by itself.
+
+⚠ **The supervisor is DISABLED under pytest** — `CC_DISABLE_SUPERVISOR=1`, set at module scope in
+`tests/conftest.py` (a fixture runs too late; `main` is imported at collection). Every endpoint test
+builds a `TestClient`, which fires the startup hook, so without the guard a plain `pytest tests/` on
+a laptop whose tunnel happened to be down would rebuild the tunnel and fire two scheduled tasks on
+the live VPS. Same class of hazard as `tests/test_integration.py`, and refused by default for the
+same reason.
+
+**Tests:** `tests/test_agent_supervisor.py` (19) + `tests/test_system_health.py` (12). Most of them
+are about what the supervisor REFUSES to do — the dangerous failure of a supervisor is not a missed
+repair, it is a repair at the wrong moment.
+
+## Readiness — the checks whose failure mode is silence
+
+`services/readiness.py`, reported once at boot and served at `GET /system/readiness`. The supervisor
+above watches things that announce themselves; this covers the opposite class — dependencies whose
+absence produces no error anywhere, just a feature that quietly does nothing:
+
+- **An un-backfilled news calendar makes the News & Holiday filter INERT.** The engine reports
+  `has_coverage=False` outside the fetched range and tags nothing, so a correctly-wired filter over
+  an unbackfilled period is indistinguishable from a broken one. The cache is git-ignored, so a
+  fresh clone starts empty and every machine backfills its own. A cache that STOPS partway is the
+  nastier case and is reported with the date it ends — recent trades come back *untagged, not
+  unaffected*.
+- **Missing `algos/credentials.json` makes every Telegram send a no-op.** Deliberate (a notifier
+  must never be able to stop a trading loop) and it means a stress-test grade can finish with
+  nobody told.
+
+It **reports and does not act** — neither is repairable from here, and neither is worth refusing to
+boot over. `_news_calendar()` catches everything: it runs inside the startup hook, and an exception
+there would stop the backend booting over a git-ignored cache file.
 
 ## Worthiness scoring
 

@@ -50,6 +50,19 @@ def health() -> dict:
     return _get("/health", timeout=5)
 
 
+def status() -> dict:
+    """MT5 TERMINAL status — a different question from health().
+
+    `/health` answers "is the Flask agent alive", which it is whether or not MT5
+    is running or logged in. `/status` answers "is the terminal actually usable":
+    `mt5_connected`, plus the account and server it is bound to. Every python
+    backtest that needs uncached bars goes through this terminal, so an agent
+    that responds while the terminal is disconnected is a run that will fail at
+    fetch time with a green dot above it.
+    """
+    return _get("/status", timeout=8)
+
+
 def agent_log(lines: int = 100) -> str:
     try:
         data = _get(f"/agent-log?lines={lines}")

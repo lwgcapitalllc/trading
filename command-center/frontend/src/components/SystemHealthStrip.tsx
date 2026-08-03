@@ -42,6 +42,40 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
     ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
     : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
 
+  // SSH: three-state, because "the tunnel is down" and "the VPS is unreachable"
+  // are different problems with different fixes and this dot used to conflate
+  // them. `ssh_tunnel` now measures the PORT FORWARDS; `vps_reachable` is the
+  // separate question of whether the box answers at all. Yellow = the tunnel is
+  // down but the VPS is fine, which the supervisor repairs by itself within a
+  // minute — so yellow means "wait", not "go and do something".
+  const sshState: DotState = h.ssh_tunnel ? 'green' : h.vps_reachable ? 'yellow' : 'red'
+  const sshTip = h.ssh_tunnel
+    ? 'SSH tunnel: both port forwards up (8765 + 8766)'
+    : h.vps_reachable
+    ? 'SSH tunnel: down, but the VPS is reachable — the supervisor is rebuilding it'
+    : 'SSH: VPS unreachable — check ForexVPS or ssh config'
+
+  // MT5: three-state for the same reason NT8 is. A responding agent is not a
+  // usable terminal — every python backtest that needs uncached bars goes
+  // through MT5_Lab, so an agent up with the terminal disconnected is a run
+  // that will fail at fetch time. `null` = we could not ask, which is reported
+  // as such rather than guessed either way.
+  const mt5State: DotState = !h.mt5_agent
+    ? 'red'
+    : h.mt5_connected === false
+    ? 'yellow'
+    : 'green'
+
+  const mt5Tip = !h.mt5_agent
+    ? h.ssh_tunnel
+      ? 'MT5 agent: down — click to start'
+      : 'MT5 agent: down — the tunnel must be up first'
+    : h.mt5_connected === false
+    ? 'MT5 agent OK — the MT5_Lab terminal is NOT connected to the broker (open it via RDP). Bar fetches will fail.'
+    : h.mt5_connected === null
+    ? 'MT5 agent: responding — terminal state unknown'
+    : `MT5 agent OK, terminal connected${h.mt5_server ? ` · ${h.mt5_server}` : ''}${h.mt5_account ? ` · ${h.mt5_account}` : ''}`
+
   return [
     {
       key: 'api',
@@ -52,8 +86,8 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
     {
       key: 'ssh',
       label: 'SSH',
-      state: h.ssh_tunnel ? 'green' : 'red',
-      tip: h.ssh_tunnel ? 'SSH to VPS: connected' : 'SSH to VPS: unreachable — check ForexVPS or ssh config',
+      state: sshState,
+      tip: sshTip,
     },
     {
       key: 'nt8',
@@ -64,12 +98,8 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
     {
       key: 'mt5',
       label: 'MT5 Agent',
-      state: h.mt5_agent ? 'green' : 'red',
-      tip: h.mt5_agent
-        ? 'MT5 agent: responding'
-        : h.ssh_tunnel
-        ? 'MT5 agent: down — click to start'
-        : 'MT5 agent: down — SSH must be up first',
+      state: mt5State,
+      tip: mt5Tip,
     },
   ]
 }

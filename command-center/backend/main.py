@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 
@@ -5,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import smart_money, bots, backtests, stress_tests, settings, strategies, rulesets, system, sweeps, stacks, optimizations, strategy_files, calendar
-from services import lab_db, runner_dispatch, mt5_agent_client
+from services import lab_db, agent_supervisor, readiness
 from services.backtest_runner import read_progress, clear_progress
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
@@ -33,22 +34,22 @@ app.include_router(strategy_files.router)
 app.include_router(calendar.router)
 
 
-def _auto_start_agents():
-    """Wait for the SSH tunnel then start any agents that aren't responding."""
-    time.sleep(8)  # give start.sh tunnel time to establish
-    for client, task in [
-        (runner_dispatch, "NT8Agent"),
-        (mt5_agent_client, "MT5AgentRDP"),
-    ]:
-        try:
-            client.health()
-            continue  # already up
-        except Exception:
-            pass
-        try:
-            system._schtasks_run(task)
-        except Exception:
-            pass  # SSH not up yet — user will see red dot and can click
+def _supervise():
+    """Keep the tunnel and both agents up, for the whole life of the process.
+
+    This replaced a ONE-SHOT thread (`_auto_start_agents`) that ran 8 seconds
+    after boot and never again. It worked on a cold start and did nothing for
+    every case after it — close the laptop, the tunnel dies, come back, and the
+    agents had to be started by hand. There is no separate startup path now: the
+    first pass is the same pass as every later one, so "it works on launch" and
+    "it recovers from sleep" cannot diverge.
+
+    The 8s delay survives for the same reason it existed — start.sh opens the
+    tunnel in parallel with this process, and probing before it is up would fire
+    two scheduled tasks for agents that are perfectly fine.
+    """
+    time.sleep(8)
+    agent_supervisor.run_forever()
 
 
 @app.on_event("startup")
@@ -68,7 +69,18 @@ async def startup():
     if m:
         import logging
         logging.getLogger(__name__).warning("Reset %d stale backtest/optimization run(s) from previous run", m)
-    threading.Thread(target=_auto_start_agents, daemon=True).start()
+    # Dependencies that fail SILENTLY — an un-backfilled news calendar, missing
+    # Telegram credentials. Reported, never repaired: neither can be fixed from
+    # here, and neither is worth refusing to boot over.
+    readiness.report()
+    # ⚠ OFF under pytest, and the guard is not optional. Every endpoint test
+    # builds a TestClient, which fires this startup hook — so without it a
+    # `pytest tests/` on a laptop whose tunnel happened to be down would rebuild
+    # the tunnel and fire two scheduled tasks on the live VPS. Same class of
+    # hazard as tests/test_integration.py, which is why it is refused by
+    # default rather than mocked per-test.
+    if os.getenv("CC_DISABLE_SUPERVISOR") != "1":
+        threading.Thread(target=_supervise, daemon=True, name="agent-supervisor-boot").start()
 
 
 @app.get("/health")
