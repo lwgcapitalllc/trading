@@ -819,6 +819,22 @@ Everything else is unchanged and deliberately so: **omit the profile and every p
 byte-identical** (the free row above reproduces the documented 161 / +135.94R exactly), the
 harness never passes one, and `compare_strategy.py` is still **exit 0**.
 
+**A cost turns marginal winners into real losers, and the win rate is where it shows up
+(measured 2026-08-03).** On the 3-year run `432aff31f374` (73 trades, Aug 2023 → Aug 2026),
+charging spread + swap took the win rate from **65.8% to 60.3%** — because **four trades flipped
+side**: +$12 → −$26, +$68 → −$133, +$207 → −$1,315 and +$376 → −$2,331. All four were scratches
+that only looked like wins because the run was frictionless, and the last two are not small.
+
+⚠ **Drawdown got WORSE while profit fell — 57.2% → 60.1%.** A cost does not merely shave the top
+off the equity curve, it deepens every losing stretch, so profit and risk move in opposite
+directions and both readings are correct. This is the companion to the compounding warning above:
+that one says a small charge costs a large fraction of the FINAL BALANCE; this one says it also
+costs you drawdown, which is the number a risk budget is actually set against.
+
+⚠ **Trade count cannot move** under spread / commission / swap — they change what a trade was
+worth, never whether it happened. Only `bid_ask_fills` moves the trade list. A re-priced run
+showing the same trade count as its source is working correctly.
+
 ### Wrong-side stop fills — a KNOWN BACKTEST LIMITATION, not a bug (recorded 2026-08-01)
 
 **Read this before reporting "the exit price matches no stop and no target" again.** That symptom

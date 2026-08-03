@@ -770,6 +770,31 @@ Rules the pill has to keep:
   most useful: you see what a layer would cost before turning it on, exactly as the news filter
   shows each rule's trade count whether or not it is applied.
 
+**⚠ The trade count does NOT move, and that is correct — expect it to be reported as a bug.** It
+already has been, from the screen. Spread, commission and swap change what each trade was WORTH;
+only `bid_ask_fills` changes which trades exist, and that one is refused here. Verified end to end
+on run `432aff31f374` (73 trades, Aug 2023 → Aug 2026), where everything else moves:
+
+| | as traded | costs on |
+|---|---|---|
+| trades | 73 | **73 — unchanged, by construction** |
+| net | $573,812 | $485,984 |
+| win rate | 65.8% | 60.3% |
+| profit factor | 4.04 | 3.83 |
+| avg win / avg loss | $15,881 / −$7,539 | $14,945 / −$5,918 |
+| worst drawdown | 57.2% | 60.1% |
+
+Two things in that table are worth keeping. **The win rate falls 5.5 points because four trades
+flip from winner to loser** — +$12, +$68, +$207 and +$376 becoming −$26, −$133, −$1,315 and
+−$2,331 — i.e. scratches that only looked like wins because the run was frictionless. And
+**drawdown gets WORSE while profit falls**: a cost does not merely shave the top off, it deepens
+every losing stretch, so the two headline cards move in opposite directions and neither is wrong.
+
+⚠ The RISKED card's percentage will not match a hand-calculation from the starting balance —
+`ddWorst` rebases the curve onto the account-balance slider (`rebaseEquity(equity, balance)`), so
+its denominator differs by design. It is still derived from the RE-PRICED curve, which is what
+makes it move at all.
+
 Four things about the Run modal that would each silently mislead if changed:
 
 - **The spread is never typed.** `useBrokerProfiles` (`staleTime: Infinity`) fetches
