@@ -198,6 +198,13 @@ SoloAccount is the gate that the seam didn't move standalone behaviour.
 2. Base bars are served cache-first (`BarCache`, one CSV per symbol+tf under `backtest/cache/`,
    git-ignored). A miss fetches the whole window from the MT5 agent (`Mt5Agent`, HTTP on
    localhost:8766 via the SSH tunnel) and records the fetched date range (`RangeCoverage`).
+   ⚠ **This hop is why a running PYTHON job counts as MT5 traffic to the command center's agent
+   supervisor** (`command-center/backend/services/agent_supervisor.py`, 2026-08-02): a python
+   backtest runs locally and touches no VPS terminal, but a cache MISS pulls its bars through this
+   tunnel, so restarting the tunnel or the MT5 agent mid-fetch kills the run. If the data layer ever
+   stops going through the agent, that coupling in the supervisor goes stale — change both.
+   The corollary is the good news: a fully CACHED window needs neither the tunnel nor the agent, so
+   a replay over bars already on disk is unaffected by anything on the VPS.
 3. `resample_up` aggregates to the target timeframe if base ≠ target — **never down**.
 4. The result is sliced to `[start_date, end_date]` inclusive.
 

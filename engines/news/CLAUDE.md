@@ -11,7 +11,12 @@ position sizing, NOT UI. The engine emits facts; a bot owns the policy and the s
 **Status:** Built 2026-07-05. Unit-tested (29 tests, green) + validated live end-to-end against the
 real Forex Factory calendar (live weekly feed + a real Feb-2025 history backfill → cache → engine
 blackout). **Off the roadmap and NOT a Pine port** — see "Validation".
-**Last reviewed:** 2026-07-29 — the FF history scraper's browser fingerprint is now a fallback chain
+**Last reviewed:** 2026-08-02 — no engine code changed; a **third consumer** was recorded. The
+command center now checks this cache at backend startup (`services/readiness.py`) and warns when it
+is empty or stops more than 30 days back, because the honest-coverage rule is invisible from
+outside: an unbackfilled range makes the lab's News & Holiday filter *inert*, which is
+indistinguishable from a broken one. Read-only — no fetch, no write, no policy. Earlier:
+2026-07-29 — the FF history scraper's browser fingerprint is now a fallback chain
 (Cloudflare started 403-ing every `chrome*` profile); 2021-01 → 2026-07 backfilled (27,363 events)
 
 ---
@@ -196,6 +201,19 @@ live, read-only calendar view (a whole week fetched, filtered client-side). It i
 from the blackout filter**: it does NOT touch `store.py` / the shared cache, and its source is
 TradingView (not FF) because the tab needs `actual` results + categories, not holidays. Consumer
 detail: `command-center/backend/CLAUDE.md` ("Live calendar tab").
+
+**Third consumer — the command center's readiness report** (2026-08-02).
+`command-center/backend/services/readiness.py` calls `EventStore().load()` at backend startup and
+warns when the cache is EMPTY or STOPS more than 30 days back. It reads only — no fetch, no write,
+no policy — and exists because **this engine's honest-coverage rule is invisible from the outside**:
+outside a fetched range `has_coverage` is False, so the lab's News & Holiday filter tags nothing and
+removes nothing, which looks *exactly* like a broken filter rather than an unbackfilled one. The
+cache is git-ignored, so every machine starts empty and a fresh clone hits this by default. A cache
+that stops PARTWAY is the nastier case and is reported with the date it ends — trades after it come
+back *untagged, not unaffected*. If `EventStore.load()`'s return shape or `NewsEvent.timestamp_ms`
+is renamed, that check degrades to a startup warning about an unreadable cache (it catches
+everything — it runs inside the startup hook, and raising there would stop the backend booting over
+a git-ignored file).
 
 ---
 
