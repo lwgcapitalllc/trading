@@ -128,12 +128,7 @@ const UNNAMED_LEVEL_COLOR = '#9598a1'
 export interface TradeFibLevel { ratio: number; price: number }
 interface TradeFibExtend {
   levels?: TradeFibLevel[]
-  entryPrice?: number
-  entryRatio?: number
-  deepestPrice?: number
-  deepestRatio?: number
   chipBg?: string
-  accent?: string
 }
 
 /** Style + label passed to generic overlays via `extendData`. Mirrors spec OverlayStyle. */
@@ -171,6 +166,7 @@ interface TradeExtend {
                        // strategies read apart (absent on a single-run chart)
   layerName?: string   // strategy name printed IN the outcome chip ("SOS Fade · Won") — the stack's
                        // primary "who won this one" signal (absent on a single-run chart)
+  precision?: number   // instrument price decimals — every side label states its own price
   entryPrice?: number
   exitPrice?: number
   mfePrice?: number
@@ -376,9 +372,14 @@ export function registerChartOverlays(): void {
       }
       // Side labels are collected first, de-collided, then drawn — so a cluster of close levels
       // (e.g. TP1 near the entry) never stacks on itself.
+      //
+      // EVERY label carries its PRICE (Aaron's call, 2026-08-03). A bare `SL` says a level exists
+      // and makes you read it off the axis; the annotations are the trade's own record of what
+      // happened, so each states the number it happened at.
+      const px = (p: number) => p.toFixed(d.precision ?? 2)
       const labels: { y: number; text: string; color: string }[] = []
       const addLabel = (p: number | undefined, text: string, color: string) => {
-        const y = yOf(p); if (y != null) labels.push({ y, text, color })
+        const y = yOf(p); if (y != null) labels.push({ y, text: `${text} ${px(p as number)}`, color })
       }
 
       const entryY = entry.y
@@ -410,8 +411,28 @@ export function registerChartOverlays(): void {
         rect(entryY, yOf(d.maePrice)!, withAlpha(advColor, 0.10))
       }
 
-      // Deepest-run guide (faint, unlabelled — it's just the top edge of the faint band).
-      crossLine(mfePrice, withAlpha(profitColor, 0.4))
+      // How far the trade RAN — the two ends of the hold, one each way, and the pair of annotations
+      // this layer was missing (Aaron's call, 2026-08-03). `Furthest` is the top edge of the faint
+      // green band (unlabelled until now); `Deepest` is its adverse mirror and had no marker at all.
+      //
+      // Each is drawn only where it says something the labels beside it don't. `Furthest` needs a
+      // REAL `mfePrice` (it falls back to the banked/exit price, which the Exit chip already
+      // states) and it must have run PAST what was banked, which is exactly when the faint unbanked
+      // band exists. `Deepest` needs to have gone adversely past the entry. Without those guards a
+      // trade that never moved against itself prints `Deepest` on the entry's own pixel row.
+      const runColor = withAlpha(profitColor, 0.7)
+      if (typeof d.mfePrice === 'number' && (d.mfePrice - (bankedPrice ?? entryP!)) * sign > 1e-9) {
+        crossLine(d.mfePrice, withAlpha(profitColor, 0.4)); dot(d.mfePrice, runColor)
+        addLabel(d.mfePrice, 'Furthest', runColor)
+      } else {
+        crossLine(mfePrice, withAlpha(profitColor, 0.4))   // guide only — Exit already names it
+      }
+      if (typeof d.maePrice === 'number' && typeof entryP === 'number'
+          && (d.maePrice - entryP) * sign < -1e-9) {
+        const deepColor = withAlpha(stopColor, 0.75)
+        crossLine(d.maePrice, withAlpha(stopColor, 0.4)); dot(d.maePrice, deepColor)
+        addLabel(d.maePrice, 'Deepest', deepColor)
+      }
       // Stop: dotted line across + dot + "SL".
       crossLine(d.stopPrice, withAlpha(stopColor, 0.85)); dot(d.stopPrice, stopColor); addLabel(d.stopPrice, 'SL', stopColor)
       // Each real profit-take: a thin dotted mint line + a dot + its label (TP1/TP2/TP3/Exit). A
@@ -586,7 +607,6 @@ export function registerChartOverlays(): void {
       const levels = Array.isArray(d.levels) ? d.levels : []
       if (!levels.length) return []
       const chipBg = withAlpha(d.chipBg ?? '#0d0d1a', 0.82)
-      const accent = d.accent ?? '#22d3ee'
       const xLeft = Math.min(coordinates[0].x, coordinates[1].x)
       const xRight = Math.max(coordinates[0].x, coordinates[1].x)
       const figures: OverlayFigure[] = []
@@ -600,13 +620,14 @@ export function registerChartOverlays(): void {
           styles: { color, size: 0.5, style: 'solid' },
           ignoreEvent: true,
         })
-        // The RATIO alone, left-aligned at the leg's start. A hand-drawn fib prints the price too
-        // because you placed it and want to check where it landed; here the price is already on the
-        // axis and the ratio is the whole question ("which retracement did it enter at"), so the
-        // chip stays narrow — several trades' ladders can be on screen at once.
+        // The RATIO alone, right-aligned at the leg's end — the side a hand-drawn fib labels, so
+        // the bot's ladder reads the same way as one you placed (Aaron's call, 2026-08-03).
+        // Deliberately NO price beside it, unlike the fib TOOL: the price is already on the axis
+        // and on the trade's own annotations, and the ratio is the whole question here ("which
+        // retracement did it enter at"), so the chip stays narrow enough for several ladders at once.
         figures.push({
           type: 'text',
-          attrs: { x: xLeft, y, text: `${lvl.ratio}`, align: 'left', baseline: 'middle' },
+          attrs: { x: xRight, y, text: `${lvl.ratio}`, align: 'right', baseline: 'middle' },
           styles: {
             style: 'stroke_fill', color, size: 9, weight: 'normal',
             backgroundColor: chipBg, borderColor: withAlpha(color, 0.4), borderSize: 1,
@@ -617,32 +638,11 @@ export function registerChartOverlays(): void {
         })
       }
 
-      // The two readings the ladder cannot state on its own, in the strategy's own units: where the
-      // fill landed on this leg, and how deep the retracement actually ran afterwards. Both sit at
-      // the RIGHT edge so they never collide with the ratio chips on the left.
-      const mark = (price: number | undefined, ratio: number | undefined, text: string) => {
-        if (typeof price !== 'number' || typeof ratio !== 'number') return
-        const y = yAxis.convertToPixel(price)
-        figures.push({
-          type: 'text',
-          attrs: { x: xRight, y, text: `${text} ${ratio.toFixed(3)}`, align: 'right', baseline: 'middle' },
-          styles: {
-            style: 'stroke_fill', color: accent, size: 9, weight: 'bold',
-            backgroundColor: chipBg, borderColor: withAlpha(accent, 0.5), borderSize: 1,
-            borderStyle: 'solid', borderRadius: 3,
-            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
-          },
-          ignoreEvent: true,
-        })
-      }
-      mark(d.entryPrice, d.entryRatio, 'entry')
-      // Only when the trade actually went deeper than its entry by a visible margin — otherwise the
-      // two chips land on the same pixel row and read as one garbled label. A trade that never
-      // retraced past its fill has nothing to add here anyway.
-      if (typeof d.deepestRatio === 'number' && typeof d.entryRatio === 'number'
-          && d.deepestRatio - d.entryRatio > 0.02) {
-        mark(d.deepestPrice, d.deepestRatio, 'deepest')
-      }
+      // This layer draws the LADDER and nothing else. It used to add its own `entry <ratio>` and
+      // `deepest <ratio>` chips; both are gone (Aaron's call, 2026-08-03) — the trade beneath it
+      // already annotates its own entry, and where it ran to now belongs with the rest of the
+      // trade's annotations (`Deepest` / `Furthest` in the TRADE template) rather than being told
+      // twice, at the same price, by two different layers.
       return figures
     },
   })

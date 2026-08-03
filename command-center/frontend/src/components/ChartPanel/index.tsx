@@ -9,7 +9,7 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2, X } from 'lucide-react'
+import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartOverlay, ChartPage, ChartSpec } from './types'
@@ -84,6 +84,12 @@ interface MenuItem {
   toggle: () => void
   sub?: boolean
   count?: number
+  /** Caption + rule drawn ABOVE this row, i.e. this row opens a new section of the menu. */
+  section?: string
+  /** This row is an ACTION (a preset), not a layer — so it is left out of the header's `on/total`
+   *  count. Counting a shortcut as a layer would make "Analysis 4/7" describe something that isn't
+   *  a set of layers, and the count is what the reader uses to see how much is drawn. */
+  action?: boolean
 }
 
 /** The hover answer behind a would-be-entry marker (Blocked or Missed), and where to float it.
@@ -167,7 +173,10 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
-  const activeCount = items.filter(it => it.on).length
+  // LAYERS only. An `action` row is a preset, not something drawn, so counting it would make the
+  // header's `on/total` stop describing how much is on the chart — which is its whole job.
+  const layers = items.filter(it => !it.action)
+  const activeCount = layers.filter(it => it.on).length
   return (
     <div ref={ref} className="relative">
       <button
@@ -175,25 +184,36 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors"
       >
         {title}
-        <span className="font-mono text-text-tertiary">{activeCount}/{items.length}</span>
+        <span className="font-mono text-text-tertiary">{activeCount}/{layers.length}</span>
         <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg" style={{ zIndex: 50, minWidth }}>
-          {items.map(it => (
-            <button
-              key={it.key}
-              onClick={it.toggle}
-              className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
-            >
-              <span
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
-              />
-              <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
-              {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
-              {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
-            </button>
+          {items.map((it, i) => (
+            <Fragment key={it.key}>
+              {/* A section caption, with a rule above it unless it opens the menu. This is what lets
+                  one menu carry both the presets and the layers they set without either reading as
+                  a stray row in the other's list. */}
+              {it.section && (
+                <div className={`px-3 pb-1 text-[9px] uppercase tracking-wide text-text-tertiary ${
+                  i === 0 ? 'pt-0.5' : 'mt-1 pt-1.5 border-t border-border-subtle'
+                }`}>
+                  {it.section}
+                </div>
+              )}
+              <button
+                onClick={it.toggle}
+                className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full flex-shrink-0"
+                  style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
+                />
+                <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
+                {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
+                {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+              </button>
+            </Fragment>
           ))}
         </div>
       )}
@@ -285,92 +305,39 @@ function MarkerNav({ current, idx, total, busy, onStep }: {
   )
 }
 
-/** The two readings a "deep debug" press sets up: the trades of ONE outcome, alone on the chart. */
-type DebugOutcome = 'winners' | 'losers' | 'both'
-
-/** The three debug readings, in the order the pill lists them. `both` is the same context layers
- *  over the WHOLE book — for reading a run in sequence, or comparing what a winner and a loser had
- *  in front of them, which is a question neither single-outcome view can answer. */
-const DEBUG_OUTCOMES: readonly DebugOutcome[] = ['winners', 'losers', 'both']
-const DEBUG_OUTCOME_LABEL: Record<DebugOutcome, string> = {
-  winners: 'Winners', losers: 'Losers', both: 'Both',
-}
-
-/** The overlay groups a deep-debug press switches ON — the context you want behind a trade you are
- *  interrogating: the break structure it traded off, and the gaps that were live when it fired.
+/** The layers **Deep debug** adds: the context you want behind a trade you are interrogating — the
+ *  fib leg its entry was priced off, the break structure it traded off, and the gaps that were live
+ *  when it fired. (The fib is a trade sub-layer rather than an overlay group, so it is switched
+ *  alongside these rather than listed in here.)
  *
  *  Taken from the panel's own group vocabulary in `overlays.ts` rather than retyped, so a rename
- *  there carries here instead of silently turning nothing on. Everything NOT named here is left
- *  exactly as the reader had it — a preset that reset the whole panel would throw away the sessions,
- *  indicators and fibs someone had set up to do the reading. */
+ *  there carries instead of silently turning nothing on. */
 const DEBUG_ON_GROUPS: readonly string[] = [
   STRUCTURE_GROUPS[0],   // External Structure — BOS/SOS break lines + the active swing rays
   ANALYSIS_GROUPS[0],    // Fair Value Gaps
 ]
 
-/** "Debug" — three presets that set the whole chart to one reading in a single press.
+/** **Deep debug** — one row at the top of the Analysis menu, on or off.
  *
- *  Reading a run one outcome at a time meant the same seven switches every time, across BOTH header
- *  dropdowns: trades on, the outcome you want, that trade's own fib leg, external structure and fair
- *  value gaps on for context, blocked and missed off so nothing else is on the chart. Seven clicks
- *  in two menus, repeated every time you swap sides. Pair it with Step (`◀ Loss 12/60 ▶`) and
- *  reading every loser end to end is one press plus one key — each one arriving with the fib it was
- *  entered off already drawn, which is the question ("why HERE?") the whole preset exists to answer.
+ *  Reading a run one trade at a time means the same context every time: the fib leg the entry was
+ *  priced off, the structure it broke, the gaps that were open. Three switches across two dropdowns,
+ *  set and unset constantly. This is that set, as one toggle.
  *
- *  **`Both` is not a fourth state, it is the outcome filter left open.** It shipped as Winners /
- *  Losers only, which made the debug CONTEXT — fibs, structure, gaps — reachable only through a
- *  filtered book; "what did every trade have in front of it" then meant entering a preset and
- *  immediately undoing part of it by hand. The context and the filter are separate questions, so
- *  the pill answers both.
+ *  **It is purely ADDITIVE, and that is what makes it a toggle rather than a mode** (Aaron's call,
+ *  and the third shape this control took — it began as a segmented `Winners | Losers` pill, then a
+ *  four-way radio, both of which owned the outcome filter and so had to answer "what does OFF
+ *  restore?"). It does not touch WHICH trades are drawn: Winners / Losers / Blocked / Missed stay
+ *  exactly where the reader set them, and Deep debug just deepens whatever is on screen. So the
+ *  question "winners, losers or both" has one answer in one place — the rows below it — instead of
+ *  being asked twice and able to disagree.
  *
- *  **It is a shortcut, never a second source of truth.** It presses the same switches the menus
- *  press, and `active` is DERIVED from those switches rather than remembered here — untick one thing
- *  by hand and the highlight clears, because the preset is no longer what is on screen. A remembered
- *  "active" flag is precisely how a label starts claiming something the chart is not doing. */
-function DebugPresets({ active, onPress }: {
-  active: DebugOutcome | null
-  onPress: (outcome: DebugOutcome) => void   // pressing the LIT side turns the preset off — see below
-}) {
-  const seg = 'px-2 h-[22px] inline-flex items-center gap-1 text-[11px] font-medium transition-colors'
-  return (
-    <div
-      className="inline-flex items-center rounded-md border border-border-subtle bg-bg-sunken overflow-hidden"
-      title={'Deep debug — one press sets the chart to one reading:\n'
-        + '· Trades on — Winners only, Losers only, or Both\n'
-        + '· Trade fibs on — the leg each entry was priced off\n'
-        + '· External Structure + Fair Value Gaps on\n'
-        + '· Blocked and Missed off\n'
-        + '\nPress the lit side again (✕) to turn debug off — that restores exactly these switches to\n'
-        + 'how the chart opens, and touches nothing else. Everything the preset does not set is left\n'
-        + 'as you had it, and changing any of it by hand clears the highlight.'}
-    >
-      <span className={`${seg} text-text-tertiary border-r border-border-subtle`}>Debug</span>
-      {DEBUG_OUTCOMES.map((o, i) => {
-        const on = active === o
-        // Winners/Losers take the trades' OWN green/red, so which reading is live is readable
-        // without parsing the words. `Both` is not an outcome, so it takes the app accent rather
-        // than borrowing one side's colour to describe a view that shows both.
-        const color = o === 'winners' ? TRADE_WIN_COLOR : o === 'losers' ? TRADE_LOSS_COLOR : theme.accent
-        return (
-          <button
-            key={o}
-            onClick={() => onPress(o)}
-            className={`${seg} ${i > 0 ? 'border-l border-border-subtle' : ''} ${
-              on ? 'bg-bg-surface' : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface'
-            }`}
-            style={on ? { color, boxShadow: `inset 0 -2px 0 ${color}` } : undefined}
-          >
-            {DEBUG_OUTCOME_LABEL[o]}
-            {/* The way OUT, on the only button that can take it. A preset you can enter and not
-                leave is a trap, and a separate "off" control would be a second thing to find; the
-                ✕ appearing ON the lit side says "press me again" without costing a segment. */}
-            {on && <X className="w-3 h-3 flex-shrink-0" />}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
+ *  **On/off is DERIVED from those layers, never remembered** (`debugOn`): switch the gaps off by
+ *  hand and the row unticks itself, because deep debug is no longer what is on screen. A remembered
+ *  flag is precisely how a label starts claiming something the chart is not doing.
+ *
+ *  ⚠ **Only layers the run actually CARRIES are counted** — a run with no recorded fibs and no
+ *  structure has nothing to deepen, so the row is hidden rather than sitting permanently unticked
+ *  (or, worse, permanently ticked because every condition was vacuously true). */
 
 /** "Go to date" — a header pill that opens a date box and scrolls the chart there, so reaching an
  *  old part of a long run is one entry instead of a long drag.
@@ -1276,75 +1243,33 @@ export default function ChartPanel({
   }, [spec, overlayGroups])
   const toggleGroup = (name: string) => setGroupsOn(v => ({ ...v, [name]: !v[name] }))
 
-  // ── Deep debug presets ───────────────────────────────────────────────────────
-  // One press = the seven switches you would otherwise set by hand across both dropdowns to read a
-  // run one outcome at a time. It writes to the SAME state the menus write to — there is no second
-  // set of layer state, so the menus and the chart can never disagree with the preset.
+  // ── Deep debug ───────────────────────────────────────────────────────────────
+  // One toggle for the context layers you want behind any trade you are interrogating. It writes to
+  // the SAME state the rows below it write to — there is no second copy of layer state — and it is
+  // deliberately ADDITIVE: it never touches WHICH trades are drawn, so "winners, losers or both"
+  // keeps one answer in one place instead of being asked twice.
   //
-  // A layer the run never emitted is set here anyway and is inert: an absent overlay group is
-  // dropped by the next `reconcileToggles` (the roster is derived from the overlays), and
-  // `tradeFibsOn` with no trade carrying a fib simply draws nothing. That is why the APPLY is
-  // unconditional and the ACTIVE test below is not.
-  const applyDebugPreset = useCallback((outcome: DebugOutcome) => {
-    setTradesOn(true)
-    // `both` leaves the outcome filter open — the debug CONTEXT over the whole book, which is a
-    // different question from "show me one side" and not reachable by any single-outcome preset.
-    setWinnersOn(outcome !== 'losers')
-    setLosersOn(outcome !== 'winners')
-    setBlocksOn(false)
-    setMissesOn(false)
-    // The trade's own fib leg — the ladder its entry, stop and targets were priced off. This is the
-    // layer that answers "why did it enter HERE", which is the whole question the preset exists for,
-    // so it belongs in it rather than being a switch you still have to find afterwards.
-    setTradeFibsOn(true)
-    setGroupsOn(v => ({ ...v, ...Object.fromEntries(DEBUG_ON_GROUPS.map(g => [g, true])) }))
-  }, [])
-
-  // The way OUT. It restores exactly the seven switches the preset SETS to the values the panel
-  // opens on — trades on with both outcomes, no fibs, no blocked, no missed, neither debug group —
-  // and touches nothing else, so the sessions, indicators, fibs and per-reason filters the reader
-  // set up survive leaving debug mode. Keep this list in step with `applyDebugPreset` above: they
-  // are the two halves of one control, and a switch set by one and not cleared by the other is a
-  // layer left on that nobody turned on.
-  const clearDebugPreset = useCallback(() => {
-    setTradesOn(true)
-    setWinnersOn(true)
-    setLosersOn(true)
-    setBlocksOn(false)
-    setMissesOn(false)
-    setTradeFibsOn(false)
-    setGroupsOn(v => ({ ...v, ...Object.fromEntries(DEBUG_ON_GROUPS.map(g => [g, false])) }))
-  }, [])
-
-  // DERIVED, never remembered. If it were a stored flag it would keep claiming a preset after the
-  // reader unticked half of it in the menus — the panel's standing rule that a label on screen is a
-  // claim about state somewhere else. Only layers the run actually CARRIES are tested: a run with no
-  // structure, no gaps and no recorded fibs has nothing to switch on, so their absence must not read
-  // as "not applied" (which would leave the highlight permanently dark on an NT8/MT5 run, or on a
-  // Python run finished before the fib field existed).
+  // Only what the run actually CARRIES counts. A run with no recorded fibs and no structure has
+  // nothing to deepen: including it would make `debugOn` vacuously true and pin the row ON for ever,
+  // and `debugAvailable` is what hides it instead.
+  const debugFibs = tradeFibCount > 0
   const debugGroups = useMemo(
     () => DEBUG_ON_GROUPS.filter(g => overlayGroups.some(og => og.name === g)),
     [overlayGroups],
   )
-  const debugActive = useMemo<DebugOutcome | null>(() => {
-    if (!tradesOn || blocksOn || missesOn) return null
-    if (!debugGroups.every(g => groupsOn[g])) return null
-    if (tradeFibCount > 0 && !tradeFibsOn) return null
-    if (winnersOn && !losersOn) return 'winners'
-    if (losersOn && !winnersOn) return 'losers'
-    // Both outcomes on with every context layer set is `both` — and it is distinguishable from the
-    // OFF state, which also leaves both on, precisely because off clears the context layers above.
-    if (winnersOn && losersOn) return 'both'
-    return null   // neither outcome on: the reader emptied the chart, which is no preset at all
-  }, [tradesOn, blocksOn, missesOn, debugGroups, groupsOn, tradeFibCount, tradeFibsOn, winnersOn, losersOn])
+  const debugAvailable = debugFibs || debugGroups.length > 0
+  const debugOn = debugAvailable
+    && (!debugFibs || tradeFibsOn)
+    && debugGroups.every(g => groupsOn[g])
 
-  // One button, both directions: pressing the LIT side leaves debug mode, pressing the other side
-  // switches to it. Deciding that here rather than in the control keeps the component a pure
-  // renderer of `active`, and means there is exactly one place that knows what "off" restores.
-  const pressDebugPreset = useCallback((outcome: DebugOutcome) => {
-    if (debugActive === outcome) clearDebugPreset()
-    else applyDebugPreset(outcome)
-  }, [debugActive, clearDebugPreset, applyDebugPreset])
+  // Setting a layer the run never emitted is inert — an absent group is dropped by the next
+  // `reconcileToggles`, and `tradeFibsOn` with no recorded fib draws nothing — so the write is
+  // unconditional even though the READ above is not.
+  const toggleDebug = useCallback(() => {
+    const next = !debugOn
+    setTradeFibsOn(next)
+    setGroupsOn(v => ({ ...v, ...Object.fromEntries(DEBUG_ON_GROUPS.map(g => [g, next])) }))
+  }, [debugOn])
 
   // Daily breaks: one vertical line at the start of each TRADING DAY present in the data — a
   // regular daily grid like TradingView, independent of where trades landed (the old code scoped
@@ -1647,6 +1572,7 @@ export default function ChartPanel({
           dirColor: tr.dir === 'long' ? theme.pos : theme.neg,     // entry arrow (buy green / sell red)
           // Profit-depth inputs — prices, converted to pixels in the overlay via the y-axis.
           // Absent fields make the overlay fall back to the plain entry→exit box.
+          precision: pricePrecision,   // every side label prints its own price
           entryPrice: tr.entryPrice,
           exitPrice: tr.exitPrice,
           mfePrice: tr.mfePrice,
@@ -1672,14 +1598,18 @@ export default function ChartPanel({
   // overlay effect (`applyNewData` clears them).
   //
   // It reuses the TRADES effect's own predicates on purpose — the loaded-candle clip, the layer
-  // isolation, the Winners/Losers filters — so a fib can only ever be drawn under a trade that is
-  // itself drawn. Its own filters would be a second place for the two to disagree, which is the
-  // same rule the Step navigator follows.
+  // isolation, the Winners/Losers filters — so the two layers can never disagree about WHICH trades
+  // are of interest. Its own filters would be a second place for them to differ, which is the same
+  // rule the Step navigator follows.
+  //
+  // It does NOT require `tradesOn`, because the row is a peer of Blocked/Missed rather than a
+  // sub-toggle of Trades: a switch that is on while its layer draws nothing, with nothing on screen
+  // saying why, is exactly the failure the per-window paging bug produced.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
     chart.removeOverlay({ name: TRADE_FIB })
-    if (!tradeFibsOn || !tradesOn) return
+    if (!tradeFibsOn) return
     for (const tr of spec.trades) {
       const fib = tr.fib
       if (!fib?.levels?.length) continue
@@ -1691,9 +1621,6 @@ export default function ChartPanel({
       // candle would otherwise have klinecharts clamp its left edge onto the plot boundary, which
       // draws the ladder across the no-data region as if the leg started there.
       const from = Math.max(fib.startTime ?? tr.entryTime, loadedLoTs)
-      const deepest = fib.levels.reduce(
-        (best, l) => (fib.deepestRatio != null && Math.abs(l.ratio - fib.deepestRatio) < Math.abs(best.ratio - fib.deepestRatio) ? l : best),
-        fib.levels[0])
       chart.createOverlay({
         name: TRADE_FIB,
         lock: true,
@@ -1701,21 +1628,14 @@ export default function ChartPanel({
           { timestamp: from, value: fib.levels[0].price },
           { timestamp: tr.exitTime, value: fib.levels[fib.levels.length - 1].price },
         ],
-        extendData: {
-          levels: fib.levels,
-          entryPrice: tr.entryPrice,
-          entryRatio: fib.entryRatio,
-          // The deepest ADVERSE price is what `deepestRatio` was measured from, so the chip is
-          // pinned there rather than at the nearest level — it marks the real excursion, not a
-          // rung. `deepest` above is only the fallback when the trade carried no MAE price.
-          deepestPrice: tr.maePrice ?? deepest.price,
-          deepestRatio: fib.deepestRatio,
-          chipBg: theme.bgSurface,
-          accent: theme.accent,
-        },
+        // The LADDER only. `entryRatio` / `deepestRatio` are still computed and still ride on the
+        // spec — they are the two readings a price ladder cannot state — but nothing draws them:
+        // the trade's own `Entry` and `Deepest` annotations say the same thing at the same price,
+        // and two layers labelling one price row is what made this chart look doubled up.
+        extendData: { levels: fib.levels, chipBg: theme.bgSurface },
       })
     }
-  }, [spec.trades, tradeFibsOn, tradesOn, winnersOn, losersOn, hiddenLayers,
+  }, [spec.trades, tradeFibsOn, winnersOn, losersOn, hiddenLayers,
       displayCandles, loadedLoTs, loadedHiTs])
 
   // Blocked setups — same rebuild-on-data-change rationale as the trades effect. Each marker
@@ -2267,20 +2187,25 @@ export default function ChartPanel({
               title="Analysis"
               minWidth={198}
               items={[
-                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length }] : []),
-                // Winners/Losers are SUB-toggles of Trades — indented, and only listed while trades
-                // are on (with trades hidden they'd be inert switches). Each carries its count so the
-                // split is readable without opening the trades table.
-                ...(spec.trades.length > 0 && tradesOn ? [
+                // ── Deep debug ───────────────────────────────────────────────────────────────
+                // One row, at the top, above the layers it switches. It is ADDITIVE — it deepens
+                // whatever the rows below are showing and never decides WHICH trades are drawn —
+                // so it reads as "and show me the detail", not as a mode that owns the menu.
+                // Hidden when the run carries nothing to deepen.
+                ...(debugAvailable ? [{
+                  key: 'deep-debug', label: 'Deep debug', color: theme.accent,
+                  on: debugOn, toggle: toggleDebug, action: true,
+                }] : []),
+                // ── The layers themselves ────────────────────────────────────────────────────
+                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length, section: 'Layers' }] : []),
+                // Winners/Losers are SUB-toggles of Trades — indented, and listed only while
+                // something they FILTER is on the chart. That is Trades or Fibs: both effects apply
+                // these two predicates, so with Fibs on alone they are still live switches, and
+                // hiding them there would leave the fibs silently filtered by a control nobody can
+                // see. Each carries its count so the split is readable without opening the table.
+                ...(spec.trades.length > 0 && (tradesOn || (tradeFibsOn && tradeFibCount > 0)) ? [
                   { key: 'winners', label: 'Winners', color: TRADE_WIN_COLOR, on: winnersOn, toggle: () => setWinnersOn(o => !o), sub: true, count: outcomeCounts.wins },
                   { key: 'losers', label: 'Losers', color: TRADE_LOSS_COLOR, on: losersOn, toggle: () => setLosersOn(o => !o), sub: true, count: outcomeCounts.losses },
-                ] : []),
-                // A third sub-toggle of Trades: each trade's OWN fib leg. It is nested rather than a
-                // peer row because it draws nothing on its own — it annotates the trades already on
-                // screen, and follows every filter above it. Default OFF: eight lines per trade is a
-                // lot of chart, and the run reads fine without it.
-                ...(spec.trades.length > 0 && tradesOn && tradeFibCount > 0 ? [
-                  { key: 'tradefibs', label: 'Trade fibs', color: theme.accent, on: tradeFibsOn, toggle: () => setTradeFibsOn(o => !o), sub: true, count: tradeFibCount },
                 ] : []),
                 // Blocked sits under Trades — same subject (what happened to a signal), opposite
                 // answer. Listed only when the run reports any: a runner that can't tell us would
@@ -2308,6 +2233,15 @@ export default function ChartPanel({
                   on: !hiddenMissReasons.has(r.label), toggle: () => toggleMissReason(r.label),
                   sub: true, count: r.count,
                 })) : []),
+                // Fibs — the fib LEG each trade was priced off. A PEER row, not a sub-toggle of
+                // Trades (Aaron's call, 2026-08-03): it is its own reading of the chart, and it
+                // draws with Trades off. It still obeys Winners/Losers, which is why those two are
+                // listed whenever this is on. Sits directly before Fair value gaps — both are the
+                // CONTEXT a setup was priced in rather than a kind of signal. Default OFF: eight
+                // lines per trade is a lot of chart, and the run reads fine without it.
+                ...(tradeFibCount > 0 ? [
+                  { key: 'tradefibs', label: 'Fibs', color: theme.accent, on: tradeFibsOn, toggle: () => setTradeFibsOn(o => !o), count: tradeFibCount },
+                ] : []),
                 // Analysis overlay groups — today just Fair Value Gaps. Last in the menu because it
                 // is the CONTEXT around the three rows above it rather than a fourth kind of signal:
                 // the backend draws a gap only where a trade was taken, refused or missed, so this
@@ -2330,13 +2264,6 @@ export default function ChartPanel({
               ...spec.indicators.map((ind, i) => ({ key: `i-${ind.name}`, label: ind.name, color: INDICATOR_PALETTE[i % INDICATOR_PALETTE.length], on: indicatorsOn[ind.name], toggle: () => toggleIndicator(ind.name) })),
             ]}
           />
-
-          {/* Deep debug: the two presets that set Analysis + Structure to one reading in a press.
-              It sits AFTER the two menus it drives, because that is what it is — a shortcut across
-              them, not a third place layers live. Hidden on a run with no trades to read. */}
-          {spec.trades.length > 0 && (
-            <DebugPresets active={debugActive} onPress={pressDebugPreset} />
-          )}
 
           {/* Strategies: its OWN dropdown (not folded into Analysis — a stack's legs are a different
               kind of thing from a run's own trades). Appears only when the spec carries layered

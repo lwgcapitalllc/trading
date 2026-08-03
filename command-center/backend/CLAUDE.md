@@ -941,6 +941,12 @@ CANNOT state is where the fill landed on it, and that is the question:
   origin genuinely retraced past it, and clamping would report every stop-out as having stopped
   exactly at the origin.
 
+⚠ **Both are computed and served, and since 2026-08-03 the chart draws NEITHER** — the panel's Fibs
+layer prints the ladder only, and the trade's own `Entry` / `Deepest` annotations carry those two
+price rows (with prices). They stay here because they are the two readings the ladder cannot state
+and the derivation is pinned by tests; if nothing consumes them by the next chart pass, delete them
+rather than leaving a field the UI implies it is showing.
+
 Both are pure geometry off two levels the ladder already carries — a fib price is linear in its
 ratio, so any two `(ratio, price)` pairs define the line and inverting it maps a price back. **No
 anchor, no direction, no range**, hence no branch for a bear leg and nothing here that can drift
