@@ -39,7 +39,9 @@ from typing import Optional
 from services import lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
-from services.structure_overlays import build_market_structure_overlays
+from services.structure_overlays import (
+    GROUP_INTERNAL, GROUP_INTERNAL_HISTORIC, build_market_structure_overlays,
+)
 
 log = logging.getLogger("CHARTSPEC")
 
@@ -74,6 +76,12 @@ _DRILL_CANDLE_CAP = 60_000
 # A left edge shorter than what was requested is the broker's TRUE limit only when the gap exceeds a
 # long weekend / holiday (bars are absent then too, but that isn't a data boundary).
 _HARD_EDGE_SLOP_MS = 4 * 24 * 60 * 60 * 1000
+# Bars of WARM-UP prefixed to a paged window before the structure and FVG engines replay it. Both are
+# streaming state machines: replayed from a cold start a page would open with no swings and no live
+# gaps, so every layer would fade in a few hundred bars AFTER each page boundary — a seam that reads
+# as "the layer stopped working". ~2,000 bars is ~30 trading days at M15, and costs one extra read of
+# bars the run already has cached.
+_PAGE_WARMUP_BARS = 2_000
 
 
 def _capped_start(tf: str, start_date: str, end_date: str) -> str:
@@ -615,23 +623,121 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
     }
 
 
+def _overlay_anchor(ov: dict) -> tuple[int, int]:
+    """An overlay's (start, end) on the time axis, whatever its shape. `vline`/`label` are a single
+    instant; `box`/`hline` span two."""
+    if ov.get("type") in ("vline", "label"):
+        t = int(ov.get("t") or 0)
+        return t, t
+    return int(ov.get("t0") or 0), int(ov.get("t1") or 0)
+
+
+def _demote_page_internal(overlays: list[dict]) -> list[dict]:
+    """A paged window's internal structure is HISTORIC by definition — move it there.
+
+    `build_market_structure_overlays` calls the newest leg in whatever it replayed "current", so a
+    page files its own last leg under `Internal Structure`. That group means "the leg the run is in
+    RIGHT NOW", which lives in the shipped window and nowhere else — several pages each claiming a
+    current leg would make the toggle describe something that does not exist. The `requires` shape
+    is the historic branch's own (`structure_overlays`), so the four toggles keep nesting exactly as
+    they do on the shipped bars: a historic break needs Internal on, a historic swing tag needs both.
+    """
+    for ov in overlays:
+        req = ov.get("requires") or []
+        if ov.get("group") == GROUP_INTERNAL:
+            ov["group"] = GROUP_INTERNAL_HISTORIC
+            ov["requires"] = [GROUP_INTERNAL]
+        elif GROUP_INTERNAL in req and GROUP_INTERNAL_HISTORIC not in req:
+            ov["requires"] = [GROUP_INTERNAL, GROUP_INTERNAL_HISTORIC]   # an internal swing tag
+    return overlays
+
+
+def _page_analysis(
+    run_id: str, row: dict, instrument: str, runner: str, timeframe: str,
+    from_ms: int, to_ms: int,
+) -> dict:
+    """The ANALYSIS for one paged-in window — structure overlays, fair-value gaps, blocked and
+    missed setups — computed the same way `build_chart_spec` computes them for the shipped window.
+
+    This exists because everything except the trades used to be clipped to the SHIPPED candle
+    window (`_capped_start`), while the panel pages bars back to the run's start. Scroll past that
+    boundary and Structure, Fair Value Gaps, Blocked and Missed all silently drew nothing while
+    their toggles still read ON — which is indistinguishable from the panel having reset itself.
+    A layer you switched on has to keep working for as far back as the chart can page.
+
+    The engines replay over the window PLUS `_PAGE_WARMUP_BARS` of older bars and only overlays
+    that reach into `[from_ms, to_ms]` are returned, so a page's structure does not start cold at
+    its own left edge. Best-effort throughout: a failure returns the empty analysis and the page
+    still delivers its candles.
+    """
+    empty = {"overlays": [], "blocks": [], "misses": [], "missNoise": []}
+    tf_min = _TF_MIN.get(timeframe.upper())
+    if not tf_min:
+        return empty
+    per_day = (1440 / tf_min) * (5 / 7)                      # ~forex: 5 trading days/week, 24h
+    warm_ms = int(_PAGE_WARMUP_BARS / per_day) * 24 * 60 * 60 * 1000
+    start_date = datetime.fromtimestamp((from_ms - warm_ms) / 1000, tz=timezone.utc).date().isoformat()
+    end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
+    warm = [c for c in _build_candles(instrument, start_date, end_date, timeframe, runner)
+            if c["time"] <= to_ms]
+    if not warm:
+        return empty
+    window = [c for c in warm if c["time"] >= from_ms]
+    if not window:
+        return empty
+
+    run_dir = LAB_RESULTS_DIR / run_id
+    blocks = _build_blocks(run_dir, window)
+    misses, miss_noise = _build_misses(run_dir, window)
+
+    equity_curve: list[dict] = []
+    eq_path = row.get("equity_curve_path")
+    if eq_path:
+        try:
+            equity_curve = json.loads(Path(eq_path).read_text())
+        except (ValueError, OSError):
+            equity_curve = []
+    trades = _build_trades(equity_curve, window)
+
+    overlays = build_market_structure_overlays(warm)
+    overlays = overlays + build_fvg_overlays(
+        warm,
+        [t["entryTime"] for t in trades] + [b["time"] for b in blocks] + [m["time"] for m in misses],
+        timeframe,
+    )
+    # Only what actually reaches this page. The warm-up bars are context for the engines, not
+    # content — an overlay that lives entirely inside them belongs to the page before this one and
+    # would arrive twice (the panel dedupes, but sending it is still a lie about where it was
+    # measured). A box OPENED in the warm-up and still alive here is kept: it is on screen.
+    overlays = _demote_page_internal([ov for ov in overlays if _overlay_anchor(ov)[1] >= from_ms])
+    return {"overlays": overlays, "blocks": blocks, "misses": misses, "missNoise": miss_noise}
+
+
 def build_run_candles(
-    run_id: str, timeframe: str, from_ms: int, to_ms: int,
+    run_id: str, timeframe: str, from_ms: int, to_ms: int, analysis: bool = False,
 ) -> Optional[dict]:
-    """Candles for a bounded [from_ms, to_ms] window of a run at an ARBITRARY timeframe — the
-    drill-down data path (e.g. 1m under a 15m run, to see a trade's exact entry).
+    """Candles for a bounded [from_ms, to_ms] window of a run at an ARBITRARY timeframe — both the
+    drill-down data path (e.g. 1m under a 15m run, to see a trade's exact entry) and the chart's
+    scroll-left PAGING path, which walks the run's own timeframe back toward its start.
 
     Reuses the run's OWN feed + runner (`get_ohlc` via `_build_candles`), so a zoom shows the
     same bars the run traded, never a different feed. Not cached — it is a live, per-window pull.
 
+    `analysis=True` also returns that window's structure overlays, fair-value gaps, blocked and
+    missed setups (`_page_analysis`) — what the PAGING path asks for, so a layer the user switched
+    on keeps drawing past the shipped window instead of going silently empty. A drill-down passes
+    False: structure is computed on the base timeframe, and a 1m view is asking about fills, not
+    about market structure.
+
     Returns:
       - None if the run is unknown (router → 404).
-      - {instrument, timeframe, candles, available, data_start_ms, hard_edge} otherwise. `available`
-        is False (candles empty) when the feed can't serve that window at all — most often the MT5
-        agent being offline. `hard_edge` is True when the oldest bar returned is the broker's TRUE
-        data limit (the feed has nothing older), with `data_start_ms` marking it — the frontend
-        draws its red "no earlier data" line there. It is False when the feed simply has more than
-        our render cap could ship (then the edge is ours, not the broker's — no line).
+      - {instrument, timeframe, candles, available, data_start_ms, hard_edge} otherwise, plus
+        {overlays, blocks, misses, missNoise} when `analysis`. `available` is False (candles empty)
+        when the feed can't serve that window at all — most often the MT5 agent being offline.
+        `hard_edge` is True when the oldest bar returned is the broker's TRUE data limit (the feed
+        has nothing older), with `data_start_ms` marking it — the frontend draws its red "no earlier
+        data" line there. It is False when the feed simply has more than our render cap could ship
+        (then the edge is ours, not the broker's — no line).
     """
     row = lab_db.get_run(run_id)
     if not row:
@@ -660,9 +766,7 @@ def build_run_candles(
     # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
     # weekend/holiday gap), and OUR cap didn't clip the request.
     hard_edge = bool(candles) and not clamped and (data_start_ms - from_ms) > _HARD_EDGE_SLOP_MS
-    log.info("run_candles: %s %s [%s, %s] -> %d candles (hard_edge=%s)",
-             run_id, timeframe, start_date, end_date, len(candles), hard_edge)
-    return {
+    out = {
         "instrument": instrument,
         "timeframe": timeframe.upper(),
         "candles": candles,
@@ -670,3 +774,11 @@ def build_run_candles(
         "data_start_ms": data_start_ms,
         "hard_edge": hard_edge,
     }
+    if analysis and candles:
+        try:
+            out.update(_page_analysis(run_id, row, instrument, runner, timeframe, from_ms, to_ms))
+        except Exception as exc:  # noqa: BLE001 — the bars are the page; the layers are a bonus
+            log.warning("run_candles: analysis failed for %s [%s, %s]: %s", run_id, start_date, end_date, exc)
+    log.info("run_candles: %s %s [%s, %s] -> %d candles (hard_edge=%s, overlays=%d)",
+             run_id, timeframe, start_date, end_date, len(candles), hard_edge, len(out.get("overlays") or []))
+    return out

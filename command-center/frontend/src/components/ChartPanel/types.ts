@@ -221,3 +221,21 @@ export interface ChartSpec {
   overlays: ChartOverlay[]      // generic strategy structure, each tagged with a `group`
   indicators: ChartIndicator[]
 }
+
+/** One page of older history, as `onRequestCandles` returns it.
+ *
+ *  `overlays`/`blocks`/`misses`/`missNoise` are the ANALYSIS for that window and are present only
+ *  when the caller asked for it (the scroll-left pager does; a drill-down does not). Everything
+ *  except the trades is emitted per-window server-side, so without them a layer the user switched
+ *  on would go silently empty the moment the chart scrolled past the shipped candles — which reads
+ *  as the panel having reset itself. The panel merges them into the spec's own. */
+export interface ChartPage {
+  candles: ChartCandle[]
+  available: boolean
+  dataStartMs: number | null
+  hardEdge: boolean
+  overlays?: ChartOverlay[]
+  blocks?: ChartBlock[]
+  misses?: ChartMiss[]
+  missNoise?: string[]
+}

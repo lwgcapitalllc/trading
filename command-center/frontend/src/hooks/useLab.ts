@@ -14,7 +14,7 @@ import type {
   InstrumentSummary, RunningJobStatus,
   StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
 } from '@/types'
-import type { ChartSpec, ChartCandle } from '@/components/ChartPanel/types'
+import type { ChartSpec, ChartPage } from '@/components/ChartPanel/types'
 
 // ── Strategies ─────────────────────────────────────────────────────────────────
 
@@ -257,16 +257,34 @@ export function useRefreshChartSpec() {
   })
 }
 
-// Drill-down candles: an imperative fetcher (not a query) the ChartPanel calls to pull a
-// finer-than-base TF (1m/5m) for the currently-visible window. `available: false` = the feed
-// can't serve that window (1m older than the broker's ~35-day 1m history).
+// One bounded window of a run's bars: an imperative fetcher (not a query) the ChartPanel calls for
+// BOTH of its data paths — a finer-than-base drill-down TF (1m/5m) over the visible window, and a
+// scroll-left PAGE of older history at the run's own TF. `available: false` = the feed can't serve
+// that window (1m older than the broker's ~35-day 1m history).
+//
+// `analysis` asks for that window's structure overlays / fair value gaps / blocked / missed setups
+// as well. The pager sets it and the drill-down does not: everything except the trades is emitted
+// per-window server-side, so without it a layer stops drawing the moment the chart scrolls past the
+// shipped candles — see `ChartPage`.
 export function useRunCandles(runId: string | null) {
   return useCallback(
-    async (tf: string, fromMs: number, toMs: number): Promise<{ candles: ChartCandle[]; available: boolean; dataStartMs: number | null; hardEdge: boolean }> => {
+    async (tf: string, fromMs: number, toMs: number, analysis = false): Promise<ChartPage> => {
       if (!runId) return { candles: [], available: false, dataStartMs: null, hardEdge: false }
       const q = `tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
-      const res = await api.get<{ candles: ChartCandle[]; available: boolean; data_start_ms: number | null; hard_edge: boolean }>(`/backtests/runs/${runId}/candles?${q}`)
-      return { candles: res.candles ?? [], available: !!res.available, dataStartMs: res.data_start_ms ?? null, hardEdge: !!res.hard_edge }
+        + (analysis ? '&analysis=true' : '')
+      const res = await api.get<ChartPage & { data_start_ms: number | null; hard_edge: boolean }>(
+        `/backtests/runs/${runId}/candles?${q}`,
+      )
+      return {
+        candles: res.candles ?? [],
+        available: !!res.available,
+        dataStartMs: res.data_start_ms ?? null,
+        hardEdge: !!res.hard_edge,
+        overlays: res.overlays,
+        blocks: res.blocks,
+        misses: res.misses,
+        missNoise: res.missNoise,
+      }
     },
     [runId],
   )

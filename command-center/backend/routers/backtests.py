@@ -579,14 +579,19 @@ async def get_chart_spec(run_id: str, refresh: bool = False) -> dict:
 
 
 @router.get("/runs/{run_id}/candles")
-async def get_run_candles(run_id: str, tf: str, from_ms: int, to_ms: int) -> dict:
+async def get_run_candles(
+    run_id: str, tf: str, from_ms: int, to_ms: int, analysis: bool = False,
+) -> dict:
     """Candles for a bounded [from_ms, to_ms] window at an arbitrary timeframe — the chart's
-    drill-down data path (e.g. 1m under a 15m run, to see a trade's exact entry).
+    drill-down data path (e.g. 1m under a 15m run, to see a trade's exact entry) AND its
+    scroll-left paging path.
 
     Pulls from the run's OWN feed/runner (same bars the run traded). `available: false` with an
     empty `candles` list means the feed can't serve that window — most often 1m older than the
-    broker's ~35-day 1m history. Backgrounded (network I/O)."""
-    out = await asyncio.to_thread(chart_spec.build_run_candles, run_id, tf, from_ms, to_ms)
+    broker's ~35-day 1m history. `analysis=true` additionally returns that window's structure
+    overlays, fair value gaps, blocked and missed setups, which is what keeps those layers drawing
+    when the chart pages back past the shipped window. Backgrounded (network I/O)."""
+    out = await asyncio.to_thread(chart_spec.build_run_candles, run_id, tf, from_ms, to_ms, analysis)
     if out is None:
         raise HTTPException(404, "Run not found")
     return out

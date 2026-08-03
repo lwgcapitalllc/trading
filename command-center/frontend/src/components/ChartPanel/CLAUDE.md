@@ -3,7 +3,27 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-02 — **the fib tool anchored its ladder the wrong way round, and had
+**Last reviewed:** 2026-08-02 — 🔴 **every layer except the TRADES stopped at the shipped candles,
+so scrolling back far enough emptied the chart while every toggle still read ON.** Structure, Fair
+Value Gaps, Blocked and Missed are all emitted PER-WINDOW server-side (`chart_spec._capped_start`
+ships ~17 months of a 6.5-year run), and the panel pages bars back to the run's start — so past that
+boundary the layers you had switched on simply drew nothing, with no message and no change to their
+switches. Aaron read it as the panel forgetting his settings, which is exactly what it looks like.
+A page now asks for its own analysis (`GET /runs/{id}/candles?analysis=true` →
+`chart_spec._page_analysis`) and the panel MERGES it — `allOverlays` / `blocks` / `misses`, deduped
+by identity — so a layer reaches back exactly as far as the bars do. **The second half of the fix is
+the one that generalises: rosters derived from the data must be RECONCILED, never re-seeded.**
+`groupsOn` was rebuilt from `overlayGroups` on every change, which was harmless only while that list
+never changed; the moment a page could rebuild it, `setGroupsOn(defaults)` would have switched the
+reader's layers off mid-scroll — so `reconcileToggles` keeps an answer the reader has already given
+and defaults only genuinely new keys (same rule for the miss-noise seed, which now seeds each label
+once). Verified in-browser on run `211384ddbea4`: at 2024-05→06, nine months before the shipped
+window, BOS/SOS lines, HH/HL/LH/LL tags, gap boxes and pink Blocked markers all draw, with Winners
+still filtered off — that region was bare candles before. ⚠ **A page costs ~+2s and ~+230 KB** (a
+structure + FVG replay over the window plus `_PAGE_WARMUP_BARS` of older bars), which a multi-page
+`goToDate` jump pays per page. ⚠ **A page's internal structure is demoted to Historic** — the
+engine calls the newest leg in whatever it replayed "current", and only the shipped window holds the
+leg the run actually ended in. Earlier the same day: **the fib tool anchored its ladder the wrong way round, and had
 since it shipped.** It put **0 on the first click and 1 on the second**, so dragging up from a swing
 low placed 0 at the low and 1 at the high — the ladder mirrored, and every retracement level on the
 wrong side of the move. It is now **1 on the first click (the leg's ORIGIN), 0 on the second (its
@@ -143,6 +163,29 @@ here**, so the chart shows exactly what the strategy saw.
     into a 1m chart. The drill-down loads its own full depth in one shot instead.
   - **Overlap guard.** A page is filtered to bars strictly older than the current oldest, so a feed
     that answers with an overlapping window can't duplicate bars.
+  - **A page carries its own ANALYSIS, and it has to** (`analysis=true`, 2026-08-02). Everything on
+    this chart except the TRADES is emitted per-window server-side — `spec.overlays`, `spec.blocks`
+    and `spec.misses` all stop at the shipped candles — so before this the Structure, Fair Value
+    Gaps, Blocked and Missed layers went silently empty the moment you scrolled past that boundary,
+    while their toggles still read ON. There is no way to tell that apart from the panel resetting
+    itself, which is exactly how it was reported. `loadOlder` asks for the window's overlays /
+    blocks / misses / missNoise and merges them into `pagedAnalysis`; `allOverlays` (= spec's +
+    paged, deduped by `overlayKey`) then feeds the group roster, the counts AND the render effect,
+    so a group can never be listed off one source and drawn off another. `runFetch` does NOT ask —
+    a drill-down is a question about fills, and structure is computed on the base timeframe.
+    - **Ids are what make the merge safe.** A block/miss id is its index in the run's own
+      `blocked_setups.json` / `missed_setups.json`, so it is stable across windows and an
+      overlapping page cannot double-draw a marker. Overlays have no id, hence `overlayKey`.
+    - ⚠ **The roster effects had to become RECONCILERS.** `groupsOn` was rebuilt from
+      `overlayGroups` on every change — harmless only while that list never changed. The moment a
+      page could rebuild it, re-seeding with the defaults would switch the reader's layers off
+      mid-scroll: the very bug, reintroduced from the other side. `reconcileToggles(prev, roster)`
+      keeps an answer already given and defaults only genuinely new keys, returning `prev`
+      unchanged when nothing moved so the effect cannot loop. Defaults return only on a new SPEC.
+      The miss-noise seed follows the same rule via `seededNoiseRef` — each label is seeded ONCE,
+      because re-applying the list per page would re-hide a reason just ticked back on.
+    - ⚠ **Cost: ~+2s and ~+230 KB per page** (a structure + FVG replay over the window plus
+      `_PAGE_WARMUP_BARS` of older bars). A multi-page `goToDate` jump pays it per page.
   Raising `_CANDLE_CAP` to ship everything instead is the wrong lever: 6.5 years of M15 is ~160k
   candles and a ~15 MB `chart_spec.json` on every chart open.
   - **A page in flight is drawn, not silent** (`LOADING_EDGE`, 2026-07-30). Scrolling past the loaded

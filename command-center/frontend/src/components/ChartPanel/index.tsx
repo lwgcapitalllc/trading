@@ -12,7 +12,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartSpec } from './types'
+import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartOverlay, ChartPage, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
 import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, FOCUS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, VLINE, registerChartOverlays } from './overlays'
@@ -459,6 +459,44 @@ function parseTfMinutes(tf: string): number {
   return m[1] === 'H' ? n * 60 : m[1] === 'D' ? n * 1440 : n
 }
 
+/** Merge a roster of `[key, default]` into an existing on/off map: a key the reader has ALREADY
+ *  answered keeps THEIR answer, and only a genuinely new one takes the default.
+ *
+ *  This is what lets paged-in history extend a layer without resetting the panel. The rosters are
+ *  DERIVED from the data (overlay groups, sessions, indicators), so every page rebuilds them — and a
+ *  plain `setX(defaults)` on each rebuild would silently undo every toggle the reader had set, which
+ *  is exactly the "it forgot my settings when it loaded more bars" bug. Returns `prev` unchanged when
+ *  nothing moved, so the effect that calls it cannot loop. */
+function reconcileToggles(
+  prev: Record<string, boolean>,
+  roster: Array<[string, boolean]>,
+): Record<string, boolean> {
+  const next: Record<string, boolean> = {}
+  for (const [key, dflt] of roster) next[key] = key in prev ? prev[key] : dflt
+  const same = Object.keys(next).length === Object.keys(prev).length
+    && Object.keys(next).every(k => next[k] === prev[k])
+  return same ? prev : next
+}
+
+/** Identity of a generic overlay, for de-duping the spec's own against paged-in ones. Two pages can
+ *  legitimately answer with the same overlay: a page is replayed with a warm-up prefix, so a box
+ *  opened before its left edge and still alive inside it belongs to both windows. */
+function overlayKey(ov: ChartOverlay): string {
+  return ov.type === 'vline' ? `v:${ov.group}:${ov.t}`
+    : ov.type === 'label' ? `l:${ov.group}:${ov.t}:${ov.price}:${ov.text}`
+    : ov.type === 'hline' ? `h:${ov.group}:${ov.t0}:${ov.t1}:${ov.price}`
+    : `b:${ov.group}:${ov.t0}:${ov.t1}:${ov.top}:${ov.bottom}`
+}
+
+/** Concatenate `extra` onto `base`, dropping anything already present under `key`. Order is
+ *  preserved — the render effects walk overlays in list order and de-collide labels left→right. */
+function mergeById<T>(base: T[], extra: T[], key: (item: T) => string): T[] {
+  if (!extra.length) return base
+  const seen = new Set(base.map(key))
+  const add = extra.filter(item => !seen.has(key(item)))
+  return add.length ? [...base, ...add] : base
+}
+
 /** Candle `time` (epoch ms) → klinecharts `timestamp`. Pure field map. */
 function candlesToKLine(candles: ChartCandle[]): KLineData[] {
   return candles.map(c => ({
@@ -514,7 +552,7 @@ export default function ChartPanel({
    * TFs (1m/5m) that pull the visible window live; omitted (e.g. the fixture) → panel behaves as
    * before. `available: false` means the feed can't serve that window (1m older than the broker keeps).
    */
-  onRequestCandles?: (tf: string, fromMs: number, toMs: number) => Promise<{ candles: ChartCandle[]; available: boolean; dataStartMs: number | null; hardEdge: boolean }>
+  onRequestCandles?: (tf: string, fromMs: number, toMs: number, analysis?: boolean) => Promise<ChartPage>
   /**
    * Optional header-bar slots so a host can fold its OWN chrome onto the panel's single top row
    * (rather than stacking a second bar above it). `headerLeading` renders at the far left, before
@@ -596,6 +634,31 @@ export default function ChartPanel({
   const baseCandlesRef = useRef(baseCandles)
   useEffect(() => { baseCandlesRef.current = baseCandles }, [baseCandles])
 
+  // The ANALYSIS paged in alongside those bars. Everything on this chart except the TRADES is
+  // emitted per-window — the spec's overlays, blocks and misses all stop at the shipped candles
+  // (`chart_spec._capped_start`) — so without this a Structure, Fair Value Gaps, Blocked or Missed
+  // layer went silently empty the moment you scrolled past that boundary, while its toggle still
+  // read ON. That is indistinguishable from the panel having forgotten the setting, and it is the
+  // bug this state exists to fix. Grows as you page back; reset with the spec, like `baseCandles`.
+  const [pagedAnalysis, setPagedAnalysis] = useState<Required<Pick<ChartPage, 'overlays' | 'blocks' | 'misses' | 'missNoise'>>>(
+    () => ({ overlays: [], blocks: [], misses: [], missNoise: [] }),
+  )
+  // A NEW spec is a different run, so the paged analysis (and the layer toggles it feeds) goes back
+  // to square one. Paging within one run never touches this.
+  useEffect(() => { setPagedAnalysis({ overlays: [], blocks: [], misses: [], missNoise: [] }) }, [spec])
+  const mergePageAnalysis = useCallback((page: ChartPage) => {
+    if (!page.overlays?.length && !page.blocks?.length && !page.misses?.length) return
+    setPagedAnalysis(prev => ({
+      overlays: mergeById(prev.overlays, page.overlays ?? [], overlayKey),
+      blocks: mergeById(prev.blocks, page.blocks ?? [], b => b.id),
+      misses: mergeById(prev.misses, page.misses ?? [], m => m.id),
+      // The emitter's "start these unticked" recommendation, unioned across windows — a reason that
+      // is routine in one stretch of the run is routine everywhere. It only seeds the initial
+      // hidden set; a reason the reader has since ticked back on stays on (see `hiddenMissReasons`).
+      missNoise: Array.from(new Set([...prev.missNoise, ...(page.missNoise ?? [])])),
+    }))
+  }, [])
+
   const displayCandles = useMemo(() => {
     // In drill-down, show the SHIPPED bars until the finer ones land. They arrive in the spec, so
     // they paint on the first frame; the drill-down is a network pull. Returning `fetched` straight
@@ -656,6 +719,10 @@ export default function ChartPanel({
   // The spec ships only the newest slice of a long run. klinecharts asks for more the moment you
   // scroll past the left edge, and this answers with one page from the run's own feed. The page is
   // sized in BARS, not days, so it costs the same at every timeframe.
+  //
+  // It asks for the window's ANALYSIS too (`analysis = true`) and merges it as it lands, so the
+  // layers reach back exactly as far as the bars do. Requested here and NOT in `runFetch`: a
+  // drill-down is a question about fills, and structure is computed on the base timeframe anyway.
   const loadOlder = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
     const oldest = baseCandlesRef.current[0]?.time
     const start = spec.historyStartMs
@@ -666,11 +733,12 @@ export default function ChartPanel({
     const perDay = (1440 / baseMin) * (5 / 7)          // ~forex: 5 trading days/week, 24h
     const to = oldest - 1
     const from = Math.max(start, to - Math.ceil(PAGE_BARS / perDay) * DAY_MS)
-    const res = await onRequestCandles(spec.baseTimeframe.toUpperCase(), from, to)
+    const res = await onRequestCandles(spec.baseTimeframe.toUpperCase(), from, to, true)
+    mergePageAnalysis(res)
     // Guard the merge: a feed that returns an overlapping window would otherwise duplicate bars.
     const bars = res.candles.filter(c => c.time < oldest)
     return { bars, more: bars.length > 0 && from > start }
-  }, [onRequestCandles, spec.historyStartMs, spec.baseTimeframe, baseMin])
+  }, [onRequestCandles, spec.historyStartMs, spec.baseTimeframe, baseMin, mergePageAnalysis])
   const loadOlderRef = useRef(loadOlder)
   useEffect(() => { loadOlderRef.current = loadOlder }, [loadOlder])
   // A drill-down TF loads its own full depth in one shot, so paging must not fire there — it would
@@ -806,7 +874,9 @@ export default function ChartPanel({
   // became a list is still on disk carrying a single `label`/`reason` pair — and every read below
   // (`b.reasons.length`, the filter roster, the hover card) would throw on it, taking the whole
   // panel down. A stale cache must degrade, never crash.
-  const blocks = useMemo<ChartBlock[]>(() => (spec.blocks ?? []).map(b => {
+  // Ids are the record's index in the run's own `blocked_setups.json`, so they are stable across
+  // windows and a page that overlaps another cannot double up.
+  const blocks = useMemo<ChartBlock[]>(() => mergeById(spec.blocks ?? [], pagedAnalysis.blocks, b => b.id).map(b => {
     const legacy = b as unknown as { label?: string; reason?: string }
     return {
       ...b,
@@ -814,7 +884,7 @@ export default function ChartPanel({
         : legacy.label ? [{ label: legacy.label, reason: legacy.reason ?? '' }]
         : [],
     }
-  }).filter(b => b.reasons.length > 0), [spec.blocks])
+  }).filter(b => b.reasons.length > 0), [spec.blocks, pagedAnalysis.blocks])
   const [blocksOn, setBlocksOn] = useState(false)
   // The hovered marker's card + where to float it. ONE state and one card for BOTH the Blocked and
   // Missed layers — they carry the same shape of answer, so two cards would drift.
@@ -857,8 +927,8 @@ export default function ChartPanel({
   // had READY and refused; a miss got partway and died. Default OFF for the same reason Blocked
   // is: a diagnostic view, and there are far more of them than there are trades.
   const misses = useMemo<ChartMiss[]>(
-    () => (spec.misses ?? []).filter(m => m.reasons?.length > 0),
-    [spec.misses],
+    () => mergeById(spec.misses ?? [], pagedAnalysis.misses, m => m.id).filter(m => m.reasons?.length > 0),
+    [spec.misses, pagedAnalysis.misses],
   )
   const [missesOn, setMissesOn] = useState(false)
   const missReasons = useMemo(() => {
@@ -872,10 +942,25 @@ export default function ChartPanel({
   // Pine's default view without the chart learning a strategy concept, and it is why the layer is
   // usable the moment you switch it on instead of burying the interesting misses under the routine
   // ones. Re-seeded when the spec changes; a stale label is inert.
+  //
+  // A page of older history can carry noise labels the shipped window never had, so the seed has to
+  // stay open — but it seeds each label ONCE (`seededNoiseRef`). Re-applying the whole list on every
+  // page would re-hide a reason the reader had just ticked back on, which is the same class of bug
+  // as clobbering the toggles: a setting the chart undoes by itself.
   const [hiddenMissReasons, setHiddenMissReasons] = useState<Set<string>>(
     () => new Set(spec.missNoise ?? []),
   )
-  useEffect(() => { setHiddenMissReasons(new Set(spec.missNoise ?? [])) }, [spec.missNoise])
+  const seededNoiseRef = useRef<Set<string>>(new Set(spec.missNoise ?? []))
+  useEffect(() => {
+    seededNoiseRef.current = new Set(spec.missNoise ?? [])
+    setHiddenMissReasons(new Set(spec.missNoise ?? []))
+  }, [spec.missNoise])
+  useEffect(() => {
+    const fresh = pagedAnalysis.missNoise.filter(lb => !seededNoiseRef.current.has(lb))
+    if (!fresh.length) return
+    fresh.forEach(lb => seededNoiseRef.current.add(lb))
+    setHiddenMissReasons(prev => new Set([...prev, ...fresh]))
+  }, [pagedAnalysis.missNoise])
   const toggleMissReason = (label: string) => setHiddenMissReasons(prev => {
     const next = new Set(prev)
     if (next.has(label)) next.delete(label); else next.add(label)
@@ -1021,11 +1106,20 @@ export default function ChartPanel({
   // Pointer-over-panel gate for the ← / → keys — see the keydown effect for why it is gated.
   const hoveredRef = useRef(false)
 
+  // Every overlay the chart may draw: the spec's own (the shipped window) plus every window paged
+  // in behind it. One list, so the group roster, the counts and the render effect all describe the
+  // same set — a group listed off one source and drawn off another is how a toggle ends up claiming
+  // to show something that isn't there.
+  const allOverlays = useMemo(
+    () => mergeById(spec.overlays, pagedAnalysis.overlays, overlayKey),
+    [spec.overlays, pagedAnalysis.overlays],
+  )
+
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
   // is independently toggleable. The chart never knows which strategy produced them.
   const overlayGroups = useMemo(() => {
     const seen = new Map<string, string>() // group → representative (first) color
-    for (const ov of spec.overlays) {
+    for (const ov of allOverlays) {
       if (!seen.has(ov.group)) seen.set(ov.group, ov.style?.color ?? DEFAULT_OVERLAY_COLOR)
     }
     // Market structure always shows ALL FOUR toggles once the run carries any structure at all —
@@ -1043,7 +1137,7 @@ export default function ChartPanel({
     const nonStruct = all.filter(g => structureOrder(g.name) < 0)
     const struct = all.filter(g => structureOrder(g.name) >= 0).sort((a, b) => structureOrder(a.name) - structureOrder(b.name))
     return [...nonStruct, ...struct]
-  }, [spec.overlays])
+  }, [allOverlays])
 
   // Overlay groups are split by the QUESTION they answer, exactly like the two dropdowns: an
   // ANALYSIS group (fair value gaps, drawn only around trades/blocks/misses) is about the strategy's
@@ -1055,13 +1149,13 @@ export default function ChartPanel({
   // that draws 41 gaps and one that draws 4 read very differently before you switch it on.
   const analysisGroups = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const ov of spec.overlays) {
+    for (const ov of allOverlays) {
       if (isAnalysisGroup(ov.group)) counts.set(ov.group, (counts.get(ov.group) ?? 0) + 1)
     }
     return ANALYSIS_GROUPS.filter(g => counts.has(g)).map(g => ({
       name: g as string, color: ANALYSIS_GROUP_COLOR[g], count: counts.get(g) ?? 0,
     }))
-  }, [spec.overlays])
+  }, [allOverlays])
 
   // Every overlay group defaults ON, EXCEPT the market-structure groups and the analysis groups —
   // both are opt-in (a chart would be unreadable with all of BOS/SOS/swings/internal drawn by
@@ -1071,9 +1165,19 @@ export default function ChartPanel({
   const [groupsOn, setGroupsOn] = useState<Record<string, boolean>>(
     () => Object.fromEntries(overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])) as Record<string, boolean>,
   )
+  // RECONCILED, never overwritten. The roster is DERIVED from the overlays, so it is rebuilt every
+  // time a page of older history lands — and re-seeding it with the defaults on each rebuild
+  // switched the reader's layers back off mid-scroll, which is the bug this whole path exists to
+  // fix. A group already answered keeps its answer; only a genuinely new one takes the default.
+  // Defaults return only on a NEW spec, i.e. a different run.
+  const groupSpecRef = useRef(spec)
   useEffect(() => {
-    setGroupsOn(Object.fromEntries(overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])) as Record<string, boolean>)
-  }, [overlayGroups])
+    const freshRun = groupSpecRef.current !== spec
+    groupSpecRef.current = spec
+    const roster = overlayGroups.map(g => [g.name, groupDefault(g.name)] as [string, boolean])
+    setGroupsOn(prev => reconcileToggles(freshRun ? {} : prev, roster))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec, overlayGroups])
   const toggleGroup = (name: string) => setGroupsOn(v => ({ ...v, [name]: !v[name] }))
 
   // Daily breaks: one vertical line at the start of each TRADING DAY present in the data — a
@@ -1540,7 +1644,7 @@ export default function ChartPanel({
     // overlays.ts). Collected here, created after the loop.
     const labelPoints: { timestamp: number; value: number }[] = []
     const labelItems: LabelItem[] = []
-    for (const ov of spec.overlays) {
+    for (const ov of allOverlays) {
       if (!groupsOn[ov.group]) continue
       // Nested layers: an overlay can also depend on OTHER groups being on (see `requires` in
       // types.ts). This is what makes the four market-structure toggles nest exactly like the
@@ -1593,7 +1697,7 @@ export default function ChartPanel({
     if (labelPoints.length) {
       chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
     }
-  }, [spec.overlays, baseCandles, groupsOn, displayCandles, loadedLoTs, loadedHiTs])
+  }, [allOverlays, baseCandles, groupsOn, displayCandles, loadedLoTs, loadedHiTs])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {
