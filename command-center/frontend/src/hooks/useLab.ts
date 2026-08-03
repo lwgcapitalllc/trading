@@ -6,7 +6,7 @@ import type {
   Strategy, ScanResult, ReconcileResult, DeployJobStatus,
   Ruleset, RulesetCreate, PersonalRulesetPatch,
   BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport, HistoryLimit,
-  BrokerProfile,
+  BrokerProfile, CostLayer, RunRepriceReport,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
   StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
@@ -247,6 +247,24 @@ export function useRunNews(runId: string | null, pre = 15, post = 30, enabled = 
     enabled: !!runId && enabled,
     staleTime: Infinity,
     placeholderData: (prev) => prev,   // keep the last window's tags visible while a new pre/post loads (no flicker on slider drag)
+  })
+}
+
+/** Re-price a completed run's trades at `layers` — the Costs pill on BacktestDetail.
+ *
+ *  `layers` is joined into the URL and into the query key, so ticking a layer is a new cached
+ *  entry rather than a refetch of the same one — flipping a cost back and forth is instant after
+ *  the first look. `staleTime: Infinity` because a completed run's trades never change; the only
+ *  input is which costs you asked for. */
+export function useRunReprice(runId: string | null, layers: CostLayer[], enabled = true) {
+  const key = [...layers].sort().join(',')
+  return useQuery({
+    queryKey: ['lab', 'run', runId, 'repriced', key],
+    queryFn: () => api.get<RunRepriceReport>(
+      `/backtests/runs/${runId}/repriced?layers=${encodeURIComponent(key)}`),
+    enabled: !!runId && enabled && key.length > 0,
+    staleTime: Infinity,
+    placeholderData: (prev) => prev,   // keep the last set on screen while a new one loads
   })
 }
 

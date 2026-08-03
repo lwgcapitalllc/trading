@@ -96,6 +96,21 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
             # how much of a shortfall was friction. 0.0 on a run that stated no costs, which is an
             # honest "nothing was priced" rather than a claim that trading was free.
             "costs_usd": _round(getattr(t, "costs_usd", 0.0)),
+            # The trade's R, COPIED from the strategy rather than re-derived downstream. `profit`
+            # is rounded to cents and `stop_price` to 5dp, so a consumer recovering R as
+            # profit / (entry-stop) / size lands ~4e-6 out per trade — invisible on one row, and it
+            # compounds to ~0.06% of final equity once `backtest/reprice.py` re-walks a curve with
+            # it. Carrying the number the strategy already had removes the derivation entirely.
+            # Reporting-only, and optional: a trade duck-type without `r` simply omits it.
+            **({"r": _round(t.r, 6)} if isinstance(getattr(t, "r", None), (int, float)) else {}),
+            # The DOLLARS this trade put at risk — its own 1R. With `r` above it describes the
+            # trade completely and exactly (`profit == r * risk_usd`), which is what lets a
+            # re-price re-walk the balance without recovering the risk from a 5dp stop price and a
+            # size. Also the honest source for "what fraction of the account did this risk?": it is
+            # NOT the configured risk %, because a resting limit is SIZED WHEN PLACED and the
+            # balance moves before it fills. Reporting-only, optional.
+            **({"risk_usd": _round(t.stop_distance * t.qty, 4)}
+               if getattr(t, "stop_distance", 0.0) and t.qty else {}),
             # Real fills + which layer traded — the price chart draws the trade box at the exact
             # entry/exit price (not a candle-close guess) and tells primary from secondary. Optional
             # for consumers that don't read them; every other equity-curve reader ignores extra keys.

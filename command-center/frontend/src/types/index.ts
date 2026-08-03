@@ -71,6 +71,40 @@ export interface BrokerProfile {
   contract_size: number
 }
 
+/** One trade on a re-priced equity curve — `GET /backtests/runs/{id}/repriced`. */
+export interface RepricedPoint {
+  index: number
+  equity: number
+  profit: number
+  r: number
+  r_before: number                   // the R the run stored, before this charge
+  cost_usd: number
+}
+
+/** A completed run's trades re-priced at a different cost profile, without replaying it.
+ *
+ *  Sibling of `RunNewsReport`, and the difference between them is why costs are toggled here at
+ *  all: the news filter REMOVES trades the run already made, while this changes what each trade
+ *  would have been worth. That is only possible because every chargeable cost is, in R,
+ *  independent of position size — see `backtest/reprice.py`.
+ *
+ *  ⚠ `is_exact` false does NOT mean indicative. It means ~0.02%–0.3% off a real replay, for one of
+ *  two reasons the UI has to caption: a `swap` layer (whose real charge depends on which bars
+ *  existed) or `derived_basis` (a run predating the stored per-trade R). */
+export interface RunRepriceReport {
+  layers: CostLayer[]
+  broker_profile: string
+  is_exact: boolean
+  derived_basis: boolean
+  approximate_layers: CostLayer[]
+  needs_rerun: CostLayer[]           // asked for but un-repriceable — say so, never drop silently
+  initial_capital: number
+  final_equity: number
+  sum_r: number
+  total_cost_usd: number
+  trades: RepricedPoint[]
+}
+
 export interface RunNewsReport {
   has_data: boolean                  // false when the calendar cache is empty → filter inert
   coverage_start_ms: number | null   // earliest ms with news data — the "news starts here" boundary

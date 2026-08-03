@@ -702,23 +702,59 @@ change IS the signal here.
 
 ---
 
-## Costs are chosen BEFORE the run, and the run page only reports them
+## Costs are switchable in TWO places, and the split is about arithmetic, not about UI
 
-**Built 2026-08-02. `RunBacktestModal` owns the switches; `BacktestDetail` owns nothing.**
+**Built 2026-08-02, extended to the run page 2026-08-03 at Aaron's request.**
 
-The **Run backtest modal** (opened from `Strategies` or `StrategyDetail`) carries a **Costs** block —
-one row per layer in `python_runner.COST_LAYERS`, every one **OFF by default**, and the whole block
-gated on `strategy.runner === 'python'` because only the local runner can charge them. `BacktestDetail`
-renders a read-only **Costs charged for** row and no control at all.
+The **Run backtest modal** (from `Strategies` or `StrategyDetail`) chooses the costs a run is
+MEASURED at — one row per layer in `python_runner.COST_LAYERS`, every one **OFF by default**, gated
+on `strategy.runner === 'python'`. **`BacktestDetail`'s Performance header now also carries a Costs
+pill** (`CostFilterPill`, beside the News & Holiday one) that charges costs onto a run that already
+happened, reshaping the real KPIs and the Equity chart without re-running anything.
 
-That split is not a UI convenience, it is the same rule the rest of this app runs on. **A cost is part
-of how a run was MEASURED, so it is frozen with the trades.** A toggle on the detail page would flip a
-number while the trade list under it stayed put — the page would be showing a book nothing had ever
-replayed. Compare the News & Holiday filter directly above, which legitimately IS a page-level toggle:
-it only ever REMOVES trades the run already made, so every number it produces is still derived from
-that run. A cost changes what the trades would have been, which is a different run.
+⚠ **The first version of this section claimed a run-page toggle was impossible, and it was wrong.**
+The argument was that a cost changes what the trades would have been, so a page-level control would
+flip a number while the trade list under it stayed put. The premise is right and the conclusion does
+not follow. **Every cost that CAN be re-priced costs a fixed amount of R regardless of position
+size** — a spread over a stop distance, a commission over a stop distance — so the R is knowable
+even though a charged run compounds into different position sizes, and the dollars follow from
+re-walking the balance. Proven against real replays in `backtest/tests/test_reprice.py`; on the live
+161-trade run `75ccc776d10c` the pill reproduces a real charged replay to **37¢ on $16.3M**. Left as
+a standing reminder that "this cannot be derived" deserves the same evidence as any other claim.
 
-Four things that would each silently mislead if changed:
+**Where the split really falls** is on whether a cost changes WHICH trades exist:
+
+| | re-priceable on the page | needs a re-run |
+|---|---|---|
+| | spread, commission, swap | `bid_ask_fills`, `slippage` |
+| why | a fixed R per trade, size-independent | changes which setups fill / which exits were market orders |
+
+`bid_ask_fills` moved the reference run 161 → 159 trades with four setups that never existed on the
+free path — no arithmetic over a stored trade list can invent those. The server names such layers in
+`needs_rerun` and the pill SAYS so; it never silently drops one and shows the rest under the same
+label.
+
+Rules the pill has to keep:
+
+- **Costs compose BEFORE the news filter, never after** — `useCostFilter(run)` then
+  `useNewsFilter(costs.repricedRun ?? run)`. A cost is a property of a trade, so it has to be
+  charged before anything decides which trades count. With nothing charged the news filter gets the
+  run's own object, reference-identical.
+- **It rebuilds through `buildFilteredRun`, the same function the news filter uses.** One definition
+  of "a Run derived from a trade list" is what stops the two controls drifting into different
+  answers for the same KPI.
+- **Refused under a firm's sizing, on the same guard as the news filter** (`newsBlocked`). A sized
+  curve is PATH DEPENDENT — charging trade #7 changes the balance going into #8 and therefore its
+  size — so there the cost is not size-independent and the whole justification evaporates.
+- **`is_exact` false must reach the reader.** Two different causes, both captioned: a `swap` layer
+  (accurate to ~0.3%, because its real charge depends on which bars existed and holiday closures
+  are not in the stored trades) and `derived_basis` (a run predating the stored per-trade `r` /
+  `risk_usd`, accurate to ~0.02%). Neither is "indicative" — but rendering either identically to an
+  exact figure is how a number nobody measured comes to be trusted.
+- **A trade the server did not price back voids the whole view** rather than passing through at its
+  old value, which would show a partly-charged book as a fully-charged one.
+
+Four things about the Run modal that would each silently mislead if changed:
 
 - **The spread is never typed.** `useBrokerProfiles` (`staleTime: Infinity`) fetches
   `GET /backtests/broker-profiles` and every detail string on those rows — the `$0.22` spread, the

@@ -774,6 +774,45 @@ class NewsTradeTag(BaseModel):
     title: Optional[str] = None      # the event that tagged it
 
 
+class RepricedPoint(BaseModel):
+    """One trade on the re-priced equity curve. Mirrors the `EquityPoint` fields the charts read,
+    so the frontend can swap this in where the stored curve was without a second code path."""
+    index: int
+    equity: float
+    profit: float
+    r: float
+    r_before: float
+    cost_usd: float
+
+
+class RunRepriceReport(BaseModel):
+    """A completed run's trades re-priced at a different cost profile, WITHOUT replaying it.
+
+    Post-processing off the stored equity curve, in the same spirit as `RunNewsReport` — but the
+    two answer different kinds of question and the distinction is what decides where a control
+    belongs. The news filter REMOVES trades the run already made, so every number it produces is
+    still derived from that run. A cost changes what the trades would have been, so this can only
+    exist because each chargeable cost is, in R, independent of position size (see
+    `backtest/reprice.py`). Where that stops being true — `bid_ask_fills`, which changes WHICH
+    setups fill — the layer is refused and named in `needs_rerun` rather than approximated.
+
+    ⚠ `is_exact` False means the figures are ~0.02%-0.3% off a real replay, never that they are
+    indicative. It is False for two distinct reasons — a `swap` layer (whose real charge depends on
+    which bars existed) or a run predating the stored `r`/`risk_usd` — and the UI must caption it.
+    """
+    layers: list[str] = []
+    broker_profile: str
+    is_exact: bool
+    derived_basis: bool = False          # run predates the stored per-trade R
+    approximate_layers: list[str] = []   # chosen layers that cannot be exact (today: swap)
+    needs_rerun: list[str] = []          # requested layers that cannot be re-priced at all
+    initial_capital: float
+    final_equity: float
+    sum_r: float
+    total_cost_usd: float
+    trades: list[RepricedPoint] = []
+
+
 class RunNewsReport(BaseModel):
     has_data: bool                             # False when the calendar cache is empty → filter inert
     coverage_start_ms: Optional[int] = None    # earliest ms with news data — the "news starts here" line

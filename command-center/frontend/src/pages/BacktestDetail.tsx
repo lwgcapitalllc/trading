@@ -3,19 +3,19 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Play,
-  Copy, Check, SlidersHorizontal, Minimize2, Newspaper,
+  Copy, Check, SlidersHorizontal, Minimize2, Newspaper, Coins,
 } from 'lucide-react'
 import {
   AreaChart, Area, ComposedChart, Line, BarChart, Bar, PieChart, Pie, Label,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews, useHistoryLimit } from '@/hooks/useLab'
+import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews, useRunReprice, useHistoryLimit } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
 import { useStressTests, useRunStressTest, useRunningStressLock } from '@/hooks/useStressTests'
-import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode } from '@/types'
+import type { BacktestDetail as Run, EvaluationDetail, EquityPoint, DailyPnlPoint, ParamSchemaEntry, SizedTimelineDay, NewsTradeTag, SizingMode, CostLayer } from '@/types'
 import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 import { balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, type XMode } from '@/lib/chartAxis'
@@ -3355,6 +3355,81 @@ function ExcludeRule({ checked, onChange, label, note, count, tone, children }: 
   )
 }
 
+export type CostFilter = ReturnType<typeof useCostFilter>
+
+// ── Costs, switched on AFTER the run ──────────────────────────────────────────────────────────
+//
+// The layers a run can be re-priced at from its stored trades. Deliberately NOT the same roster
+// the Run modal offers: `bid_ask_fills` and `slippage` change WHICH setups fill and which exits
+// were market orders, neither of which a trade list can answer, so both are re-run-only. The
+// server is the authority (`backtest.reprice.REPRICEABLE_LAYERS`) and reports anything it cannot
+// price in `needs_rerun`; this list only decides which rows the pill draws.
+const REPRICEABLE: CostLayer[] = ['spread', 'commission', 'swap']
+
+const COST_ROW_LABEL: Record<string, string> = {
+  spread: 'Spread', commission: 'Commission', swap: 'Overnight swap',
+}
+
+// Why a cost belongs on this page at all, given the news filter next to it is the only other
+// control that reshapes these numbers — and why the Run modal still owns the OTHER two layers.
+//
+// The news filter REMOVES trades the run already made, so everything it produces is still derived
+// from that run. A cost is different in kind: it changes what each trade was worth, and the naive
+// reading is that you therefore cannot know it without re-running, because a charged run compounds
+// differently and every later trade is a different SIZE. The way out is that every layer here
+// costs a fixed amount of R regardless of size — a spread over a stop distance, a commission over
+// a stop distance — so the R is knowable and the dollars follow from re-walking the balance. That
+// identity is proven against real replays in `backtest/tests/test_reprice.py`, and it is exactly
+// what `bid_ask_fills` does NOT satisfy, which is why that one is refused rather than estimated.
+function useCostFilter(run: Run | undefined) {
+  const [layers, setLayers] = useState<Set<CostLayer>>(new Set())
+  // Only a python run stores the per-trade record a re-price needs; NT8/MT5 curves carry no stop
+  // price or size, so the pill does not appear rather than appearing and failing.
+  const enabled = run?.runner === 'python' && (run?.equity_curve?.length ?? 0) > 0
+  const chosen = useMemo(() => REPRICEABLE.filter(l => layers.has(l)), [layers])
+  const { data: report, isLoading } = useRunReprice(run?.run_id ?? null, chosen, enabled)
+
+  const toggle = (l: CostLayer) =>
+    setLayers(prev => {
+      const next = new Set(prev)
+      next.has(l) ? next.delete(l) : next.add(l)
+      return next
+    })
+
+  // The run rebuilt on the re-priced trades. It reuses `buildFilteredRun` — the same function the
+  // news filter rebuilds through — so there is ONE definition of "a Run derived from a trade list"
+  // and the two controls cannot drift into disagreeing about how a KPI is recomputed.
+  const view = useMemo(() => {
+    if (!run || !report || !chosen.length) return null
+    const priced = new Map(report.trades.map(t => [t.index, t]))
+    const raw = (run.equity_curve ?? []).filter(p => p.profit != null || p.direction)
+    // A trade the server did not price back is a mismatch, not something to pass through at its
+    // old value — that would show a partly-charged book as a fully-charged one.
+    if (raw.some(p => !priced.has(p.index))) return null
+    const kept = raw.map(p => {
+      const t = priced.get(p.index)!
+      return { ...p, profit: t.profit, equity: t.equity, costs_usd: -Math.abs(t.cost_usd) }
+    })
+    return { kept, curve: kept, run: buildFilteredRun(run, kept, kept) }
+  }, [run, report, chosen])
+
+  return {
+    enabled, isLoading, report, layers, chosen, toggle,
+    active: chosen.length > 0 && view != null,
+    repricedRun: view?.run ?? null,
+    repricedCurve: view?.curve ?? null,
+    // Everything the pill has to SAY rather than imply. `needsRerun` is the honest answer for a
+    // layer this page cannot compute; `notExact` is the honest caption for one it computes to
+    // ~0.02%–0.3% rather than to the cent. Rendering either silently is the failure this whole
+    // area exists to have stopped.
+    needsRerun: report?.needs_rerun ?? [],
+    notExact: !!report && !report.is_exact,
+    derivedBasis: !!report?.derived_basis,
+    approximateLayers: report?.approximate_layers ?? [],
+    totalCost: report?.total_cost_usd ?? 0,
+  }
+}
+
 export type NewsFilter = ReturnType<typeof useNewsFilter>
 
 // The filter's whole state, owned by the PAGE rather than by any one control, because THREE things
@@ -3574,12 +3649,106 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
   )
 }
 
+function CostFilterPill({ costs }: { costs: CostFilter }) {
+  const {
+    isLoading, layers, toggle, active, totalCost, needsRerun, notExact, derivedBasis,
+    approximateLayers,
+  } = costs
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  // Like the news pill beside it, the label states the SIZE of what is applied rather than that
+  // something is. "Costs on" would leave you to open the popover to find out what it cost.
+  const label = isLoading ? 'Pricing…'
+    : active ? `Charging ${dollar(Math.abs(totalCost))}`
+    : 'Charging nothing'
+
+  return (
+    <div ref={wrapRef} className="relative shrink-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+          active ? 'border-gold-text/40 bg-gold-text/15 text-gold-text'
+                 : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'}`}
+      >
+        <Coins size={12} className="shrink-0" />
+        <span className="tabular-nums">{label}</span>
+        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[340px] rounded-lg border border-border-default bg-bg-surface shadow-2xl shadow-black/50 p-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+              Charge to these numbers
+            </span>
+            <InfoTip text="The run was measured at whatever costs it was launched with — this re-prices its trades on top, without re-running. It works because each of these costs a fixed amount of R no matter what size the position was, so the R is knowable and the dollars follow. Reshapes the Performance numbers and the Equity chart only." />
+          </div>
+
+          {REPRICEABLE.map(l => (
+            <ExcludeRule
+              key={l}
+              checked={layers.has(l)}
+              onChange={() => toggle(l)}
+              label={COST_ROW_LABEL[l] ?? l}
+              note={l === 'swap' ? 'approximate' : undefined}
+              count={0}
+              tone={l === 'swap' ? 'holiday' : 'news'}
+            />
+          ))}
+
+          <div className="border-t border-border-subtle pt-2.5 space-y-1.5 text-[12px] text-text-secondary">
+            {/* Both of these are things the page would otherwise imply falsely by staying quiet:
+                a layer it silently could not compute, and a figure that is close rather than exact. */}
+            {needsRerun.length > 0 && (
+              <p className="text-gold-text">
+                {needsRerun.join(' and ')} can’t be applied here — {needsRerun.length === 1 ? 'it changes' : 'they change'} which
+                setups fill, so {needsRerun.length === 1 ? 'it needs' : 'they need'} a re-run from the strategy page.
+              </p>
+            )}
+            {active && notExact && (
+              <p className="text-text-tertiary">
+                {approximateLayers.includes('swap' as CostLayer)
+                  ? 'Swap is accurate to about 0.3% — its real charge depends on which bars existed, and holiday closures aren’t in the stored trades.'
+                  : ''}
+                {derivedBasis
+                  ? ' This run predates the stored per-trade R, so the figures are within ~0.02% rather than exact.'
+                  : ''}
+              </p>
+            )}
+            {active && (
+              <p>
+                <span className="tabular-nums font-medium text-text-primary">{dollar(Math.abs(totalCost))}</span>
+                {' charged across the run'}
+              </p>
+            )}
+            {!active && needsRerun.length === 0 && (
+              <p>Nothing charged — these are the run’s own numbers.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // The Performance section label, with the news filter's pill on the right of it. The label row
 // already spanned the column with nothing in it, so the whole control costs zero vertical space —
 // and putting it HERE rather than in a section of its own is what removed the duplicated KPI tiles:
 // the filter reshapes these numbers, so it belongs on their header.
-function PerformanceHeader({ news, blocked, filtered, collapsed, onToggle }: {
-  news: NewsFilter; blocked: string | null; filtered: boolean
+function PerformanceHeader({ news, costs, blocked, filtered, collapsed, onToggle }: {
+  news: NewsFilter; costs: CostFilter; blocked: string | null; filtered: boolean
   collapsed: boolean; onToggle: () => void
 }) {
   return (
@@ -3600,7 +3769,13 @@ function PerformanceHeader({ news, blocked, filtered, collapsed, onToggle }: {
           </span>
         )}
       </button>
-      {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
+      {/* Two controls, one header, and they compose in one direction: costs re-price the trades,
+          then the news filter removes some of them. The reverse would be wrong — a cost is a
+          property of a trade, so it has to be charged before anything decides which trades count. */}
+      <div className="flex items-center gap-2 shrink-0">
+        {costs.enabled && <CostFilterPill costs={costs} />}
+        {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
+      </div>
     </div>
   )
 }
@@ -3647,7 +3822,11 @@ export function BacktestDetail() {
   const { data: strategy } = useStrategy(run?.strategy_id ?? null)
   // Owned here, not in the card, so the main Equity chart can redraw on the kept trades (see
   // useNewsFilter). The card renders the controls and the before/after comparison off this too.
-  const news = useNewsFilter(run)
+  // Costs first, then the news filter on top of the re-priced trades — see PerformanceHeader for
+  // why that order is the only correct one. `costs.repricedRun ?? run` means the ordinary case
+  // (nothing charged) hands the news filter the run's own object, reference-identical.
+  const costs = useCostFilter(run)
+  const news = useNewsFilter(costs.repricedRun ?? run)
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('bt_params_panel') === 'collapsed' } catch { return false }
   })
@@ -3792,7 +3971,14 @@ export function BacktestDetail() {
     ? 'Not available while a firm’s sized numbers are shown — position sizes depend on the trades before them, so removing one needs a re-run, not arithmetic.'
     : null
   const newsOnKpis = news.active && !newsBlocked && news.filteredRun != null
-  const kpiRun     = newsOnKpis ? news.filteredRun! : effRun
+  // Costs are refused under a firm's sizing for exactly the reason the news filter is, and it is
+  // worth stating in its own right: a sized curve is PATH DEPENDENT, so charging trade #7 changes
+  // the balance going into #8 and therefore its position size. That is a re-run, not arithmetic.
+  // On the raw one-unit curve the charge is size-independent in R, which is the whole reason this
+  // control can exist at all.
+  const costOnKpis = costs.active && !newsBlocked && costs.repricedRun != null
+  const costedRun  = costOnKpis ? costs.repricedRun! : effRun
+  const kpiRun     = newsOnKpis ? news.filteredRun! : costedRun
 
   const fallback = useMemo(
     () => computeFallbacks(kpiRun?.daily_pnl ?? []),
@@ -3803,7 +3989,10 @@ export function BacktestDetail() {
     () => computeFallbacks(effRun?.daily_pnl ?? []),
     [effRun?.daily_pnl],
   )
-  const kpiCompare = (newsOnKpis && effRun)
+  // Every card's "vs unfiltered" delta compares against the run AS IT WAS MEASURED, so it answers
+  // the question either pill was opened to ask — what did charging this cost, or removing those
+  // trades, actually do. Driven by EITHER control being on, not just the news one.
+  const kpiCompare = ((newsOnKpis || costOnKpis) && effRun)
     ? { run: effRun, fallback: rawFallback, equity: effRun.equity_curve }
     : null
 
@@ -3819,7 +4008,11 @@ export function BacktestDetail() {
   // toggle, so on a firm-sized run — where the grid refuses the filter — the chart would otherwise
   // quietly draw a filtered curve under numbers that aren't, with a disabled pill and nothing
   // saying why. One switch drives both.
-  const equityCurve = (newsOnKpis ? news.filteredCurve : null) ?? run?.equity_curve ?? []
+  // The costed curve is the fallback BENEATH the news-filtered one, so the chart follows whichever
+  // controls are on and always matches the grid above it.
+  const equityCurve = (newsOnKpis ? news.filteredCurve : null)
+    ?? (costOnKpis ? costs.repricedCurve : null)
+    ?? run?.equity_curve ?? []
 
   // Regime bands for the main equity chart, in whatever units its x-axis is using.
   // DATE mode reads the run's FULL-CALENDAR timeline — every trading day in the window, classified
@@ -4142,7 +4335,7 @@ export function BacktestDetail() {
           {isComplete && (
             <div className="space-y-2.5">
               <PerformanceHeader
-                news={news} blocked={newsBlocked} filtered={newsOnKpis}
+                news={news} costs={costs} blocked={newsBlocked} filtered={newsOnKpis}
                 collapsed={perfCollapsed} onToggle={togglePerfCollapsed}
               />
               <PerformancePanel

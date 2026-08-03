@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
     WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest, RunNewsReport,
-    BrokerProfile,
+    BrokerProfile, RepricedPoint, RunRepriceReport,
     HistoryLimit,
 )
 from services import lab_db, runner_dispatch, chart_spec, news_filter, history_limits
@@ -320,6 +320,64 @@ def get_run_news(
     trades = [{"index": p.get("index"), "entry_ms": p.get("entry_ms")} for p in equity_curve]
     report = news_filter.build_report(trades, pre_minutes=max(0, pre), post_minutes=max(0, post))
     return RunNewsReport(**report)
+
+
+@router.get("/runs/{run_id}/repriced", response_model=RunRepriceReport)
+def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepriceReport:
+    """Re-price this run's stored trades at `layers`, so the detail page can switch costs on and
+    off without re-running. Pure post-processing off the stored equity curve — no replay, no VPS.
+
+    `layers` is a comma-separated subset of `backtest.reprice.REPRICEABLE_LAYERS`; empty means
+    charge nothing, which reproduces the run exactly as stored. `broker` defaults to the profile
+    the run was made against, so a re-price is billed at the same measured facts the run was.
+
+    ⚠ **Layers that cannot be re-priced are REPORTED, never silently dropped.** `bid_ask_fills`
+    changes which setups fill, and `slippage` depends on which exits were market orders — neither
+    is recoverable from a trade list, so both come back in `needs_rerun` for the UI to say so. A
+    400 would be wrong here: the caller asked a reasonable question and the honest answer is "that
+    one needs a re-run", not a failure.
+    """
+    from backtest.fills import PROFILES
+    from backtest.reprice import REPRICEABLE_LAYERS, RepriceError, reprice_curve
+
+    row = lab_db.get_run(run_id)
+    if not row:
+        raise HTTPException(404, "Run not found")
+
+    wanted = [l.strip() for l in layers.split(",") if l.strip()]
+    priceable = [l for l in wanted if l in REPRICEABLE_LAYERS]
+    needs_rerun = [l for l in wanted if l not in REPRICEABLE_LAYERS]
+
+    broker_id = broker or row.get("broker_profile") or "vantage_demo"
+    if broker_id not in PROFILES:
+        raise HTTPException(400, f"Unknown broker profile '{broker_id}'")
+    profile = PROFILES[broker_id]
+
+    curve = _load_json(row.get("equity_curve_path"))
+    if not curve:
+        raise HTTPException(400, "This run stored no equity curve, so it cannot be re-priced")
+
+    # The starting balance is not a stored column — recover it from the curve's own first point,
+    # which is exact arithmetic (`equity` is cumulative and anchored on it) rather than a guess at
+    # a default deposit. Getting it wrong rescales every dollar on the page while leaving R right.
+    first = curve[0]
+    initial = float(first.get("equity", 0.0)) - float(first.get("profit", 0.0))
+
+    try:
+        out = reprice_curve(curve, profile=profile, layers=priceable, initial_capital=initial)
+    except RepriceError as exc:
+        raise HTTPException(400, str(exc))
+
+    return RunRepriceReport(
+        layers=list(out.layers), broker_profile=broker_id,
+        is_exact=out.is_exact, derived_basis=out.derived_basis,
+        approximate_layers=list(out.approximate_layers), needs_rerun=needs_rerun,
+        initial_capital=out.initial_capital, final_equity=out.final_equity,
+        sum_r=out.sum_r, total_cost_usd=out.total_cost_usd,
+        trades=[RepricedPoint(index=t.index, equity=round(t.equity, 2),
+                              profit=round(t.profit, 2), r=round(t.r, 6),
+                              r_before=round(t.r_before, 6), cost_usd=round(t.cost_usd, 2))
+                for t in out.trades])
 
 
 @router.get("/runs/{run_id}/log", response_class=PlainTextResponse)

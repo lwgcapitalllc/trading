@@ -89,7 +89,25 @@ def test_equity_curve_point_has_exactly_the_lab_contract_keys():
     assert set(p) == {"index", "equity", "date", "entry_ms", "exit_ms", "direction",
                       "profit", "exit_name", "size", "favorable", "adverse", "costs_usd",
                       "entry_price", "exit_price", "kind",
-                      "mfe_price", "mae_price", "stop_price", "legs", "tp_targets"}
+                      "mfe_price", "mae_price", "stop_price", "legs", "tp_targets",
+                      # 2026-08-03 — the trade's own R and the dollars it risked, COPIED from the
+                      # strategy. Together they describe it exactly (`profit == r * risk_usd`),
+                      # which is what lets `backtest/reprice.py` re-walk a balance without
+                      # recovering either from a 2dp profit and a 5dp stop price.
+                      "r", "risk_usd"}
+
+
+def test_a_trade_without_r_or_a_stop_omits_those_keys_rather_than_faking_them():
+    """Both are optional by design — an NT8/MT5 curve and any trade duck-type lacking them simply
+    has no key. Writing a 0.0 would make a re-price read the trade as risking nothing, and it would
+    charge the whole account for one spread rather than refusing."""
+
+    class _Bare:
+        dir, qty, entry_ms, exit_ms = 1, 1.0, 0, 86_400_000
+        pnl_usd, exit_reason, entry_price, exit_price = 100.0, "TP", 2000.0, 2010.0
+
+    p = build_equity_curve([_Bare()])[0]
+    assert "r" not in p and "risk_usd" not in p
 
 
 def test_equity_curve_carries_what_the_trade_was_CHARGED():
