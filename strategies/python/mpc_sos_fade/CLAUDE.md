@@ -23,9 +23,12 @@ shipped `exec_tp1_pct = exec_tp2_pct = 0` and carrying the swing ratchet through
 new ENTRY MODEL through `cfg_bits` (decoded 544375, **bit 524288 set** = rule 3 live on both sides)
 — exit 0 at warmups 100 / 500 / 1000 / 2000. That is the run that validates the port; an export
 taken before 2026-08-02 has every new bit clear and proves nothing about it.
-**RE-RUN GREEN 2026-08-02 after the label/tooltip sync** (same export, same four warmups) — that
-change touched Pine input TITLES and tooltips, `config.py` comments and one display string, so a
-green run here is the evidence it was cosmetic, not an argument that it must have been.
+**RE-RUN GREEN 2026-08-02 after the label/tooltip sync**, on a FRESH 21,715-bar export taken off the
+renamed file (2025-08-31 → 2026-08-02, `cfg_bits` 544375) — exit 0 at warmups 100 / 500 / 1000 /
+2000. That change touched Pine input TITLES and tooltips, `config.py` comments and one display
+string, so a green run on an export from the NEW file is the evidence it was cosmetic, rather than
+an argument that it must have been. The same run is the compile proof: a title is a string literal,
+so a mangled one fails to compile, it does not quietly change a trade.
 
 ### `mpc_sos_fade.meta.json` — labels and descs are SHARED WITH THE PINE (2026-08-02)
 

@@ -21,9 +21,9 @@ the same commit. Two of them are deliberately the FORK's own wording, not the A+
 `exec_aplus` is "A+ has priority (stand the B-leg down)" because in this file A+ never places an
 order, and `exec_sl_buf_tk` says "beyond fib 1.0" because that is where this bot's stop always
 sits. Nothing behavioural moved: the only Python edits were two comment strings in `config.py`.
-⚠ **`compare_bleg.py` was NOT re-run — there is no B-LEG export in `engines/` right now.** No B-LEG
-logic changed, so parity is expected to hold, but that is an argument, not a measurement; re-export
-before trusting it. Earlier the same day: **the parent's new A+ entry model is PINNED OFF here, and
+✅ **`compare_bleg.py` re-run GREEN the same day** on a fresh 21,715-bar `VANTAGE_XAUUSD, 15m` export
+(2025-08-31 → 2026-08-02, `cfg_bits` 61047 — `execBLeg` ON, `execAplus` priority ON, `execDeepFib`
+ON, matching this fork's pins) — **exit 0 at warmups 100 / 500 / 1000 / 2000**. Earlier the same day: **the parent's new A+ entry model is PINNED OFF here, and
 unlike the minimum-stop guard it is NOT inert.** `mpc_sos_fade` gained rules 1-3 (`exec_fib_overlap` /
 `exec_fib_deep_edge` / `exec_fib_nearest`), the pre-zone gate (`exec_fvg_pre_zone`) and the
 deep-entry stop (`exec_sl_deep`), and flipped `exec_deep_fib` **True → False**.
