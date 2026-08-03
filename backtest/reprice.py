@@ -113,6 +113,18 @@ class RepricedRun:
     def approximate_layers(self) -> tuple[str, ...]:
         return tuple(l for l in self.layers if l not in EXACT_LAYERS)
 
+    @property
+    def total_cost_r(self) -> float:
+        """What the layers took off, in R.
+
+        **This is the additive unit and dollars are not.** Charging a layer changes the balance,
+        which changes every later position's SIZE, so one layer's dollar cost depends on which
+        others are also on — three per-layer dollar figures would not sum to the total and the UI
+        would look broken while every number in it was right. In R the size cancels (see the module
+        docstring), so per-layer R figures add up exactly. Show R per layer, dollars for the total.
+        """
+        return sum(t.cost_r for t in self.trades)
+
 
 #: Rollovers on these weekdays book nothing. Saturday because the market is shut outright, and
 #: FRIDAY because gold closes at the rollover instant itself — the weekend is carried by the

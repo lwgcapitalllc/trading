@@ -3427,6 +3427,9 @@ function useCostFilter(run: Run | undefined) {
     derivedBasis: !!report?.derived_basis,
     approximateLayers: report?.approximate_layers ?? [],
     totalCost: report?.total_cost_usd ?? 0,
+    totalCostR: report?.total_cost_r ?? 0,
+    // Every layer's own price, ticked or not — the pill shows what turning one on would cost.
+    layerCostR: report?.layer_cost_r ?? {},
   }
 }
 
@@ -3649,9 +3652,49 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
   )
 }
 
+// One cost layer's row. Deliberately NOT `ExcludeRule` even though they look alike: that one
+// states a trade COUNT, which is the right readout for an exclusion rule (how many trades a
+// release landed on) and meaningless for a cost, which touches every trade. The first build reused
+// it and every row read "0 trades", which is how a hardcoded placeholder looks once it is on screen.
+//
+// The readout is R, not dollars, and that is the load-bearing part. A layer's DOLLAR cost depends
+// on which other layers are on — charging one changes the balance, which changes every later
+// position's size — so three dollar figures would not add up to the total underneath them, and the
+// panel would look broken while every number in it was correct. In R the size cancels, so these
+// sum exactly. It is also the unit a cost should be read in: 12R of cost turned $28.3M into $10.1M
+// on the reference run, so the dollars answer a different question from the one the row asks.
+function CostRule({ checked, onChange, label, note, costR, tone }: {
+  checked: boolean; onChange: () => void; label: string; note?: string
+  costR: number | undefined; tone: 'cost' | 'swap'
+}) {
+  return (
+    <button
+      onClick={onChange}
+      className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
+        checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle hover:bg-bg-sunken/60'}`}
+    >
+      <span className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
+        checked ? 'bg-accent border-accent' : 'border-border-default'}`}>
+        {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
+      </span>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'swap' ? 'bg-neg-text' : 'bg-gold-text'}`} />
+      <span className="text-[12px] text-text-primary flex-1 min-w-0">
+        {label}
+        {note && <span className="text-text-tertiary"> · {note}</span>}
+      </span>
+      {/* A layer this broker genuinely does not charge says so in words. "0.00R" reads as a
+          failure to compute; "none on this account" is the actual finding — a demo pays no
+          commission, and that is worth knowing rather than looking broken. */}
+      <span className="text-[12px] tabular-nums text-text-secondary shrink-0">
+        {costR == null ? '—' : costR === 0 ? 'none on this account' : `−${costR.toFixed(2)}R`}
+      </span>
+    </button>
+  )
+}
+
 function CostFilterPill({ costs }: { costs: CostFilter }) {
   const {
-    isLoading, layers, toggle, active, totalCost, needsRerun, notExact, derivedBasis,
+    isLoading, layers, toggle, active, totalCost, totalCostR, needsRerun, notExact, derivedBasis,
     approximateLayers,
   } = costs
   const [open, setOpen] = useState(false)
@@ -3697,14 +3740,14 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
           </div>
 
           {REPRICEABLE.map(l => (
-            <ExcludeRule
+            <CostRule
               key={l}
               checked={layers.has(l)}
               onChange={() => toggle(l)}
               label={COST_ROW_LABEL[l] ?? l}
               note={l === 'swap' ? 'approximate' : undefined}
-              count={0}
-              tone={l === 'swap' ? 'holiday' : 'news'}
+              costR={costs.layerCostR[l]}
+              tone={l === 'swap' ? 'swap' : 'cost'}
             />
           ))}
 
@@ -3727,10 +3770,19 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
                   : ''}
               </p>
             )}
+            {/* Both units, R first. A cost read against the net dollars is systematically
+                misread: on the reference run 12R of cost turned $28.3M into $10.1M — 64% of the
+                balance for 9% of the R — because at a fixed % risk a dollar not earned early never
+                compounds. The R is the size of the cost; the dollars are what compounding did with
+                it, which is a different and much larger number. */}
             {active && (
               <p>
-                <span className="tabular-nums font-medium text-text-primary">{dollar(Math.abs(totalCost))}</span>
-                {' charged across the run'}
+                <span className="tabular-nums font-medium text-text-primary">
+                  −{Math.abs(totalCostR).toFixed(2)}R
+                </span>
+                {' charged across the run · '}
+                <span className="tabular-nums">{dollar(Math.abs(totalCost))}</span>
+                {' after compounding'}
               </p>
             )}
             {!active && needsRerun.length === 0 && (

@@ -82,6 +82,32 @@ def test_charging_the_spread_moves_the_money_but_not_the_trade_count(client, pri
     assert body["sum_r"] == pytest.approx(5.0 - 2 * (0.22 / 10.0))
 
 
+def test_every_layer_is_priced_even_with_none_ticked(client, priced_run):
+    """The pill shows what turning a layer on would COST before you turn it on — the same
+    discipline the news filter's rows follow. The first build had no per-layer figure at all and
+    every row read '0 trades', a hardcoded placeholder that looked like real data."""
+    body = client.get(f"/backtests/runs/{priced_run}/repriced").json()
+    assert body["layers"] == []
+    assert set(body["layer_cost_r"]) == {"spread", "commission", "swap"}
+    assert body["layer_cost_r"]["spread"] > 0
+
+
+def test_the_per_layer_prices_sum_to_the_total(client, priced_run):
+    """They are in R precisely so they can. In dollars they could not — charging one layer changes
+    the balance and so every later position's size — and rows that don't add up to the total under
+    them read as a bug whether or not they are one."""
+    body = client.get(
+        f"/backtests/runs/{priced_run}/repriced?layers=spread,commission,swap").json()
+    assert sum(body["layer_cost_r"].values()) == pytest.approx(body["total_cost_r"])
+
+
+def test_a_layer_this_broker_does_not_charge_prices_at_zero(client, priced_run):
+    """Vantage demo charges no commission, and that is a FINDING rather than a missing number —
+    the UI renders it as 'none on this account' instead of an ambiguous 0.00R."""
+    body = client.get(f"/backtests/runs/{priced_run}/repriced").json()
+    assert body["layer_cost_r"]["commission"] == 0.0
+
+
 def test_a_layer_that_cannot_be_repriced_is_REPORTED_not_dropped(client, priced_run):
     """`bid_ask_fills` changes which setups fill, so no arithmetic over a stored trade list can
     produce it. Silently ignoring it would show a spread-only number under a bid/ask label — the

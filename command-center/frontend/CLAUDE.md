@@ -753,6 +753,22 @@ Rules the pill has to keep:
   exact figure is how a number nobody measured comes to be trusted.
 - **A trade the server did not price back voids the whole view** rather than passing through at its
   old value, which would show a partly-charged book as a fully-charged one.
+- **Each row states its own price, and in R.** `CostRule` exists because the first build reused
+  `ExcludeRule` — right for an exclusion rule, which counts the trades a release landed on, and
+  meaningless for a cost, which touches every trade — so every row rendered a hardcoded
+  `0 trades` that looked exactly like real data. **The unit is load-bearing:** a layer's DOLLAR
+  cost depends on which others are on (charging one changes the balance, so every later position
+  is a different size), so three dollar figures would not sum to the total beneath them and the
+  panel would read as broken while every number in it was right. In R the size cancels and the
+  rows add up exactly — pinned in `test_reprice.py` and `test_run_repricing.py`. The footer
+  therefore says **R first, dollars second** (`−12.08R charged · $332,371 after compounding`),
+  which is also the honest reading: 12R of cost turned $28.3M into $10.1M on the reference run, so
+  the dollars measure what COMPOUNDING did with the cost, not the size of the cost.
+- **A layer this broker does not charge says so in words** — `none on this account` rather than
+  `0.00R`, which reads as a failure to compute. A demo pays no commission and that is a finding.
+- **The report is fetched with NOTHING ticked too**, because that is when the per-layer prices are
+  most useful: you see what a layer would cost before turning it on, exactly as the news filter
+  shows each rule's trade count whether or not it is applied.
 
 Four things about the Run modal that would each silently mislead if changed:
 

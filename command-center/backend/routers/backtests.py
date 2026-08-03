@@ -365,6 +365,16 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
 
     try:
         out = reprice_curve(curve, profile=profile, layers=priceable, initial_capital=initial)
+        # Every layer's own price, whether or not it is currently ticked — the same discipline the
+        # news filter's rows follow, so you can see what turning one on would cost before you turn
+        # it on. In **R**, because that is the additive unit: a layer's DOLLAR cost depends on which
+        # other layers are on (they change the balance, which changes every later position's size),
+        # so three per-layer dollar figures would not sum to the total shown beneath them.
+        per_layer = {
+            l: reprice_curve(curve, profile=profile, layers=[l],
+                             initial_capital=initial).total_cost_r
+            for l in REPRICEABLE_LAYERS
+        }
     except RepriceError as exc:
         raise HTTPException(400, str(exc))
 
@@ -374,6 +384,7 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
         approximate_layers=list(out.approximate_layers), needs_rerun=needs_rerun,
         initial_capital=out.initial_capital, final_equity=out.final_equity,
         sum_r=out.sum_r, total_cost_usd=out.total_cost_usd,
+        total_cost_r=out.total_cost_r, layer_cost_r=per_layer,
         trades=[RepricedPoint(index=t.index, equity=round(t.equity, 2),
                               profit=round(t.profit, 2), r=round(t.r, 6),
                               r_before=round(t.r_before, 6), cost_usd=round(t.cost_usd, 2))

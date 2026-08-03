@@ -810,6 +810,13 @@ class RunRepriceReport(BaseModel):
     final_equity: float
     sum_r: float
     total_cost_usd: float
+    total_cost_r: float = 0.0
+    #: Every re-priceable layer's own price in R, ticked or not, so the UI can show what turning
+    #: one on would cost before it is turned on. **R, not dollars, and that is load-bearing:**
+    #: charging a layer changes the balance and therefore every later position's SIZE, so a layer's
+    #: dollar cost depends on which others are on and three dollar figures would not sum to the
+    #: total beneath them. In R the size cancels and they add up exactly.
+    layer_cost_r: dict[str, float] = {}
     trades: list[RepricedPoint] = []
 
 

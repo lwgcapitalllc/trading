@@ -102,6 +102,11 @@ export interface RunRepriceReport {
   final_equity: number
   sum_r: number
   total_cost_usd: number
+  total_cost_r: number
+  /** Each re-priceable layer's own price in R, ticked or not — what turning it on would cost.
+   *  R rather than dollars because charging one layer changes the balance and so every later
+   *  position's SIZE: dollar costs per layer would not sum to the total. In R they do. */
+  layer_cost_r: Record<string, number>
   trades: RepricedPoint[]
 }
 

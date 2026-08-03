@@ -262,7 +262,9 @@ export function useRunReprice(runId: string | null, layers: CostLayer[], enabled
     queryKey: ['lab', 'run', runId, 'repriced', key],
     queryFn: () => api.get<RunRepriceReport>(
       `/backtests/runs/${runId}/repriced?layers=${encodeURIComponent(key)}`),
-    enabled: !!runId && enabled && key.length > 0,
+    // Fetched even with NOTHING ticked: the response carries every layer's own price, which is
+    // what the pill shows on each row before you turn any of them on.
+    enabled: !!runId && enabled,
     staleTime: Infinity,
     placeholderData: (prev) => prev,   // keep the last set on screen while a new one loads
   })

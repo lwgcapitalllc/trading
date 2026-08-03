@@ -137,6 +137,27 @@ def test_exactness_is_declared_per_layer():
     assert not approx.is_exact and approx.approximate_layers == ("swap",)
 
 
+def test_per_layer_cost_in_R_is_additive_but_in_dollars_it_is_not():
+    """Why the pill lists each layer's price in R and only totals in dollars.
+
+    Charging a layer changes the balance, which changes every later position's SIZE, so a layer's
+    DOLLAR cost depends on which others are on — three dollar figures under one dollar total would
+    not add up, and the panel would look broken while every number in it was right. R has the size
+    cancelled out, so the rows sum to the total exactly.
+    """
+    prof = _profile(spread=0.22, commission=3.0)
+    rows = [_row(1, profit=1_000.0), _row(2, profit=-400.0), _row(3, profit=2_000.0)]
+    only_spread = reprice_curve(rows, profile=prof, layers=["spread"], initial_capital=10_000.0)
+    only_comm = reprice_curve(rows, profile=prof, layers=["commission"], initial_capital=10_000.0)
+    both = reprice_curve(rows, profile=prof, layers=["spread", "commission"],
+                         initial_capital=10_000.0)
+
+    assert only_spread.total_cost_r + only_comm.total_cost_r == pytest.approx(both.total_cost_r)
+    # ...and the dollars deliberately do NOT, which is the reason the rule above exists.
+    assert only_spread.total_cost_usd + only_comm.total_cost_usd != pytest.approx(
+        both.total_cost_usd, rel=1e-9)
+
+
 def test_a_run_predating_the_stored_r_is_flagged_as_derived():
     """Not exact, and it must SAY so — an approximate figure rendered identically to an exact one
     is how a number nobody measured comes to be trusted. The values are still right to ~0.02%; the
