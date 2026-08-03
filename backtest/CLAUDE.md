@@ -93,6 +93,16 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   is the strategy's own "worth looking at" flag and must pass through UNTOUCHED: the chart derives
   its opening view from it, so defaulting or dropping it silently changes what a reader sees first.
   Full path: `command-center/backend/CLAUDE.md` → *Missed setups*.
+  **`fib`** (added 2026-08-02, `_trade_fib`) is the newest optional key on an equity-curve POINT:
+  the fib LEG a trade was priced off, as `{start_ms, levels: [[ratio, price], …]}`, and absent
+  entirely when a trade carries none. Same duck-type discipline as everything else here — any object
+  exposing `levels` as (ratio, price) pairs satisfies it, so this file knows nothing about which
+  ratios a fib "should" have and a strategy with its own ladder just ships different pairs.
+  ⚠ **It COPIES, and must keep copying.** The prices are the ones the strategy had in hand when it
+  placed the order; recomputing them here — or in the chart — from anchors and a direction would be
+  a second implementation of one leg, and the two would eventually disagree about a trade neither
+  can re-run. Pinned by `test_the_fib_ladder_is_COPIED_never_recomputed`, which feeds it a
+  deliberately non-linear ladder and requires it back unchanged.
 - **A4 — Local optimizer** *(done 2026-07-16)*. `backtest/optimizer.py`. `run_sweep(module_path, df,
   combos, …)` replays one strategy over N parameter sets with the bars loaded ONCE and combos fanned
   across cores — no VPS, no terminal lock, no deploy/compile (4 combos over 3 months = 9s).

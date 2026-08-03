@@ -3,7 +3,47 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-02 — 🔴 **every layer except the TRADES stopped at the shipped candles,
+**Last reviewed:** 2026-08-02 — **every trade can now draw the FIB LEG it was priced off** (Analysis
+→ Trades → **Trade fibs**), so a plotted trade says which retracement levels it went into instead of
+leaving you to redraw the fib by hand. Each level arrives as an explicit `(ratio, price)` pair the
+STRATEGY recorded when it placed the order, so **there is no fib maths in the browser** and the
+chart cannot land on a price the bot never used; two accent chips name the two readings a ladder
+cannot state on its own — `entry 0.702` and `deepest 0.886`. **`TRADE_FIB` is a separate template
+from `FIB` on purpose: this one is DATA, not a drawing** — locked, event-ignoring, undeletable, and
+deliberately NOT following the fib editor's configurable ladder, because retuning your own tool must
+not restyle what the bot measured (only the factory COLOURS are shared, so a 0.618 the bot used
+looks like a 0.618 you drew). It is a SUB-toggle of Trades and reuses that effect's own predicates —
+loaded-candle clip, layer isolation, Winners/Losers — so a fib can only ever be drawn under a trade
+that is itself drawn, the same "no filters of its own" rule Step follows. Default OFF and listed
+only when trades carry one, so NT8/MT5 and pre-today Python runs show no switch. Earlier the same
+day: **Debug (`Debug | Winners | Losers`), two presets that set the whole
+chart to one reading in a press** — and, once the layer above existed, **the trade fib went INTO
+them**. Interrogating a run one outcome at a time meant the same seven switches every time, across
+BOTH dropdowns — trades on, one outcome only, that trade's own fib leg, External Structure and Fair
+Value Gaps on for context, Blocked and Missed off — and then the same seven again to swap sides.
+Pair it with Step and reading every loser end to end is one press plus one key, each arriving with
+the fib it was entered off already drawn; the fib belongs in the preset rather than beside it
+because "why did it enter HERE" is the question the preset exists to answer, and a shortcut that
+stops one click short of the point is not one. **It is a shortcut, not a third place layers live:**
+it writes to the same state the menus write to, and the active highlight is DERIVED from that state
+rather than remembered, so unticking one thing by hand clears it — a stored "active" flag is exactly
+how a label starts claiming something the chart is not doing. Anything the preset does not NAME is
+left alone (sessions, indicators, hand-drawn fibs, the other three structure groups), and the groups
+it names come from `STRUCTURE_GROUPS`/`ANALYSIS_GROUPS` rather than retyped strings, so a rename
+there carries. ⚠ **It shipped with no way OUT for half a day** — Aaron's report, and the right
+correction to a bad argument in this file's own earlier draft ("there is no defined state to
+un-apply to"): there is, and it is what the panel OPENS on. Pressing the lit side now clears the
+preset, advertised by a **✕ on that segment**, and `clearDebugPreset` restores exactly the seven
+switches `applyDebugPreset` sets and nothing else — the two must stay in step, because a switch set
+by one and not cleared by the other is a layer left on that nobody turned on. ⚠ **The apply is
+unconditional but the ACTIVE test is not**: setting a layer the run never emitted is inert, while
+testing for one it can never have would leave the highlight permanently dark on an NT8/MT5 run.
+Verified in-browser on run `211384ddbea4` from the worst starting state (Blocked + Missed on, both
+outcomes on, no structure): one press → `Analysis 3/6` + `Structure 1/4` with all switches right and
+Step re-scoped to `Win 106/111`; unticking a layer by hand cleared the highlight with everything else
+untouched; pressing the lit side returned every one of the seven to its opening value. The fib clause
+was exercised the same way against an injected `ChartTradeFib` — no run carries one yet (no
+backfill), so waiting for real fib data would have meant shipping that branch unverified. Earlier the same day: 🔴 **every layer except the TRADES stopped at the shipped candles,
 so scrolling back far enough emptied the chart while every toggle still read ON.** Structure, Fair
 Value Gaps, Blocked and Missed are all emitted PER-WINDOW server-side (`chart_spec._capped_start`
 ships ~17 months of a 6.5-year run), and the panel pages bars back to the run's start — so past that
@@ -281,6 +321,43 @@ here**, so the chart shows exactly what the strategy saw.
   - **Both arrows disable while `jumping`** and `stepMarker` bails on `jumpingRef` — `goToDate`
     refuses to start a second jump, so without the guard the readout would advance while the chart
     stood still.
+- **Debug** (`DebugPresets` in `index.tsx`, header pill after Analysis / Structure, 2026-08-02) —
+  `Debug | Winners | Losers`. One press sets the chart to a single reading: **Trades on with that
+  outcome only, Trade fibs on, External Structure + Fair Value Gaps on, Blocked and Missed off.**
+  That combination is what interrogating a run one trade at a time actually needs, and building it by
+  hand was seven switches across two dropdowns — repeated every time you swap sides. It sits after
+  both menus because that is what it is: a shortcut across them.
+  - **It presses the same switches the menus press.** There is no second copy of layer state, so the
+    preset, the menus, the chart and the Step navigator cannot disagree.
+  - **The trade fib is in the preset, not beside it** (added the same day the layer landed). "Why did
+    it enter HERE" is the question the preset exists to answer, and the fib leg is the layer that
+    answers it — leaving it as a switch you still had to go and find afterwards would have made the
+    shortcut stop one click short of the point.
+  - **The active highlight is DERIVED, never remembered** (`debugActive`) — recomputed from
+    `tradesOn`/`winnersOn`/`losersOn`/`tradeFibsOn`/`blocksOn`/`missesOn`/`groupsOn`. A stored flag
+    would keep claiming a preset after the reader unticked half of it, which is the panel's standing
+    lesson (a label on screen is a claim about state somewhere else) in miniature. Untick one thing
+    and the highlight clears.
+  - **The groups it turns on are `DEBUG_ON_GROUPS`, read out of `STRUCTURE_GROUPS[0]` /
+    `ANALYSIS_GROUPS[0]`** rather than retyped — a rename in `overlays.ts` carries here instead of
+    silently switching nothing on.
+  - ⚠ **The APPLY is unconditional, the ACTIVE test is not.** Setting a layer the run never emitted
+    is inert (an absent group is dropped by the next `reconcileToggles`; `tradeFibsOn` with no
+    recorded fib draws nothing), but TESTING for one that cannot exist would leave the highlight
+    permanently dark. So `debugGroups` filters to groups the run carries and the fib clause is
+    `tradeFibCount > 0 && !tradeFibsOn` — an NT8/MT5 run, or a Python run finished before the fib
+    field existed, must not read as "not applied" for want of a layer it can never have.
+  - **Anything it does not NAME is left exactly as it was** — sessions, day breaks, indicators,
+    hand-drawn fibs, the other three structure groups, the per-reason filters. A preset that reset
+    the panel would throw away the setup someone built to do the reading.
+  - **Pressing the LIT side turns debug off** (`pressDebugPreset` → `clearDebugPreset`), and the ✕
+    that appears on it is the only advertisement of that — a preset you can enter and not leave is a
+    trap, which is exactly how it shipped for half a day. "Off" restores the seven switches the
+    preset SETS to the values the panel opens on and touches nothing else, so leaving debug mode
+    never costs you the sessions or drawings you had up. ⚠ **`clearDebugPreset` must stay in step
+    with `applyDebugPreset`** — a switch set by one and not cleared by the other is a layer left on
+    that nobody turned on. Deciding on/vs/off lives in the host, so the control stays a pure renderer
+    of `active` and one place knows what "off" means. Hidden on a run with no trades.
 - **Overlays are registered once, created per-spec.** Custom templates live in `overlays.ts`
   (`registerChartOverlays()`, guarded so StrictMode/remounts don't double-register). The panel
   creates instances with `points` (anchored by `timestamp`) + `extendData` (colors/labels).
@@ -444,6 +521,32 @@ here**, so the chart shows exactly what the strategy saw.
   - Dropped from a **stack** spec, for the same reason blocks and misses are: it is anchored to the
     BASE leg's trades, so on a merged chart it would draw gaps at one strategy's entries and nothing
     at the others'. A leg's own page still has it.
+- **Trade fibs** (`TRADE_FIB` overlay, `trade.fib`, 2026-08-02) — **the leg each trade was actually
+  priced off.** Aaron's brother asked to see the fib run on the points a trade used, so he can read
+  which retracement levels it went into. Every level arrives as an explicit `(ratio, price)` pair
+  recorded by the strategy when it PLACED the order, so there is **no fib maths in the browser at
+  all** — the chart cannot arrive at a different price from the bot. The ladder spans the leg's
+  start → the trade's exit, so it reaches back through the retracement rather than beginning at the
+  fill, and two accent chips at the right edge name the two things a price ladder cannot say:
+  `entry 0.702` (where the fill landed on this leg) and `deepest 0.886` (how far the retracement ran
+  afterwards). Full derivation + why it is split that way: `backend/CLAUDE.md` → *Trade fibs*.
+  - **A separate TEMPLATE from `FIB`, deliberately — this one is DATA, not a drawing.** It is
+    `lock: true`, every figure is `ignoreEvent`, and it is not draggable, selectable or deletable.
+    Same call as `MISS`/`BLOCK` being two names, for the opposite reason: those share a template
+    because they draw the same thing; these are split because one is the reader's work and one is
+    the run's record.
+  - **It does NOT read the user's configurable ladder** (`fibLevels.ts`) — Aaron's call. A trade's
+    levels are a fact about that trade, so retuning the drawing tool must not change them. Only the
+    COLOURS are shared, off the frozen `DEFAULT_FIB_LEVELS` constant, so a 0.618 the bot used looks
+    like a 0.618 you drew. A ratio the factory set doesn't name renders grey, never invisible.
+  - **It is a SUB-toggle of Trades and reuses the trades effect's own predicates** — the
+    loaded-candle clip, the layer isolation, Winners/Losers. A fib can therefore only be drawn under
+    a trade that is itself drawn; its own filters would be a second place for the two to disagree,
+    the same rule Step follows. Default OFF (eight lines per trade is a lot of chart) and listed
+    only when trades actually carry one, so NT8/MT5 and pre-2026-08-02 Python runs show no switch.
+  - The leg's start is **clamped into the loaded bars**: a leg beginning before the oldest loaded
+    candle would otherwise have klinecharts clamp its left edge onto the plot boundary, drawing the
+    ladder across the no-data region as if the leg had started there.
 - **Portfolio-stack layering** (`layer` / `layerName` / `layerColor` on a trade — all absent on a
   single-run spec, which is what makes every stack affordance vanish for a normal backtest). With
   several strategies' trades on ONE chart, the outcome alone doesn't say WHOSE trade it was, so the

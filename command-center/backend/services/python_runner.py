@@ -40,8 +40,15 @@ _LOCK = threading.Lock()
 _TF_MINUTES = {"D1": 1440, "H4": 240, "H1": 60, "M30": 30, "M15": 15, "M5": 5, "M1": 1}
 
 
+# The cost layers a run may switch on, in the order the UI shows them. Every one is OFF by
+# default — Aaron's call (2026-08-02): the baseline run stays frictionless so it stays directly
+# comparable to the TradingView Strategy Tester, and each cost is something you deliberately
+# turned on rather than something the lab decided for you.
+COST_LAYERS = ("spread", "swap", "commission", "slippage", "bid_ask_fills")
+
+
 def _cost_profile(spec: dict):
-    """The run's `AccountProfile`, or None when the run stated no costs.
+    """The run's `AccountProfile`, or None when the run charges nothing.
 
     **This is the seam that was missing until 2026-08-01.** The lab collected
     `commission_per_side` and `slippage_ticks` at run creation, stored them on the row, showed
@@ -49,7 +56,14 @@ def _cost_profile(spec: dict):
     reporting a cost profile it had not applied. The tell in the data was 52 losing trades each
     losing EXACTLY 10.00% of prior equity, which no cost model can produce.
 
-    Two facts the numbers are interpreted against, both stated rather than assumed:
+    **Layered since 2026-08-02.** `cost_layers` names which costs to charge and `broker_profile`
+    says whose measured facts to charge them from — so the two costs we genuinely KNOW, the spread
+    and the overnight swap, stop being unpriced without anyone having to type a number. The one
+    unknowable cost keeps its own switch and its own typed figure on purpose: slippage is a
+    property of a live account that no amount of history can measure, so it must never ride along
+    with the measured ones.
+
+    Four facts the numbers are interpreted against, all stated rather than assumed:
 
     * **`commission_per_side` is dollars per LOT per side**, a lot being `contract_size` units
       (100 oz for gold — `AccountProfile`'s default, and the unit every broker quotes gold
@@ -57,20 +71,60 @@ def _cost_profile(spec: dict):
     * **`slippage_ticks` is charged on MARKET exits only** and only in bar mode. A resting limit
       does not slip, and tick mode measures the real thing off the tape — see
       `Execution._charge_slippage`.
+    * **`spread` and `swap` come from the BROKER PROFILE, never from the request.** Both are
+      measurements (`backtest/fills.py` records the tick counts behind each spread and the
+      Specification window behind each swap), and a number the operator can type is a number that
+      can silently disagree with the broker. Picking `puprime_standard` instead of the default
+      `vantage_demo` moves the spread 0.22 → 0.33, because those are two different measurements.
+    * **`bid_ask_fills` REPLACES the spread cost, it does not add to it** — see
+      `Execution._charge_spread`. It is also the ONLY layer that can change which trades exist,
+      which is why it is its own switch, and it implies `spread`: modelling the ask with no
+      spread is a no-op wearing a label.
 
-    Returns None when both are zero, which keeps a costless run byte-identical to every result
-    measured before this landed: no profile means no charge, exactly as before.
+    ⚠ **`cost_layers` absent (None) means a PRE-LAYER run and keeps the old behaviour** — charge
+    whatever commission and slippage that row stated. An explicit `[]` means charge nothing.
+    Collapsing the two would silently re-price every stored run the moment it was retried.
     """
+    from backtest.fills import PROFILES, AccountProfile
+
     commission = float(spec.get("commission_per_side") or 0.0)
     slippage = int(spec.get("slippage_ticks") or 0)
-    if commission <= 0 and slippage <= 0:
-        return None
-    from backtest.fills import AccountProfile
-    # swap=None deliberately: overnight financing is a broker fact the lab does not collect, and
-    # inventing one here would move every result under the banner of a commission change. Tick
-    # mode (`account_profile`) remains the way to price swap.
-    return AccountProfile(name="lab", commission_per_side_per_lot=commission,
-                          slippage_ticks=slippage, swap=None)
+    layers = spec.get("cost_layers")
+
+    if layers is None:                      # pre-2026-08-02 row — the old contract, untouched
+        if commission <= 0 and slippage <= 0:
+            return None
+        return AccountProfile(name="lab", commission_per_side_per_lot=commission,
+                              slippage_ticks=slippage, swap=None)
+
+    on = {str(x) for x in layers}
+    unknown = on - set(COST_LAYERS)
+    if unknown:
+        raise ValueError(
+            f"unknown cost layer(s) {sorted(unknown)} — known layers are {list(COST_LAYERS)}. "
+            f"A layer nobody reads would be charged as nothing while the page said otherwise.")
+    if not on:
+        return None                         # explicit "charge nothing": no charge path entered
+
+    broker = spec.get("broker_profile") or "vantage_demo"
+    if broker not in PROFILES:
+        raise ValueError(
+            f"broker_profile {broker!r} unknown — the spread and swap are read off a real "
+            f"account, so it must be one of: {sorted(PROFILES)}")
+    base = PROFILES[broker]
+
+    bid_ask = "bid_ask_fills" in on
+    return AccountProfile(
+        name=f"lab:{broker}",
+        commission_per_side_per_lot=commission if "commission" in on else 0.0,
+        contract_size=base.contract_size,
+        mintick=base.mintick,
+        latency_ms=base.latency_ms,
+        swap=base.swap if "swap" in on else None,
+        slippage_ticks=slippage if "slippage" in on else 0,
+        spread=base.spread if ("spread" in on or bid_ask) else 0.0,
+        bid_ask_fills=bid_ask,
+    )
 
 
 def _timeframe_minutes(spec: dict) -> int:

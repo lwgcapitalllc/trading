@@ -39,6 +39,16 @@ const MIN_TRADES_FOR_STRESS = 100
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
+/** Display names for the cost layers a python run can charge. Reading order matches the Run
+ *  modal's, so the page and the form name the same thing the same way. */
+const COST_LAYER_LABEL: Record<string, string> = {
+  spread: 'spread',
+  swap: 'overnight swap',
+  commission: 'commission',
+  slippage: 'slippage',
+  bid_ask_fills: 'bid/ask fills',
+}
+
 function dollar(n: number | null | undefined, signed = false): string {
   if (n == null) return '—'
   const abs = Math.abs(n)
@@ -1019,7 +1029,20 @@ export function PerformancePanel({
     // its effect on the net is not.
     ...(costsTotal !== 0 ? [{
       key: 'costs', label: 'Costs charged', value: dollar(costsTotal),
-      tip: `Commission, slippage and swap actually charged across every fill, already deducted from Net above. ⚠ Read this against the RETURN, not the net dollars: at a fixed % risk the account compounds, so a dollar of cost paid early also costs every dollar it would have grown into. On this strategy ${dollar(Math.abs(costsTotal))} of charges moves the final balance by many times that.`,
+      tip: `Commission, spread, slippage and swap actually charged across every fill, already deducted from Net above. ⚠ Read this against the RETURN, not the net dollars: at a fixed % risk the account compounds, so a dollar of cost paid early also costs every dollar it would have grown into. On this strategy ${dollar(Math.abs(costsTotal))} of charges moves the final balance by many times that.`,
+    } as PanelRow] : []),
+    // WHICH costs were charged, not just what they came to. A run that charged nothing and a run
+    // made before the switches existed look identical from the total alone — and this lab's
+    // recurring defect is exactly a number on screen whose provenance nothing states. `null`
+    // means "made before layered costs", which is not the same answer as "charged nothing".
+    ...(run.cost_layers != null ? [{
+      key: 'costlayers', label: 'Costs charged for',
+      value: run.cost_layers.length
+        ? run.cost_layers.map(l => COST_LAYER_LABEL[l] ?? l).join(', ')
+        : 'nothing',
+      tip: run.cost_layers.length
+        ? `The cost layers this run had switched on${run.broker_profile ? `, priced off the ${run.broker_profile} account` : ''}. Anything not listed was not charged at all.`
+        : 'This run was deliberately frictionless — no spread, no swap, no commission, no slippage. That is the default, and it is what makes the result directly comparable to the TradingView Strategy Tester.',
     } as PanelRow] : []),
   ]
 

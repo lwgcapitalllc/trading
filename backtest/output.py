@@ -78,6 +78,7 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
     equity = float(initial_capital)
     for i, t in enumerate(sorted(trades, key=lambda x: (x.exit_ms, x.entry_ms)), start=1):
         equity += t.pnl_usd
+        fib = _trade_fib(t)
         curve.append({
             "index":     i,
             "equity":    _round(equity),
@@ -120,8 +121,38 @@ def build_equity_curve(trades: Sequence[Any], *, initial_capital: float = 0.0) -
                 _round(v, 5) for v in (getattr(t, "tp1", 0.0), getattr(t, "tp2", 0.0))
                 if isinstance(v, (int, float)) and v
             ],
+            # The fib LEG this trade was priced off, exactly as the strategy read it when it
+            # placed the order — `{start_ms, levels: [[ratio, price], ...]}`, or absent. See
+            # `_trade_fib`. Reporting-only, and optional like every other rich field here.
+            **({"fib": fib} if fib else {}),
         })
     return curve
+
+
+def _trade_fib(t: Any) -> Optional[dict]:
+    """A trade's frozen fib leg → the equity point's `fib` object, or None.
+
+    Duck-typed like everything else here: any object exposing `levels` as (ratio, price) pairs
+    satisfies it, so this knows nothing about which strategy produced the ladder or which ratios
+    are in it — a strategy drawing a different set just ships different pairs.
+
+    It COPIES rather than derives. The prices are the ones the strategy had in hand at placement;
+    recomputing them downstream from anchors would be a second implementation of the same fib, and
+    the two would eventually disagree about a trade neither could re-run.
+    """
+    fib = getattr(t, "fib", None)
+    raw = getattr(fib, "levels", None) if fib is not None else None
+    if not raw:
+        return None
+    levels = [[float(r), _round(p, 5)] for r, p in raw
+              if isinstance(r, (int, float)) and isinstance(p, (int, float))]
+    if not levels:
+        return None
+    start = getattr(fib, "start_ms", None)
+    out: dict = {"levels": levels}
+    if isinstance(start, (int, float)) and start:
+        out["start_ms"] = int(start)
+    return out
 
 
 # ── daily P&L ─────────────────────────────────────────────────────────────────

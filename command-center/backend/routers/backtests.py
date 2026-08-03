@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from models import (
     BacktestRunRequest, BacktestSummary, BacktestDetail, EvaluationDetail,
     WorthinessScore, RunningJobStatus, RunningJobInfo, RetryRunRequest, RunNewsReport,
+    BrokerProfile,
     HistoryLimit,
 )
 from services import lab_db, runner_dispatch, chart_spec, news_filter, history_limits
@@ -47,6 +48,24 @@ def _load_json(path: Optional[str]) -> list:
         return json.loads(Path(path).read_text())
     except Exception:
         return []
+
+
+def _json_list(raw) -> Optional[list]:
+    """A stored JSON list, or None when the column was never written.
+
+    None and `[]` are DIFFERENT answers for `cost_layers` — "this run predates layers" vs
+    "this run deliberately charged nothing" — so a missing column must not collapse to empty.
+    A malformed value reads as None: unknown, which is the honest answer and the one the page
+    already knows how to caption."""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, list) else None
 
 
 def _worthiness_from_row(row: dict) -> Optional[WorthinessScore]:
@@ -161,6 +180,8 @@ def _row_to_detail(row: dict) -> BacktestDetail:
         end_date=row["end_date"],
         commission_per_side=row["commission_per_side"],
         slippage_ticks=row["slippage_ticks"],
+        cost_layers=_json_list(row.get("cost_layers")),
+        broker_profile=row.get("broker_profile"),
         status=row["status"],
         error_message=row.get("error_message"),
         created_at=row["created_at"],
@@ -212,6 +233,31 @@ def get_running_job() -> RunningJobStatus:
         nt8=RunningJobInfo(**jobs["nt8"]),
         mt5=RunningJobInfo(**jobs["mt5"]),
     )
+
+
+@router.get("/broker-profiles", response_model=list[BrokerProfile])
+def list_broker_profiles() -> list[BrokerProfile]:
+    """The account profiles a python run can charge its costs from, with their MEASURED numbers.
+
+    This endpoint exists so the Run modal never retypes a spread. Every number here was measured
+    (`backtest/fills.py` records the tick counts and the Specification window behind each), and a
+    figure copied into a form is a second claim that can silently disagree with the one actually
+    charged — the failure this lab has now hit three times. The UI displays what the run will be
+    billed, because it is reading the same object the runner bills from.
+    """
+    from backtest.fills import PROFILES
+
+    return [
+        BrokerProfile(
+            id=key,
+            spread=p.spread,
+            commission_per_side_per_lot=p.commission_per_side_per_lot,
+            swap_long_points=p.swap.swap_long_points if p.swap else None,
+            swap_short_points=p.swap.swap_short_points if p.swap else None,
+            contract_size=p.contract_size,
+        )
+        for key, p in sorted(PROFILES.items())
+    ]
 
 
 @router.get("/history-limit", response_model=Optional[HistoryLimit])
@@ -345,6 +391,8 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "source_run_id":      req.source_run_id,
         "sizing_mode":        req.sizing_mode,
         "manual_risk_pct":    req.manual_risk_pct,
+        "cost_layers":        req.cost_layers,
+        "broker_profile":     req.broker_profile,
     })
 
     job_spec = {
@@ -358,6 +406,8 @@ async def trigger_backtest(req: BacktestRunRequest) -> dict:
         "end_date":          req.end_date,
         "commission_per_side": req.commission_per_side,
         "slippage_ticks":    req.slippage_ticks,
+        "cost_layers":       req.cost_layers,
+        "broker_profile":    req.broker_profile,
     }
 
     try:
@@ -501,6 +551,10 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         "end_date":          row["end_date"],
         "commission_per_side": row["commission_per_side"],
         "slippage_ticks":    row["slippage_ticks"],
+        # Read back off the ROW, so a retry re-prices exactly as the original run did. NULL stays
+        # NULL here on purpose — a pre-layer run must retry on the pre-layer contract.
+        "cost_layers":       _json_list(row.get("cost_layers")),
+        "broker_profile":    row.get("broker_profile"),
     }
 
     try:

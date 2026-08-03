@@ -55,7 +55,38 @@ resets them to defaults on every chart he has the script on.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-08-02 — **the 2026-08-02 ENTRY MODEL is ported, and it changes the shipped
+**Last reviewed:** 2026-08-02 — **every trade now RECORDS the fib leg it was priced off, so the lab
+chart can draw the exact ladder the entry, stop and targets came from.** Aaron's brother asked to
+see, on each plotted trade, the fib run on the points that trade used — i.e. which retracement
+levels it went into. `Trade.fib` (a `TradeFib`: the eight `(ratio, price)` pairs plus the bar the
+LEG started on) is snapshotted in `_place_entries` onto `_Pending` and carried through
+`_open_position` to the closed `Trade`. **REPORTING ONLY**, the same standing as `mfe_usd` / `tp1` /
+`tp2` — nothing reads a ladder back, so no decision can move.
+⚠ **It is taken at PLACEMENT and read from the ORDER at the fill, never from `sig` again.** A fib is
+live and keeps extending while a limit rests, so re-reading it at the fill would report a leg the
+order was never priced against — and the stop and targets on that same trade, which ARE frozen at
+placement, would then belong to a different ladder from the one drawn beside them
+(`test_the_recorded_fib_is_the_one_the_ORDER_rested_on_not_the_one_at_the_fill`).
+⚠ **It is a COPY, not a derivation.** The prices are the `fiboP*` values the strategy had in hand;
+nothing downstream recomputes them from anchors. A fib rebuilt in the backend or the browser is a
+second claim about one leg, which is the failure this repo has now met four times.
+⚠ **Recording is all-or-nothing** — a ladder missing a rung is dropped entirely, because seven
+levels drawn where there are eight reads as "this trade had no 0.786" rather than "this record is
+incomplete". The **1m secondary** records none by design (it rests at a retrace of its own tight 1m
+leg, a different fib), and `mpc_bleg` gets none for free (it overrides `_place_entries`).
+It needed two fields upstream: `Signals.fibo_ash_ms` / `.fibo_asl_ms`, converted from the fib
+engine's new `ash_loc`/`asl_loc` through a bar-index→time table in `SignalAdapter`. ⚠ **Times,
+deliberately not bar INDICES** — an index is relative to the window that produced it, and this repo
+has already been bitten once by diffing a Pine `bar_index` across two windows (`strategies/CLAUDE.md`
+→ the B-LEG harness bug); the chart trims its candles, so only a timestamp survives the trip.
+✅ **Proven cosmetic by measurement, not argued:** `compare_strategy.py` **exit 0 at warmups 100 /
+500 / 1000 / 2000** on the 21,715-bar `VANTAGE_XAUUSD, 15m` export, `compare_bleg.py` exit 0 at 100
+and 800 on the B-LEG export, and the fibonacci engine A/B'd at HEAD vs the working tree over 47,263
+real bars with 0 field differences (`engines/fibonacci/CLAUDE.md`). Also validated forward on 23,716
+real M15 bars: all 17 trades in 2024 carry a ladder, and their entry ratios independently reproduce
+the documented entry model — **0.618 ×5 / 0.702 / 0.786 ×3 exactly on a level (the `_fib_snap`
+rules), the rest between levels (gap-edge entries)**, with deepest ratios 0.62–0.98, i.e. never past
+the 0.886 stop. 79 tests green here. Earlier the same day: **the 2026-08-02 ENTRY MODEL is ported, and it changes the shipped
 default.** Five new config fields, in lockstep with `mpc_strategy.pine`: `exec_fvg_pre_zone` (False),
 `exec_fib_overlap` (False), `exec_fib_deep_edge` (False), **`exec_fib_nearest` (True)** and
 `exec_sl_deep` (False) — and `exec_deep_fib` flipped **True → False**, because rule 3 replaces it.

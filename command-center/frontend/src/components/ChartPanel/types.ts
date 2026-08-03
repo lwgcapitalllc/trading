@@ -39,6 +39,33 @@ export interface ChartProfitLeg {
   label: string
 }
 
+/** One rung of a trade's own fib leg: a ratio and the price the STRATEGY read for it. */
+export interface ChartFibLevel {
+  ratio: number
+  price: number
+}
+
+/** The fib LEG a trade was priced off — recorded by the strategy when it placed the order, not
+ *  recomputed here. `levels` is the whole ladder at the prices the strategy had in hand, so the
+ *  chart and the bot can never disagree about where a level sat.
+ *
+ *  `entryRatio` / `deepestRatio` are what the ladder cannot say on its own and are the reason this
+ *  exists: where the fill landed ON the leg (0.702 = it filled at the 70.2% retrace) and how far
+ *  the retracement ran afterwards. `deepestRatio` legitimately exceeds 1 on a trade that traded
+ *  through the leg origin.
+ *
+ *  `startTime` is the bar the leg began on, which is where the drawing starts — a ladder beginning
+ *  at the entry would hide the retracement that produced it. Absent ⇒ start at the entry.
+ *
+ *  OPTIONAL on the trade: a runner or strategy that records no fib carries none, and the panel's
+ *  Trade fibs toggle then never appears. */
+export interface ChartTradeFib {
+  levels: ChartFibLevel[]
+  entryRatio?: number
+  deepestRatio?: number
+  startTime?: EpochMs
+}
+
 /** One round-trip trade: entry → exit, drawn as a profit-depth view.
  *
  *  Two shades of green show how far price went in the trade's favour: SOLID from entry to where
@@ -62,6 +89,7 @@ export interface ChartTrade {
   profitLegs?: ChartProfitLeg[] // where profit was actually taken → one labelled dotted line each
   stopPrice?: number            // initial 1R stop → a bubble + dotted risk line
   tpTargets?: number[]          // TP target ladder (nearest→furthest); first UNHIT one drawn faintly
+  fib?: ChartTradeFib           // the fib leg this trade was priced off → the Trade fibs layer
   // Portfolio-stack layering — OPTIONAL, absent on a single-run spec. `layer` names the strategy the
   // trade belongs to (so a host can filter to the toggled-on strategies); `layerColor` tints the
   // entry marker + outcome chip so overlapping strategies read apart; `layerName` is the human name

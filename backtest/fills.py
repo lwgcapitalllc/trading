@@ -151,6 +151,23 @@ class AccountProfile:
     the only way to price it there, and 0 honestly means "not priced" rather than "none occurred".
     It is charged on MARKET exits only: a resting limit fills at your price or better or not at
     all, so entries and take-profit rungs do not slip against you.
+
+    `spread` is the same shape as `slippage_ticks` — **BAR MODE ONLY**, 0.0 meaning "not priced" —
+    but for the opposite reason. It is not unknowable; it is MEASURED and stable (gold on both
+    brokers below reads a fixed $0.33). Tick mode has the real bid and ask on every tick, so it
+    pays the spread by construction and ignores this field; bar mode gets one price per bar and
+    has to be told. **It is a fact about the SYMBOL as much as the account**, and the value here is
+    XAUUSD's — the same is already true of `swap`, so a profile in this module is read as "this
+    account, trading gold". Quote a different instrument and both numbers need re-measuring.
+
+    `bid_ask_fills` is the OTHER half of the spread and the only field here that can change which
+    trades exist. Charging the spread as a cost leaves every fill where it was; in reality the
+    broker's bars are the BID, and a BUY transacts at the ask. So a long's entry limit and a
+    short's stop are both one spread harder to reach than a bid-only bar makes them look. With
+    this on, everything that transacts at the ask is tested against `bid + spread` — which is what
+    tick mode does, at bar resolution. Default OFF, because it moves the trade list and a run that
+    moves the trade list must be asked for. It lives on the profile rather than in the strategy
+    config so it travels with the `spread` it is meaningless without.
     """
 
     name: str
@@ -160,6 +177,8 @@ class AccountProfile:
     latency_ms: int = 75                # ~1 median tick spacing; the single assumption
     swap: Optional[SwapModel] = None
     slippage_ticks: int = 0             # BAR MODE ONLY — see below
+    spread: float = 0.0                 # BAR MODE ONLY — price units; 0.0 = not priced
+    bid_ask_fills: bool = False         # BAR MODE ONLY — moves fills, not just P&L
 
     def __post_init__(self) -> None:
         if self.commission_per_side_per_lot == SENTINEL:
@@ -175,6 +194,13 @@ class AccountProfile:
             raise CostsNotConfigured("latency_ms must be >= 0")
         if self.slippage_ticks < 0:
             raise CostsNotConfigured("slippage_ticks must be >= 0")
+        if self.spread < 0:
+            raise CostsNotConfigured("spread must be >= 0 (it is a width, not a signed cost)")
+        if self.bid_ask_fills and self.spread <= 0:
+            raise CostsNotConfigured(
+                "bid_ask_fills is on but spread is 0 — the ask would equal the bid, so the "
+                "setting would silently do nothing while claiming the fills are modelled."
+            )
 
     def lots(self, qty: float) -> float:
         """Position size in LOTS. Commission and swap are quoted per lot; the strategy sizes in
@@ -209,16 +235,31 @@ _XAUUSD_SWAP = SwapModel(swap_long_points=-78.29, swap_short_points=29.49,
 # -74.84, swap_short +26.98, triple-swap on Wednesday (MT5 rollover3days=3 → our Monday-based 2).
 # Commission is 0.00 because it is a DEMO account — Aaron's standing fact: demos never charge
 # commission (a live Vantage RAW ECN would be $3.00/side/lot, but we never trade Vantage live).
-# Spread is NOT set here — it is measured live from the Vantage bid/ask tick stream (see module top).
 _XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.98,
                                  contract_size=100.0, digits=2, triple_weekday=2)
 
+# Bar-mode spreads, MEASURED off each broker's own cached bid/ask tick stream — never quoted from
+# the other one, and that distinction is not academic: the two differ by 50%.
+#   PU Prime XAUUSD.s (2026-07-14, 688k ticks)  — median 0.330, p90 0.330, p99 0.380. A FIXED
+#     marked-up spread, which is how a zero-commission tier is priced.
+#   Vantage  XAUUSD   (2026-08-02, 1,494,459 ticks over 60 sampled hours of the local tick cache,
+#     spanning 2025-08 → 2026-07) — median **0.220**, p90 0.270, p99 0.310, max 0.310.
+# Tick mode ignores both: it has the real bid and ask on every tick. These exist so BAR mode, which
+# sees one price per bar, can be told what it cannot measure.
+_SPREAD_XAUUSD_PUPRIME = 0.33
+_SPREAD_XAUUSD_VANTAGE = 0.22
+
 PROFILES = {
-    "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP),
-    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP),
-    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP),
-    "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=_XAUUSD_SWAP),
-    "vantage_demo":     AccountProfile("vantage_demo",     0.00, swap=_XAUUSD_SWAP_VANTAGE),
+    "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP,
+                                       spread=_SPREAD_XAUUSD_PUPRIME),
+    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP,
+                                       spread=_SPREAD_XAUUSD_PUPRIME),
+    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP,
+                                       spread=_SPREAD_XAUUSD_PUPRIME),
+    "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=_XAUUSD_SWAP,
+                                       spread=_SPREAD_XAUUSD_PUPRIME),
+    "vantage_demo":     AccountProfile("vantage_demo",     0.00, swap=_XAUUSD_SWAP_VANTAGE,
+                                       spread=_SPREAD_XAUUSD_VANTAGE),
 }
 
 

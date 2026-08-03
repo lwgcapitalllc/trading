@@ -209,3 +209,41 @@ def test_half_reached_resets_on_new_leg():
     ev = fib.update(high=115.0, low=114.0, snap=new)
     assert ev.origin_changed
     assert not ev.half_reached
+
+
+# ── the leg's own anchors (reporting only) ──
+
+def test_the_leg_anchors_are_reported_with_their_bars():
+    """`ash`/`asl` (the two prices every level is measured from) and `ash_loc`/`asl_loc` (the bars
+    they sit on). Reporting only — nothing in the level maths reads them back — but a consumer
+    needs both halves: the prices to derive a ratio the ladder has no rung for, and the BARS to
+    say where the leg is (the lab's price chart draws each trade's own fib from the bar its leg
+    started on, which two prices alone cannot locate)."""
+    fib = StructureFib()
+    ev = fib.update(105.0, 104.0, _bull_snap(ash=110.0, asl=100.0, ash_loc=10, asl_loc=0))
+    assert (ev.ash, ev.asl) == (110.0, 100.0)
+    assert (ev.ash_loc, ev.asl_loc) == (10, 0)
+    # And they are the anchors the levels were actually built from, not a parallel copy.
+    assert ev.levels["TP3"] == ev.ash        # 0.0
+    assert ev.levels["1.0"] == ev.asl        # 1.0
+
+
+def test_the_anchor_bars_follow_a_moving_pullback_extreme():
+    """The live anchor extends with the pullback, and its BAR must move with it — a stale loc
+    would draw the leg from a bar the fib no longer uses."""
+    fib = StructureFib()
+    fib.update(105.0, 104.0, _bull_snap(ash=110.0, asl=100.0, ash_loc=10, asl_loc=0))
+    ev = fib.update(112.0, 104.0, StructureSnapshot(
+        ash=110.0, asl=100.0, ash_loc=10, asl_loc=0, direction=1,
+        pb_mode=True, pb_extreme=112.0, pb_extreme_loc=25))
+    assert (ev.ash, ev.ash_loc) == (112.0, 25)
+    assert (ev.asl, ev.asl_loc) == (100.0, 0)
+
+
+def test_the_anchors_are_absent_while_the_fib_is_inactive():
+    """`active=False` means there is no leg, and a consumer deriving a price or a span off a stale
+    anchor would put a drawing on a leg that no longer exists."""
+    fib = StructureFib()
+    ev = fib.update(105.0, 104.0, StructureSnapshot(ash=None, asl=None, direction=0))
+    assert ev.active is False
+    assert (ev.ash, ev.asl, ev.ash_loc, ev.asl_loc) == (None, None, None, None)

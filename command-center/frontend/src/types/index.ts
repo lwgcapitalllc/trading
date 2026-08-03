@@ -59,6 +59,18 @@ export interface HistoryLimit {
   note: string                 // plain-English reason, shown under the date field
 }
 
+/** A broker account's MEASURED cost facts, served by `GET /backtests/broker-profiles`.
+ *  Never retype one of these numbers into a component — they come off the same object the
+ *  runner bills from, which is what stops the page and the charge disagreeing. */
+export interface BrokerProfile {
+  id: string
+  spread: number                     // price units, BAR MODE only (tick mode has the real book)
+  commission_per_side_per_lot: number
+  swap_long_points: number | null    // null = this profile prices no overnight financing
+  swap_short_points: number | null
+  contract_size: number
+}
+
 export interface RunNewsReport {
   has_data: boolean                  // false when the calendar cache is empty → filter inert
   coverage_start_ms: number | null   // earliest ms with news data — the "news starts here" boundary
@@ -496,11 +508,21 @@ export interface BacktestRunRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
+  cost_layers?: CostLayer[]
+  broker_profile?: string
   evaluate_rulesets: string[]
   source_run_id?: string | null
   sizing_mode?: SizingMode
   manual_risk_pct?: number | null   // required when sizing_mode === 'manual'
 }
+
+/** Which costs a python run charges. Empty = free, and that is the DEFAULT: the baseline run
+ *  stays directly comparable to the TradingView Strategy Tester, and each cost is a deliberate
+ *  choice. `spread` and `swap` are charged from the broker profile's own MEASUREMENTS; only
+ *  `slippage` is a number anyone types, because it is the only one that cannot be measured.
+ *  ⚠ `bid_ask_fills` is the odd one out — it REPLACES the spread cost rather than adding to it,
+ *  and it is the only layer that can change which trades exist. */
+export type CostLayer = 'spread' | 'swap' | 'commission' | 'slippage' | 'bid_ask_fills'
 
 export interface VerdictSummary {
   ruleset_id: string
@@ -606,6 +628,10 @@ export interface BacktestDetail {
   end_date: string
   commission_per_side: number
   slippage_ticks: number
+  /** `null` = the run predates layered costs, which is NOT the same as `[]` ("charged nothing
+   *  on purpose"). Keep the distinction when captioning it. */
+  cost_layers: CostLayer[] | null
+  broker_profile: string | null
   status: string
   error_message: string | null
   created_at: string

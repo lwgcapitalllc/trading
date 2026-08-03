@@ -159,6 +159,59 @@ def _leg_label(reason: str) -> str:
     return f"TP{m.group(1)}" if m else "Exit"
 
 
+def _trade_fib(p: dict, entry_price: float, mae_price: Optional[float]) -> Optional[dict]:
+    """A stored trade's frozen fib leg → the chart's `fib` object, or None when it has none.
+
+    The LEVELS are passed through untouched — they are the prices the strategy had in hand when
+    it placed the order (see `backtest/output.py::_trade_fib`), and re-deriving them here from
+    anchors would be a second implementation of the same fib on the same trade.
+
+    What IS computed here is the pair of readings a level list cannot state on its own, and they
+    are the thing that answers "what retracement did it go into":
+
+      - `entryRatio`  — where the fill landed on this ladder (0.702 = it filled at the 70.2%
+                        retrace). This is the trade's depth, stated in the strategy's own units.
+      - `deepestRatio`— the same for the deepest ADVERSE price of the whole hold, i.e. how far the
+                        retracement actually ran after the entry. It legitimately exceeds 1.0 on a
+                        trade that traded through the leg origin.
+
+    Both are pure geometry off two levels the ladder already carries, so no anchor, direction or
+    range is needed and there is nothing here that can disagree with the strategy: a fib price is
+    linear in its ratio, so any two (ratio, price) pairs define the whole line, and inverting it
+    maps a price back to its ratio. Returns None for a degenerate ladder (a zero-height leg) —
+    every ratio would map to the same price and a division would be by zero.
+    """
+    raw = p.get("fib")
+    if not isinstance(raw, dict):
+        return None
+    levels = [
+        {"ratio": float(r), "price": float(v)}
+        for r, v in (lv for lv in (raw.get("levels") or []) if isinstance(lv, (list, tuple)) and len(lv) == 2)
+        if isinstance(r, (int, float)) and isinstance(v, (int, float))
+    ]
+    if len(levels) < 2:
+        return None
+    lo, hi = levels[0], levels[-1]
+    span_ratio = hi["ratio"] - lo["ratio"]
+    span_price = hi["price"] - lo["price"]
+    if not span_ratio or not span_price:
+        return None
+
+    def ratio_at(price: Optional[float]) -> Optional[float]:
+        if price is None:
+            return None
+        return round(lo["ratio"] + (price - lo["price"]) * span_ratio / span_price, 4)
+
+    out: dict = {"levels": levels, "entryRatio": ratio_at(entry_price)}
+    start = raw.get("start_ms")
+    if isinstance(start, (int, float)) and start:
+        out["startTime"] = int(start)
+    deepest = ratio_at(mae_price)
+    if deepest is not None:
+        out["deepestRatio"] = deepest
+    return out
+
+
 def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
     """One trade per equity-curve point — every runner emits one point per CLOSED trade
     (NT8 `parse_trades_csv`, MT5 `_normalize_mt5_results`, Python `build_equity_curve`), so
@@ -218,6 +271,7 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
             if isinstance(lg.get("price"), (int, float))
             and (float(lg["price"]) - ep) * dir_sign > max(scratch, 1e-9)
         ]
+        fib = _trade_fib(p, ep, mae_price)
         trades.append({
             "id": f"T{n}",
             "dir": direction,
@@ -238,6 +292,11 @@ def _build_trades(equity_curve: list[dict], candles: list[dict]) -> list[dict]:
                 round(float(t), 5) for t in (p.get("tp_targets") or [])
                 if isinstance(t, (int, float)) and t
             ],
+            # The fib LEG the trade was priced off, plus where the entry and the deepest adverse
+            # price sat ON it. OPTIONAL: absent for any runner or strategy that doesn't record one
+            # (NT8/MT5, older Python runs, the B-LEG fork), which is what makes the chart's Trade
+            # fibs toggle disappear rather than render an empty layer.
+            **({"fib": fib} if fib else {}),
         })
     return trades
 

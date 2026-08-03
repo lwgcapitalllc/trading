@@ -940,3 +940,70 @@ def test_the_bleg_fork_pins_the_floor_off_because_it_cannot_enforce_it():
     from mpc_bleg.config import BLegConfig
 
     assert BLegConfig().exec_min_stop_mode == "Off"
+
+
+# ------------------------------------------------- the trade's own fib leg ------
+# Reporting-only, exactly like the excursion fields: nothing reads a recorded ladder back, so
+# these tests pin the RECORD, never a decision.
+
+def test_a_filled_trade_records_the_fib_leg_it_was_priced_off():
+    """The whole ladder, at the prices the strategy read, on the bar the order was placed."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())      # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())      # fill @103.82
+    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5), _seq_flat())              # stop out -> closed
+    t = ex.trades[0]
+    assert t.fib is not None
+    assert t.fib.levels == [
+        (0.0, 110.0), (0.382, 106.18), (0.5, 105.0), (0.618, 103.82),
+        (0.702, 102.8), (0.786, 102.0), (0.886, 101.14), (1.0, 100.0),
+    ]
+
+
+def test_the_recorded_fib_is_the_one_the_ORDER_rested_on_not_the_one_at_the_fill():
+    """A fib is live — it keeps extending while the limit sits there. Reading it again at the fill
+    would report a leg the order was never priced against, and the stop/targets on that same trade
+    would then belong to a different ladder from the one drawn beside them."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())      # place off the 110/100 leg
+    # The leg extends before the limit fills: same setup, every level moved.
+    moved = dict(fibo_p1=126.18, fibo_p2=125.0, fibo_p3=123.82, fibo_p4=122.8,
+                 fibo_p5=122.0, fibo_p6=121.14, fibo_p7=130.0, fibo_p10=120.0,
+                 fibo_ash=130.0, fibo_asl=120.0)
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0, **moved), _seq_long_ready())   # fill @103.82
+    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5, **moved), _seq_flat())           # stop out
+    assert ex.trades[0].fib.levels[0] == (0.0, 110.0)      # the leg at PLACEMENT, not 130.0
+    assert ex.trades[0].fib.levels[-1] == (1.0, 100.0)
+
+
+def test_the_fib_start_is_the_bar_the_LEG_began_not_the_entry():
+    """The x-span the chart draws from. A ladder starting at the fill would hide the retracement
+    that produced it, which is the thing the layer exists to show."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, fibo_ash_ms=7_000, fibo_asl_ms=3_000),
+            _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0, fibo_ash_ms=7_000, fibo_asl_ms=3_000),
+            _seq_long_ready())
+    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5), _seq_flat())
+    assert ex.trades[0].fib.start_ms == 3_000     # the EARLIER anchor — where the leg started
+
+
+def test_an_incompletely_priced_fib_is_recorded_as_NOTHING_rather_than_partially():
+    """All-or-nothing: a ladder missing a rung would draw seven levels and silently omit the
+    eighth, which reads as 'this trade had no 0.786' instead of 'this record is incomplete'."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, fibo_p5=None), _seq_long_ready())
+    assert ex._pend_long is not None and ex._pend_long.fib is None
+
+
+def test_the_secondary_reentry_records_no_A_plus_ladder():
+    """The 1m sniper rests at a retrace of its OWN tight 1m leg, which is a different fib. Absent
+    is the honest answer; borrowing the 15m ladder would label the re-entry with a leg it was
+    never priced on."""
+    from types import SimpleNamespace
+
+    ex = Execution(_cfg())
+    arm = SimpleNamespace(l_armed=True, l_edge=103.0, l_sl=102.0, l_tp1=105.0, l_tp2=106.0,
+                          l_leg=1, s_armed=False, s_edge=None, s_sl=None,
+                          s_tp1=None, s_tp2=None, s_leg=None)
+    assert ex._secondary_pending(arm).fib is None

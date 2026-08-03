@@ -541,6 +541,13 @@ class BacktestRunRequest(BaseModel):
     # and Python runs that have no such cost. State the costs you want charged; nothing is assumed.
     commission_per_side: float = 0.0
     slippage_ticks: int = 0
+    # Layered costs (python runner, 2026-08-02). EMPTY BY DEFAULT and that is Aaron's call: the
+    # baseline run is frictionless so it stays directly comparable to the TradingView Strategy
+    # Tester, and each cost is switched on deliberately. Known layers live in
+    # `services/python_runner.COST_LAYERS`; `broker_profile` names whose MEASURED spread and swap
+    # to charge (a key of `backtest.fills.PROFILES`), so neither is ever typed in by hand.
+    cost_layers: list[str] = []
+    broker_profile: str = "vantage_demo"
     evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
     source_run_id: Optional[str] = None # run this was derived from (e.g. a tuning iteration)
@@ -559,6 +566,25 @@ class BacktestRunRequest(BaseModel):
     @property
     def ruleset_ids(self) -> list[str]:
         return self.evaluate_rulesets or self.evaluate_firms
+
+
+class BrokerProfile(BaseModel):
+    """A broker account's MEASURED cost facts, served so the Run modal never retypes one.
+
+    Same discipline as `HistoryLimit` below and for the same reason: a number copied into the
+    frontend is a second claim about what the runner charges, and this lab's recurring defect is
+    exactly that — a page stating a value nothing downstream reads. These come straight off
+    `backtest.fills.PROFILES`, the object the run is billed from.
+
+    `swap_*_points` are null when the profile prices no overnight financing. `spread` is in price
+    units and is BAR-MODE only — tick mode has the real bid and ask on every tick.
+    """
+    id: str
+    spread: float
+    commission_per_side_per_lot: float
+    swap_long_points: Optional[float] = None
+    swap_short_points: Optional[float] = None
+    contract_size: float
 
 
 class HistoryLimit(BaseModel):
@@ -680,6 +706,10 @@ class BacktestDetail(BaseModel):
     end_date: str
     commission_per_side: float
     slippage_ticks: int
+    # `None` = a run made before layers existed, which is NOT the same as an empty list ("charged
+    # nothing on purpose"). The page must be able to say which, so the Optional is load-bearing.
+    cost_layers: Optional[list[str]] = None
+    broker_profile: Optional[str] = None
     status: str
     error_message: Optional[str] = None
     created_at: datetime

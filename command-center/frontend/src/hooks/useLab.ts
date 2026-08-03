@@ -6,6 +6,7 @@ import type {
   Strategy, ScanResult, ReconcileResult, DeployJobStatus,
   Ruleset, RulesetCreate, PersonalRulesetPatch,
   BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport, HistoryLimit,
+  BrokerProfile,
   LabProgress, SystemHealth,
   SweepRequest, SweepResponse, SweepDetail,
   StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
@@ -222,6 +223,20 @@ export function useHistoryLimit(
     ),
     enabled: !!instrument,
     staleTime: 60 * 60_000,
+  })
+}
+
+// The broker cost profiles a python run can charge from, with their MEASURED numbers.
+// Same rule as `useHistoryLimit` above: the spread is a measurement, so the modal reads it from
+// the object the runner bills from instead of carrying its own copy. A hardcoded 0.22 here would
+// keep reading 0.22 the day the measurement moved — a page stating a value nothing charges is
+// this lab's most-repeated defect.
+// Effectively static: it only changes when someone re-measures a broker.
+export function useBrokerProfiles() {
+  return useQuery({
+    queryKey: ['lab', 'broker-profiles'],
+    queryFn: () => api.get<BrokerProfile[]>('/backtests/broker-profiles'),
+    staleTime: Infinity,
   })
 }
 

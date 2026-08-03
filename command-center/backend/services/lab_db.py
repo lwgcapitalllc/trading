@@ -511,6 +511,14 @@ def init_db() -> None:
             "ALTER TABLE backtest_runs ADD COLUMN max_drawdown_pct REAL",
             "ALTER TABLE backtest_runs ADD COLUMN scratch_count INTEGER",
             "ALTER TABLE backtest_runs ADD COLUMN trade_concentration_pct REAL",
+            # 2026-08-02 — layered costs (python runner). `cost_layers` is a JSON list naming which
+            # costs to charge; `broker_profile` is the `backtest.fills.PROFILES` key the measured
+            # facts (spread, swap, commission) are read from, so nothing is typed in.
+            # ⚠ NULL `cost_layers` is NOT the same as '[]': NULL means the row predates the column
+            # and must keep the OLD behaviour (charge whatever commission/slippage it stated), so
+            # every historical run stays reproducible. '[]' is an explicit "charge nothing".
+            "ALTER TABLE backtest_runs ADD COLUMN cost_layers TEXT",
+            "ALTER TABLE backtest_runs ADD COLUMN broker_profile TEXT",
             # Tradeify corrections — current $50k target is $3,000 (old accounts grandfathered at
             # $2,500); and the $50k/$100k eval trailing MLL locks at start+$100.
             "UPDATE rulesets SET profit_target = 3000 WHERE id = 'tradeify_50k_eval'",
@@ -1613,8 +1621,8 @@ def insert_run(data: dict) -> None:
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
                  status, created_at, started_at, evaluate_firms, runner, optimization_id,
-                 source_run_id, sizing_mode, manual_risk_pct)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_run_id, sizing_mode, manual_risk_pct, cost_layers, broker_profile)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
@@ -1627,6 +1635,11 @@ def insert_run(data: dict) -> None:
             data.get("source_run_id"),
             data.get("sizing_mode", "consistent"),
             data.get("manual_risk_pct"),
+            # Always written, even when empty — '[]' is "charge nothing", NULL is "this row
+            # predates layers", and `python_runner._cost_profile` treats them differently on
+            # purpose. A new run must never land in the legacy branch.
+            json.dumps(data.get("cost_layers") or []),
+            data.get("broker_profile") or "vantage_demo",
         ))
 
 

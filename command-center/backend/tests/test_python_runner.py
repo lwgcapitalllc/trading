@@ -218,3 +218,85 @@ def test_either_cost_alone_still_builds_a_profile():
     # Swap is a broker fact the lab does not collect. Inventing one here would move every
     # result under the banner of a commission change; tick mode remains the way to price it.
     assert p.swap is None
+
+
+# ── layered costs (2026-08-02) ───────────────────────────────────────────────────
+#
+# Aaron's shape: the baseline run stays FREE so it is comparable to the TradingView Strategy
+# Tester, and each cost is switched on deliberately. The two costs we can measure (spread, swap)
+# come off a broker profile so nobody types them; slippage keeps its own switch because it is the
+# one that genuinely cannot be measured from history.
+
+def test_an_explicit_empty_layer_list_charges_nothing():
+    """The default, and it must produce NO profile — not a zero-valued one — so the charge paths
+    stay unentered and the run is byte-identical to a pre-cost result."""
+    from services.python_runner import _cost_profile
+
+    assert _cost_profile({"cost_layers": []}) is None
+    # ...even when the numbers are sitting right there un-ticked.
+    assert _cost_profile({"cost_layers": [], "commission_per_side": 3.0,
+                          "slippage_ticks": 2}) is None
+
+
+def test_a_missing_layer_list_is_not_an_empty_one():
+    """NULL means the row predates layers and must keep the OLD contract (charge what it stated);
+    `[]` means charge nothing. Collapsing the two would silently re-price every stored run the
+    first time it was retried."""
+    from services.python_runner import _cost_profile
+
+    legacy = _cost_profile({"commission_per_side": 2.25, "slippage_ticks": 1})
+    assert legacy is not None and legacy.commission_per_side_per_lot == 2.25
+    assert _cost_profile({"cost_layers": [], "commission_per_side": 2.25,
+                          "slippage_ticks": 1}) is None
+
+
+def test_spread_and_swap_come_from_the_broker_not_the_request():
+    """Both are MEASUREMENTS. A field the operator can type is a field that can disagree with the
+    broker, so neither is accepted from the request at all."""
+    from services.python_runner import _cost_profile
+
+    p = _cost_profile({"cost_layers": ["spread", "swap"]})
+    assert p.spread == 0.22                      # Vantage gold, measured off 1.49M cached ticks
+    assert p.swap is not None and p.swap.swap_long_points == -74.84
+    assert p.commission_per_side_per_lot == 0.0  # not ticked
+    assert p.slippage_ticks == 0
+
+
+def test_the_broker_profile_changes_the_spread():
+    """0.22 vs 0.33 is a 50% difference, and it is the whole reason the profile is a choice."""
+    from services.python_runner import _cost_profile
+
+    assert _cost_profile({"cost_layers": ["spread"],
+                          "broker_profile": "puprime_standard"}).spread == 0.33
+
+
+def test_bid_ask_fills_implies_a_spread_to_model():
+    """Modelling the ask with no spread is a no-op wearing a label — the class of silent nothing
+    this whole area exists to stop."""
+    from services.python_runner import _cost_profile
+
+    p = _cost_profile({"cost_layers": ["bid_ask_fills"]})
+    assert p.bid_ask_fills is True and p.spread == 0.22
+
+
+def test_each_layer_only_switches_on_its_own_cost():
+    from services.python_runner import _cost_profile
+
+    p = _cost_profile({"cost_layers": ["slippage"], "slippage_ticks": 2,
+                       "commission_per_side": 3.0})
+    assert p.slippage_ticks == 2
+    assert p.commission_per_side_per_lot == 0.0, "commission was not ticked"
+    assert p.spread == 0.0 and p.swap is None
+
+
+def test_an_unknown_layer_or_broker_is_refused_loudly():
+    """A layer nobody reads would be charged as nothing while the page said otherwise — which is
+    precisely the defect this module's docstring is about."""
+    import pytest as _pytest
+
+    from services.python_runner import _cost_profile
+
+    with _pytest.raises(ValueError):
+        _cost_profile({"cost_layers": ["spred"]})
+    with _pytest.raises(ValueError):
+        _cost_profile({"cost_layers": ["spread"], "broker_profile": "not_a_broker"})

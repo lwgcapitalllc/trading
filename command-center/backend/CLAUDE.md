@@ -919,6 +919,42 @@ and it predates the 2026-07-18 mpc default drift, so it is replayed with the set
 (which is what the config keyword arguments on `build_fvg_overlays` exist for). That the ENGINE still
 matches today's mpc build is proven separately by `engines/fair_value_gaps/tools/compare_fvg.py`.
 
+## Trade fibs — the leg each trade was actually priced off
+
+`chart_spec._trade_fib`. Aaron's brother asked to see, on every trade the chart plots, the fib run
+on the points that trade used — which retracement levels it went into. The strategy records that
+ladder when it places the order (`mpc_sos_fade/execution.py` → `TradeFib`), `backtest/output.py`
+puts it on the equity-curve point, and this turns it into the chart's `trades[].fib`.
+
+**The levels are PASSED THROUGH; only the two RATIOS are computed here.** That split is the whole
+design. The prices are the ones the strategy had in hand at placement, so a chart and a bot can
+never disagree about where a level sat — a fib rebuilt downstream from anchors and a direction is
+a second claim about one leg, which is the failure this repo has now met four times (Run modal
+costs, Optimize modal params, the SSH dot, the lab-vs-Pine parameter names). What a price ladder
+CANNOT state is where the fill landed on it, and that is the question:
+
+- **`entryRatio`** — the fill as a ratio (0.702 = it entered at the 70.2% retrace). On the A+ bot
+  this reproduces the entry model without being told about it: an entry snapped to a fib by
+  `_fib_snap` reads exactly 0.618 / 0.702 / 0.786, and a gap-edge entry reads between two rungs.
+- **`deepestRatio`** — the same for the deepest ADVERSE price of the hold, i.e. how far the
+  retracement really ran after entry. **Not clamped at 1.0**: a trade that traded through the leg
+  origin genuinely retraced past it, and clamping would report every stop-out as having stopped
+  exactly at the origin.
+
+Both are pure geometry off two levels the ladder already carries — a fib price is linear in its
+ratio, so any two `(ratio, price)` pairs define the line and inverting it maps a price back. **No
+anchor, no direction, no range**, hence no branch for a bear leg and nothing here that can drift
+from the strategy. A degenerate (zero-height) leg returns `None` rather than dividing by zero.
+
+`startTime` is the bar the LEG began on, not the entry — a ladder starting at the fill would hide
+the retracement that produced it, which is the thing the layer exists to show.
+
+**Optional end to end**, like blocks and misses: NT8/MT5 record none, a Python run finished before
+this landed has none (**no backfill — it would mean replaying the strategy**), and `mpc_bleg` has
+none by construction. The chart's Trade fibs toggle is listed off whether any trade carries one, so
+absence removes the switch instead of offering an empty layer. Existing runs need **Reload charts**
+(`chart_spec.json` is cached). Tests: `tests/test_chart_spec_trade_fib.py` (12).
+
 ## News filter (post-run)
 
 The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time gate: the lab runs every backtest RAW (news is never wired into the C#/MQL5 strategy), so removing news-window trades is pure arithmetic on the finished trade list — instant, no VPS re-run. Design decision (Aaron 2026-07-05): **run raw + toggle after.** Window default **15 min before / 30 min after** a high-impact USD release (asymmetric — liquidity dies only in the last minutes before; the spike/reversal/move run 15–30 min after). **Two rules, both switchable, and BOTH DEFAULT OFF** (2026-08-01, Aaron's call): the page opens on the run exactly as traded, so every number on it is the backtest's own and turning a rule on is a deliberate what-if. That replaced two different defaults for one reason — a filtered default means the headline figure on screen is not the run's result, and no checkbox further down the page makes that obvious. Holidays had defaulted ON (hardcoded always-excluded with no control at all until 2026-07-30, when they became a visible checkbox but stayed ticked), and news followed the strategy's own `avoid_news`, so the default silently DIFFERED BETWEEN STRATEGIES — two runs over the same window could open on different trade counts with nothing on screen explaining why. The backend reports `in_news` and `in_holiday` separately and always has; every default here has been a frontend-only decision.

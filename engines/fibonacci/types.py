@@ -159,6 +159,13 @@ class StructureFibEvents:
     # as the entry — Pine gets that for free by computing inside its fib block.
     ash: Optional[float] = None                       # swing HIGH anchor
     asl: Optional[float] = None                       # swing LOW anchor
+    # The BARS those two anchors sit on (Pine `fibo_ash_loc` / `fibo_asl_loc`). Same standing as
+    # the prices above: existing internal state, surfaced unchanged, read by nobody in the level
+    # maths — so detection is untouched and `compare_fib.py` is unaffected. A consumer needs them
+    # to say WHERE the leg is, which two prices alone cannot answer (the chart draws a trade's own
+    # fib from the leg's origin bar). Both None whenever `active` is False, like the prices.
+    ash_loc: Optional[int] = None
+    asl_loc: Optional[int] = None
 
 
 @dataclass

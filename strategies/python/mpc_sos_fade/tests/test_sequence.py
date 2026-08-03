@@ -123,3 +123,38 @@ def test_stale_arm_clears_after_window():
     late = (cfg.aplus_window + 1) * 60_000
     st = seq.update(_sig(index=1, time_ms=late))
     assert st.l_stage == 0
+
+
+# ------------------------------------------------- the leg's anchor TIMES -------
+# `fibo_ash_ms` / `fibo_asl_ms` are reporting-only (nothing in the A+ path reads them), and they
+# exist so a consumer downstream of this run can say WHERE the fib leg is. The engine reports its
+# anchors as bar INDICES; a bar index is relative to the window that produced it, so shipping one
+# to a chart that trimmed its candles would point at the wrong candle — hence times.
+
+def test_the_fib_leg_anchor_times_are_real_bar_timestamps_from_this_run():
+    out = _run(synth_bars(10))
+    times = {sig.time_ms for sig, _ in out}
+    live = [sig for sig, _ in out if sig.fibo_ash is not None]
+    assert live, "the fib never went active on this fixture — nothing is being tested"
+    for sig in live:
+        assert sig.fibo_ash_ms in times
+        assert sig.fibo_asl_ms in times
+        # An anchor is a PAST swing, so it can never postdate the bar reporting it.
+        assert sig.fibo_ash_ms <= sig.time_ms
+        assert sig.fibo_asl_ms <= sig.time_ms
+
+
+def test_no_anchor_time_ever_outlives_its_anchor():
+    """They are two halves of one fact. A time surviving a leg that has gone would let a consumer
+    draw a span for a leg that no longer exists. The converse is deliberately NOT asserted: an
+    anchor whose bar predates this run's first bar has no time here, and `_bar_time` answers None
+    rather than inventing one — over a full replay that case cannot arise (every bar from index 0
+    is recorded), which is why both directions hold in practice."""
+    out = _run(synth_bars(10))
+    assert any(sig.fibo_ash is not None for sig, _ in out), "fixture never activates the fib"
+    assert any(sig.fibo_ash is None for sig, _ in out), "fixture never has the fib inactive"
+    for sig, _ in out:
+        if sig.fibo_ash is None:
+            assert sig.fibo_ash_ms is None
+        if sig.fibo_asl is None:
+            assert sig.fibo_asl_ms is None

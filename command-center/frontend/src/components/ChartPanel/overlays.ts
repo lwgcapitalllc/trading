@@ -86,6 +86,15 @@ export const FOCUS = 'lwgFocus'
 /** User-drawn Fibonacci retracement tool (2 anchor points → horizontal levels + price labels). */
 export const FIB = 'lwgFib'
 
+/** A TRADE's own fib leg — the ladder the strategy priced that entry, stop and targets off,
+ *  recorded at order placement and shipped on the trade. Deliberately a separate template from
+ *  `FIB` rather than a configured instance of it, for the same reason `MISS` and `BLOCK` are two
+ *  names: this one is DATA, not a drawing. It must not be draggable, selectable, deletable, or
+ *  affected by the fib editor — a reader who retunes their own ladder has not changed what the bot
+ *  measured. It also needs no fib MATHS: every level arrives as an explicit (ratio, price) pair,
+ *  so nothing in the browser can arrive at a different price from the strategy. */
+export const TRADE_FIB = 'lwgTradeFib'
+
 /** One rung of the fib ladder. `visible: false` keeps a level in the user's configured set while
  *  leaving it off the chart — the difference between "I don't use this one right now" and "delete
  *  it", exactly as the checkbox in TradingView's fib settings behaves. */
@@ -106,6 +115,26 @@ export const DEFAULT_FIB_LEVELS: FibLevel[] = [
   { ratio: 0.886, color: '#ef5350' }, // red
   { ratio: 1,     color: '#9598a1' }, // neutral (same as 0)
 ]
+
+/** Ratio → factory colour, for a TRADE's fib. It reads the FACTORY set and never the user's
+ *  configured ladder: the levels a trade was priced on are a fact about that trade, so retuning
+ *  the drawing tool must not restyle them — but a 0.618 drawn by the bot should still look like a
+ *  0.618 you drew yourself, which is what sharing the constant buys. */
+const FACTORY_LEVEL_COLOR = new Map(DEFAULT_FIB_LEVELS.map(l => [l.ratio, l.color]))
+/** A ratio the factory set doesn't name (a strategy with its own ladder) — grey, not invisible. */
+const UNNAMED_LEVEL_COLOR = '#9598a1'
+
+/** One rung of a trade's recorded fib: the ratio and the price the STRATEGY read for it. */
+export interface TradeFibLevel { ratio: number; price: number }
+interface TradeFibExtend {
+  levels?: TradeFibLevel[]
+  entryPrice?: number
+  entryRatio?: number
+  deepestPrice?: number
+  deepestRatio?: number
+  chipBg?: string
+  accent?: string
+}
 
 /** Style + label passed to generic overlays via `extendData`. Mirrors spec OverlayStyle. */
 interface OverlayExtend {
@@ -535,6 +564,84 @@ export function registerChartOverlays(): void {
           },
           ignoreEvent: true,
         })
+      }
+      return figures
+    },
+  })
+
+  // ── A trade's own fib leg (data, not a drawing — see TRADE_FIB) ────────────────
+  // Two points give the x-span only: the bar the LEG started on → the trade's exit, so the ladder
+  // reaches back through the retracement that produced the entry rather than starting at the fill.
+  // Every y comes from a level's own recorded price, so there is no fib maths here at all.
+  registerOverlay({
+    name: TRADE_FIB,
+    totalStep: 2,
+    lock: true,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, yAxis }) => {
+      if (coordinates.length < 2 || !yAxis) return []
+      const d = (overlay.extendData ?? {}) as TradeFibExtend
+      const levels = Array.isArray(d.levels) ? d.levels : []
+      if (!levels.length) return []
+      const chipBg = withAlpha(d.chipBg ?? '#0d0d1a', 0.82)
+      const accent = d.accent ?? '#22d3ee'
+      const xLeft = Math.min(coordinates[0].x, coordinates[1].x)
+      const xRight = Math.max(coordinates[0].x, coordinates[1].x)
+      const figures: OverlayFigure[] = []
+
+      for (const lvl of levels) {
+        const color = FACTORY_LEVEL_COLOR.get(lvl.ratio) ?? UNNAMED_LEVEL_COLOR
+        const y = yAxis.convertToPixel(lvl.price)
+        figures.push({
+          type: 'line',
+          attrs: { coordinates: [{ x: xLeft, y }, { x: xRight, y }] },
+          styles: { color, size: 0.5, style: 'solid' },
+          ignoreEvent: true,
+        })
+        // The RATIO alone, left-aligned at the leg's start. A hand-drawn fib prints the price too
+        // because you placed it and want to check where it landed; here the price is already on the
+        // axis and the ratio is the whole question ("which retracement did it enter at"), so the
+        // chip stays narrow — several trades' ladders can be on screen at once.
+        figures.push({
+          type: 'text',
+          attrs: { x: xLeft, y, text: `${lvl.ratio}`, align: 'left', baseline: 'middle' },
+          styles: {
+            style: 'stroke_fill', color, size: 9, weight: 'normal',
+            backgroundColor: chipBg, borderColor: withAlpha(color, 0.4), borderSize: 1,
+            borderStyle: 'solid', borderRadius: 3,
+            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          },
+          ignoreEvent: true,
+        })
+      }
+
+      // The two readings the ladder cannot state on its own, in the strategy's own units: where the
+      // fill landed on this leg, and how deep the retracement actually ran afterwards. Both sit at
+      // the RIGHT edge so they never collide with the ratio chips on the left.
+      const mark = (price: number | undefined, ratio: number | undefined, text: string) => {
+        if (typeof price !== 'number' || typeof ratio !== 'number') return
+        const y = yAxis.convertToPixel(price)
+        figures.push({
+          type: 'text',
+          attrs: { x: xRight, y, text: `${text} ${ratio.toFixed(3)}`, align: 'right', baseline: 'middle' },
+          styles: {
+            style: 'stroke_fill', color: accent, size: 9, weight: 'bold',
+            backgroundColor: chipBg, borderColor: withAlpha(accent, 0.5), borderSize: 1,
+            borderStyle: 'solid', borderRadius: 3,
+            paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+          },
+          ignoreEvent: true,
+        })
+      }
+      mark(d.entryPrice, d.entryRatio, 'entry')
+      // Only when the trade actually went deeper than its entry by a visible margin — otherwise the
+      // two chips land on the same pixel row and read as one garbled label. A trade that never
+      // retraced past its fill has nothing to add here anyway.
+      if (typeof d.deepestRatio === 'number' && typeof d.entryRatio === 'number'
+          && d.deepestRatio - d.entryRatio > 0.02) {
+        mark(d.deepestPrice, d.deepestRatio, 'deepest')
       }
       return figures
     },

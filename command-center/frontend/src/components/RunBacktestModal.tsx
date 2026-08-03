@@ -2,11 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { X, Play, Info } from 'lucide-react'
 import { AlertTriangle } from 'lucide-react'
-import { useFirms, useTriggerBacktest, useRunningVpsJob, useHistoryLimit } from '@/hooks/useLab'
+import { useFirms, useTriggerBacktest, useRunningVpsJob, useHistoryLimit, useBrokerProfiles } from '@/hooks/useLab'
 import { ParamEditor } from '@/components/ParamEditor'
 import { PeriodPicker, PresetBtn, today, yearsAgo } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runningJobFor, RUNNER_LABEL, runnerMarket } from '@/lib/runner'
-import type { Strategy, Firm, SizingMode } from '@/types'
+import type { Strategy, Firm, SizingMode, CostLayer, BrokerProfile } from '@/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
@@ -123,6 +123,16 @@ function SectionHead({ label, tooltip }: { label: string; tooltip?: string }) {
       {tooltip && <InfoTooltip content={tooltip} />}
     </div>
   )
+}
+
+/** Account-currency swap for ONE lot for ONE night, from the broker's quoted POINTS.
+ *  The broker's own formula: points x contract size x 10^-digits. Doing it here rather than
+ *  shipping a pre-multiplied number keeps the served profile a faithful copy of the
+ *  Specification window — the same reason the spread is served raw. Digits is 2 on gold, and
+ *  is the one term not on `BrokerProfile`; it is fixed at 2 for every profile we quote. */
+function swapPerNight(b: BrokerProfile, side: 'long' | 'short'): number {
+  const pts = (side === 'long' ? b.swap_long_points : b.swap_short_points) ?? 0
+  return pts * b.contract_size * 0.01
 }
 
 function Divider() {
@@ -290,6 +300,51 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
   const [commPerSide, setCommPerSide]     = useState(0)
   const [slippageTicks, setSlippageTicks] = useState(0)
 
+  // ── Costs (python runner) — OFF by default, and that is the design ──────────
+  // Aaron's call (2026-08-02): the baseline run charges nothing, so it stays directly comparable
+  // to the TradingView Strategy Tester, and every cost is something you deliberately switched on.
+  // Spread and swap are MEASURED and come off the broker profile; slippage is the only figure
+  // anyone types, because it is the only one history cannot measure — which is exactly why it
+  // gets its own switch instead of riding along with the others.
+  const [costLayers, setCostLayers] = useState<Set<CostLayer>>(new Set())
+  const [brokerProfile, setBrokerProfile] = useState('vantage_demo')
+  const { data: brokerProfiles } = useBrokerProfiles()
+  const broker = brokerProfiles?.find(b => b.id === brokerProfile) ?? null
+
+  const toggleLayer = (layer: CostLayer) => setCostLayers(prev => {
+    const next = new Set(prev)
+    if (next.has(layer)) next.delete(layer)
+    else next.add(layer)
+    // The spread can be priced as a COST or modelled into the FILLS, never both — doing both
+    // bills one spread twice (see `Execution._charge_spread`). The UI enforces the same
+    // exclusivity the backend does, so the two can never describe different runs.
+    if (layer === 'bid_ask_fills' && next.has('bid_ask_fills')) next.delete('spread')
+    if (layer === 'spread' && next.has('spread')) next.delete('bid_ask_fills')
+    return next
+  })
+
+  // Every `detail` is derived from the SERVED profile, never retyped — see `useBrokerProfiles`.
+  // `tag` marks the two rows that are not plain measured costs, because both mislead if read as
+  // one: slippage is a guess, and bid/ask changes the trade list rather than just the P&L.
+  const costRows: { id: CostLayer; label: string; detail: string; tag?: string }[] = [
+    { id: 'spread', label: 'Spread',
+      detail: broker ? `$${broker.spread.toFixed(2)} per round turn, measured on this broker`
+                     : 'measured per broker' },
+    { id: 'swap', label: 'Overnight swap',
+      detail: broker?.swap_long_points != null
+        ? `$${swapPerNight(broker, 'long').toFixed(2)} a night per lot long, `
+          + `$${swapPerNight(broker, 'short').toFixed(2)} short`
+        : 'this account prices no financing' },
+    { id: 'commission', label: 'Commission',
+      detail: 'charges the figure below, per lot per side' },
+    { id: 'slippage', label: 'Slippage', tag: 'a guess',
+      detail: 'charges the ticks below, on market exits only' },
+    { id: 'bid_ask_fills', label: 'Model bid/ask on fills', tag: 'moves trades',
+      detail: broker
+        ? `buys transact $${broker.spread.toFixed(2)} higher — some longs never fill, some stops do`
+        : 'buys transact at the ask' },
+  ]
+
   useEffect(() => {
     if (primaryRuleset?.default_commission_per_side != null) {
       setCommPerSide(primaryRuleset.default_commission_per_side)
@@ -330,6 +385,8 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         end_date:            endDate,
         commission_per_side: commPerSide,
         slippage_ticks:      slippageTicks,
+        cost_layers:         isPython ? Array.from(costLayers) : [],
+        broker_profile:      brokerProfile,
         evaluate_rulesets:   Array.from(selectedFirms),
         sizing_mode:         sizingMode,
         manual_risk_pct:     sizingMode === 'manual' ? manualPctNum : null,
@@ -738,6 +795,76 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
                     </div>
                   ))}
                 </div>
+              </div>
+            </>
+          )}
+
+          {isPython && (
+            <>
+              <Divider />
+
+              {/* Costs — off by default; each one is a deliberate choice */}
+              <div>
+                <SectionHead
+                  label="Costs"
+                  tooltip="Nothing is charged unless you tick it, so a bare run is frictionless and comparable to the TradingView Strategy Tester. Spread and swap are measured off the broker account below — they are facts, not settings."
+                />
+
+                <div className="flex items-center gap-2 mb-2.5">
+                  <label className="text-[11px] text-text-secondary flex-shrink-0">Broker account</label>
+                  <select
+                    value={brokerProfile}
+                    onChange={e => setBrokerProfile(e.target.value)}
+                    className={`${inputCls} max-w-[220px]`}
+                  >
+                    {(brokerProfiles ?? []).map(b => (
+                      <option key={b.id} value={b.id}>{b.id}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  {costRows.map(row => {
+                    const on = costLayers.has(row.id)
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => toggleLayer(row.id)}
+                        className={`w-full flex items-start gap-2.5 px-2.5 py-2 rounded border text-left transition-colors ${
+                          on
+                            ? 'border-accent/40 bg-accent/5'
+                            : 'border-border-subtle/50 bg-bg-sunken hover:border-border-default'
+                        }`}
+                      >
+                        <span
+                          className={`mt-[2px] w-3.5 h-3.5 rounded-sm border flex-shrink-0 flex items-center justify-center ${
+                            on ? 'border-accent bg-accent' : 'border-border-default'
+                          }`}
+                        >
+                          {on && <span className="text-[9px] leading-none text-bg-base font-bold">✓</span>}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-[12px] text-text-primary">{row.label}</span>
+                            {row.tag && (
+                              <span className="text-[9px] uppercase tracking-[0.4px] px-1 py-[1px] rounded bg-warn-muted text-warn-text">
+                                {row.tag}
+                              </span>
+                            )}
+                          </span>
+                          <span className="block text-[11px] text-text-tertiary leading-snug">{row.detail}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {costLayers.size === 0 && (
+                  <p className="mt-2 text-[11px] text-text-tertiary">
+                    Nothing ticked — this run charges no costs at all.
+                  </p>
+                )}
               </div>
             </>
           )}

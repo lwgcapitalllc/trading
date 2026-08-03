@@ -31,6 +31,7 @@ The adapter is a streaming state machine (like the engines): feed one `BarState`
 
 from __future__ import annotations
 
+from array import array
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -141,6 +142,17 @@ class Signals:
     last_conf_high: Optional[float] = None
     last_conf_low: Optional[float] = None
 
+    # The TIMES of the two leg anchors above (`fibo_ash` / `fibo_asl`), in epoch ms. REPORTING
+    # ONLY — no decision reads them, so they are parity-safe in the same way `Trade.mfe_usd` is.
+    # They exist because a fib is a leg, not just a price ladder: the lab's price chart draws each
+    # trade's own fib from the bar the leg STARTED on, and two prices cannot say where that is.
+    # ⚠ Times, deliberately not bar INDICES. An index is relative to the window that produced it,
+    # and this repo has already been bitten once by diffing a Pine `bar_index` across two windows
+    # (`strategies/CLAUDE.md` → the B-LEG harness bug). A timestamp survives being shipped to a
+    # chart that trimmed its candles. None on the same bars `fibo_ash`/`fibo_asl` are None.
+    fibo_ash_ms: Optional[int] = None
+    fibo_asl_ms: Optional[int] = None
+
 
 # Pine fib level name -> the engine's `levels` dict key (see fibonacci/engine.py _RATIO).
 # Prices coincide where a retrace and a target share a ratio (0.5, 0.382), so the key
@@ -187,6 +199,14 @@ class SignalAdapter:
         # session-gap detector needs the previous two bar timestamps (Pine time[1]/time[2])
         self._prev_time: Optional[int] = None
         self._prev_prev_time: Optional[int] = None
+
+        # Bar index -> that bar's epoch ms, appended once per bar. The ONLY reason it exists is
+        # `fibo_ash_ms`/`fibo_asl_ms`: the fib engine reports its leg anchors as bar INDICES, and
+        # a consumer downstream of this run needs times. An anchor can sit thousands of bars back,
+        # so a bounded window would not do. `array("q")` rather than a list because it is a dense
+        # table of one int per bar — 8 bytes each, ~1.2 MB over a 155k-bar replay, against ~5 MB
+        # of boxed ints. Reporting-only, like the two fields it feeds.
+        self._bar_ms = array("q")
 
         # liquidity swept slots (Pine liq_* vars): highs -> BSL, lows -> SSL
         self._bsl = {k: _LiqSlot() for k in ("h4", "day", "asia", "london", "ny")}
@@ -307,6 +327,12 @@ class SignalAdapter:
         index, t = bar.index, bar.timestamp_ms
         o, high, low, c = bar.open, bar.high, bar.low, bar.close
 
+        # Index -> time, for `_bar_time` below. Written by index rather than appended so a caller
+        # that steps the same bar twice cannot desync the table from the engine's bar numbering.
+        while len(self._bar_ms) <= index:
+            self._bar_ms.append(t)
+        self._bar_ms[index] = t
+
         # session-gap bar (Pine 3726-3728): a time jump > 2x the normal spacing
         bar_gap = 0 if self._prev_time is None else t - self._prev_time
         normal_gap = 0 if (self._prev_time is None or self._prev_prev_time is None) \
@@ -418,7 +444,18 @@ class SignalAdapter:
             last_conf_high=ext.last_conf_high, last_conf_low=ext.last_conf_low,
             sniper_zone_top=sz.zone_top, sniper_zone_bot=sz.zone_bot,
             sz_bar=self._sz_bar, sz_bullish=(sz.direction != -1),
+            fibo_ash_ms=(self._bar_time(fib.ash_loc) if fib.active else None),
+            fibo_asl_ms=(self._bar_time(fib.asl_loc) if fib.active else None),
         )
+
+    def _bar_time(self, loc: Optional[int]) -> Optional[int]:
+        """A bar index the fib engine reported -> that bar's epoch ms, or None if it is not in
+        this run's window. Out of range is a real answer, not an error: a fib anchored on a bar
+        the replay started after (a warm-up-era leg) has no time here, and inventing one would
+        put a drawing on the wrong candle."""
+        if loc is None or loc < 0 or loc >= len(self._bar_ms):
+            return None
+        return int(self._bar_ms[loc])
 
 
 def _active_fvgs(fvg_events):

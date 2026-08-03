@@ -234,6 +234,8 @@ class StructureFib:
             half_reached=self._half_reached,
             ash=self._ash,
             asl=self._asl,
+            ash_loc=self._ash_loc,
+            asl_loc=self._asl_loc,
         )
 
 

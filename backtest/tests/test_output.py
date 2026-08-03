@@ -114,6 +114,40 @@ def test_equity_curve_excursion_defaults_to_zero_when_trade_lacks_it():
     assert curve[0]["adverse"] == 0.0
 
 
+# ── the trade's fib leg ───────────────────────────────────────────────────────
+
+class _FakeFib:
+    def __init__(self, levels, start_ms=None):
+        self.levels, self.start_ms = levels, start_ms
+
+
+def test_equity_curve_carries_the_trade_s_fib_leg():
+    t = _t(100.0)
+    t.fib = _FakeFib([(0.0, 110.0), (0.618, 103.82), (1.0, 100.0)], start_ms=1_700_000_000_000)
+    p = build_equity_curve([t])[0]
+    assert p["fib"] == {"levels": [[0.0, 110.0], [0.618, 103.82], [1.0, 100.0]],
+                        "start_ms": 1_700_000_000_000}
+
+
+def test_a_trade_with_no_fib_omits_the_key_entirely():
+    """Absent, not empty. The chart's Trade fibs toggle is listed off whether trades carry one, so
+    an empty object would advertise a layer with nothing in it — the same rule the blocked and
+    missed layers follow for a runner that cannot report them."""
+    assert "fib" not in build_equity_curve([_t(100.0)])[0]
+    t = _t(100.0)
+    t.fib = _FakeFib([])
+    assert "fib" not in build_equity_curve([t])[0]
+
+
+def test_the_fib_ladder_is_COPIED_never_recomputed():
+    """`output` knows no fib maths and must not learn any: the prices are the ones the strategy
+    had in hand at placement. A ladder whose ratios are not evenly spaced (a strategy with its own
+    set) passes through untouched rather than being 'corrected' onto a line."""
+    t = _t(100.0)
+    t.fib = _FakeFib([(0.0, 110.0), (0.236, 108.0), (0.5, 99.0)])   # deliberately NOT linear
+    assert build_equity_curve([t])[0]["fib"]["levels"] == [[0.0, 110.0], [0.236, 108.0], [0.5, 99.0]]
+
+
 def test_stop_price_is_derived_from_distance_and_direction():
     """The profit-depth view's risk line: long stop sits below entry, short above."""
     long_p = build_equity_curve([_t(10.0, dir=1, entry=100.0, stop=5.0)])[0]

@@ -164,6 +164,11 @@ class Trade:
     # runner's near-miss of the following TP is visible. No decision reads them (parity-safe).
     tp1: float = 0.0
     tp2: float = 0.0
+    # The fib LEG this trade was priced off, frozen at order placement — see `TradeFib`. Optional
+    # for the same reason every other reporting field here is: a fork that prices its entries some
+    # other way (`mpc_bleg` overrides `_place_entries` and works off band prices, not this ladder)
+    # simply carries None, and the chart draws no fib for it rather than an invented one.
+    fib: Optional["TradeFib"] = None
 
 
 # ── blocked setups (Pine 4025-4086, the pink TRADE BLOCKED tag) ─────────────────
@@ -360,6 +365,46 @@ class _MissWatch:
         self.edge = self.fib = None
 
 
+# ── the fib leg a trade was priced off (reporting only) ─────────────────────────
+# Every ratio the strategy reads, at the price it read it at, frozen on the bar the order was
+# placed. It is a RECORD, not a derivation: `_place_entries` copies the same `fiboP*` values that
+# picked the entry edge, the stop anchor and both targets, so a chart drawing this ladder is
+# drawing the levels the trade was actually priced against rather than a fib recomputed later
+# from anchors and a direction. That distinction is the whole point — a fib rebuilt downstream is
+# a second claim about the same leg, and two claims can disagree.
+#
+# REPORTING ONLY, the same standing as `Trade.mfe_usd` / `tp1` / `tp2`: nothing reads a frozen
+# ladder back, so no decision can move and `compare_strategy.py` diffs the same `px_*` stream.
+#
+# `start_ms` is the bar the LEG began on (the earlier of the two anchors), which is what gives the
+# drawing an x-span reaching back through the retracement instead of starting at the entry.
+_FIB_RATIOS = ((0.0, "fibo_p7"), (0.382, "fibo_p1"), (0.5, "fibo_p2"), (0.618, "fibo_p3"),
+               (0.702, "fibo_p4"), (0.786, "fibo_p5"), (0.886, "fibo_p6"), (1.0, "fibo_p10"))
+
+
+@dataclass
+class TradeFib:
+    """The fib leg a trade was priced off. `levels` is (ratio, price), shallow → deep."""
+
+    levels: List[Tuple[float, float]]
+    start_ms: Optional[int] = None
+
+
+def _freeze_fib(sig) -> Optional[TradeFib]:
+    """Snapshot the live Structure fib, or None when it is not fully priced.
+
+    All-or-nothing on purpose: a partial ladder would draw some levels and silently omit others,
+    which reads as "the trade had no 0.786" rather than "this record is incomplete"."""
+    levels: List[Tuple[float, float]] = []
+    for ratio, attr in _FIB_RATIOS:
+        price = getattr(sig, attr, None)
+        if price is None:
+            return None
+        levels.append((ratio, float(price)))
+    stamps = [t for t in (sig.fibo_ash_ms, sig.fibo_asl_ms) if t is not None]
+    return TradeFib(levels=levels, start_ms=min(stamps) if stamps else None)
+
+
 # ── the resting-order + position model ──────────────────────────────────────────
 @dataclass
 class _Pending:
@@ -372,6 +417,8 @@ class _Pending:
     tp1: float
     tp2: float
     sos_bar: Optional[int]
+    # The whole fib ladder those levels came off, frozen on the same bar (reporting only).
+    fib: Optional[TradeFib] = None
 
 
 def _intrabar_targets_first(o: float, h: float, l: float) -> bool:
@@ -453,6 +500,7 @@ class Execution:
         self._exit_reason = ""
         self._tp1 = 0.0
         self._tp2 = 0.0
+        self._fib: Optional[TradeFib] = None   # the open trade's frozen fib leg (reporting only)
         self._stage = 0                    # 0 full-stop, 1 BE, 2 floor + runner trail
         self._max_fav = 0.0
         # Structure-trail anchors, snapshotted at each bar's CLOSE (see _advance_stage). The stop
@@ -575,8 +623,10 @@ class Execution:
         # ── Phase A: fill / manage against THIS 1m bar ──
         if self._pos_dir == 0 and self._pend_sec is not None:
             pend = self._pend_sec
-            if pend.dir > 0 and sig1m.low <= pend.edge:
-                fill = pend.edge if sig1m.open > pend.edge else sig1m.open
+            adj = self._ask_adj(pend.dir, entry=True)   # the sniper is a resting limit too
+            if pend.dir > 0 and sig1m.low + adj <= pend.edge:
+                o = sig1m.open + adj
+                fill = pend.edge if o > pend.edge else o
                 if self._open_position(pend, fill, sig1m, sink, kind="secondary"):
                     filled_dir = 1
             elif pend.dir < 0 and sig1m.high >= pend.edge:
@@ -897,6 +947,10 @@ class Execution:
         if cfg.flat_by_close and self._in_flat_window(sig):
             long_armed = short_armed = False
 
+        # One snapshot for both sides — they read the same live fib, and taking it once is what
+        # guarantees a long and a short placed on this bar report the identical leg.
+        fib = _freeze_fib(sig) if (long_armed or short_armed) else None
+
         if long_armed:
             sl = self._sl_anchor(sig, long_edge, True) - cfg.exec_sl_buf_tk * cfg.mintick
             dist = long_edge - sl
@@ -905,7 +959,7 @@ class Execution:
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7   # deep 0.382 / shallow 0.0
             if self._stop_clears_floor(dist, long_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
-                self._pend_long = _Pending(1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar)
+                self._pend_long = _Pending(1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar, fib)
             else:
                 self._pend_long = None
         else:
@@ -919,7 +973,7 @@ class Execution:
             tp2 = sig.fibo_p1 if deep else sig.fibo_p7
             if self._stop_clears_floor(dist, short_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
-                self._pend_short = _Pending(-1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar)
+                self._pend_short = _Pending(-1, short_edge, qty, sl, tp1, tp2, seq.s_sos_bar, fib)
             else:
                 self._pend_short = None
         else:
@@ -1157,14 +1211,18 @@ class Execution:
         # A long and short limit can't both rest into a fill in the same bar in
         # practice (opposite directions), but resolve deterministically: whichever the
         # bar's path reaches first. We check the one the path favors first.
+        # Path order is read off the BID bar, and correctly so: `_ask_adj` shifts open, high and
+        # low by the same constant, which leaves every distance between them unchanged.
         targets_first = _intrabar_targets_first(sig.open, sig.high, sig.low)
         order = [self._pend_long, self._pend_short] if targets_first \
             else [self._pend_short, self._pend_long]
         for pend in order:
             if pend is None:
                 continue
-            if pend.dir > 0 and sig.low <= pend.edge:
-                fill = pend.edge if sig.open > pend.edge else sig.open  # gap = better fill
+            adj = self._ask_adj(pend.dir, entry=True)   # long buys the ask; short sells the bid
+            if pend.dir > 0 and sig.low + adj <= pend.edge:
+                o = sig.open + adj
+                fill = pend.edge if o > pend.edge else o     # gap = better fill
                 if self._open_position(pend, fill, sig, dec):
                     return True
             if pend.dir < 0 and sig.high >= pend.edge:
@@ -1202,6 +1260,10 @@ class Execution:
         self._sl = pend.sl
         self._tp1 = pend.tp1
         self._tp2 = pend.tp2
+        # The ladder those three came off, carried through to the closed Trade (reporting only).
+        # Taken from the ORDER, not from `sig`: the fib is a live thing that keeps extending, so
+        # reading it again at the fill would report a leg the resting limit was never priced on.
+        self._fib = pend.fib
         self._stage = 0
         self._filled_qty = 0.0
         self._sos_bar_open = pend.sos_bar
@@ -1212,6 +1274,7 @@ class Execution:
         self._costs_usd = 0.0
         self._last_roll_ms = None
         self._charge_commission(pend.qty)
+        self._charge_spread(pend.qty)       # half the round turn; the exits pay the other half
         # Seeded from the ENTRY PRICE, not the entry bar's extreme (Pine `lMaxFav := lEntry`).
         # The bar's FAVOURABLE extreme is where price was on its way INTO the resting limit,
         # i.e. before the trade existed — see the fill-bar note in `step`.
@@ -1245,9 +1308,11 @@ class Execution:
     # ── open-trade management (Phase A exits + Phase B staging) ───────────────────
     def _manage_open(self, sig, dec) -> None:
         # Excursion (reporting only): widen the hold's high/low before this bar's exits resolve,
-        # so the closing bar's extreme counts too. Never read by a decision.
-        self._ext_high = max(self._ext_high, sig.high)
-        self._ext_low = min(self._ext_low, sig.low)
+        # so the closing bar's extreme counts too. Never read by a decision. Shifted onto the ASK
+        # for a short, so the reported best and worst prices are ones its exits could have got.
+        adj = self._exit_adj()
+        self._ext_high = max(self._ext_high, sig.high + adj)
+        self._ext_low = min(self._ext_low, sig.low + adj)
         if self._resolver is not None:
             return self._manage_open_ticks(sig, dec)
         return self._manage_open_bar(sig, dec)
@@ -1291,6 +1356,7 @@ class Execution:
         stop = self._current_stop()
         d = self._pos_dir
         targets_first = _intrabar_targets_first(sig.open, sig.high, sig.low)
+        adj = self._exit_adj()      # a short exits by BUYING — test it against the ask
 
         # Build the remaining brackets (id, target-price-or-None, portion-qty).
         brackets = self._remaining_brackets()
@@ -1299,8 +1365,8 @@ class Execution:
 
         for oid, target, qty in brackets:
             hit_target = target is not None and (
-                (d > 0 and sig.high >= target) or (d < 0 and sig.low <= target))
-            hit_stop = (d > 0 and sig.low <= stop) or (d < 0 and sig.high >= stop)
+                (d > 0 and sig.high >= target) or (d < 0 and sig.low + adj <= target))
+            hit_stop = (d > 0 and sig.low <= stop) or (d < 0 and sig.high + adj >= stop)
             if not hit_target and not hit_stop:
                 continue
             if hit_target and hit_stop:
@@ -1308,7 +1374,7 @@ class Execution:
             else:
                 take_target = hit_target
             level = target if take_target else stop
-            price = self._fill_price(level, sig.open, take_target)
+            price = self._fill_price(level, sig.open + adj, take_target)
             self._exit_portion(oid, price, qty, sig, dec, market=not take_target)
             if self._pos_dir == 0:
                 return
@@ -1359,6 +1425,7 @@ class Execution:
         self._equity_realized += pnl
         self._account.book_pnl(self._leg, pnl)   # realize onto the shared balance as it happens
         self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
+        self._charge_spread(qty)            # ...and so does each leg's half of the spread
         if market:
             self._charge_slippage(qty)
         self._filled_qty += qty
@@ -1397,7 +1464,7 @@ class Execution:
             kind=self._entry_kind,
             mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
             mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
-            tp1=round(self._tp1, 5), tp2=round(self._tp2, 5)))
+            tp1=round(self._tp1, 5), tp2=round(self._tp2, 5), fib=self._fib))
         dec.closed_r = r
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
         # hold"). Flag its direction so the driver kills that 15m leg (a stopped re-entry ends the
@@ -1427,6 +1494,66 @@ class Execution:
         if self._profile is None:
             return
         self._charge(-self._profile.commission(qty))
+
+    def _spread(self) -> float:
+        """The stated bar-mode spread, or 0.0 when there is nothing to price.
+
+        Tick mode returns 0.0 for the same reason `_charge_slippage` does: the resolver transacts
+        on the real side of the book, so the spread is already IN the fill price and charging a
+        stated one on top books it twice."""
+        if self._profile is None or self._resolver is not None:
+            return 0.0
+        return getattr(self._profile, "spread", 0.0)
+
+    def _charge_spread(self, qty: float) -> None:
+        """Charge HALF the spread on one side of a round turn.
+
+        Half, not the whole thing, and it is the only split that survives a partial exit. The
+        quoted mid sits between bid and ask, so each side of a round turn gives up `spread / 2`
+        against it: a long lifts the ask to get in and hits the bid to get out. Charging half at
+        the entry and half on each exit portion totals exactly one spread across the position
+        however many rungs the ladder fills — charging a whole spread per fill would bill a
+        three-leg exit three times.
+
+        ⚠ **This is the ALTERNATIVE to `bid_ask_fills`, never its companion.** There are two
+        coherent ways to price a spread and they are mutually exclusive:
+
+        * charge it as a cost and leave every fill on the bid (here) — moves money, moves no
+          trades, and is directly comparable to a run with no costs at all;
+        * transact on the real side of the book (`bid_ask_fills`) — the entry books at the ask
+          and the exit at the bid, so the spread is paid BY CONSTRUCTION, exactly as tick mode
+          pays it.
+
+        Doing both bills the same spread twice. So this returns early when the fills are already
+        modelled, which keeps one spread per round turn true in either mode."""
+        s = self._spread()
+        if s <= 0 or getattr(self._profile, "bid_ask_fills", False):
+            return
+        self._charge(-(s / 2.0) * abs(qty) * self._cfg.point_value)
+
+    # ── the ask side of the book (AccountProfile.bid_ask_fills) ───────────────────
+    def _ask_adj(self, direction: int, *, entry: bool) -> float:
+        """How much to ADD to this bar's bid prices before testing a level, in price units.
+
+        Broker bars are the BID. A buy transacts at the ask, which is `spread` higher — so a
+        level a buy is waiting on is reached when `bid + spread` gets there, not when the bid
+        does. Which of the four order sides is a buy follows entirely from the position:
+
+        * a LONG **enters** by buying (its limit is one spread harder to reach) and **exits** by
+          selling (unchanged — the bar already is the bid);
+        * a SHORT **enters** by selling (unchanged) and **exits** by buying — so its stop, its TP
+          rungs and its excursion all live on the ask.
+
+        So the whole rule is: a long's entry, and everything a short does after entry. Returns 0.0
+        with the toggle off, which is what makes that path byte-identical to the old one."""
+        s = self._spread()
+        if s <= 0 or not getattr(self._profile, "bid_ask_fills", False):
+            return 0.0
+        return s if (direction > 0 if entry else direction < 0) else 0.0
+
+    def _exit_adj(self) -> float:
+        """`_ask_adj` for the OPEN position's own exits — nonzero only for a short."""
+        return self._ask_adj(self._pos_dir, entry=False)
 
     def _charge_slippage(self, qty: float) -> None:
         """Charge the profile's per-fill slippage ESTIMATE on a market exit.
@@ -1495,8 +1622,12 @@ class Execution:
     # ── stop staging + trail (Pine 4674-4719) ────────────────────────────────────
     def _advance_stage(self, sig) -> None:
         d = self._pos_dir
+        # A short's favourable extreme and its TP touches are read on the ASK, the same price its
+        # rungs fill at (`_manage_open_bar`). They have to agree: staging the stop off a level the
+        # rung could not fill at would move the stop for a take-profit that never happened.
+        adj = self._exit_adj()
         if self._max_fav is None:
-            self._max_fav = sig.high if d > 0 else sig.low
+            self._max_fav = sig.high if d > 0 else sig.low + adj
         if d > 0:
             self._max_fav = max(self._max_fav, sig.high)
             if self._stage < 1 and sig.high >= self._tp1:
@@ -1504,10 +1635,10 @@ class Execution:
             if self._stage < 2 and sig.high >= self._tp2:
                 self._stage = 2
         else:
-            self._max_fav = min(self._max_fav, sig.low)
-            if self._stage < 1 and sig.low <= self._tp1:
+            self._max_fav = min(self._max_fav, sig.low + adj)
+            if self._stage < 1 and sig.low + adj <= self._tp1:
                 self._stage = 1
-            if self._stage < 2 and sig.low <= self._tp2:
+            if self._stage < 2 and sig.low + adj <= self._tp2:
                 self._stage = 2
         # Latch the 15m leg once its PRIMARY reaches TP1 (stage >= 1 = moved to breakeven) — the
         # secondary's eligibility gate. Idempotent; only a primary sets it (a secondary reaching

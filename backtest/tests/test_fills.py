@@ -272,3 +272,33 @@ def test_latency_can_skip_an_early_fill():
     r = TickPathResolver(fake, "XAUUSD.s", latency_ms=75)
     f = r.first_touch(_bar(ms=1_000_000, h=101.5, l=98.5), {"stop": Level(99.50, falling=True)}, buying=False)
     assert f is None, "the 99.0 tick arrived before our order did"
+
+
+# ── spread (2026-08-02) ──────────────────────────────────────────────────────────
+
+def test_each_brokers_spread_is_its_own_measurement():
+    """The two differ by 50%, so quoting one for the other overstates or understates every
+    bar-mode run on that broker. Vantage is the BACKTEST broker; PU Prime is where we trade live.
+    Both are measured off that broker's own cached bid/ask ticks — see the note in fills.py."""
+    assert PROFILES["vantage_demo"].spread == 0.22
+    assert PROFILES["puprime_standard"].spread == 0.33
+
+
+def test_bid_ask_fills_refuses_to_run_with_no_spread():
+    """The ask would equal the bid, so the setting would change nothing while claiming the fills
+    are modelled — the same silent-no-op class as the costs the lab collected and never charged."""
+    with pytest.raises(CostsNotConfigured):
+        AccountProfile("x", 0.0, spread=0.0, bid_ask_fills=True)
+
+
+def test_a_negative_spread_is_refused():
+    """It is a WIDTH, not a signed cost. A negative one would pay you to trade."""
+    with pytest.raises(CostsNotConfigured):
+        AccountProfile("x", 0.0, spread=-0.1)
+
+
+def test_spread_defaults_to_not_priced():
+    """0.0 means 'not priced', the same honest default `slippage_ticks` carries — which is what
+    keeps a profile built before this field existed byte-identical."""
+    assert AccountProfile("x", 0.0).spread == 0.0
+    assert AccountProfile("x", 0.0).bid_ask_fills is False
