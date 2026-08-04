@@ -10,7 +10,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine, ReferenceArea, ReferenceDot,
 } from 'recharts'
-import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, useRefreshChartSpec, useRunCandles, useRunNews, useRunReprice, useHistoryLimit } from '@/hooks/useLab'
+import { useBacktestRun, useBacktestRuns, useRunLog, useLabProgress, useStopBacktest, useReloadCharts, useRetryBacktest, useRunningVpsJob, useStrategy, useRulesets, useChartSpec, usePrefetchChartSpec, useRefreshChartSpec, useRunCandles, useRunNews, useRunReprice, useHistoryLimit } from '@/hooks/useLab'
 import InfoTip from '@/components/InfoTip'
 import { PeriodPicker } from '@/components/PeriodPicker'
 import { isNt8Runner, runnerScope, runnerMarket, runningJobFor, RUNNER_LABEL } from '@/lib/runner'
@@ -29,8 +29,16 @@ import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
 import { StatusPill } from '@/components/StatusPill'
 import { useStickyBanner } from '@/components/StickyHeader'
 
-// Lazy so klinecharts + the chart fixture only load when the Price chart section opens.
-const ChartPanel = lazy(() => import('@/components/ChartPanel'))
+// Lazy so klinecharts + the chart fixture only load when the Price chart section opens — but the
+// import is NAMED so the run page can start it in the background on mount (`preloadChartPanel`)
+// rather than at the moment the tab is clicked. A second call is free: the module registry
+// resolves the same promise, and `lazy()` reads that already-settled promise instead of a fetch.
+const importChartPanel = () => import('@/components/ChartPanel')
+const ChartPanel = lazy(importChartPanel)
+export function preloadChartPanel() { void importChartPanel() }
+
+// Module scope so the identity is stable across renders — see ChartTabPanel's `keepMounted`.
+const PRICE_TAB_ONLY = ['price'] as const
 
 // Stress-test sample-size gate — mirror backend services/stress_tester.py. Below this the whole
 // test is blocked (the A-F grade leans on Monte Carlo tail percentiles that small samples can't
@@ -3921,6 +3929,31 @@ export function BacktestDetail() {
   )
   // Primary chart tab (the big charts) + secondary tab (supporting charts). Price lazy-loads.
   const [primaryTab, setPrimaryTab] = useState<'equity' | 'sized' | 'price' | 'breakdown'>('equity')
+  // The page opens on Equity, so the Price tab used to start from nothing the moment it was
+  // clicked: a ~3.5 MB ChartSpec fetch, then the klinecharts chunk, then klinecharts laying out
+  // 33k candles and their overlays. Measured on run 432aff31f374, all three land on the reader:
+  // 2.45s from click to a painted chart. All three are paid up front now, in the background,
+  // while the reader is looking at the equity curve.
+  //
+  // Gated on the run having a curve at all (the same `hasCharts` test the Charts section makes) —
+  // a run with no chart data has no Price tab to warm.
+  const canChart = (run?.equity_curve.length ?? 0) > 0
+  usePrefetchChartSpec(canChart ? runId ?? null : null, canChart)
+  // The third cost — the panel BUILD — can only be paid by mounting it, so the Charts section
+  // keeps the Price tab mounted (hidden) once `warmPrice` is set. Deferred to an idle beat rather
+  // than done on mount: klinecharts blocks the main thread while it lays the candles out, and the
+  // equity curve is what the reader is actually waiting for on arrival.
+  const [warmPrice, setWarmPrice] = useState(false)
+  useEffect(() => {
+    if (!canChart || warmPrice) return
+    preloadChartPanel()
+    const arm = () => setWarmPrice(true)
+    // `requestIdleCallback` isn't everywhere (Safari got it in 16.4), so the timer is the floor,
+    // not a belt-and-braces extra.
+    const ric = window.requestIdleCallback?.(arm, { timeout: 2_500 })
+    const t = window.setTimeout(arm, 1_200)
+    return () => { if (ric != null) window.cancelIdleCallback?.(ric); window.clearTimeout(t) }
+  }, [canChart, warmPrice])
   const [fullscreenChart, setFullscreenChart] = useState<string | null>(null)
   // When a run is scored against several firms, show ONE at a time (a wall of cards is
   // confusing). This selects which firm's evaluation card is shown; defaults to the first
@@ -4614,6 +4647,9 @@ export function BacktestDetail() {
                       onActive={k => setPrimaryTab(k as 'equity' | 'sized' | 'price' | 'breakdown')}
                       sub={SUBS[primaryTab]}
                       height={520}
+                      // Build the price chart in the background once the page has settled, so the
+                      // Price tab is already drawn by the time it is clicked. See `warmPrice`.
+                      keepMounted={warmPrice ? PRICE_TAB_ONLY : undefined}
                       onExpand={() => setFullscreenChart(primaryTab)}
                       render={renderChart}
                       right={<>

@@ -3,7 +3,11 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-03 — **Analysis → Order Blocks.** The canonical `engines/order_blocks/`
+**Last reviewed:** 2026-08-03 — **the panel is now WARM-MOUNTED by its host, hidden, before the
+reader clicks the Price tab** — 2,453 ms → 167 ms from click to a painted chart, measured on run
+`432aff31f374`. Nothing in this folder changed; what changed is that it can be alive inside a
+`visibility: hidden` container, which is a real constraint on anything added here. See the first
+bullet under **Conventions**. Earlier the same day: **Analysis → Order Blocks.** The canonical `engines/order_blocks/`
 engine is replayed server-side and a block is drawn ONLY where it was live on a trade / blocked /
 missed bar — the fair-value-gap layer's anchor rule, with one engine swapped (579 boxes on the
 measured run, beside the gap layer's 661). **It needed no new template, no new effect and no new
@@ -150,10 +154,22 @@ here**, so the chart shows exactly what the strategy saw.
 
 ## Conventions
 
-- **Lazy-mounted.** `BacktestDetail.tsx` imports the panel via `React.lazy` inside a collapsed
-  "Price chart" section. klinecharts (~205 kB) and the fixture only load when the section opens
-  — verified as a separate build chunk. Keep it this way; never import this folder eagerly from
-  a page.
+- **Lazy-imported, and since 2026-08-03 WARM-MOUNTED.** `BacktestDetail.tsx` still imports the panel
+  via `React.lazy` — klinecharts (~205 kB) and the fixture are never in the app's own bundle, and
+  that must stay true: never import this folder eagerly from a page. What changed is *when* the
+  lazy import is STARTED and when the panel is mounted. The page kicks the import off on arrival
+  (`preloadChartPanel`) and, after an idle beat, mounts the panel HIDDEN behind the Equity tab
+  (`ChartTabPanel`'s `keepMounted`), so the ~1.8 s klinecharts spends laying 33k candles out is paid
+  in the background instead of under the reader — measured 2,453 ms → 167 ms from clicking Price to
+  a painted chart. Two consequences for anything written in this folder:
+  - **This component may be mounted in a container that is `visibility: hidden`.** That container
+    has a REAL width (that is why it is not `display: none`), so `init()`, `getSize()` and
+    `measureInset` all read correct numbers and the reveal needs no resize — verified, canvas width
+    1033 px either side of it. But do not add mount-time work that assumes the panel is on screen:
+    anything needing paint, an `IntersectionObserver`, or focus has to wait for a real interaction.
+  - **It is mounted once and revealed, never remounted.** The `ResizeObserver` still carries every
+    genuine size change (fullscreen measures 1033 → 1555 and back). Fullscreen, the tab cycle and
+    the layer menus were all re-verified against a warm-mounted instance.
 - **Theme.** Colors come from the app theme via `chartStyles.ts` (it reads `@/themes/electric-indigo`,
   the same source `@/themes/chart` uses for Recharts). No raw hex in components. Grid is off.
 - **klinecharts data shape.** Spec candles use `time`; klinecharts wants `timestamp`. The

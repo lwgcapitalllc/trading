@@ -11,7 +11,7 @@ import { copyChartAsPng } from '@/lib/chartImage'
 
 // Shared chart panel: a segmented tab control, optional right-side controls, an Expand button,
 // and the active chart rendered at `height`. `render(key, h)` draws the chart for a tab key.
-export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, render, right, aboveChart }: {
+export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, render, right, aboveChart, keepMounted }: {
   tabs: readonly (readonly [string, string])[]
   active: string
   onActive: (k: string) => void
@@ -23,6 +23,14 @@ export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, r
   // Optional content rendered between the description and the chart — e.g. the active tab's
   // KPI cards, so each analysis's numbers sit directly above its own chart.
   aboveChart?: React.ReactNode
+  /** Tab keys that stay MOUNTED while another tab is showing, so clicking them costs nothing.
+   *  Only worth it for a tab whose build is slow and whose data is already loaded — the price
+   *  chart, where klinecharts spends ~2s laying 33k candles and their overlays out. An inactive
+   *  one is `visibility: hidden` and out of flow: it keeps the panel's real WIDTH (so the canvas
+   *  is sized correctly and the reveal needs no resize) while contributing no height, and
+   *  `visibility` also takes it out of the tab order and the accessibility tree.
+   *  Leave unset and every tab renders only while active, as before. */
+  keepMounted?: readonly string[]
 }) {
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-lg px-4 pt-3 pb-3">
@@ -53,7 +61,18 @@ export function ChartTabPanel({ tabs, active, onActive, sub, height, onExpand, r
       </div>
       {sub && <div className="text-[10px] text-text-tertiary mt-4 mb-4 px-0.5">{sub}</div>}
       {aboveChart}
-      {render(active, height)}
+      <div className="relative">
+        {keepMounted?.map(key => (
+          <div
+            key={key}
+            className={active === key ? undefined : 'invisible absolute inset-x-0 top-0'}
+            aria-hidden={active !== key || undefined}
+          >
+            {render(key, height)}
+          </div>
+        ))}
+        {!keepMounted?.includes(active) && render(active, height)}
+      </div>
     </div>
   )
 }

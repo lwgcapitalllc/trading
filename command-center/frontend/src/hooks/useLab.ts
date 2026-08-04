@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
@@ -279,6 +279,27 @@ export function useChartSpec(runId: string | null) {
     enabled: !!runId,
     staleTime: Infinity,
   })
+}
+
+/** Warm the ChartSpec cache in the background as soon as the run page opens, so the Price tab is
+ *  a cache hit whenever it is first clicked. The spec is a ~3.5 MB payload (measured on run
+ *  432aff31f374) and the browser also has to parse it, so a cold first click paid the whole thing
+ *  while the reader watched a skeleton.
+ *
+ *  `prefetchQuery`, deliberately NOT a page-level `useChartSpec`: prefetch fills the SAME cache
+ *  entry without subscribing the page to a multi-megabyte object it never renders — the panel's
+ *  own `useChartSpec` reads it straight out. It also swallows its own errors, which is what keeps
+ *  a failed prefetch invisible: the panel retries on mount and shows the real error there. */
+export function usePrefetchChartSpec(runId: string | null, enabled: boolean) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    if (!runId || !enabled) return
+    void qc.prefetchQuery({
+      queryKey: ['lab', 'chart-spec', runId],
+      queryFn: () => api.get<ChartSpec>(`/backtests/runs/${runId}/chart-spec`),
+      staleTime: Infinity,
+    })
+  }, [qc, runId, enabled])
 }
 
 export function useRefreshChartSpec() {
