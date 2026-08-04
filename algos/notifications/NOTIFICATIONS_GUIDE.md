@@ -99,6 +99,23 @@ The suppress file is written by:
 
 Individual `/restart <bot>` follows the same terminate-then-start pattern for the single bot.
 
+🔴 **THE TELEGRAM BOT WAS NEVER CRASHING — IT WAS BEING KILLED, AND THIS WATCHDOG'S OWN
+"restarted" MESSAGE IS WHAT MADE IT LOOK LIKE A CRASH (found 2026-08-04).** Aaron had been
+watching it stop and come back for weeks. **Evidence it never faulted: 4,764 Windows Application
+events over 14 days, none mentioning python, and no crash event (1000/1001/1026) since 26 July.**
+A `taskkill /f` leaves no event behind; a real crash does. Four things were killing it, three now
+fixed: the Telegram bot's own `/emergency` command ran `taskkill /f /im python.exe` and **killed
+itself** (which is also why its confirmation reply never arrived), the command center's Stop button
+did the same, and three docs told you to run it by hand. The fourth was the routine one and was
+BY DESIGN: **`startup_coordinator.py` ended by launching `start_telegram.py` unconditionally, and
+that script force-kills any running telegram_bot.py before starting a fresh one** — so every
+Start/Restart from the Bots page killed the alert channel, and a minute later this watchdog sent
+🟢 *Telegram Bot Restarted*. The coordinator now skips a healthy Telegram
+(`start_telegram_if_needed`). ⚠ **`SYS_TELEGRAM` deliberately keeps the force-restart** — that
+task's job is recovering a bot that is alive but WEDGED, and it is what this watchdog fires below.
+**The standing lesson: an alert channel that cries wolf stops being read, and a routine event
+dressed as a failure costs exactly as much trust as a missed one.**
+
 **Alerts sent:**
 - 🚨 Bot Offline — unexpected stop (suppressed for intentional stops)
 - 🟢 Bot Online — bot came back after a crash (suppressed if stop was intentional)

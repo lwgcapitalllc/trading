@@ -299,6 +299,93 @@ def test_no_bot_is_watched_that_nothing_can_start():
         f"watched but never launched: {set(monitor.BOTS) - started}")
 
 
+# ── starting a bot must not take the alert channel down with it ─────────────────
+def _coordinator_telegram_fns(proc_stdout, spawns):
+    """Load the launcher's REAL telegram functions without importing the module.
+
+    Same constraint as `_coordinator_sequence` above — `startup_coordinator.py` hardcodes
+    `Path("C:/trading/algos")` and imports from it at module scope, so it only imports on the
+    VPS. Pulling the two function bodies out of the AST and exec'ing them tests the shipped
+    code rather than a copy of it that can drift.
+    """
+    src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
+    tree = ast.parse(src)
+    wanted = {"telegram_is_running", "start_telegram_if_needed"}
+    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
+    assert {f.name for f in fns} == wanted, f"missing from the launcher: {wanted - {f.name for f in fns}}"
+
+    ns = {
+        "subprocess": SimpleNamespace(
+            run=lambda *a, **k: SimpleNamespace(stdout=proc_stdout),
+            Popen=lambda *a, **k: spawns.append(a),
+            CREATE_NEW_PROCESS_GROUP=0,
+        ),
+        "PYTHON": "python.exe",
+        "ALGOS": Path("C:/trading/algos"),
+        "print": lambda *a, **k: None,
+    }
+    exec(compile(ast.Module(body=fns, type_ignores=[]), "<launcher>", "exec"), ns)
+    return ns
+
+
+def test_starting_a_bot_leaves_a_healthy_telegram_alone():
+    """THE regression, and it had been running for weeks reading as a crash.
+
+    This ran `start_telegram.py` unconditionally, and that script force-kills any running
+    telegram_bot.py before starting a fresh one. So every Start/Restart from the Bots page —
+    and every documented bot restart — killed the alert channel and rebuilt it, after which
+    SYS_MONITOR noticed the gap and sent "Telegram Bot Restarted". Nothing was ever wrong with
+    it. An alert channel that cries wolf stops being read, and a bot restart is exactly when
+    you want to hear from it.
+    """
+    spawns = []
+    ns = _coordinator_telegram_fns("python.exe  C:\\trading\\algos\\notifications\\telegram_bot.py  123",
+                                   spawns)
+    ns["start_telegram_if_needed"]()
+    assert spawns == [], "restarted a Telegram bot that was already running"
+
+
+def test_a_missing_telegram_is_still_started():
+    """The other half — the skip must not turn into never starting it at boot."""
+    spawns = []
+    ns = _coordinator_telegram_fns("python.exe  C:\\trading\\algos\\live\\runner.py --bot x  456", spawns)
+    ns["start_telegram_if_needed"]()
+    assert len(spawns) == 1
+    assert "start_telegram.py" in str(spawns[0])
+
+
+def test_an_unreadable_process_list_starts_one_rather_than_assuming_it_is_up():
+    """The safe direction is not symmetric here. An extra Telegram is refused by
+    telegram_bot.py's own singleton guard; a missing one is silence."""
+    spawns = []
+    src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
+    tree = ast.parse(src)
+    fns = [n for n in tree.body if isinstance(n, ast.FunctionDef)
+           and n.name in {"telegram_is_running", "start_telegram_if_needed"}]
+
+    def _boom(*a, **k):
+        raise OSError("wmic unavailable")
+
+    ns = {
+        "subprocess": SimpleNamespace(run=_boom, Popen=lambda *a, **k: spawns.append(a),
+                                      CREATE_NEW_PROCESS_GROUP=0),
+        "PYTHON": "python.exe", "ALGOS": Path("C:/trading/algos"),
+        "print": lambda *a, **k: None,
+    }
+    exec(compile(ast.Module(body=fns, type_ignores=[]), "<launcher>", "exec"), ns)
+    ns["start_telegram_if_needed"]()
+    assert len(spawns) == 1
+
+
+def test_sys_telegram_still_force_restarts():
+    """The skip is about COLLATERAL damage only. `SYS_TELEGRAM` exists to recover a bot that is
+    alive but wedged, and it is what this watchdog fires — so `start_telegram.py` must keep its
+    kill-then-start behaviour, or a hung Telegram can never be recovered automatically."""
+    src = (_REPO / "algos" / "notifications" / "start_telegram.py").read_text()
+    assert "def kill_existing" in src
+    assert "kill_existing()" in src, "SYS_TELEGRAM lost its force-restart"
+
+
 def test_the_stall_threshold_is_well_clear_of_the_poll_interval():
     """`LOG_STALE_SECS` has to be a large multiple of how often the loop actually turns, or
     one slow broker call becomes a 3am alert."""

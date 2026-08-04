@@ -165,13 +165,52 @@ def main():
     print("  All bots started." if all_ok else "  Some bots had issues.")
     print("=" * 60)
 
+    start_telegram_if_needed()
+
+
+def telegram_is_running() -> bool:
+    """Is a telegram_bot.py process alive right now?"""
+    try:
+        r = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return "telegram_bot.py" in r.stdout
+    except Exception as e:
+        # Unreadable process list. Say NO, so the caller starts one: an extra Telegram is
+        # refused by telegram_bot.py's own singleton guard, while a missing one is silence.
+        print(f"  ! Could not read the process list ({e}) — assuming Telegram is down")
+        return False
+
+
+def start_telegram_if_needed() -> None:
+    """Start the Telegram bot, but never restart a healthy one.
+
+    **Restarting a trading bot must not take the alert channel down with it.** Until
+    2026-08-04 this ran `start_telegram.py` unconditionally, and that script's first act is
+    `kill_existing()` — force-kill any running telegram_bot.py, sleep 2, start fresh. So every
+    Start/Restart from the Bots page, and every documented bot restart, killed Telegram and
+    rebuilt it. A minute later SYS_MONITOR noticed the gap and sent "Telegram Bot Restarted".
+
+    Nothing was ever wrong with it. Aaron had been reading those messages as crashes for weeks,
+    which is worse than the downtime: **an alert channel that cries wolf stops being read**, and
+    the moment you are restarting a bot is exactly when you want to hear from it.
+
+    ⚠ **`SYS_TELEGRAM` deliberately keeps the force-restart.** That task's whole job is
+    recovering a bot that is alive but wedged, and it is what SYS_MONITOR fires (up to 3 times)
+    when Telegram is genuinely down. This skip is only about collateral damage from starting
+    something else.
+    """
     print("\nStarting Telegram...")
+    if telegram_is_running():
+        print("  ✓ Already running — left alone")
+        return
     subprocess.Popen(
         [PYTHON, str(ALGOS / "notifications/start_telegram.py")],
         cwd=str(ALGOS),
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
     )
-    print("  ✓ Done")
+    print("  ✓ Started")
 
 
 if __name__ == "__main__":
