@@ -189,6 +189,33 @@ n/a — no live bots.
 
 ### What I Am Working On
 
+🔧 **IN FLIGHT AND UNCOMMITTED (2026-08-03) — the DEPLOYED CODE SNAPSHOT. Three tests are red and
+they are this work, not a regression.** Read this before running `pytest algos/tests` and concluding
+something broke.
+
+**What is being built:** a promoted bot should run a FROZEN COPY of its code, so the repo working
+tree stops mattering to it. `strategy_params` has been frozen in the instance config from the start,
+but `strategy_dir` still points straight at `strategies/python/<pkg>` in the repo — so a `git pull`
+on the VPS, for a lab fix or anything else, rewrites the code under a running bot, and the version
+pin then refuses to restart it. **Backtesting a new version could brick the deployed one.** Aaron's
+rule: a bot runs what you last DEPLOYED until you deploy something else.
+
+**Where it is:** working tree only — `live/live_config.py` (`deployed_dir` / `is_frozen` /
+`code_root`), `live/version.py` (`deployment_hash` over MANY roots), `live/runner.py`, the untracked
+`tools/promote.py`, and a `.gitignore` entry for `instances/*/deployed/` + `deployed.json` (a
+per-machine build artefact, reproducible from `promoted_commit`; promoting happens ON the VPS, so
+committing it would collide with the next pull).
+
+**The failures, and the one-line cause:** `algos/tests/test_live_version.py` —
+`test_verify_pin_passes_when_the_code_matches`, `..._refuses_when_the_repo_moved_underneath`,
+`..._an_unpinned_bot_is_allowed_and_returns_its_hash`, all `TypeError: 'PosixPath' object is not
+iterable`. `verify_pin` now takes a LIST of roots and those three still pass it a single path. The
+rest of the suite is green (162 passed). **Fix the tests to the new contract — do not "fix"
+`verify_pin` back to one root**, which is the whole point of the change: hashing only the strategy
+package leaves `engines/` and `backtest/` free to move under a GREEN pin, so the bot starts, reports
+the version it was promoted at, and trades different logic. Same shape as the phantom-exit bug — a
+guard that looks fine while the thing beneath it moved.
+
 **Phase:** No live bots. All four first-attempt bots were deleted 2026-06-22. The suite is being rebuilt backtest-first per the S.Y.S.T.E.M. method (`docs/BOT_DEVELOPMENT_METHOD.md`) — strategies are validated through the command-center backtest lab before any return to live demo trading. The reusable deployment infrastructure is preserved in `docs/BOT_DEPLOYMENT_INFRA.md`.
 
 ### CLEAN SLATE — 2026-07-31. Read this before trusting anything older.
