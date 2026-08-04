@@ -186,6 +186,20 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   README stating the window, fill model, config levers at run time, and open caveats; keep that
   honest or the numbers get quoted without them. Current: `2026-07-29_xauusd_15m_full_history/`
   (A+ and B-LEG, 2018-09-13 → 2026-07-29, bar fills).
+- **`tools/overlap_audit.py`** — do two strategies actually trade DIFFERENT legs of the move? Replays
+  two `strategies/python/` bots over ONE bar frame and reports the bars both held a position (split
+  same-side vs opposite), which trades pair up, how far apart same-direction ENTRIES land (the direct
+  test of "both fired on one structure break"), what a single account would have carried, and the
+  monthly R correlation. **Built 2026-08-04 to close the standing A+/B-LEG overlap question**, which
+  had been design intent in three CLAUDE.md files for a year and never measured; it passed —
+  27 shared bars in 155,453, one same-direction cluster in 6.5 years. ⚠ **It deliberately does NOT
+  net the two into a combined equity curve**: both bots are `self_sizing`, so running them on one
+  account changes both bots' sizes from the first shared trade and the result is a third thing
+  neither bot is. That question belongs to the unbuilt allocator (G10); this tool measures how often
+  the allocator would have had anything to arbitrate. ⚠ **Re-run it after any entry-logic change on
+  either bot** — the output is a fact about today's config. The bar arithmetic is unit-tested
+  (`tests/test_overlap_audit.py`), because a slip in it would report "the legs never overlap" exactly
+  as cleanly as the truth does.
 - **`tools/compare_feeds.py`** — feed-parity check: MT5 pull vs a TradingView export of the same
   symbol/TF/window. Reports **clock offset** (0 = aligned; non-zero = the broker-server-time bug
   that shifts every session — fix before demo), coverage, and OHLC drift. This is *data* parity, not

@@ -240,12 +240,64 @@ unwired. Nothing backs up any VPS log anywhere — `algos/` logs live only on th
 ### G10 — No account-level risk allocator
 
 `CLAUDE.md` is explicit: `exec_risk_pct` is per-trade with nothing above it, the account-level cap is
-**unbuilt, and is a prerequisite for running more than one bot live**. Also standing and unmeasured:
-the A+ vs B-LEG overlap audit (do the two legs actually stay out of each other's way, or do they fire
-on the same structure break?).
+**unbuilt, and is a prerequisite for running more than one bot live**.
 
-**Consequence for this plan: start with ONE bot.** A+ alone needs no allocator. Adding B-LEG needs
-the allocator plus the overlap audit first.
+**Consequence for this plan: start with ONE bot.** A+ alone needs no allocator.
+
+The overlap half of this gap is **CLOSED as of 2026-08-04** — see G14. The legs really do stay out of
+each other's way, so the allocator is no longer the thing standing between here and a second bot. What
+is standing there now is that **B-LEG has no measured edge**, which the same run found.
+
+### G14 — The overlap audit — **MEASURED 2026-08-04, and it passed**
+
+`backtest/tools/overlap_audit.py`, replayed over **155,453 M15 bars (2020-01-01 → 2026-08-03)**.
+A+ reproduced its documented **161 trades / +135.94R** baseline to the cent, which is the cross-check
+that the tool drives the strategies correctly rather than a third thing.
+
+**The legs do not overlap.** Both bots held a position on **27 bars out of 155,453** — 0.3% of A+'s
+own hold time, 0.8% of B-LEG's. 18 of those bars were same-side, 9 opposite. Six A+ trades out of 161
+(3.7%) shared a bar with a B-LEG trade; only **two pairs were same-direction**.
+
+**They do not fire on the same structure break either**, which was the specific worry: across 6.5
+years exactly **ONE** A+ trade has a same-direction B-LEG entry within 16 bars (2023-07-27, 1 bar
+apart — and both lost). Monthly R correlation is **+0.155** across all 75 traded months and **+0.208**
+across the 33 both traded; they were both negative in 3 of those 33.
+
+⚠ **This does NOT clear the allocator (G10).** The peak was still 2 concurrent positions, and each bot
+sizes off its OWN equity, so on those 27 bars one account would have carried 2 × `exec_risk_pct`. The
+audit says the allocator would rarely have had anything to arbitrate — not that risk stacking is safe.
+
+⚠ **And it does NOT mean the two are independent.** Both read one structure stream on one instrument,
+and being flat at different moments is not the same as losing for different reasons. A near-zero
+monthly correlation is the better evidence, and it is still only 6.5 years of one symbol.
+
+⚠ **Re-run it after any entry-logic change on either bot** — that is what the tool is for, and the
+result above is a fact about today's config, not about the setups.
+
+### G15 — B-LEG has NO MEASURED EDGE — raised 2026-08-04
+
+The same run measured B-LEG over the same 6.5 years, and this is the finding that actually changes the
+plan: **50 trades, −0.94R.** Not a loss worth worrying about — a *nothing*. Win rate 34%, average win
++1.65R, average loss −1.01R, expectancy −0.02R per trade.
+
+**The honest statistical read is that 50 trades cannot tell a small edge from a small negative one.**
+The 95% confidence interval on its mean R is **−0.40 to +0.37**, i.e. its 6.5-year total lands
+somewhere between −20R and +18R. Compare A+ over the same bars: **+0.29 to +1.40** per trade, entirely
+positive. One of these has a measured edge and the other has a measured absence of one.
+
+**The shape is worse than the total.** B-LEG's peak-to-trough drawdown in R is **−15.62R** on the way
+to finishing at −0.94R — nearly **double A+'s −7.99R**, for none of the return. It lost in 2021, 2022
+and 2023 (−14.7R combined) and made it back in 2024–2026 (+12.2R), with 2026 being 4 trades.
+
+⚠ **This is a statement about the SHIPPED DEFAULTS, not about the setup.** B-LEG runs `exec_tp1_pct`
+/ `exec_tp2_pct` at 0/0 (full runner) and `exec_sl_level` "1.0", pinned to its own Pine and never
+tuned — lab run `096432c2ad20` was at 30/40. It has never been optimized over a long window, because
+until today it had never been REPLAYED over one; every previous B-LEG number in this repo came from
+2–5 trade validation windows.
+
+**Consequence: bot #2 is not blocked on the allocator or the overlap audit any more. It is blocked on
+B-LEG having something to deploy.** Optimizing it is real work with a real risk of curve-fitting 50
+trades, and it is not on this plan.
 
 ### G11 — The Bots page is CORRECT for many bots and unreadable with them — raised 2026-08-04
 
@@ -675,16 +727,15 @@ believing it works.** Offline green means the logic is right, not that the bot s
 | 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | **Live `exec_risk_pct`** | 10% was measured at **−54.9% max drawdown** over 6.5 years, and Run 12 found the drawdown is a losing streak at that risk, not give-back — risk % is the only lever that moves it. On a demo this is a choice about what you want to learn, not a survival question, but it should be a deliberate number |
-| 4 | **A+ only, or A+ and B-LEG?** | Recommendation: **A+ only.** Two bots need the account-level allocator (unbuilt), the A+/B-LEG overlap audit (never run), and the multi-bot Bots page (G11). All three are real work and none is on this plan |
+| 4 | **A+ only, or A+ and B-LEG?** | **ANSWERED 2026-08-04 — A+ only, and for a new reason.** The overlap audit ran and B-LEG passed it comfortably (G14), so the original objection is gone. But the same run measured B-LEG at **50 trades / −0.94R over 6.5 years** (G15) — no edge to deploy. The allocator (G10) and the multi-bot Bots page (G11) are still unbuilt and still needed before bot #2, but they are no longer the binding constraint |
 
 ---
 
 ## 7. Standing reminders this plan touches
 
-- **The overlap audit** (`CLAUDE.md`, Aaron asked to be reminded): "the legs don't overlap" is design
-  intent, never measured. A+ and B-LEG are the pair most likely to break it, because both can be
-  triggered by the *same* structure break. Cheap to measure — run both over one window and count bars
-  where both hold a position. Must happen before any two-bot live setup.
+- ~~**The overlap audit**~~ — **RUN 2026-08-04 and it passed** (G14). 27 shared bars in 155,453; one
+  same-direction entry cluster in 6.5 years. `backtest/tools/overlap_audit.py` is the tool; re-run it
+  after any entry-logic change on either bot, because the result is a fact about today's config.
 - **Risk is budgeted per account and never layered** (`CLAUDE.md`). `exec_risk_pct` today is per-trade
   with nothing above it. The allocator is a prerequisite for bot #2, not a nice-to-have.
 - **The Bots page needs a multi-bot shape before bot #2** (G11, raised 2026-08-04). It is already

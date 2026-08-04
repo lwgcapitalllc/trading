@@ -11,10 +11,11 @@ engines (`engines/`), the replay runner (`backtest/`), or the A+ machinery it re
 **Status:** Built + unit-tested (19 tests green) + **Pine-parity GREEN (exit 0), re-validated 2026-07-31**
 on a fresh 6,329-bar `VANTAGE_XAUUSD, 15m` export off the session-window build — bar-for-bar
 identical decision stream. The harness is `tools/compare_bleg.py` +
-`indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. **Sample size is the
-open question, not correctness:** the validated windows have produced 2–5 trades each, far too thin
-to tune against. See "The parity gate".
-**Last reviewed:** 2026-08-02 — **this bot's lab labels and descriptions are now shared with
+`indicators/mpc_b_leg_strategy_export.pine`, registered in `verify_parity.py`. 🔴 **NO MEASURED EDGE, RE-CONFIRMED 2026-08-04** —
+**50 trades / −0.94R over 6.5 years** post-phantom-exit-fix, agreeing with the pre-fix archive's
++3.5R over 7.9 years. Correctness was never the question and still is not; what is measured is that
+the SHIPPED DEFAULTS have nothing in them to deploy. See "The 6.5-year measurement".
+**Last reviewed:** 2026-08-04 — 🔴 **RE-MEASURED OVER 6.5 YEARS POST-PHANTOM-EXIT-FIX, AND IT MAKES NOTHING.** ⚠ **This is a CONFIRMATION, not a discovery, and the fact that it needed confirming is the finding.** `backtest/archive/2026-07-29_xauusd_15m_full_history/README.md` already stated **58 trades / +3.5R over 7.9 years** and, in its own words, "B-LEG is roughly flat over 7.9 years and is the one that most needs the analysis". That snapshot predates the 2026-08-01 phantom-exit fix and was on the repo's own re-baseline list, so it needed re-running — but the verdict was on disk, in a committed file, and nothing had been decided off it. The current number: **50 trades, −0.94R over 155,453 M15 bars (2020-01-01 → 2026-08-03)**, at the shipped defaults, zero cost layers. 34% win rate, **+1.65R average win against a −1.01R average loss**, expectancy **−0.02R per trade**. ⚠ **The right read is NOT "it loses" — it is that 50 trades cannot distinguish a small edge from a small negative one.** The 95% CI on its mean R is **−0.40 to +0.37**, i.e. its 6.5-year total belongs anywhere in **−20R to +18R**. Run the identical window through A+ and the CI is **+0.29 to +1.40**, entirely positive on 161 trades. That contrast is the finding: one bot has an edge that survives error bars and this one has an absence of one. ⚠ **The SHAPE is worse than the total, and it is the part that matters for a live decision**: peak-to-trough **−15.62R** on the way to finishing at −0.94R — nearly DOUBLE A+'s −7.99R over the same bars, for none of the return. By year: 2020 +1.5, 2021 −6.0, 2022 −3.9, 2023 −4.8, 2024 +0.3, 2025 +3.0, 2026 +8.9 (4 trades). A first half that loses and a second half that recovers is exactly what noise looks like at n=50, so do not read a regime story into it without measuring one. ⚠ **THIS IS A STATEMENT ABOUT THE DEFAULTS, NOT ABOUT THE SETUP.** `exec_tp1_pct`/`exec_tp2_pct` are 0/0 (full runner) and `exec_sl_level` is "1.0", both PINNED to this fork's own Pine for parity rather than chosen — lab run `096432c2ad20` ran 30/40. This bot has never been optimized over a long window. ⚠ **What today actually adds over the archive is the ERROR BARS and the DRAWDOWN SHAPE.** "Roughly flat" reads as a strategy waiting for its moment; **flat with a ±19R interval and a −15.62R peak-to-trough** reads as a measurement that has not begun, and only the second one is a basis for saying no. A number without its uncertainty is a number nobody can act on, which is why it sat in a README for a week. ⚠ **And optimizing it is its own hazard**: 50 trades is few enough that a grid will find a winner whatever the truth is, which is the definition of curve-fitting. Any tuning pass here needs an out-of-sample split stated BEFORE the grid runs, not after. ✅ **The good news from the same run, and it is genuine**: the A+/B-LEG **overlap audit finally ran and this bot PASSED it comfortably** — 27 shared bars in 155,453, one same-direction entry cluster in 6.5 years, monthly R correlation +0.155. The "different legs of the move" design intent is measured and true. It just does not matter yet. Tool: `backtest/tools/overlap_audit.py`; write-up in `docs/LIVE_TRADING_PIPELINE.md` → G14/G15. **Consequence: this bot is NOT a candidate for bot #2 today**, and the thing standing in its way is no longer the allocator or the overlap question — both of those moved out of the road today — but the absence of anything to deploy. Earlier: **this bot's lab labels and descriptions are now shared with
 `indicators/mpc_b_leg_strategy.pine`.** All 11 params in `mpc_bleg.meta.json` carry that input's
 Pine title byte-for-byte and its tooltip verbatim as the `desc`; change one and change the Pine in
 the same commit. Two of them are deliberately the FORK's own wording, not the A+ parent's —
@@ -361,6 +362,46 @@ same shape to any future packed column whose value is DERIVED rather than copied
 Backtest numbers are now validated logic, not directional guesses — with the standing caveat that
 **5 trades is far too thin a sample to tune against.** Parity says the code is right; it says nothing
 about whether the edge is real.
+
+## The 6.5-year measurement — 2026-08-04
+
+That last sentence was finally acted on. **Nothing above this line changes** — parity is still green
+and the code is still right. What is new is that the bot has been *replayed*, rather than validated,
+over a real window.
+
+```
+python backtest/tools/run_report.py --strategy mpc_bleg --start 2020-01-01 --end 2026-08-03
+```
+
+**155,453 M15 bars, 50 trades, −0.94R.** No cost layers (the free baseline, comparable to the
+Strategy Tester). Win rate 34%, average win +1.65R, average loss −1.01R, expectancy −0.02R/trade,
+peak-to-trough **−15.62R**.
+
+| | trades | sum R | mean R | 95% CI on mean R | max DD (R) |
+|---|---|---|---|---|---|
+| `mpc_sos_fade` | 161 | **+135.94** | +0.84 | **+0.29 → +1.40** | −7.99 |
+| `mpc_bleg` | 50 | **−0.94** | −0.02 | **−0.40 → +0.37** | −15.62 |
+
+**Read the CI column, not the sum R column.** A+'s interval is entirely positive — 6.5 years of gold
+is enough to say its edge is real. B-LEG's straddles zero and is centred on it: its true 6.5-year
+total belongs anywhere between −20R and +18R, and no amount of staring at the −0.94 will narrow that.
+This is the one place where `CLAUDE.md`'s "sample size arrives at the portfolio level" argument does
+**not** apply: that rule says do not reject a strategy for trading rarely, and this is not a rejection
+— it is the statement that the measurement cannot yet distinguish this bot from a coin.
+
+⚠ **Everything here is about the SHIPPED DEFAULTS.** `exec_tp1_pct`/`exec_tp2_pct` = 0/0 and
+`exec_sl_level` = "1.0" are **pinned to this fork's Pine for parity**, which is a correctness
+decision, never a performance one. Lab run `096432c2ad20` ran 30/40. Read the table as "the
+parity-pinned configuration has no measured edge", never as "the B-LEG setup does not work".
+
+⚠ **The obvious next move is also the dangerous one.** Optimizing over 50 trades will find a winning
+combination whether or not one exists. If it is done: state the out-of-sample split **before** the
+grid runs, and expect the honest answer to be "not enough data", because `mpc_sos_fade_optimization.md`
+Run 12 already showed on the A+ bot that buying trade count by loosening a rule loses money.
+
+⚠ **`--no-regime` was passed** on this run (the regime tag is reporting-only and does not touch a
+trade). The "by regime" answer for B-LEG has not been measured and is a genuinely open question — the
+2021–2023 losing stretch and the 2024–2026 recovery could be regime or could be noise at n=50.
 
 ## Tests
 
