@@ -104,6 +104,17 @@ def main():
 
         bot_key, name, script, argv, log_path, *_ = entry
         print(f"Starting {name} (single-bot mode)...")
+
+        # This is the path the command center's per-bot Start button drives, which makes it the
+        # likeliest way anyone produces a duplicate — pressing Start on a bot that is already
+        # running is a completely reasonable thing to do. `runner.already_running()` would
+        # refuse the second copy anyway, but it would do so in a boot log nobody opens; this
+        # says it where the button's caller can see it, and skips `set_started`, which would
+        # otherwise reset the uptime of the bot that is genuinely running.
+        if bot_is_running(bot_key):
+            print(f"  OK {name} is already running — left alone")
+            return
+
         set_started(bot_key)
 
         # stdout/stderr to a FILE, never DEVNULL. A bot writes its own log once its logger

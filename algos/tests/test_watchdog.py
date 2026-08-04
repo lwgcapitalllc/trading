@@ -426,6 +426,25 @@ def test_an_unreadable_process_list_leaves_the_bot_alone():
     assert fn("mpc_sos_fade_demo") is True
 
 
+def test_both_launch_paths_are_guarded():
+    """`main()` has TWO launch paths and the single-bot one is the dangerous one — it is what
+    the command center's per-bot Start button drives, and pressing Start on a running bot is a
+    perfectly reasonable thing to do. It was missed on the first pass of this fix.
+
+    Asserted structurally rather than behaviourally because `main()` cannot be exec'd in
+    isolation (it reaches module-scope state and `bot_state`); this at least fails when a third
+    launch path is added without a guard.
+    """
+    src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
+    fn = next(n for n in ast.parse(src).body
+              if isinstance(n, ast.FunctionDef) and n.name == "main")
+    guards = [n for n in ast.walk(fn)
+              if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "bot_is_running"]
+    assert len(guards) == 2, (
+        f"{len(guards)} launch path(s) check whether the bot is already running — full startup "
+        f"and single-bot mode both need it")
+
+
 def test_the_runner_refuses_to_be_a_second_copy(monkeypatch):
     """The backstop, covering every path the launcher does not own — the command center, this
     watchdog, and a hand-typed command."""

@@ -341,10 +341,19 @@ off it — double the intended risk, from a state neither can see. The bridge fi
 `adopt_broker_state`'s HALT-on-unknown-position makes this survivable rather than an immediate
 double book. In dry run it cost nothing. Live, it is the single most expensive bug in this file.
 
-**Fixed with two guards, because they cover different launch paths:** the coordinator skips a bot
-already running, and `runner.already_running()` refuses to be a second copy — the latter covering
-the command center, the watchdog and a hand-typed command, none of which the coordinator owns.
-Both match on `--bot <key>` rather than the script name, since every live bot is `runner.py`.
+**Fixed with three guards, because they cover different launch paths:** the coordinator skips a
+bot already running on **both** of its paths — full startup, and `--bot` single-bot mode — and
+`runner.already_running()` refuses to be a second copy at all, covering the watchdog and a
+hand-typed command. All match on `--bot <key>` rather than the script name, since every live bot
+is `runner.py`.
+
+⚠ **The single-bot path was MISSED on the first pass of this fix, and it is the dangerous one** —
+it is what the command center's per-bot Start button drives, and pressing Start on a bot that is
+already running is a completely reasonable thing for a person to do. The runner's own guard would
+have refused the second copy, but it would have said so in a boot log nobody opens, and
+`set_started` would already have reset the uptime of the bot that was genuinely running. A test
+now asserts that `main()` contains exactly two `bot_is_running` checks, so a third launch path
+cannot be added without one.
 
 ⚠ **The two guards default in OPPOSITE directions when the process list cannot be read**, and that
 asymmetry is deliberate: the coordinator assumes RUNNING and leaves the bot alone (a duplicate is
