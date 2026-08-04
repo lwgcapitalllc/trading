@@ -39,6 +39,7 @@ from typing import Optional
 from services import lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
+from services.ob_overlays import GROUP_OB, build_ob_overlays
 from services.structure_overlays import (
     GROUP_INTERNAL, GROUP_INTERNAL_HISTORIC, build_market_structure_overlays,
 )
@@ -572,11 +573,17 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # gaps themselves are mpc_assistant.pine's (see fvg_overlays.py — the strategy runs a different,
     # stricter set). Best-effort: [] on any failure, and [] when the run has no trades/blocks/misses
     # in the window, which is what keeps the toggle off an NT8/MT5 chart.
-    overlays = overlays + build_fvg_overlays(
-        candles,
-        [t["entryTime"] for t in trades] + [b["time"] for b in blocks] + [m["time"] for m in misses],
-        base_tf,
+    anchors = (
+        [t["entryTime"] for t in trades] + [b["time"] for b in blocks] + [m["time"] for m in misses]
     )
+    overlays = overlays + build_fvg_overlays(candles, anchors, base_tf)
+
+    # Order blocks — the same anchor rule, for the same reason, off the canonical OB engine (see
+    # ob_overlays.py). Measured on run `75ccc776d10c`: 2,567 blocks created over the window, 579 of
+    # them live when something fired. Unlike the gaps there is no settings fork to warn about — the
+    # strategy files dropped order blocks entirely in 2026-07, so mpc_assistant.pine is the only
+    # source; equally, a drawn block never explains an entry, because the bot reads none.
+    overlays = overlays + build_ob_overlays(candles, anchors)
 
     spec = {
         "instrument": instrument,
@@ -669,11 +676,13 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         # any one strategy — identical for every leg (same instrument/timeframe/window). So the
         # stack's price chart carries the base leg's, giving it full BacktestDetail parity
         # (structure layers, ATR pane, fib/measurement tools all read the same spec).
-        # The FVG group is the ONE exception and is dropped for the same reason blocks and misses
-        # are: it is anchored to the BASE leg's trades, so on a merged chart it would draw gaps at
-        # one strategy's entries and nothing at the others' — which reads as "these setups had gaps
-        # and those didn't" rather than "only one leg was measured". A leg's own page still has it.
-        "overlays": [dict(o) for o in src.get("overlays", []) if o.get("group") != GROUP_FVG],
+        # The two ANCHORED groups — fair value gaps and order blocks — are the exception, dropped
+        # for the same reason blocks and misses are: both are anchored to the BASE leg's trades, so
+        # on a merged chart they would draw zones at one strategy's entries and nothing at the
+        # others' — which reads as "these setups had gaps and those didn't" rather than "only one
+        # leg was measured". A leg's own page still carries both.
+        "overlays": [dict(o) for o in src.get("overlays", [])
+                     if o.get("group") not in (GROUP_FVG, GROUP_OB)],
         "indicators": [dict(i) for i in src.get("indicators", [])],
         "layers": layers,
         # The base leg's run_id — the frontend routes M1/M5 drill-down + fullscreen candle fetches
@@ -746,9 +755,6 @@ def _page_analysis(
         return empty
 
     run_dir = LAB_RESULTS_DIR / run_id
-    blocks = _build_blocks(run_dir, window)
-    misses, miss_noise = _build_misses(run_dir, window)
-
     equity_curve: list[dict] = []
     eq_path = row.get("equity_curve_path")
     if eq_path:
@@ -756,14 +762,28 @@ def _page_analysis(
             equity_curve = json.loads(Path(eq_path).read_text())
         except (ValueError, OSError):
             equity_curve = []
-    trades = _build_trades(equity_curve, window)
+
+    # Built over the WARM-UP as well as the page, then sliced to the page for content. The two uses
+    # are different questions: a marker is drawn only where it is on screen, but the ANCHOR set is
+    # "did anything fire while this gap / block was alive", and a zone can outlive the bars its box
+    # covers — an order block's box is a fixed 30-bar stub while the block itself can stay live for
+    # hundreds. Anchoring off the page alone would drop a zone that a trade just off the left edge is
+    # the whole reason for. `_anchor_bars` ignores anything outside the replayed candles anyway, and
+    # ids are assigned over the WHOLE file, so slicing here is identical to passing a narrower window.
+    blocks_warm = _build_blocks(run_dir, warm)
+    misses_warm, miss_noise = _build_misses(run_dir, warm)
+    trades_warm = _build_trades(equity_curve, warm)
+    anchors = (
+        [t["entryTime"] for t in trades_warm]
+        + [b["time"] for b in blocks_warm]
+        + [m["time"] for m in misses_warm]
+    )
+    blocks = [b for b in blocks_warm if b["time"] >= from_ms]
+    misses = [m for m in misses_warm if m["time"] >= from_ms]
 
     overlays = build_market_structure_overlays(warm)
-    overlays = overlays + build_fvg_overlays(
-        warm,
-        [t["entryTime"] for t in trades] + [b["time"] for b in blocks] + [m["time"] for m in misses],
-        timeframe,
-    )
+    overlays = overlays + build_fvg_overlays(warm, anchors, timeframe)
+    overlays = overlays + build_ob_overlays(warm, anchors)
     # Only what actually reaches this page. The warm-up bars are context for the engines, not
     # content — an overlay that lives entirely inside them belongs to the page before this one and
     # would arrive twice (the panel dedupes, but sending it is still a lie about where it was

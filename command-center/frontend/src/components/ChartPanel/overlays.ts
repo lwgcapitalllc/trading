@@ -43,20 +43,26 @@ export const STRUCTURE_GROUP_COLOR: Record<typeof STRUCTURE_GROUPS[number], stri
 }
 
 /** Overlay groups that belong in the **Analysis** dropdown rather than Structure, because they
- *  describe the strategy's SIGNALS rather than what the market drew. Today that is the fair-value-gap
- *  layer, which the backend emits only around trades / blocked setups / missed setups — so it answers
- *  "where were the gaps when this fired", the Analysis question, not "what shape is the market in".
- *  Like the structure groups these default OFF and are listed with a count. MUST match the GROUP_*
- *  names in the backend `fvg_overlays.py`. */
+ *  describe the CONTEXT a signal fired in rather than what the market drew as a whole. Both of
+ *  today's entries are emitted by the backend only around trades / blocked setups / missed setups —
+ *  so they answer "what was open when this fired", the Analysis question, not "what shape is the
+ *  market in". Like the structure groups they default OFF and are listed with a count. MUST match
+ *  the GROUP_* names in the backend `fvg_overlays.py` / `ob_overlays.py`.
+ *
+ *  ⚠ ORDER MATTERS BEYOND THE MENU: `DEBUG_ON_GROUPS` in `index.tsx` reads `ANALYSIS_GROUPS[0]`, so
+ *  a new layer goes on the END unless it is genuinely meant to join Deep debug. */
 export const ANALYSIS_GROUPS = [
   'Fair Value Gaps',
+  'Order Blocks',
 ] as const
 
-/** Analysis-menu dot colour per group — it matches what the layer actually draws, so the FVG dot is
- *  the same neutral grey as the boxes (which are borderless and identical for bull and bear, exactly
- *  like mpc's). Distinct enough from Blocked pink / Missed amber to tell the rows apart. */
+/** Analysis-menu dot colour per group — each matches what its layer actually draws, so a row's dot
+ *  is a swatch of the boxes it switches on. FVG is the neutral grey of its borderless boxes; Order
+ *  Blocks is mpc's `OB_ACCENT` orange outline. Both are distinct from Blocked pink / Missed amber,
+ *  and from each other, so the rows tell apart at a glance. */
 export const ANALYSIS_GROUP_COLOR: Record<typeof ANALYSIS_GROUPS[number], string> = {
   'Fair Value Gaps': '#94a3b8',
+  'Order Blocks': '#E65100',
 }
 
 /** Daily session-break marker (Step 6) — a vline drawn under a separate name so the generic
@@ -138,6 +144,7 @@ interface OverlayExtend {
   lineStyle?: 'solid' | 'dashed'
   lineWidth?: number
   label?: string
+  labelAlign?: 'left' | 'right'
 }
 
 /** One structure text label — the batched LABEL overlay carries an array of these in `extendData.items`,
@@ -221,6 +228,26 @@ function withAlpha(color: string, a: number): string {
   const b = parseInt(full.slice(4, 6), 16)
   return `rgba(${r}, ${g}, ${b}, ${a})`
 }
+
+/** Bare coloured text — no chip, no border, no background.
+ *
+ *  ⚠ klinecharts' DEFAULT overlay-text style is a solid BLUE chip (`#1677FF` background AND border),
+ *  and OMITTING those fields falls back to it — so a `text` figure that wants plain text has to
+ *  clear them explicitly. This lives at module scope because the trap is invisible until something
+ *  is actually drawn: the generic BOX and HLINE label paths both shipped carrying it, dormant for
+ *  months, until the order-block layer became the first emitter to put a `label` on a box and its
+ *  "OB" tag came out as a blue pill. Every bare text figure here spreads this. */
+const FLAT_TEXT = {
+  size: 10,
+  weight: 'bold',
+  backgroundColor: 'transparent',
+  borderColor: 'transparent',
+  borderSize: 0,
+  paddingLeft: 0,
+  paddingRight: 0,
+  paddingTop: 0,
+  paddingBottom: 0,
+} as const
 
 let registered = false
 
@@ -685,10 +712,21 @@ export function registerChartOverlays(): void {
         },
       ]
       if (d.label) {
+        // `labelAlign: 'right'` parks the tag at the box's RIGHT edge instead of its left. Generic,
+        // not OB-specific: a box whose left edge is its ANCHOR candle has the candles sitting right
+        // there, so a left-aligned tag lands on price, while the right edge of a fixed-width zone is
+        // usually empty space (mpc_assistant.pine says exactly this — `text_halign = align_right`).
+        const right = d.labelAlign === 'right'
         figures.push({
           type: 'text',
-          attrs: { x: x + 4, y: y + 3, text: d.label, baseline: 'top' },
-          styles: { color, size: 10, weight: 'bold' },
+          attrs: {
+            x: right ? x + width - 4 : x + 4,
+            y: y + 3,
+            text: d.label,
+            align: right ? 'right' : 'left',
+            baseline: 'top',
+          },
+          styles: { ...FLAT_TEXT, color },
           ignoreEvent: true,
         })
       }
@@ -725,7 +763,7 @@ export function registerChartOverlays(): void {
         figures.push({
           type: 'text',
           attrs: { x: Math.max(a.x, b.x) - 4, y: a.y - 3, text: d.label, align: 'right', baseline: 'bottom' },
-          styles: { color, size: 10, weight: 'bold' },
+          styles: { ...FLAT_TEXT, color },
           ignoreEvent: true,
         })
       }
@@ -817,17 +855,12 @@ export function registerChartOverlays(): void {
         placed.push(b)
       }
       // Flat text — no chip/box/border/background (Aaron's call; also matches the Pine, which uses
-      // color(na) for the label background). klinecharts' DEFAULT overlay-text style has a BLUE
-      // backgroundColor + borderColor (#1677FF), and omitting those fields falls back to it — so they
-      // must be set transparent (and borderSize 0) explicitly to leave just the coloured text.
+      // color(na) for the label background). See `FLAT_TEXT` for the klinecharts default this is
+      // clearing, and why it is shared rather than repeated here.
       return placed.map((b): OverlayFigure => ({
         type: 'text',
         attrs: { x: b.x, y: b.y, text: b.text, align: 'center', baseline: 'middle' },
-        styles: {
-          color: b.color, size: 10, weight: 'bold',
-          backgroundColor: 'transparent', borderColor: 'transparent', borderSize: 0,
-          paddingLeft: 0, paddingRight: 0, paddingTop: 0, paddingBottom: 0,
-        },
+        styles: { ...FLAT_TEXT, color: b.color },
         ignoreEvent: true,
       }))
     },

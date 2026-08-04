@@ -3,7 +3,21 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-02 — **every trade can now draw the FIB LEG it was priced off** (Analysis
+**Last reviewed:** 2026-08-03 — **Analysis → Order Blocks.** The canonical `engines/order_blocks/`
+engine is replayed server-side and a block is drawn ONLY where it was live on a trade / blocked /
+missed bar — the fair-value-gap layer's anchor rule, with one engine swapped (579 boxes on the
+measured run, beside the gap layer's 661). **It needed no new template, no new effect and no new
+concept**: it is a plain `box` group and a second string in `ANALYSIS_GROUPS`, which is precisely
+what that list was added for. Default OFF, listed with its count, last in Analysis, and deliberately
+**not** in Deep debug (Aaron's call). ⚠ **The box is a fixed 30-bar STUB from the anchor candle, not
+a live-bar tracker** — the one place this differs from the gaps, and the reason a block's box can end
+long before the block dies, or after the bar it died on. ⚠ **Exercising the generic `BOX` label path
+for the first time found a bug sitting in it**: klinecharts' default overlay-text style is a solid
+BLUE chip, so the first `OB` tag rendered as a blue pill — and the `HLINE` label path carried the
+identical bug, still dormant. This file already recorded that trap for the `LABEL` template; it
+applied to both and nobody had drawn one. All three now spread the shared `FLAT_TEXT` style.
+**The lesson: a generic mechanism nobody has used is not a working mechanism.** Earlier:
+2026-08-02 — **every trade can now draw the FIB LEG it was priced off** (Analysis
 → **Fibs**), so a plotted trade says which retracement levels it went into instead of
 leaving you to redraw the fib by hand. Each level arrives as an explicit `(ratio, price)` pair the
 STRATEGY recorded when it placed the order, so **there is no fib maths in the browser** and the
@@ -523,6 +537,35 @@ here**, so the chart shows exactly what the strategy saw.
   - Dropped from a **stack** spec, for the same reason blocks and misses are: it is anchored to the
     BASE leg's trades, so on a merged chart it would draw gaps at one strategy's entries and nothing
     at the others'. A leg's own page still has it.
+- **Order blocks** (`Order Blocks` overlay group, backend `services/ob_overlays.py`, 2026-08-03) —
+  **the supply/demand zones that were LIVE when something happened.** Aaron's brother asked to see
+  order blocks on the backtest chart; the canonical `engines/order_blocks/` engine is replayed
+  server-side under the SAME anchor rule as the gaps (a block is drawn only if it was live on a trade
+  ENTRY / blocked / missed bar), so this is the second entry in `ANALYSIS_GROUPS` and cost the panel
+  **no new template, no new effect and no new concept** — it is a plain `box` group and the generic
+  pipeline already draws, clips, counts and toggles it. Measured on run `432aff31f374`: 2,567 blocks
+  created over the window, **579** drawn, beside the gap layer's 661. Default OFF, listed with its
+  count, last in Analysis — it and the gaps are the CONTEXT a setup fired into, not a kind of signal.
+  - **The BOX is a fixed STUB, and that is the only real difference from the gap layer.** mpc gives
+    an order block `OB_STUB` (30) bars from its anchor candle and stretches it to the live bar only
+    while price is back within one block-height; a gap box tracks the live bar. That uniform width is
+    deliberate on the indicator — it makes a set of zones scan as one family of levels. Two things
+    that follow and look wrong until you know: a block's box can end long BEFORE the block dies (the
+    zone stays live and keeps answering anchors), and it can end AFTER the bar it died on (the stub
+    runs past the live bar into empty space). Backend derivation: `backend/CLAUDE.md` → *Order blocks*.
+  - **One deep orange for BOTH directions, drawn as an OUTLINE with a whisper of fill** (`#E65100`,
+    mpc's `OB_ACCENT`), with the `OB` tag right-aligned in the box. The blue/red directional
+    experiment was tried and REVERTED in the Pine, so bull and bear look identical here exactly as
+    they do on the indicator — and the outline is what tells these apart from the borderless grey
+    gap boxes they sit among.
+  - **It is deliberately NOT in Deep debug** (Aaron's call — "don't add it to the deep debug yet").
+    `DEBUG_ON_GROUPS` reads `ANALYSIS_GROUPS[0]`, so a new analysis layer goes on the END of that
+    list and joins the preset only when someone decides it belongs in the every-trade reading.
+  - **It found a live bug in the generic `BOX` label path**, which had never been used: klinecharts'
+    default overlay-text style is a solid BLUE chip, so the first `OB` tag rendered as a blue pill.
+    Both the BOX and HLINE label paths shipped carrying it, dormant, and both now spread the shared
+    `FLAT_TEXT` style the `LABEL` template already used — see that constant in `overlays.ts`.
+  - Dropped from a **stack** spec alongside the gaps, for the same anchored-to-the-base-leg reason.
 - **Fibs** (`TRADE_FIB` overlay, `trade.fib`, 2026-08-02) — **the leg each trade was actually
   priced off.** Aaron's brother asked to see the fib run on the points a trade used, so he can read
   which retracement levels it went into. Every level arrives as an explicit `(ratio, price)` pair

@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   LayoutDashboard, Radar, Bot, CalendarDays, BookOpen, ClipboardList, BarChart2, Sliders,
-  Activity, Settings, ChevronsLeft, ChevronsRight,
+  Activity, Settings, ChevronsLeft, ChevronsRight, RefreshCw,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
@@ -54,6 +55,41 @@ function ActivityDot() {
       <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-60 animate-ping" />
       <span className="relative inline-flex h-[7px] w-[7px] rounded-full bg-accent" />
     </span>
+  )
+}
+
+// Refresh-everything action. It lives here rather than in the top bar because the
+// bar's width now carries the affirmation ribbon — and this is a global action, so
+// the global nav is where it belongs. Styled as a footer row so it reads as a peer
+// of Settings, and collapses to an icon like every other row.
+function RefreshAll({ collapsed }: { collapsed: boolean }) {
+  const qc = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await qc.invalidateQueries()
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleRefresh}
+      disabled={refreshing}
+      title={collapsed ? 'Refresh all data' : undefined}
+      className={
+        'w-full flex items-center gap-[10px] px-[9px] py-[7px] mt-[8px] rounded-md text-[13px] ' +
+        'cursor-pointer select-none transition-colors duration-[120ms] ' +
+        'text-text-tertiary hover:bg-bg-hover hover:text-text-secondary ' +
+        (collapsed ? 'justify-center ' : '')
+      }
+    >
+      <RefreshCw size={16} className={`flex-shrink-0 opacity-85 ${refreshing ? 'animate-spin' : ''}`} />
+      {!collapsed && 'Refresh data'}
+    </button>
   )
 }
 
@@ -171,6 +207,9 @@ export function Sidebar() {
       {/* ── Footer ────────────────────────────────────────────────── */}
       <div className="mt-auto pt-[10px] border-t border-border-subtle">
         <SystemHealthStrip collapsed={collapsed} />
+
+        {/* Refresh all data — moved out of the top bar 2026-08-03 */}
+        <RefreshAll collapsed={collapsed} />
 
         {/* Settings — last nav item */}
         <NavLink

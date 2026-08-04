@@ -15,7 +15,24 @@ canonical implementation — no consumer builds its own.
 **Pine:** ported from `indicators/mpc_assistant.pine`; parity harness is `indicators/ob_export.pine`,
 diffed against this Python by `tools/compare_ob.py`. Pine stays in `indicators/` (shared source,
 TradingView-only toolchain); the CSV + compare tool are the engine's half.
-**Last reviewed:** 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME, AND IT SETTLES THE WARM-UP QUESTION.** `compare_ob.py --warmup 326` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export, stable at warm-up 1000 / 5000. **326, not 798** — and the reason matters: this export is a mid-history SLICE, so Pine is WARM and Python is the cold one, exactly the configuration of the cold-start-at-2000/6000/12000 test below. Same ~300-bar figure, same direction, reached from different data and a different timeframe. Earlier the same evening — ✅ **VALIDATED. `compare_ob.py` exit 0** on a real
+**Last reviewed:** 2026-08-03 — **THE FIRST CONSUMER LANDED, AND IT IS A DISPLAY ONE.**
+`command-center/backend/services/ob_overlays.py` replays this engine over a backtest's candles to
+draw the blocks that were live at each trade / blocked setup / missed setup on the lab's price chart.
+**No engine code changed**, and the note below claiming nothing imports this engine is now false —
+it has been corrected in place rather than left to be read as current. Two things worth knowing here
+rather than only over there. **(1) The consumer owns the Pine's DRAWING rules, which are deliberately
+not in this engine** — `OB_STUB` (the 30-bar box width), the `obNear` stretch, and delete-on-death.
+That split is the same one the engine's Scope line has always stated (events, not boxes), and it
+means a change to mpc's box geometry belongs in the consumer while a change to creation or
+mitigation belongs here. **(2) It runs the engine at its DEFAULTS, because there is no fork to
+resolve** — unlike `fair_value_gaps/`, whose two consumers legitimately see different gap sets, the
+strategy files dropped order blocks entirely on 2026-07-24/25, so `mpc_assistant.pine` is the only
+source and these defaults ARE its constants. ⚠ **That consumer brings NO new Pine evidence.** The FVG
+one diffs its boxes against the export's own `px_fvg_*` arrays and so validates that engine a second
+independent way; this one cannot, because all three exports in `exports/` predate the 2026-07-31
+re-port (six slots, no `cfg_ob_*`) and `compare_ob.py` refuses them outright. Its 18 tests prove the
+EMITTER only, and say so. **`compare_ob.py` on a fresh export is still the sole parity evidence for
+this engine — re-run it on the next one.** Earlier: 2026-07-31 (late) — ✅ **RE-CONFIRMED ON A SECOND TIMEFRAME, AND IT SETTLES THE WARM-UP QUESTION.** `compare_ob.py --warmup 326` → exit 0 on a 13,186-bar `VANTAGE_XAUUSD, 5m` export, stable at warm-up 1000 / 5000. **326, not 798** — and the reason matters: this export is a mid-history SLICE, so Pine is WARM and Python is the cold one, exactly the configuration of the cold-start-at-2000/6000/12000 test below. Same ~300-bar figure, same direction, reached from different data and a different timeframe. Earlier the same evening — ✅ **VALIDATED. `compare_ob.py` exit 0** on a real
 21,691-bar `VANTAGE_XAUUSD, 15m` export, all 55 columns, warm-up 798, stable to warm-up 10000. The
 re-port below is now proven against TradingView, not just against unit tests. One Pine bug had to be
 fixed to get there: `ob_export.pine` did not compile (`CE10088 — cannot modify global variable in
@@ -50,8 +67,16 @@ survives, so this was a rewrite rather than a re-sync:
   separate event from `mitigated`, because a block price never returned to was not consumed.
 * **`max_active` 2 → 10**, and eviction no longer protects structure-born blocks (there are none).
 
-**Nothing downstream broke:** no consumer imports this engine — not `backtest/replay/EngineStack`,
-not either bot — so the re-port carries no strategy risk. And unlike the Cycle fib, there is **no
+**Nothing downstream broke:** at the time of the re-port no consumer imported this engine — not
+`backtest/replay/EngineStack`, not either bot — so it carried no strategy risk. **⚠ That is no longer
+true as of 2026-08-03 and the sentence is kept for the re-port's context only: `command-center`'s
+price chart now consumes it** (`backend/services/ob_overlays.py` → the chart's *Analysis → Order
+Blocks* layer, one box per block that was live at a trade / blocked / missed setup). It reads the
+public events ONLY, and it is a DISPLAY consumer — no strategy reads a block, so a change here still
+moves no trade — but a change here now moves what a reader sees on a backtest, and the box geometry
+that consumer mirrors is the Pine's drawing rule (`OB_STUB`, the `obNear` stretch, delete-on-death),
+which is NOT in this engine. Keep those in step: `command-center/backend/CLAUDE.md` → *Order blocks*.
+And unlike the Cycle fib, there is **no
 two-Pine fork to worry about**: the strategy files dropped order blocks entirely on 2026-07-24/25, so
 `mpc_assistant.pine` is the only source. **`indicators/ob_export.pine` was rebuilt too** — it used to
 EMBED the whole structure engine (1148 lines → ~300), which was its single biggest maintenance trap
@@ -314,6 +339,12 @@ is the only backstop. It did not bite on the 21,691-bar run above.
 
 - Pine source of truth: `indicators/mpc_assistant.pine` OB blocks (191-393 / 2269-2550 / 2626-2881).
 - Parity export build: `indicators/ob_export.pine`.
+- **Consumers** (public events only — never this engine's internals):
+  - `command-center/backend/services/ob_overlays.py` — draws the blocks that were live at each trade
+    entry / blocked setup / missed setup on the lab's price chart (Analysis → Order Blocks). A
+    DISPLAY consumer: no strategy reads a block, so a change here cannot move a trade. It owns the
+    Pine's DRAWING rules, which are deliberately not in this engine — the `OB_STUB` box width, the
+    `obNear` stretch, and delete-on-death. See `command-center/backend/CLAUDE.md` → *Order blocks*.
 - Siblings in shape (standalone, price-pattern, events-not-visuals): `engines/fair_value_gaps/CLAUDE.md`,
   `engines/equal_highs_lows/CLAUDE.md`, `engines/rsi_divergence/CLAUDE.md`.
 - The audit that found this: `docs/ENGINE_EXTRACTION_ROADMAP.md` → "Audit findings — 2026-07-31".

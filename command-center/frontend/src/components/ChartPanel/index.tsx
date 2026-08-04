@@ -311,7 +311,12 @@ function MarkerNav({ current, idx, total, busy, onStep }: {
  *  alongside these rather than listed in here.)
  *
  *  Taken from the panel's own group vocabulary in `overlays.ts` rather than retyped, so a rename
- *  there carries instead of silently turning nothing on. */
+ *  there carries instead of silently turning nothing on.
+ *
+ *  ⚠ **Order Blocks is deliberately NOT in here** (Aaron's call, 2026-08-03 — "don't add it to the
+ *  deep debug yet"). It is a live Analysis row like any other; this preset is a curated set, and a
+ *  layer joins it only when it has earned a place in the every-trade reading. That is also why the
+ *  indices below are `[0]` and not a spread of the whole list. */
 const DEBUG_ON_GROUPS: readonly string[] = [
   STRUCTURE_GROUPS[0],   // External Structure — BOS/SOS break lines + the active swing rays
   ANALYSIS_GROUPS[0],    // Fair Value Gaps
@@ -1806,7 +1811,7 @@ export default function ChartPanel({
             { timestamp: ov.t0, value: ov.top },
             { timestamp: ov.t1, value: ov.bottom },
           ],
-          extendData: style,
+          extendData: { ...style, label: ov.label, labelAlign: ov.labelAlign },
         })
       } else if (ov.type === 'hline') {
         chart.createOverlay({

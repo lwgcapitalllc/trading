@@ -879,6 +879,54 @@ could not be asked — not that the terminal is disconnected. The checks are wri
 falsy, so an unanswered question renders as *"terminal state unknown"* rather than as a failure the
 UI invented. Same rule as `DrawdownMeter`'s refusal to draw an unmeasured tail as an absent one.
 
+## The affirmation ribbon, and why it holds still
+
+**Built 2026-08-03, Aaron's request.** Six affirmations rotate in the top bar, one every 20 seconds.
+The list is the `AFFIRMATIONS` array in `components/TopBar.tsx` — edit that and nothing else, since
+the rotation reads its own length. They render uppercase on one line that never wraps, so roughly 40
+characters is the ceiling before a narrow window clips one.
+
+**The Refresh button moved to the sidebar footer to make room** (`Sidebar.tsx` → `RefreshAll`, styled
+as a peer of Settings and collapsing to an icon like every other row). Refresh-everything is a global
+action, so the global nav is an honest home for it, and the top bar's width was the only space in the
+shell wide enough to hold a sentence.
+
+**The animation is deliberately front-loaded, and the brief is the reason.** These are meant to
+register subconsciously, which rules out the obvious treatment: a looping shimmer or a pulsing glow
+stops being SEEN within minutes — the eye adapts to steady motion and files it as background — and
+until it does, it competes with the numbers the page is actually for. Looping motion reads as
+decoration; motion that finishes reads as intent. So the whole budget goes on the ARRIVAL — words
+fade up 75ms apart, so the line assembles at the pace of a voice saying it and the eye travels along
+and READS it rather than glancing at a block that appeared — and then it holds perfectly still for
+its full turn. Still, bright and identical every time round is what repetition needs in order to
+encode. The exit is a plain fade, duller than the entrance on purpose: two ends competing for
+attention would make the change feel like an effect.
+
+Four things that will break it if they are changed back:
+
+- **`-webkit-background-clip: text` is not usable here, although the wordmark beside it uses exactly
+  that.** The clip silently stops working when the same element also carries a `transform` — and this
+  line moves on every change — at which point the gradient floods the whole box and the transparent
+  letters vanish inside it. What you see is a solid gradient BAR where the text should be, which is
+  how it shipped twice during the build. The ribbon paints a flat colour instead, and the word-by-word
+  entrance would have forced that anyway: a gradient can span the whole line or restart per word, and
+  neither survives animating each word on its own.
+- **The rAF that starts the entrance needs the timer beside it.** `requestAnimationFrame` does not
+  fire in a BACKGROUND tab while the timers driving the rest of the cycle keep running, so on rAF
+  alone the ribbon parks in `enter` — fully transparent — until the tab is looked at again. The 80ms
+  fallback is the fix for a real stall, not belt-and-braces.
+- **It is `absolute inset-0` across the whole bar, not a flex child.** Laid out in the row it centres
+  in the space LEFT OVER beside the wordmark, which is visibly right of centre. The two therefore
+  overlap at narrow widths: the wordmark carries `z-10`, and the type steps down from 22px to 17px
+  below 1280px so the longest line still clears it.
+- **One node shows one affirmation.** The three phases (`enter` → `in` → `out`) reuse a single
+  element rather than crossfading two copies, so a stalled timer can never leave the bar reading two
+  things at once.
+
+Verified in headless Chrome at 2.5s and at 25s — message 1 then message 2, which is what proves the
+rotation advances rather than the first line simply sitting there. That check is also what caught the
+background-tab stall.
+
 ## Key UI decisions
 
 **Platform-based job lock** — `GET /backtests/running-job` returns `{ nt8, mt5, python }: RunningJobInfo` (polled at 5s via `useRunningVpsJob()`). All three lock independently. **Never branch on `runner === 'mt5'`** — that conflated two different questions (which lock scope? is this NT8-only UI?) and silently gave Python jobs the NT8 badge and the NT8 lock. Resolve both through `lib/runner.ts`: `runningJobFor(runningJob, runner)` for the lock (`jobBlocked = !!runningJobFor(runningJob, run.runner)?.running`), `isNt8Runner(runner)` for NT8-only UI (futures contract months, prop-challenge rulesets, injected foundational params, the NT8 chart export), `runnerMarket(runner)` for forex-vs-futures ruleset filtering (MT5 and Python are both forex), and `runnerScope`/`RUNNER_LABEL`/`RUNNER_FULL_LABEL` for display. It mirrors the backend's `_SCOPE_RUNNER_SQL`, including NT8 as the fallback for unknown runners. Lock surfaces: `RunBacktestModal`, `OptimizeButton`, `Tier3WarningModal`, `RunRow` retry, `BacktestDetail` retry/rerun. `Strategies.tsx` calls `useRunningVpsJob()` at page level (result unused) to keep the cache warm — without this, the first modal render sees `runningJob = undefined` and treats the lock as clear. All six job-lifecycle mutations invalidate `['lab', 'running-job']` on success. `BacktestSummary.runner` must be mapped in `_row_to_summary` or `run.runner` is undefined on the frontend. The backend `get_running_job()` correctly routes MT5 optimizations to the `mt5` bucket (joins `strategies` on runner) — a running MT5 optimization does NOT set `nt8.running`.

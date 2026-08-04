@@ -165,7 +165,10 @@ export interface OverlayStyle {
  *  "Internal Structure" on top of its own group. Absent = the overlay's own group is the only gate. */
 type OverlayRequires = { requires?: string[] }
 
-/** A filled rectangle spanning a time and price range (e.g. a range box). */
+/** A filled rectangle spanning a time and price range (e.g. a range box, an order block).
+ *  `label` names the zone in its corner — `labelAlign: 'right'` parks it at the box's right edge,
+ *  which is what a zone anchored on a candle needs (its LEFT edge is the candle itself, so a tag
+ *  there sits on price). Both absent = an unlabelled box, which is what a fair value gap is. */
 export interface BoxOverlay extends OverlayRequires {
   type: 'box'
   group: string
@@ -173,6 +176,8 @@ export interface BoxOverlay extends OverlayRequires {
   t1: EpochMs
   top: number
   bottom: number
+  label?: string
+  labelAlign?: 'left' | 'right'
   style?: OverlayStyle
 }
 
