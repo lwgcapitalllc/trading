@@ -12,9 +12,11 @@ Runtime config:
 
 Global control actions (all bots):
   POST /bots/start                     — run SYS_STARTUP task
-  POST /bots/stop                      — delete lock + taskkill python.exe
+  POST /bots/stop                      — terminate each registered bot + delete lock
   POST /bots/restart                   — stop + 3s + start
-  POST /bots/emergency                 — immediate taskkill, no cleanup
+
+  (There is no /bots/emergency route. This list claimed one until 2026-08-04; it was
+   removed at some point and the docstring kept advertising it.)
 
 Per-bot control actions:
   POST /bots/{bot_name}/start          — schtasks /run /tn {task_name}
@@ -525,11 +527,11 @@ def get_bot_log(bot_name: str, lines: int = 500):
 
 # ── Control actions ───────────────────────────────────────────────────────────
 #
-# All actions run over SSH.  Sequence mirrors the VPS deploy workflow in CLAUDE.md:
-#   stop  = delete lock file + taskkill all python.exe
+# All actions run over SSH.
+#   stop  = kill each registered BOT process + delete the MT5 lock
 #   start = run SYS_STARTUP scheduled task
 #   restart = stop then start (with a 3-second gap)
-#   emergency = immediate taskkill, no lock delete (fastest path)
+#   emergency = kill the bots immediately, no lock cleanup (fastest path)
 #
 # Each endpoint returns { "status": "ok"|"error", "output": "<ssh stdout>" }.
 # A 502 is raised when the SSH call itself fails or times out.
@@ -538,10 +540,33 @@ _LOCK_PATH  = r"C:\trading\algos\mt5_connect.lock"
 _STARTUP_TN = "SYS_STARTUP"
 
 
-def _stop_procs() -> str:
-    """Kill lock file + all python.exe processes.  Returns combined SSH output."""
-    out = _ssh(f"del {_LOCK_PATH} 2>nul & taskkill /f /im python.exe 2>nul")
-    return out
+def _kill_bot(bot_key: str) -> str:
+    """Terminate ONE bot, matched on the `--bot <key>` in its process commandline.
+
+    **Never `taskkill /f /im python.exe`.** That kills every Python process on the VPS: the
+    trading bot, the Telegram bot, the MT5 backtest agent and the NT8 agent. It is how Stop
+    took the whole box down, and on 2026-07-31 it is what killed the live bot — which then
+    stayed dead for three days, because at the time nothing restarted it. It also silently
+    breaks any in-flight lab backtest, since both agents are Python too.
+
+    The bot key is already this repo's process identity — `monitor.is_running` matches on the
+    same string, because `runner.py` is the entrypoint for EVERY live bot and the script name
+    alone cannot tell two of them apart. Verified on the VPS 2026-08-04: this terminated the
+    bot and left the Telegram bot and both agents running on their original PIDs.
+    """
+    return _ssh(
+        f"wmic process where \"name='python.exe' and commandline like '%--bot {bot_key}%'\" "
+        f"call terminate 2>nul"
+    )
+
+
+def _stop_procs(clear_lock: bool = True) -> str:
+    """Stop every registered bot, and nothing else. Returns combined SSH output."""
+    outs = [_kill_bot(key) for key in _SUPPRESS_KEYS]
+    if clear_lock:
+        # Only meaningful once the bots are actually gone — a live bot re-creates it.
+        outs.append(_ssh(f"del {_LOCK_PATH} 2>nul"))
+    return "\n".join(o for o in outs if o).strip()
 
 
 def _start_task() -> str:
