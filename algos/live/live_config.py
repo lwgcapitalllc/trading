@@ -97,59 +97,9 @@ class LiveConfig:
     def instance_dir(self) -> Path:
         return _INSTANCES / self.bot_key
 
-    # ── the deployed snapshot ───────────────────────────────────────────────
-    # A promoted bot runs a FROZEN COPY of its code, held here, and the repo working tree
-    # becomes irrelevant to it. That is the whole point, and it is the half of the version
-    # isolation that was missing until 2026-08-03: `strategy_params` was frozen in this file
-    # from the start, but `strategy_dir` pointed straight at `strategies/python/<pkg>` in the
-    # repo. So a `git pull` on the VPS — for a lab fix, an agent update, anything — rewrote the
-    # code under a running bot, and the pin then refused to restart it. Backtesting a new
-    # version could brick the deployed one. Aaron's rule, and it is the right one: a bot runs
-    # what you last DEPLOYED until you deploy something else.
-    #
-    # Three trees, not one, because all three decide what the bot trades:
-    #   strategies/python/<pkg>   the strategy itself
-    #   engines/                  market structure, fibs, FVG, divergence, sessions, liquidity
-    #   backtest/                 replay + the fill model the live bridge mirrors
-    # Hashing only the first (which is all the pin used to do) leaves the engines free to move
-    # under a green pin — the bot starts happily and trades different logic. See version.py.
-    @property
-    def deployed_dir(self) -> Path:
-        return self.instance_dir / "deployed"
-
-    @property
-    def is_frozen(self) -> bool:
-        """True once this bot has been promoted — i.e. it has its own copy of the code."""
-        return (self.deployed_dir / "strategies" / "python" / self.strategy_package).is_dir()
-
-    @property
-    def code_root(self) -> Path:
-        """The tree this bot's imports resolve against: its snapshot, or the repo if unpromoted.
-
-        An UNPROMOTED bot falling back to the repo is deliberate — it is the state you pass
-        through while building a new bot, and refusing to run at all would make the first
-        promotion impossible. `runner.py` says loudly which of the two it is using.
-        """
-        return self.deployed_dir if self.is_frozen else _REPO_ROOT
-
     @property
     def strategy_dir(self) -> Path:
-        return self.code_root / "strategies" / "python" / self.strategy_package
-
-    @property
-    def import_paths(self) -> list[Path]:
-        """What to put at the FRONT of `sys.path` so every import resolves inside `code_root`.
-
-        Mirrors the repo layout exactly, so a snapshot import and a repo import find the same
-        module by the same name — the freeze changes WHICH copy is loaded, never how it is
-        spelled.
-        """
-        return [self.code_root, self.code_root / "strategies" / "python"]
-
-    @property
-    def source_roots(self) -> list[Path]:
-        """Every tree the version pin must hash, in a fixed order (the hash depends on it)."""
-        return [self.strategy_dir, self.code_root / "engines", self.code_root / "backtest"]
+        return _REPO_ROOT / "strategies" / "python" / self.strategy_package
 
     @property
     def repo_root(self) -> Path:
