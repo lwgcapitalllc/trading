@@ -1809,7 +1809,7 @@ color eqlColor    = color.new(color.black, 0)
 int   EQ_ORIGIN_CAP = 1500
 
 bool eqShowInput = input.bool(true, "Equal Highs/Lows (EQH/EQL)", group = GRP_LIQ, tooltip = "Marks stacked liquidity pools. EQH = two swing highs at the same price, with buy-side liquidity resting just above. EQL is the mirror below. The level lives until a candle CLOSES through it. Drawing only at the default — it prices no entry and blocks no trade.", display = display.none)
-bool eqExemptFvg = input.bool(false, "   ↳ A gap on an EQ level survives the FVG cap", group = GRP_LIQ, active = eqShowInput, tooltip = "ON = a fair value gap sitting on an EQH/EQL is exempt from the Max Active FVGs cap and from the directional filter, so it persists until mitigated instead of being evicted by newer gaps. The idea: a gap backed by resting liquidity is worth more than a gap that is merely recent. ⚠ This is the ONE setting here that changes trades — it changes which gaps exist, so it changes which entries fire. It also puts this file out of sync with its Python port and its export, neither of which model the exemption. OFF by default so nothing historical moves; treat any run with it on as an experiment, not a baseline.")
+bool eqExemptFvg = input.bool(true, "   ↳ A gap on an EQ level survives the FVG cap", group = GRP_LIQ, active = eqShowInput, tooltip = "ON (default) = a fair value gap sitting on an EQH/EQL is exempt from the Max Active FVGs cap and lives until price mitigates it. It is kept IN ADDITION to the newest gaps, never in place of one: the cap counts ordinary gaps only, so you always hold the full Max Active FVGs plus however many are pinned by resting liquidity. A gap backed by a live liquidity pool is worth more than a gap that is merely recent. ⚠ This changes TRADES — it changes which gaps exist, so it changes which entries fire. Every result measured before 2026-08-03 was taken with it OFF.")
 
 bool  eqShow = marketStructureOnly ? false : eqShowInput
 float eqAtr  = ta.atr(50)
@@ -1970,7 +1970,25 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
     // default here) the scan finds index 0 on its first test, so this is exactly
     // the old array.shift and nothing moves. With it ON, a gap sitting on an
     // EQH/EQL is skipped over and survives until it is actually mitigated.
-    while array.size(fvgBoxes) > fvgMaxCount
+    // ── THE CAP COUNTS NON-EQ GAPS ONLY (Aaron, 2026-08-03) ──
+    // The exemption used to be a SWAP, not an addition, and that made it self-cancelling.
+    // The cap was measured over EVERY gap while the drop scan skipped the exempt ones, so an
+    // EQ-backed gap held a slot: keeping it evicted the newest ordinary gap in its place.
+    // Measured on 40,000 real M15 bars, that is exactly what it did — the A+ bot lost 2 setups
+    // and gained none, because the gaps it protected cost it the gaps it would have traded.
+    // So `fvgMaxCount` now bounds the ORDINARY gaps only and an exempt gap rides ON TOP of
+    // them. The count is what a reader already assumes it is: seven recent gaps, plus however
+    // many are pinned by resting liquidity, each living until price mitigates it.
+    // ⚠ The live total is therefore UNBOUNDED by this input — it is bounded by the EQ engine
+    // instead (eqMax levels per side, each dying on a close through it). That is the intended
+    // trade: the cap exists to stop clutter, and a gap backed by a live liquidity pool is the
+    // opposite of clutter. Turn eqExemptFvg OFF to get the plain FIFO back.
+    int _nonEq = 0
+    if array.size(fvgBoxes) > 0
+        for _di = 0 to array.size(fvgBoxes) - 1
+            if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                _nonEq += 1
+    while _nonEq > fvgMaxCount
         int _dropIdx = -1
         for _di = 0 to array.size(fvgBoxes) - 1
             if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
@@ -1984,6 +2002,7 @@ if showFVG and barstate.isconfirmed and bar_index >= 2
         array.remove(fvgBots, _dropIdx)
         array.remove(fvgIsBull, _dropIdx)
         array.remove(fvgBorn, _dropIdx)
+        _nonEq -= 1
 
 // ── Extend live gaps, delete tapped ones, apply directional visibility ──
 if showFVG and array.size(fvgBoxes) > 0

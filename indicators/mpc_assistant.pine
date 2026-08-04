@@ -83,6 +83,14 @@ f_swingCol(color c) =>
 //============================================================
 var GRP_TOOLS = "Chart Tools"
 bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, tooltip = "FVG on the chart. A fair value gap is the price void left by a 3-candle imbalance, where the first and third candles do not overlap.", display = display.none)
+// ── THE FVG COUNT IS LOCKED AGAIN (Aaron, 2026-08-03) ──
+// It was exposed on 2026-08-02 as "Max Active FVGs", for the same reason the order-block
+// count was exposed the day before: so the number could be tested against a real chart.
+// That test is done and it answered a different question than expected — the gap set
+// itself was wrong, not its depth. With the three detection settings now synced to
+// mpc_strategy.pine (see the FVG block below), the cap is settled at the strategy's 7 and
+// there is nothing left for the input to do except let a student set the chart out of step
+// with the bot again. Same reasoning, same outcome, same day of the week.
 bool showOBsInput        = input.bool(true,  "Order Blocks",      group = GRP_TOOLS, tooltip = "OB on the chart. An order block is the last opposing candle before the move that broke structure.", display = display.none)
 // ── THE COUNT IS LOCKED TOO NOW (Aaron, 2026-07-31) ──
 // It was the one order-block setting left on the panel, exposed on 2026-07-30 so the
@@ -398,8 +406,10 @@ method extendOBs(array<OrderBlock> arr, int dir) =>
 // Detection always runs (the A+ entry check reads the gaps); the toggle hides them.
 bool showFVG = true
 bool drawFVG = showTradeTools and showFVGInput
-// Detection, appearance and cap are LOCKED to the tuned defaults — no panel inputs,
-// so nothing about what a gap is or how many are kept can be altered.
+// Detection, appearance and cap are LOCKED to the tuned defaults — no panel inputs, so
+// nothing about what a gap is or how many are kept can be altered. The cap was briefly
+// an input (2026-08-02 → 2026-08-03) while the number was tested against a real chart;
+// see the note at its old declaration site in GRP_TOOLS.
 // Same shared filter the order blocks use — see dirOnlyInput. The FVG side already had
 // this rule wired all the way through; it was just hardcoded off with no way to reach
 // it. One exception survives on purpose: a gap sitting behind an EQH/EQL stays visible
@@ -407,11 +417,29 @@ bool drawFVG = showTradeTools and showFVGInput
 bool  fvgDirOnly   = dirOnlyInput
 color fvgBullColor = color.new(color.gray, 80)
 color fvgBearColor = color.new(color.gray, 80)
+// ── SYNCED TO mpc_strategy.pine 2026-08-02 (Aaron's call) ──
+// These three were the reason the indicator drew gaps the A+ bot did not see. The
+// strategy is the stricter side on all three, so the indicator was drawing a SUPERSET
+// and a visible gap beside a "no FVG" block on the bot was expected rather than a bug.
+// That is now closed: what is drawn here is what mpc_strategy.pine counts.
+//   min gap 15m+     0.04 -> 0.1   (a 0.04% floor on $3,300 gold is $1.32; 0.1% is $3.30)
+//   middle-bar close  off -> ON at 15m+, still forced OFF below 15m
+//   max active gaps     8 -> 7
+// ⚠ Sub-15m is UNCHANGED on all three counts — the floor was already 0.0 there and the
+// close test is forced off below 15m in the strategy too, so the low timeframes draw
+// exactly what they drew before. Only 15m and above moves.
+// ⚠ engines/fair_value_gaps/ still DEFAULTS to the old 8 / 0.04 / False, and its
+// docstring still calls those "the mpc_assistant defaults" — that is now stale text.
+// It is harmless because every real consumer pins its own values (mpc_sos_fade already
+// pins exactly the three below), and fvg_export.pine carries cfg_fvg_* columns so
+// compare_fvg.py configures Python FROM the export rather than from a default. Re-export
+// at these values before trusting the next parity run.
+bool  fvgIsLTF     = timeframe.in_seconds() < 900
 float fvgThreshLTF = 0.0
-float fvgThreshHTF = 0.04
-float fvgThreshPct = timeframe.in_seconds() < 900 ? fvgThreshLTF : fvgThreshHTF
-bool fvgRequireClose = false
-int   fvgMaxCount  = 8
+float fvgThreshHTF = 0.1
+float fvgThreshPct = fvgIsLTF ? fvgThreshLTF : fvgThreshHTF
+bool fvgRequireClose = fvgIsLTF ? false : true
+int   fvgMaxCount  = 7
 
 //============================================================
   // EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
@@ -1705,8 +1733,17 @@ f_latest1mFvg() =>
     var float bTop = na, var float bBot = na
     var float sTop = na, var float sBot = na
     if barstate.isconfirmed and bar_index >= 2
-        bool bull = low > high[2] and (not fvgRequireClose or close[1] > high[2]) and (low - high[2]) / high[2] * 100 > fvgThreshLTF
-        bool bear = high < low[2] and (not fvgRequireClose or close[1] < low[2]) and (low[2] - high) / low[2] * 100 > fvgThreshLTF
+        // ⚠ BOTH sub-15m settings are PINNED here, and the close test had to be pinned
+        // explicitly on 2026-08-02. This body runs inside request.security(..., "1", ...),
+        // but `fvgRequireClose` is a global resolved at the CHART timeframe — so once it
+        // became timeframe-split (false below 15m, true at 15m+), a 15m chart started
+        // applying the 15m close test to ONE-MINUTE gaps. That silently tightened the deep
+        // REV entry trigger (aplusX_fvgInNow) on the exact chart the setup is traded on.
+        // The threshold was already pinned to fvgThreshLTF for the same reason; the close
+        // test just had no split to fall foul of until now. Below 15m the split resolves to
+        // false anyway, so `false` IS the sub-15m rule, stated rather than inherited.
+        bool bull = low > high[2] and (low - high[2]) / high[2] * 100 > fvgThreshLTF
+        bool bear = high < low[2] and (low[2] - high) / low[2] * 100 > fvgThreshLTF
         if bull
             bTop := low, bBot := high[2]
         if bear
@@ -3592,7 +3629,25 @@ f_processFvg() =>
             array.push(fvgBorn, bar_index)
         // Cap: drop the oldest NON-EQ gap beyond the limit. A gap behind an EQH/EQL
         // (liquidity) is exempt when eqExemptFvg is on, so it persists until mitigated.
-        while array.size(fvgBoxes) > fvgMaxCount
+        // ── THE CAP COUNTS NON-EQ GAPS ONLY (Aaron, 2026-08-03) ──
+        // The exemption used to be a SWAP, not an addition, and that made it self-cancelling.
+        // The cap was measured over EVERY gap while the drop scan skipped the exempt ones, so an
+        // EQ-backed gap held a slot: keeping it evicted the newest ordinary gap in its place.
+        // Measured on 40,000 real M15 bars, that is exactly what it did — the A+ bot lost 2 setups
+        // and gained none, because the gaps it protected cost it the gaps it would have traded.
+        // So `fvgMaxCount` now bounds the ORDINARY gaps only and an exempt gap rides ON TOP of
+        // them. The count is what a reader already assumes it is: seven recent gaps, plus however
+        // many are pinned by resting liquidity, each living until price mitigates it.
+        // ⚠ The live total is therefore UNBOUNDED by this input — it is bounded by the EQ engine
+        // instead (eqMax levels per side, each dying on a close through it). That is the intended
+        // trade: the cap exists to stop clutter, and a gap backed by a live liquidity pool is the
+        // opposite of clutter. Turn eqExemptFvg OFF to get the plain FIFO back.
+        int _nonEq = 0
+        if array.size(fvgBoxes) > 0
+            for _di = 0 to array.size(fvgBoxes) - 1
+                if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                    _nonEq += 1
+        while _nonEq > fvgMaxCount
             int _dropIdx = -1
             for _di = 0 to array.size(fvgBoxes) - 1
                 if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
@@ -3606,6 +3661,7 @@ f_processFvg() =>
             array.remove(fvgBots, _dropIdx)
             array.remove(fvgIsBull, _dropIdx)
             array.remove(fvgBorn, _dropIdx)
+            _nonEq -= 1
 
     // ── Extend live gaps, delete tapped ones, apply directional visibility ──
     if showFVG and array.size(fvgBoxes) > 0
