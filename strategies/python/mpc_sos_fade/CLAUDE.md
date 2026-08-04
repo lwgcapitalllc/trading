@@ -982,12 +982,37 @@ is pre-2026-07-26 and `compare_strategy.py` prints a loud warning rather than gu
 
 All OFF for the parity check (to match the Pine); each is a real-run choice:
 1. **Flat-by-close** — force-flat + no new entries N minutes before the daily close (`flat_by_close`).
-   **Default False, and measured 2026-07-16: leave it that way.** A/B over 6.5 months: OFF $39,454 /
-   PF 1.444 vs ON $19,813 / PF 1.253 on the same 32 trades. Only 4 trades ever held overnight, they
-   were all winners, and they made 70% of the profit; total swap for the period was −$36.80. Flatting
-   early buys a smaller drawdown for half the profit. (This param was DEAD CODE until 2026-07-16 —
-   `_in_flat_window` read only `sig.ny_hour`, so "minutes left" was always a multiple of 60 and never
-   hit the ≤15 window. Any A/B run before that date compared a flag against itself.)
+   **Default False, and RE-MEASURED 2026-08-03 over the full 6.5 years: leave it that way, and the
+   margin is not close.** Aaron asked the natural question — *"I don't like swaps, what if we just
+   close before the market closes?"* — so it was replayed four ways over the same 155,453 M15 bars
+   at run `75ccc776d10c`'s params:
+
+   | | trades | R | final balance |
+   |---|---|---|---|
+   | hold overnight, free | 161 | **135.94** | $28,258,768 |
+   | hold overnight, spread+swap | 161 | 123.90 | $10,090,716 |
+   | flat before close, free | 161 | **59.82** | $411,314 |
+   | flat before close, spread+swap | 161 | 54.18 | $236,057 |
+
+   **It does exactly what it promises and the swap goes to zero** — the charge falls 12.04R → 5.64R
+   and what remains is pure spread. **You save 6.4R of swap and give up 76.1R of edge to do it, a
+   12:1 bad trade.** The entries are IDENTICAL (161 either way, all matched on entry bar); **73 of
+   them are cut short**, and held to the end those 73 made 140.39R against 64.28R cut at the close.
+   The worst single one ran 274 hours for **+23.96R** and becomes a **−0.46R** scratch after 3.8h.
+   ⚠ **It does not merely shave the runner, it INVERTS the long side: longs go +70.96R → −12.10R.**
+   Shorts survive (+64.98R → +31.38R) because gold's short swap is a CREDIT (+26.98 points/night on
+   Vantage) — over the run shorts were paid 2.14R of swap while longs paid 8.55R. So "the swap is
+   expensive" is a statement about LONGS only, and the fix for it cannot be a rule that hits both.
+   **The mechanism is structural, not a tuning artefact:** the runner trails on confirmed structure
+   (`Structure + % ratchet`), and structure takes days to build — a hard 17:00 NY exit caps every
+   runner at one session. This is the same finding as Run 12 from a new direction: the edge is in
+   the tail, and anything that truncates the tail costs more than the friction it removes.
+   ⚠ **Do not read the earlier figure recorded here** (6.5 months / 32 trades / OFF $39,454 vs ON
+   $19,813, measured 2026-07-16). Same direction, but 4 overnight trades is not a sample and the
+   dollars predate the phantom-exit fix and the layered costs. The table above supersedes it.
+   (This param was DEAD CODE until 2026-07-16 — `_in_flat_window` read only `sig.ny_hour`, so
+   "minutes left" was always a multiple of 60 and never hit the ≤15 window. Any A/B run before that
+   date compared a flag against itself.)
 2. ~~**Sizing** — real runs swap in the dynamic sizing engine under a ruleset.~~ **No longer true
    as of 2026-07-16:** the bot declares `self_sizing: True`, so real runs keep the Pine's own fixed-%
    sizing (`exec_risk_pct`) and the engine never re-sizes them — this is NOT a deviation any more,

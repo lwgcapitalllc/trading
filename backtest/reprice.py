@@ -97,6 +97,18 @@ class RepricedRun:
 
     @property
     def total_cost_usd(self) -> float:
+        """The FEES — what the layers actually took out of the account, in dollars.
+
+        ⚠ **This is NOT how much smaller the run finished, and the two are not close.** The balance
+        impact is `<stored final equity> - final_equity`, and it is larger by however much the fees
+        would have compounded into: on the 161-trade reference run these are **$332,371 of fees
+        against $18,200,741 of balance**, a factor of 55. Both are real, they answer different
+        questions, and a caller showing one under a name that suggests the other has told the reader
+        the feature is broken — which is exactly what the lab's Costs pill did until 2026-08-03,
+        printing this figure captioned "after compounding". Name it "fees" and derive the balance
+        impact separately, or show R, which is the size of the charge and cannot be confused for
+        either.
+        """
         return sum(t.cost_usd for t in self.trades)
 
     @property
