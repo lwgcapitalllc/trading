@@ -279,6 +279,50 @@ there is a live position on the line.
 account; G11 stops a human doing the same thing by clicking the wrong row. Both are prerequisites for
 running more than one bot live.
 
+### G12 — The terminal can restart underneath a running bot — **CLOSED 2026-08-04**
+
+**MetaTrader updates itself, and it does not ask.** At 02:57:53 UTC `C:\MT5_FFT\terminal64.exe` was
+rewritten and the replacement process started at 02:57:55. The bot (started 02:24) held an IPC handle
+to the process that had just been replaced, so from the 02:30 bar onward it saw nothing at all —
+50 minutes across an open session, in which it would have taken no entry and managed no exit.
+
+**Nothing in the system reported it, and that is the part worth keeping.** Every failure on the MT5
+path returns an ABSENCE rather than raising: `copy_rates_from_pos` → None → `get_candles` returns an
+empty frame (documented as *"never None"*, which is right for its callers and fatal here) →
+`new_bars` reads *no bar has closed* and `gap_bars` reads *no gap*. `account_info` → None → the
+heartbeat wrote a null balance. The loop therefore kept stamping its heartbeat, so **SYS_MONITOR saw
+a healthy bot**, `wmic` still listed the process, so **the Bots page said RUNNING**, and the log
+carried not one warning. The single visible symptom anywhere was a **blank balance cell**, which is
+what Aaron noticed.
+
+**The fix, and why it is `account_info()` rather than a bar check.** The loop probes the link first,
+every poll. A bar-based probe cannot work: an empty frame is what a QUIET MARKET produces too, so
+such a check either cries wolf out of hours or — the way it actually shipped — treats a dead link as
+a quiet market indefinitely. `account_info()` answers whenever the link is alive, at 3am on a Sunday
+as readily as mid-session, so `None` means exactly one thing. A lost link is logged, alerted once
+(not every 10s), and reconnected on a 30s floor; **recovery RE-WARMS**, because an outage is a hole
+in the bar stream and that is the condition `gap_bars() > 4` already exists for. It deliberately does
+not reason about an open position — if the broker holds one the rebuilt emulator does not know
+about, `OrderBridge._agrees` halts on the next bar, which is correct and already built.
+
+`bot_state.json` gains **`mt5_link`**, surfaced on the Bots page as a **No MT5 link** chip beside the
+Running pill, because *a blank balance is not a diagnosis*. Both facts are true simultaneously and
+they are different: the process is alive (so a restart is the fix and the watchdog was right not to
+fire) and it is blind (so it is trading nothing). 12 tests in `algos/tests/test_mt5_link.py`.
+
+⚠ **The general lesson, and it is not this repo's usual label-vs-code one.** Every layer here behaved
+correctly and defensibly on its own — an empty DataFrame is a reasonable thing for a bar fetcher to
+return, and a null balance is a reasonable thing to write when you have no balance. **The defect was
+that "no data" and "cannot ask" were represented by the same value at every hop**, so the distinction
+was destroyed at the bottom and could not be recovered anywhere above it. Before adding a probe
+anywhere in this system, ask whether its negative result can be produced by a healthy system too — if
+it can, it is not a probe.
+
+⚠ **Still open, and this incident is the argument for it:** there is **no external dead-man's
+switch.** Every alert in the suite originates ON the VPS, so if the box or its network dies, silence
+is indistinguishable from health. The same is true of a bot the watchdog cannot restart. Something
+off-box has to expect a regular signal and complain when it stops.
+
 ---
 
 ## 4. Design decisions

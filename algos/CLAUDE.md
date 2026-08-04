@@ -81,6 +81,30 @@ Two rules this package is built around, both in `docs/LIVE_TRADING_PIPELINE.md`:
 and **version isolation is two mechanisms** — params frozen in the instance config so lab edits
 cannot reach a live bot, plus a source-hash pin the bot refuses to start against on mismatch.
 
+🔴 **THE TERMINAL CAN RESTART UNDERNEATH A RUNNING BOT, AND UNTIL 2026-08-04 NOTHING NOTICED.**
+MetaTrader auto-updates itself: on that date `C:\MT5_FFT\terminal64.exe` was rewritten at 02:57:53
+and the replacement process started two seconds later, taking the running bot's IPC handle with it.
+The bot then sat **50 minutes across an open session having seen no bars**, and every indicator in
+the suite said it was fine — because **each failure on the MT5 path returns an ABSENCE, not an
+error**. `copy_rates_from_pos` → None → `get_candles` returns an empty frame (documented "never
+None", correct for its callers and fatal here) → `BarFeed.new_bars` reads *no bar has closed* and
+`gap_bars` reads *no gap*; `account_info` → None → a null balance. The loop kept stamping its
+heartbeat, so **SYS_MONITOR saw a healthy bot**, `wmic` still listed the process, so the **Bots page
+said RUNNING**, and the log carried no warning. The only visible symptom in the entire system was a
+**blank balance cell** on a page nobody had reason to distrust.
+
+`runner.probe_link()` now asks `account_info()` FIRST, every poll, and `_recover_link()` reconnects
+and **re-warms** (an outage is a hole in the bar stream — the `gap_bars() > 4` condition arriving by
+another route). ⚠ **A bar-based probe cannot do this job**: an empty frame is also what a quiet
+market produces, so such a check either cries wolf out of hours or treats a dead link as a quiet
+market forever, which is exactly how it shipped. ⚠ **`bot_state.json` carries `mt5_link`** because a
+null balance is not a diagnosis; the Bots page renders it beside the Running pill, since the process
+being ALIVE and being BLIND are both true and are different facts. ⚠ **The heartbeat is still
+stamped while blind, on purpose** — the bot IS alive, and dropping the stamp would fire the watchdog's
+stall alert, which means something else and would restart a process whose problem is not the process.
+Tests: `algos/tests/test_mt5_link.py` (12). **The transferable rule: before trusting a probe, ask
+whether a healthy system can produce its negative result — if it can, it is not a probe.**
+
 **Everything account-, machine- and version-specific is in the instance config, never in code
 and never global.** Which terminal, which account, which server, which symbol, which magic
 number, which strategy version, which broker clock — and **where this bot reports**. Two bots on
