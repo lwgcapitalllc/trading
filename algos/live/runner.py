@@ -29,6 +29,22 @@ hiccup, terminal reconnect) long enough to miss bars, the engines' state no long
 to the market's history. Feeding them the newest bar as if nothing happened produces a state
 machine that is wrong in a way it can never recover from. Re-warming is cheap; being subtly
 wrong for a week is not.
+
+**The terminal link is PROBED every poll, because losing it looks exactly like a quiet market.**
+Measured on the VPS 2026-08-04: MetaTrader auto-updated itself — `terminal64.exe` was rewritten
+at 02:57:53 and the new process started two seconds later — and the running bot's IPC handle died
+with the old one. It then sat for 50 minutes across a live session having seen nothing, because
+every failure on that path returns an ABSENCE rather than raising: `copy_rates_from_pos` returns
+None, so `get_candles` hands back an empty frame, which `new_bars` reads as *no bar has closed*
+and `gap_bars` reads as *no gap*; `account_info` returns None, so the heartbeat wrote a null
+balance. The loop kept stamping its heartbeat, so the watchdog saw a healthy bot and the Bots page
+said RUNNING. **The only visible symptom in the entire system was a blank balance.**
+
+So the loop asks `account_info()` first, every poll. It is the right probe precisely because it
+is UNAMBIGUOUS — a quiet market and a dead terminal produce the same empty bar frame, but
+`account_info()` answers whenever the link is alive, whatever the market is doing. A lost link
+is logged, alerted once, and reconnected; and because the outage IS a hole in the bar stream, the
+recovery re-warms through the same path a `gap_bars` overrun takes rather than resuming.
 """
 
 from __future__ import annotations
@@ -56,6 +72,12 @@ from version import verify_pin, current_commit, VersionMismatch  # noqa: E402
 
 _stop_requested = False
 
+# How often a lost terminal link is retried. `BotMT5.connect()` already burns up to ~40s on its
+# own five attempts, so this is a floor between those bursts rather than the poll interval —
+# reconnecting is the only thing left to do, but hammering a terminal that is mid-restart just
+# fills the log with the same failure.
+_LINK_RETRY_SECONDS = 30
+
 
 def _handle_signal(signum, frame):
     global _stop_requested
@@ -74,6 +96,11 @@ class LiveRunner:
         self.feed = None
         self.bridge = None
         self.source_hash = ""
+        # Link-outage bookkeeping. `_link_lost_at` is None whenever the link is believed good,
+        # so it doubles as the "have I already alerted" flag — an outage must be announced once,
+        # not every ten seconds for an hour.
+        self._link_lost_at: float | None = None
+        self._link_retry_at = 0.0
         # Stamped from the file `cfg` was just read from, so `_cfg_mtime` always describes
         # the config actually in memory and the first poll sees no phantom change.
         try:
@@ -181,6 +208,81 @@ class LiveRunner:
                                    "0 — the strategy would size every trade off nothing.")
         self.log.info(f"Sizing against account balance ${capital:,.2f}")
         return cls(scfg, initial_capital=capital), scfg
+
+    # ── the terminal link ────────────────────────────────────────────────────
+    def probe_link(self) -> tuple[bool, float | None]:
+        """Is this process still talking to the terminal? Returns (link_up, balance).
+
+        **`account_info()` is the probe, and the choice matters more than it looks.** The
+        obvious probe is "did we get any bars", and it is the wrong one: an empty bar frame is
+        what a QUIET MARKET produces as well as a dead terminal, so a check built on it either
+        cries wolf out of hours or — the way it actually shipped — treats a dead link as a quiet
+        market forever. `account_info()` has no such ambiguity. It answers whenever the link is
+        alive, at 3am on a Sunday as readily as mid-session, so `None` means exactly one thing.
+
+        The balance comes back from the same call because it is the same question. Reading it
+        separately is what let the two answers disagree: the heartbeat wrote `balance: null` for
+        50 minutes while the loop reported itself healthy.
+        """
+        import MetaTrader5 as mt5
+        try:
+            info = mt5.account_info()
+        except Exception as e:
+            # An exception here is a dead link too, not a different event. It is logged rather
+            # than raised because the caller's answer is the same either way — reconnect.
+            self.log.warning(f"Balance read failed: {e}")
+            return False, None
+        if info is None:
+            return False, None
+        return True, float(info.balance)
+
+    def _recover_link(self) -> None:
+        """Announce a lost link once, then keep trying to get it back.
+
+        **The re-warm is not optional and is the whole reason this cannot just call
+        `connect()`.** However long the outage lasted, that many bars closed without reaching the
+        engines — which is precisely the condition `gap_bars() > 4` already exists for, arriving
+        by a different route. Resuming on the next bar would leave structure, fibs and liquidity
+        carrying a market history that never happened. So recovery walks the identical path:
+        rebuild the strategy, re-warm, hand the fresh execution object to the bridge.
+
+        **What it deliberately does NOT do is reason about an open position.** If the broker holds
+        one and the rebuilt emulator does not, `OrderBridge._agrees` sees the disagreement on the
+        next bar and HALTS — which is the correct outcome and is already built. Teaching this
+        method to adopt or close a position would be a second, less tested answer to a question
+        the bridge already answers conservatively.
+        """
+        now = time.time()
+        if self._link_lost_at is None:
+            self._link_lost_at = now
+            self.log.error(
+                "MT5 link lost — the terminal is not answering this process. No bars are "
+                "arriving and the strategy is NOT seeing the market until it reconnects. The "
+                "usual cause is the terminal restarting itself after an auto-update.")
+            self.ledger.event("mt5_link_lost", last_bar=str(self.feed.last_bar_time))
+            self._notify(
+                f"⚠️ *{self.cfg.display_name}* lost its MT5 connection.\n"
+                f"It is not seeing bars until it reconnects. Retrying.")
+
+        if now - self._link_retry_at < _LINK_RETRY_SECONDS:
+            return
+        self._link_retry_at = now
+
+        if not self.connect():
+            self.log.warning("Reconnect failed — will retry.")
+            return
+
+        self.strategy, _ = self._build_strategy()
+        self.bridge._ex = self.strategy.execution
+        self.warm()
+        self.bridge.begin_live()
+
+        down = now - self._link_lost_at
+        self._link_lost_at = None
+        self.log.info(f"MT5 link restored after {down / 60:.1f} min — engines re-warmed.")
+        self.ledger.event("mt5_link_restored", down_seconds=round(down))
+        self._notify(f"✅ *{self.cfg.display_name}* reconnected to MT5 after "
+                     f"{down / 60:.0f} min. Engines re-warmed.")
 
     def connect(self) -> bool:
         from mt5_ops import BotMT5
@@ -322,23 +424,36 @@ class LiveRunner:
 
         while not _stop_requested:
             try:
-                gap = self.feed.gap_bars()
-                if gap > 4:
-                    # See the module docstring: a hole in the stream is a different market
-                    # history, not a recoverable lag.
-                    self.log.warning(f"{gap} bars missed — re-warming the engines rather than "
-                                     f"resuming with a hole in the stream.")
-                    self.ledger.event("rewarm", missed_bars=gap)
-                    self.strategy, _ = self._build_strategy()
-                    self.bridge._ex = self.strategy.execution
-                    self.warm()
-                    self.bridge.begin_live()
+                # FIRST, before anything reads a bar. Every data call below returns an empty
+                # frame on a dead link, which is indistinguishable from a market that simply
+                # has not printed a bar yet — so asking the bars whether the terminal is alive
+                # is a question they cannot answer. See `probe_link`.
+                link_up, balance = self.probe_link()
+                if not link_up:
+                    self._recover_link()
+                else:
+                    gap = self.feed.gap_bars()
+                    if gap > 4:
+                        # See the module docstring: a hole in the stream is a different market
+                        # history, not a recoverable lag.
+                        self.log.warning(f"{gap} bars missed — re-warming the engines rather "
+                                         f"than resuming with a hole in the stream.")
+                        self.ledger.event("rewarm", missed_bars=gap)
+                        self.strategy, _ = self._build_strategy()
+                        self.bridge._ex = self.strategy.execution
+                        self.warm()
+                        self.bridge.begin_live()
 
-                for _, row in self.feed.new_bars().iterrows():
-                    self._on_bar(row)
+                    for _, row in self.feed.new_bars().iterrows():
+                        self._on_bar(row)
 
-                self._maybe_reload_runtime()
-                self._heartbeat(bot_state)
+                    self._maybe_reload_runtime()
+
+                # Stamped on BOTH paths, and carrying the link state. A blind bot must still
+                # look alive to the watchdog — it IS alive, and a missing stamp would report it
+                # as the wrong failure — but the state file has to say which of the two it is,
+                # or a blank balance is again the only symptom of a bot that cannot see.
+                self._heartbeat(bot_state, link_up=link_up, balance=balance)
                 consecutive_errors = 0
             except Exception as e:
                 consecutive_errors += 1
@@ -514,7 +629,8 @@ class LiveRunner:
                 blocked.append((name, old, new))
         return allowed, blocked
 
-    def _heartbeat(self, bot_state) -> None:
+    def _heartbeat(self, bot_state, *, link_up: bool | None = None,
+                   balance: float | None = None) -> None:
         """Stamp that the loop turned, then record what it saw.
 
         `heartbeat` is the field SYS_MONITOR reads to catch a process that is ALIVE but no
@@ -528,20 +644,25 @@ class LiveRunner:
         that throws must not be able to swallow the stamp. An MT5 outage already has its own
         louder path (`new_bars()` raises → loop_error → a named alert at 10), and letting it
         also suppress the heartbeat would just add a second, vaguer alert for the same event.
+
+        ⚠ **`mt5_link` exists because a null balance is not a diagnosis.** The loop hands both
+        values in from its own `probe_link` call — one question, one answer, written together —
+        so a blank balance on the Bots page can always be attributed. Read alone, `balance:
+        null` is indistinguishable between "the terminal is gone" and "nobody has asked yet",
+        and the first of those went unnoticed for 50 minutes on 2026-08-04 for exactly that
+        reason. The default `link_up=None` means UNSTATED, never "down": callers that only want
+        a stamp (and every pre-2026-08-04 test) still probe here rather than record a failure
+        nobody measured.
         """
-        balance = None
-        try:
-            import MetaTrader5 as mt5
-            info = mt5.account_info()
-            balance = float(info.balance) if info else None
-        except Exception as e:
-            self.log.warning(f"Balance read failed: {e}")
+        if link_up is None:
+            link_up, balance = self.probe_link()
 
         try:
             bot_state.write_bot(self.cfg.bot_key, {
                 "status": self.bridge.state.value,
                 "heartbeat": time.time(),
                 "balance": balance,
+                "mt5_link": bool(link_up),
                 "account": self.cfg.account,
                 "symbol": self.cfg.symbol,
                 "version": self.cfg.strategy_version,

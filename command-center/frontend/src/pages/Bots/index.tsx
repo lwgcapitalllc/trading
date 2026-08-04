@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check } from 'lucide-react'
+import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   useBotSnapshot, useBotLog,
@@ -71,6 +71,28 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
       {label}
+    </span>
+  )
+}
+
+/** Running, but not talking to its terminal.
+ *
+ * This sits BESIDE the Running pill rather than replacing it, because both are true and they
+ * are different facts: the process is alive (so restarting it is the fix, and the watchdog is
+ * right not to have fired) and it is blind (so it is taking no trades and managing none).
+ * Collapsing the two into one word would lose whichever half the reader needed.
+ *
+ * ⚠ `=== false` and never falsy — `null` means the bot has not stamped a link state, which is
+ * not the same claim. Rendering an unanswered question as a failure is the mistake this chip
+ * was added to stop, in the other direction. */
+function NoLinkChip() {
+  return (
+    <span
+      title="The bot is running but its MT5 terminal is not answering, so it is receiving no bars. It retries every 30s; if this persists, restart the bot."
+      className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                 rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
+    >
+      <Unplug size={9} /> No MT5 link
     </span>
   )
 }
@@ -414,12 +436,17 @@ export function Bots() {
                           </div>
                         </td>
                         <td className="px-6 py-[11px] align-middle">
-                          <StatusPill status={bot.status} />
+                          <div className="flex items-center gap-[6px]">
+                            <StatusPill status={bot.status} />
+                            {bot.mt5_link === false && <NoLinkChip />}
+                          </div>
                         </td>
                         <td className="px-6 py-[11px] font-mono text-small align-middle">
                           {bot.balance != null
                             ? '$' + bot.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                            : '—'}
+                            : <span className={bot.mt5_link === false ? 'text-warn-text' : 'text-text-tertiary'}>
+                                {bot.mt5_link === false ? 'no link' : '—'}
+                              </span>}
                         </td>
                         <td className="px-6 py-[11px] font-mono text-small align-middle">
                           {bot.total_pnl_pct != null

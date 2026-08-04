@@ -446,6 +446,11 @@ def get_snapshot():
             account=str(state.get("account") or ""),
             account_type=_TASK_ACCT_TYPE.get(task_name, "demo"),
             balance=state.get("balance"),
+            # Read with a THREE-way result on purpose: True, False, or "the bot never said".
+            # `state.get("mt5_link")` on a bot that predates the field returns None, and
+            # coercing that to False would paint a healthy bot as disconnected — the same
+            # rule `mt5_connected` follows on the sidebar's MT5 dot.
+            mt5_link=state.get("mt5_link") if status == "RUNNING" else None,
             status=status,
             uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
             total_pnl_pct=total_pnl,
