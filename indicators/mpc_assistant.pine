@@ -116,6 +116,20 @@ int   maxActiveOB        = 10
 // hole where a valid level used to be.
 bool dirOnlyInput        = input.bool(false, "Trend-Aligned Zones Only", group = GRP_TOOLS, tooltip = "Off (default) shows every fair value gap and order block, both directions. On hides the ones that oppose the current external structure — in an uptrend only bullish gaps and bullish blocks are drawn, in a downtrend only bearish. Hidden, not deleted: they come back if structure turns. Applies to Fair Value Gaps and Order Blocks together.", display = display.none)
 bool eqShowInput         = input.bool(true,  "Equal Highs/Lows",  group = GRP_TOOLS, tooltip = "Tagged EQH and EQL. EQH = Equal Highs, a pair of highs at the same price with buy-side liquidity resting above. EQL = Equal Lows, the mirror below.", display = display.none)
+// ── THE EQ DIALS ARE LOCKED AGAIN (Aaron, 2026-08-04) ──
+// Three inputs lived here for a few hours — sensitivity, count, and a line extension —
+// exposed for the same reason the FVG cap and the order-block count were exposed before
+// them: so the numbers could be tested against a real chart rather than argued about.
+// That test is done and it settled all three IN ONE SITTING, which is why they go back
+// down as constants the same day:
+//   SENSITIVITY  0.1 → 0.3 → 0.25
+//   COUNT        6   → 18  → 14
+//   EXTENSION    50  → 10  → gone entirely (the line ends at the live candle)
+// With the numbers settled there is nothing left for the inputs to do except let a
+// student set the chart out of step with the tool. Same reasoning, same outcome, and
+// the third time this file has run this exact loop.
+// The values now live in the EQUAL HIGHS / LOWS block below, next to the rest of the
+// locked EQ settings. See the note there for what each one drives.
 var i_showLiquidityInput = input.bool(true,  "Liquidity Levels",  group = GRP_TOOLS, tooltip = "The tags down the right edge. PDH/PDL = Previous Day High/Low. PWH/PWL = Previous Week High/Low. PWC = Previous Week Close. H4 H/L = the previous 4-hour candle High/Low. Asia/Ldn/NY H and L = that session High and Low. BSL = Buy-Side Liquidity (above a high), SSL = Sell-Side Liquidity (below a low).", display = display.none)
 bool showSessionsInput   = input.bool(true,  "Trading Sessions",  group = GRP_TOOLS, display = display.none)
 bool showHistoricSessions = input.bool(true, "    ↳ Session History", group = GRP_TOOLS, active = showSessionsInput, tooltip = "On (default) draws every session in the chart's history. Off draws only the current week's session boxes, from Sunday 00:00 New York.", display = display.none)
@@ -444,10 +458,27 @@ int   fvgMaxCount  = 7
 //============================================================
   // EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
 //============================================================
-// Detection, appearance and cap LOCKED to tuned defaults — no panel inputs.
+// Detection, appearance and cap ALL LOCKED to tuned defaults — no panel inputs, so
+// nothing about what an EQ level is, how many are kept, or how they draw can be altered.
+// The three settled 2026-08-04 after a few hours on the panel; see the note at their old
+// declaration site in GRP_TOOLS for the values they moved through.
+// What each one drives, stated once so it does not have to be re-derived from the code:
+//   eqAtrMult — the SENSITIVITY. Two consecutive same-side pivots are "equal" when their
+//     prices sit within ATR(50) x this. It is the ONLY thing deciding what qualifies.
+//     Measured in ATR rather than dollars so it travels across instruments and timeframes.
+//     ⚠ It ALSO decides which fair value gaps sit "on" an EQ level, so it is the dial
+//     behind the FVG cap exemption too — raising it keeps more gaps on the chart.
+//   eqMax — the COUNT, a plain FIFO cap counted PER SIDE. Fourteen EQH and fourteen EQL,
+//     not fourteen between them. Past the cap the oldest on that side is dropped. A level
+//     already dies on its own when price WICKS through it, so this mostly bites in a
+//     choppy range that keeps printing new ones.
+//   eqPivotLen — how sharp a turn has to be to count as a pivot at all. Deliberately the
+//     quietest of the three: it changes the INPUT to both rules above rather than either
+//     rule, so moving it moves everything downstream at once.
+// There is no line-extension constant — the line ends at the live candle (x2 = bar_index).
 int   eqPivotLen  = 2
-float eqAtrMult   = 0.1
-int   eqMax       = 6
+float eqAtrMult   = 0.25
+int   eqMax       = 14
 bool  eqExemptFvg = true
 color eqhColor    = color.new(color.black, 0)
 color eqlColor    = color.new(color.black, 0)
@@ -3543,8 +3574,15 @@ f_processEq() =>
         int phBar = bar_index - eqPivotLen
         if not na(eqPrevPh) and math.abs(eqPh - eqPrevPh) <= eqTol
             float lvl = math.max(eqPh, eqPrevPh)
-            line ln = line.new(eqPrevPhBar, lvl, bar_index + i_lineExtend, lvl, color = eqhColor, style = line.style_dotted, width = 1)
-            label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = f_liqSize(), textalign = text.align_left)
+            line ln = line.new(eqPrevPhBar, lvl, bar_index, lvl, color = eqhColor, style = line.style_solid, width = 1)
+            // style_label_left with an INVISIBLE box (color = na), not style_none (Aaron,
+            // 2026-08-04): style_none centres its text ON the anchor, so half the glyph
+            // sits above the level and it reads as an offset tag floating over the line.
+            // style_label_left anchors the label's LEFT edge at the point and centres the
+            // text vertically on it — the tag starts exactly where the line ends and sits
+            // ON the level, which is what "at the end of the line" means. The na box keeps
+            // the plain-text look style_none had.
+            label lb = label.new(bar_index, lvl, "EQH", style = label.style_label_left, color = color(na), textcolor = eqhColor, size = f_liqSize(), textalign = text.align_left)
             array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl), array.push(eqhBar, eqPrevPhBar)
             while array.size(eqhLines) > eqMax
                 line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx), array.shift(eqhBar)
@@ -3554,18 +3592,38 @@ f_processEq() =>
         int plBar = bar_index - eqPivotLen
         if not na(eqPrevPl) and math.abs(eqPl - eqPrevPl) <= eqTol
             float lvl = math.min(eqPl, eqPrevPl)
-            line ln = line.new(eqPrevPlBar, lvl, bar_index + i_lineExtend, lvl, color = eqlColor, style = line.style_dotted, width = 1)
-            label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = f_liqSize(), textalign = text.align_left)
+            line ln = line.new(eqPrevPlBar, lvl, bar_index, lvl, color = eqlColor, style = line.style_solid, width = 1)
+            // Mirror of the EQH label — see the note there for why style_label_left.
+            label lb = label.new(bar_index, lvl, "EQL", style = label.style_label_left, color = color(na), textcolor = eqlColor, size = f_liqSize(), textalign = text.align_left)
             array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl), array.push(eqlBar, eqPrevPlBar)
             while array.size(eqlLines) > eqMax
                 line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx), array.shift(eqlBar)
         eqPrevPl := eqPl, eqPrevPlBar := plBar
 
-    // Mitigation + right-extend each bar: EQH taken on a close above, EQL on a close below.
+    // ── A WICK TAKES THE LIQUIDITY (Aaron, 2026-08-04) ──
+    // The test was `close > lvl` — a CLOSE above the EQH — so a candle that speared
+    // clean through the level and closed back under it left the line drawn. That is the
+    // EQH still sitting on the chart with a wick through it.
+    // A close test is the wrong question for THIS object, and it is worth saying why
+    // rather than just flipping it. An EQH is not a support/resistance level being
+    // "broken" — it is a POOL OF RESTING STOPS above two equal highs. Price reaching
+    // those stops is what fills them, and price reaches with its WICK. So the sweep IS
+    // the wick; whether the candle closed back below is a statement about what happened
+    // AFTER the liquidity was taken, not about whether it was taken.
+    // This is the same correction the order blocks got on 2026-07-31 ("if an OB is
+    // wicked and the candle pulls back it's mitigated"), for the same reason, and it
+    // leaves the two tools reading the chart the same way.
+    // `high`/`low`, not `close`, also makes the deletion STABLE on the live bar: a bar's
+    // high only ever grows within the bar, so once it clears the level it stays cleared.
+    // The old close test could delete a level intrabar and put it back on the next tick
+    // as the close moved — Pine restores every `var` array on each realtime tick.
+    // ⚠ This is now the ONLY copy of the EQ block that reads a wick. `mpc_strategy.pine`
+    // and engines/equal_highs_lows/ both still use `close`, so the three have diverged
+    // deliberately — see the note handed back with this change.
     if eqShow and array.size(eqhLines) > 0
         for i = array.size(eqhLines) - 1 to 0
             float lvl = array.get(eqhPx, i)
-            if close > lvl
+            if high > lvl
                 line.delete(array.get(eqhLines, i)), label.delete(array.get(eqhLbls, i))
                 array.remove(eqhLines, i), array.remove(eqhLbls, i), array.remove(eqhPx, i), array.remove(eqhBar, i)
             else
@@ -3575,19 +3633,21 @@ f_processEq() =>
                 // origin from eqhBar, NOT line.get_x1 — querying an already-aged line is
                 // the very thing that can throw.
                 line.set_x1(ehl, math.max(array.get(eqhBar, i), bar_index - LIQ_ORIGIN_CAP))
-                line.set_x2(ehl, bar_index + i_lineExtend)
-                label.set_x(array.get(eqhLbls, i), bar_index + i_lineExtend)
+                line.set_x2(ehl, bar_index)
+                label.set_x(array.get(eqhLbls, i), bar_index)
     if eqShow and array.size(eqlLines) > 0
         for i = array.size(eqlLines) - 1 to 0
             float lvl = array.get(eqlPx, i)
-            if close < lvl
+            // Mirror of the EQH wick rule above — an EQL is sell-side liquidity resting
+            // BELOW, so the low reaching it is what takes it.
+            if low < lvl
                 line.delete(array.get(eqlLines, i)), label.delete(array.get(eqlLbls, i))
                 array.remove(eqlLines, i), array.remove(eqlLbls, i), array.remove(eqlPx, i), array.remove(eqlBar, i)
             else
                 line ell = array.get(eqlLines, i)
                 line.set_x1(ell, math.max(array.get(eqlBar, i), bar_index - LIQ_ORIGIN_CAP))
-                line.set_x2(ell, bar_index + i_lineExtend)
-                label.set_x(array.get(eqlLbls, i), bar_index + i_lineExtend)
+                line.set_x2(ell, bar_index)
+                label.set_x(array.get(eqlLbls, i), bar_index)
     int _ret = 0
 f_processEq()
 
