@@ -78,6 +78,12 @@ command-center/backend/lab.db-shm
 command-center/backend/lab.db-wal
 command-center/backend/reports/lab/
 
+# Per-run parameter blobs, named by a content hash (params_<hash>.json). Runtime scratch
+# dropped in the backend root by a lab run — one got swept into a commit by `git add -A` on
+# 2026-08-04. Ignored rather than chased: I could not find what writes it, and a file that
+# regenerates itself is not worth guessing about, but it is definitely not source.
+command-center/backend/params_*.json
+
 # =============================================================
 # Algos — VPS-only runtime files
 # These live only on the VPS. Never overwrite via git pull.

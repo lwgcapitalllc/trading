@@ -1033,11 +1033,17 @@ export function PerformancePanel({
     // Costs were charged but INVISIBLE until 2026-08-01: the run row carried the settings and
     // nothing reported what they came to. The row only appears on a priced run — printing
     // "$0" on every unpriced one would read as "trading was free" rather than "nothing was
-    // priced". The tooltip carries the compounding warning because the raw charge is small and
-    // its effect on the net is not.
+    // priced".
+    //
+    // ⚠ **It is called FEES, not "costs", because it is not the number the Net above moved by.**
+    // The fees are what left the account; the Net moves by far more, since a fee paid early also
+    // costs everything it would have compounded into. Measured on run `75ccc776d10c`: $332,371 of
+    // fees, $18,200,741 off the final balance — 55x. Naming this row "Costs charged" invited
+    // exactly the subtraction that makes those two look like a contradiction, and it was reported
+    // as a bug from the screen. The tooltip states the relationship rather than leaving it implied.
     ...(costsTotal !== 0 ? [{
-      key: 'costs', label: 'Costs charged', value: dollar(costsTotal),
-      tip: `Commission, spread, slippage and swap actually charged across every fill, already deducted from Net above. ⚠ Read this against the RETURN, not the net dollars: at a fixed % risk the account compounds, so a dollar of cost paid early also costs every dollar it would have grown into. On this strategy ${dollar(Math.abs(costsTotal))} of charges moves the final balance by many times that.`,
+      key: 'costs', label: 'Fees charged', value: dollar(costsTotal),
+      tip: `Commission, spread, slippage and swap actually handed to the broker across every fill, already deducted from Net above. ⚠ This is NOT the amount the Net moved by, and the gap is usually large: at a fixed % risk the account compounds, so a dollar of fee paid early also costs every dollar it would have grown into over every trade after it. Expect the balance impact to be many times this figure — that is compounding, not a bigger fee. Judge a cost in R (the Costs pill states it), never in net dollars.`,
     } as PanelRow] : []),
     // WHICH costs were charged, not just what they came to. A run that charged nothing and a run
     // made before the switches existed look identical from the total alone — and this lab's
@@ -3418,7 +3424,12 @@ function useCostFilter(run: Run | undefined) {
       const t = priced.get(p.index)!
       return { ...p, profit: t.profit, equity: t.equity, costs_usd: -Math.abs(t.cost_usd) }
     })
-    return { kept, curve: kept, run: buildFilteredRun(run, kept, kept) }
+    // The two dollar figures the reader will otherwise derive by subtracting, and which are NOT the
+    // same number — see `balanceImpact` below. Both are summed off the SAME rows the Net hero sums,
+    // so the pill and the card can never disagree about what changed.
+    const netBefore = raw.reduce((t, p) => t + (p.profit ?? 0), 0)
+    const netAfter = kept.reduce((t, p) => t + (p.profit ?? 0), 0)
+    return { kept, curve: kept, run: buildFilteredRun(run, kept, kept), netBefore, netAfter }
   }, [run, report, chosen])
 
   return {
@@ -3434,8 +3445,21 @@ function useCostFilter(run: Run | undefined) {
     notExact: !!report && !report.is_exact,
     derivedBasis: !!report?.derived_basis,
     approximateLayers: report?.approximate_layers ?? [],
+    // ⚠ THREE numbers, and conflating any two of them is the bug this pill shipped with.
+    //   `totalCostR`  — the SIZE of the charge, and the only additive unit (see `CostRule`).
+    //   `totalCost`   — the FEES actually handed to the broker, in dollars, on the charged path.
+    //   `balanceImpact` — how much smaller the final balance is, which is a different and much
+    //                     larger number because a dollar of fee paid early also costs everything it
+    //                     would have compounded into.
+    // On the reference run those are 12.08R, $332,371 and $18,200,741 — the fees are 1.8% of the
+    // balance impact. The pill labelled the FEES "after compounding" and printed nothing else, so
+    // the only way to find the $18.2M was to subtract the Net hero yourself and conclude the fees
+    // were 55x what the pill said. Show both dollar figures, each under its own name, always.
     totalCost: report?.total_cost_usd ?? 0,
     totalCostR: report?.total_cost_r ?? 0,
+    netBefore: view?.netBefore ?? null,
+    netAfter: view?.netAfter ?? null,
+    balanceImpact: view ? view.netBefore - view.netAfter : null,
     // Every layer's own price, ticked or not — the pill shows what turning one on would cost.
     layerCostR: report?.layer_cost_r ?? {},
   }
@@ -3660,6 +3684,21 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
   )
 }
 
+// One named figure in the Costs popover's footer: label on the left, number on the right, and a
+// `title` saying which question it answers. It exists because that footer carries THREE numbers of
+// two different units, and the version that printed one of them with a borrowed caption is what let
+// a reader conclude the pill was lying (see the footer's own comment).
+function Figure({ label, hint, children }: {
+  label: string; hint: string; children: React.ReactNode
+}) {
+  return (
+    <p className="flex items-baseline justify-between gap-3" title={hint}>
+      <span className="text-text-tertiary shrink-0">{label}</span>
+      <span className="tabular-nums text-right">{children}</span>
+    </p>
+  )
+}
+
 // One cost layer's row. Deliberately NOT `ExcludeRule` even though they look alike: that one
 // states a trade COUNT, which is the right readout for an exclusion rule (how many trades a
 // release landed on) and meaningless for a cost, which touches every trade. The first build reused
@@ -3703,7 +3742,7 @@ function CostRule({ checked, onChange, label, note, costR, tone }: {
 function CostFilterPill({ costs }: { costs: CostFilter }) {
   const {
     isLoading, layers, toggle, active, totalCost, totalCostR, needsRerun, notExact, derivedBasis,
-    approximateLayers,
+    approximateLayers, netBefore, netAfter, balanceImpact,
   } = costs
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -3721,8 +3760,15 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
 
   // Like the news pill beside it, the label states the SIZE of what is applied rather than that
   // something is. "Costs on" would leave you to open the popover to find out what it cost.
+  //
+  // ⚠ **The size is stated in R, and a dollar figure here is actively misleading.** This read
+  // `Charging $332,371` — the fees — while the Net hero six inches away fell by $18,200,741, so the
+  // pill and the headline disagreed by 55x with nothing on screen reconciling them. Neither number
+  // was wrong; the fees are simply not the balance impact, and a pill has room for one number. R is
+  // the one that cannot be misread: it is the true size of the charge, it is what the rows below add
+  // up to, and it is comparable between runs. Both dollar figures live in the popover, named.
   const label = isLoading ? 'Pricing…'
-    : active ? `Charging ${dollar(Math.abs(totalCost))}`
+    : active ? `Charging ${Math.abs(totalCostR).toFixed(2)}R`
     : 'Charging nothing'
 
   return (
@@ -3778,20 +3824,43 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
                   : ''}
               </p>
             )}
-            {/* Both units, R first. A cost read against the net dollars is systematically
-                misread: on the reference run 12R of cost turned $28.3M into $10.1M — 64% of the
-                balance for 9% of the R — because at a fixed % risk a dollar not earned early never
-                compounds. The R is the size of the cost; the dollars are what compounding did with
-                it, which is a different and much larger number. */}
+            {/* ⚠ THE FEES AND THE BALANCE IMPACT ARE DIFFERENT NUMBERS, and both have to be here.
+                This block used to print the fees alone, captioned "after compounding" — a label on
+                the one figure that is NOT the compounding effect. So the reader subtracted the Net
+                hero instead, got $18.2M against a pill saying $332,371, and reasonably read the
+                whole feature as broken. It is not: at this strategy's risk per trade, 12.08R of
+                charge costs $332k in fees and $18.2M of final balance, because a dollar of fee paid
+                early also costs everything it would have compounded into over the trades after it.
+                Naming all three is the only way that stops looking like a contradiction. */}
             {active && (
-              <p>
-                <span className="tabular-nums font-medium text-text-primary">
-                  −{Math.abs(totalCostR).toFixed(2)}R
-                </span>
-                {' charged across the run · '}
-                <span className="tabular-nums">{dollar(Math.abs(totalCost))}</span>
-                {' after compounding'}
-              </p>
+              <div className="space-y-1">
+                <Figure label="Charged" hint="the size of it — the unit the rows above add up in">
+                  <span className="font-medium text-text-primary">
+                    −{Math.abs(totalCostR).toFixed(2)}R
+                  </span>
+                </Figure>
+                <Figure label="Fees charged" hint="what actually left the account, on the charged path">
+                  {dollar(Math.abs(totalCost))}
+                </Figure>
+                {balanceImpact != null && netBefore != null && netAfter != null && (
+                  <>
+                    <Figure label="Net P&L" hint="the run's own figure, then the charged one">
+                      <span className="text-text-tertiary">{dollar(netBefore)}</span>
+                      {' → '}
+                      {dollar(netAfter)}
+                    </Figure>
+                    <p className="pt-0.5 text-[11px] leading-[1.45] text-text-tertiary">
+                      The balance moves{' '}
+                      <span className="tabular-nums text-neg-text">{dollar(-Math.abs(balanceImpact))}</span>
+                      {Math.abs(totalCost) > 1 && Math.abs(balanceImpact) > Math.abs(totalCost) * 1.5
+                        ? `, ${(Math.abs(balanceImpact) / Math.abs(totalCost)).toFixed(0)}x the fees`
+                        : ''}
+                      {' — a fee paid early also costs everything it would have compounded into. '}
+                      <span className="text-text-secondary">Read the cost as R, not as dollars.</span>
+                    </p>
+                  </>
+                )}
+              </div>
             )}
             {!active && needsRerun.length === 0 && (
               <p>Nothing charged — these are the run’s own numbers.</p>
