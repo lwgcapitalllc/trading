@@ -233,6 +233,16 @@ def show(cfg) -> int:
 
 
 def main(argv=None) -> int:
+    # A Windows console is cp1252 and cannot encode the arrows these messages are written with.
+    # It does not degrade — it raises, mid-print, AFTER the snapshot has been staged, so the
+    # promote dies somewhere in the middle with no pin written. Measured on the VPS the first
+    # time this ran. Same fix, same reason, as `runner.py::_make_logger`.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     ap = argparse.ArgumentParser(description="Deploy a version of the code to one bot.")
     ap.add_argument("--bot", required=True)
     ap.add_argument("--dry-run", action="store_true", help="report, copy nothing")
