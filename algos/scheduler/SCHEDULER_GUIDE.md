@@ -29,6 +29,29 @@ one bot at a time and waiting for connection confirmation before the next.
 
 ---
 
+## `SYS_STARTUP` is IDEMPOTENT as of 2026-08-04 — it was not before
+
+Running it used to start a second copy of everything already running, because the coordinator
+launched each bot in `STARTUP_SEQUENCE` unconditionally and then launched `start_telegram.py`,
+whose first act is to force-kill any running Telegram bot. So firing this task on a healthy box:
+
+- left **TWO** `runner.py --bot <key>` processes — one account, one magic number, one strategy,
+  both sizing a full position off the same setup, from a state neither could see; and
+- **killed and rebuilt the Telegram bot**, after which SYS_MONITOR sent 🟢 *Telegram Bot
+  Restarted* a minute later. That message is why a routine event read as a crash for weeks.
+
+**Both were MEASURED on the live box on 2026-08-04, not reasoned about** — the duplicate bot was
+found by running this task to verify the Telegram fix.
+
+It is now safe to fire at any time: a running bot is skipped, a healthy Telegram is left alone,
+and anything genuinely down is started. `runner.py` carries its own refusal as a backstop for
+the paths this task does not own (the command center, the watchdog, a typed command).
+
+⚠ **`SYS_TELEGRAM` deliberately still force-restarts.** That task's job is recovering a Telegram
+bot that is alive but WEDGED, which is a state no "is it running" check can see.
+
+---
+
 ## Install All Tasks (PowerShell)
 
 ```powershell

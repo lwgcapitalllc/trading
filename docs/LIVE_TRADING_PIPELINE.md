@@ -323,6 +323,41 @@ switch.** Every alert in the suite originates ON the VPS, so if the box or its n
 is indistinguishable from health. The same is true of a bot the watchdog cannot restart. Something
 off-box has to expect a regular signal and complain when it stops.
 
+### G13 — Every recovery path could produce a duplicate — **CLOSED 2026-08-04**
+
+**`SYS_STARTUP` was not idempotent, and every recovery path in this suite fires it.** The boot
+task, the Bots page Start/Restart buttons, and the documented restart command all run
+`startup_coordinator.py`, which launched each bot in `STARTUP_SEQUENCE` unconditionally and then
+launched `start_telegram.py`, whose first act is to force-kill any running Telegram bot.
+
+**Measured on the live box**, by firing the task to verify an unrelated fix: it left **two
+`runner.py --bot mpc_sos_fade_demo` processes** four minutes apart, and killed and rebuilt the
+Telegram bot. Nothing anywhere reported either.
+
+⚠ **Two copies of one bot is the worst duplicate available here.** They share an account, a magic
+number and a strategy, so they see the same setup on the same bar and each sizes a FULL position
+off it — double the intended risk, from a state neither can see. The bridge filters
+`get_open_positions()` by MAGIC, so each finds the other's position and reads it as its own; only
+`adopt_broker_state`'s HALT-on-unknown-position makes this survivable rather than an immediate
+double book. In dry run it cost nothing. Live, it is the single most expensive bug in this file.
+
+**Fixed with two guards, because they cover different launch paths:** the coordinator skips a bot
+already running, and `runner.already_running()` refuses to be a second copy — the latter covering
+the command center, the watchdog and a hand-typed command, none of which the coordinator owns.
+Both match on `--bot <key>` rather than the script name, since every live bot is `runner.py`.
+
+⚠ **The two guards default in OPPOSITE directions when the process list cannot be read**, and that
+asymmetry is deliberate: the coordinator assumes RUNNING and leaves the bot alone (a duplicate is
+two positions), the runner assumes NOT RUNNING and starts (an unstartable bot is silence). Neither
+default is "safe" in the abstract — each is safe against the failure that path actually causes.
+
+✅ Verified by re-firing the task with both fixes live: one bot, one Telegram, no new processes.
+
+⚠ **The general shape, and it is worth carrying into the multi-bot work (G10/G11): a start command
+that is not idempotent is a duplicate generator.** Every automatic recovery mechanism here — the
+boot task, the watchdog, the supervisor — works by re-issuing a start. If "start" is not safe to
+call on something already running, then every one of those is a way to double the book.
+
 ---
 
 ## 4. Design decisions
