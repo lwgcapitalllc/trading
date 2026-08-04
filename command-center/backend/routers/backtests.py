@@ -344,9 +344,22 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
     if not row:
         raise HTTPException(404, "Run not found")
 
+    # ⚠ **A layer the RUN already charged must never be charged again here.** The stored trades were
+    # measured with it baked in, so re-pricing it on top bills one cost twice — and nothing
+    # downstream can tell, because the result is a plausible number rather than an error. `[]` and
+    # `None` both mean "charged none of these" (the second is a row predating the layers), so the
+    # distinction the rest of the lab keeps does not matter at this seam.
+    # ⚠ Through `_json_list`, NEVER `set(row["cost_layers"])` — the column is stored as raw JSON
+    # TEXT, so setting the string directly iterates its CHARACTERS and every layer name silently
+    # fails to match while `'s'`, `'p'`, `'r'`… all appear to be charged.
+    already = set(_json_list(row.get("cost_layers")) or [])
     wanted = [l.strip() for l in layers.split(",") if l.strip()]
-    priceable = [l for l in wanted if l in REPRICEABLE_LAYERS]
-    needs_rerun = [l for l in wanted if l not in REPRICEABLE_LAYERS]
+    # Reported off the RUN, not off what the caller ticked, because the UI has to render those rows
+    # as already-on whether or not anyone asked for them — a row that looks available and does
+    # nothing when clicked is the failure this replaces.
+    already_charged = [l for l in REPRICEABLE_LAYERS if l in already]
+    priceable = [l for l in wanted if l in REPRICEABLE_LAYERS and l not in already]
+    needs_rerun = [l for l in wanted if l not in REPRICEABLE_LAYERS and l not in already]
 
     broker_id = broker or row.get("broker_profile") or "vantage_demo"
     if broker_id not in PROFILES:
@@ -370,9 +383,13 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
         # it on. In **R**, because that is the additive unit: a layer's DOLLAR cost depends on which
         # other layers are on (they change the balance, which changes every later position's size),
         # so three per-layer dollar figures would not sum to the total shown beneath them.
+        # A layer the run already charged is priced at 0.0 rather than at what it WOULD cost —
+        # the honest answer to "what does turning this on cost from here" is nothing, because it
+        # is already on. Quoting its price would invite exactly the double charge refused above.
         per_layer = {
-            l: reprice_curve(curve, profile=profile, layers=[l],
-                             initial_capital=initial).total_cost_r
+            l: (0.0 if l in already else
+                reprice_curve(curve, profile=profile, layers=[l],
+                              initial_capital=initial).total_cost_r)
             for l in REPRICEABLE_LAYERS
         }
     except RepriceError as exc:
@@ -382,6 +399,7 @@ def get_run_repriced(run_id: str, layers: str = "", broker: str = "") -> RunRepr
         layers=list(out.layers), broker_profile=broker_id,
         is_exact=out.is_exact, derived_basis=out.derived_basis,
         approximate_layers=list(out.approximate_layers), needs_rerun=needs_rerun,
+        already_charged=already_charged,
         initial_capital=out.initial_capital, final_equity=out.final_equity,
         sum_r=out.sum_r, total_cost_usd=out.total_cost_usd,
         total_cost_r=out.total_cost_r, layer_cost_r=per_layer,

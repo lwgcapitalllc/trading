@@ -180,3 +180,86 @@ def test_a_run_with_no_stored_curve_refuses_rather_than_returning_an_empty_book(
     would render as 'costs changed nothing', which is a claim about a run nobody measured."""
     r = client.get(f"/backtests/runs/{seeded_run}/repriced?layers=spread")
     assert r.status_code == 400 and "equity curve" in r.json()["detail"]
+
+
+# ── a layer the RUN already charged ────────────────────────────────────────────────────────────
+#
+# The hazard here is silent and expensive: the stored trades were MEASURED with that cost baked in,
+# so charging it again bills one cost twice and produces a plausible number rather than an error.
+# Nothing downstream can catch it — the page would simply be wrong by a believable amount.
+
+@pytest.fixture
+def spread_charged_run(fresh_db, tmp_path):
+    """The same run, but launched with `spread` already charged at replay time."""
+    from services import lab_db
+
+    lab_db.upsert_strategy({"id": "s2", "name": "S2", "class_name": "S2", "runner": "python",
+                            "source_path": "strategies/python/s2/__init__.py",
+                            "scanned_at": int(time.time()), "default_params": {},
+                            "param_schema": []})
+    run_id = "alreadyspread01"
+    lab_db.insert_run({"run_id": run_id, "strategy_id": "s2", "instrument": "XAUUSD",
+                       "params": {}, "bar_type": "Minute", "bar_value": 15,
+                       "start_date": "2024-01-01", "end_date": "2024-12-31",
+                       "status": "running", "created_at": int(time.time()),
+                       "commission_per_side": 0.0, "slippage_ticks": 0,
+                       "cost_layers": ["spread"], "broker_profile": "vantage_demo"})
+    # Held THREE DAYS, unlike the base fixture's one-hour trades: swap only charges on a rollover
+    # crossed, so an intraday trade prices it at exactly 0.0 and could not tell "this layer was
+    # refused" apart from "this layer costs nothing here".
+    hold = 3 * 86_400_000
+    rows = [_point(1, equity=11_000.0, profit=1_000.0, exit_ms=1_700_000_000_000 + hold),
+            _point(2, equity=10_500.0, profit=-500.0, exit_ms=1_700_000_000_000 + hold)]
+    lab_db.update_run_complete(run_id, {"net_pnl": 500.0, "trade_count": 2},
+                               {"equity_curve": _curve(tmp_path, rows)})
+    return run_id
+
+
+def test_a_layer_the_run_already_charged_is_never_charged_twice(client, spread_charged_run):
+    """Ticking `spread` on a run that already charged it must change NOTHING.
+
+    Not "change a little" — the cost is in the stored trades, so the honest re-price of it is a
+    no-op. Before this, the endpoint read the request and never the run, so it happily billed a
+    second spread and moved every number on the page by a completely believable amount.
+    """
+    r = client.get(f"/backtests/runs/{spread_charged_run}/repriced?layers=spread")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["layers"] == [], "spread must not be re-applied on top of the run's own charge"
+    assert body["total_cost_usd"] == 0.0 and body["total_cost_r"] == 0.0
+    assert body["already_charged"] == ["spread"], "and it must SAY so rather than silently ignoring"
+
+
+def test_an_already_charged_layer_is_reported_even_when_nothing_is_ticked(client,
+                                                                         spread_charged_run):
+    """The UI renders those rows as already-on, so the field describes the RUN, not the request.
+    Keyed off `wanted` it would be empty until the user ticked a row that then did nothing —
+    a checkbox indistinguishable from a broken one."""
+    body = client.get(f"/backtests/runs/{spread_charged_run}/repriced").json()
+    assert body["already_charged"] == ["spread"]
+
+
+def test_an_already_charged_layer_is_priced_at_zero_not_at_what_it_would_cost(client,
+                                                                             spread_charged_run):
+    """`layer_cost_r` answers "what does turning this on cost from here", and the answer is nothing.
+    Quoting its standalone price would invite exactly the double charge the endpoint refuses."""
+    body = client.get(f"/backtests/runs/{spread_charged_run}/repriced").json()
+    assert body["layer_cost_r"]["spread"] == 0.0
+    assert body["layer_cost_r"]["swap"] != 0.0, "an un-charged layer still quotes its real price"
+
+
+def test_a_layer_the_run_did_not_charge_still_prices_normally(client, spread_charged_run):
+    """The refusal is per-LAYER. A run that charged the spread can still be re-priced for swap."""
+    body = client.get(f"/backtests/runs/{spread_charged_run}/repriced?layers=spread,swap").json()
+    assert body["layers"] == ["swap"]
+    assert body["already_charged"] == ["spread"]
+    assert body["total_cost_r"] != 0.0
+
+
+def test_cost_layers_is_read_as_JSON_not_iterated_as_a_string(client, spread_charged_run):
+    """`cost_layers` is stored as raw JSON TEXT. `set(row["cost_layers"])` iterates its CHARACTERS,
+    so every real layer name fails to match while 's', 'p', 'r'… all appear to be charged — the
+    refusal would silently stop working and the double charge would come straight back."""
+    body = client.get(f"/backtests/runs/{spread_charged_run}/repriced?layers=swap").json()
+    assert body["already_charged"] == ["spread"], "a character-set would not contain 'spread'"
+    assert body["layers"] == ["swap"], "...and would have matched 's'/'w'/'a'/'p' against swap"

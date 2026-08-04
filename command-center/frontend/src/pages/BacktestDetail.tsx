@@ -3401,7 +3401,13 @@ function useCostFilter(run: Run | undefined) {
   // price or size, so the pill does not appear rather than appearing and failing.
   const enabled = run?.runner === 'python' && (run?.equity_curve?.length ?? 0) > 0
   const chosen = useMemo(() => REPRICEABLE.filter(l => layers.has(l)), [layers])
-  const { data: report, isLoading } = useRunReprice(run?.run_id ?? null, chosen, enabled)
+  // ⚠ `isError` is READ, not ignored. The server REFUSES rather than degrades — a curve missing an
+  // entry price, a stop or a size raises `RepriceError` → 400, which is the correct behaviour and
+  // the whole point of `reprice.py`'s refusal discipline. But the pill destructured only `data`,
+  // so a refusal left `report` undefined, `view` null and `active` false — and the label read
+  // "Charging nothing" with the reader's boxes still ticked. A backend that carefully refuses to
+  // guess is worth nothing if the UI renders the refusal as "no costs apply".
+  const { data: report, isLoading, isError, error } = useRunReprice(run?.run_id ?? null, chosen, enabled)
 
   const toggle = (l: CostLayer) =>
     setLayers(prev => {
@@ -3422,7 +3428,22 @@ function useCostFilter(run: Run | undefined) {
     if (raw.some(p => !priced.has(p.index))) return null
     const kept = raw.map(p => {
       const t = priced.get(p.index)!
-      return { ...p, profit: t.profit, equity: t.equity, costs_usd: -Math.abs(t.cost_usd) }
+      // ⚠ **SIGNED, never `-Math.abs`.** `cost_usd` is positive for a charge and NEGATIVE for a
+      // credit, because a short's gold swap is a real credit (+26.98 points/night on Vantage) and
+      // can exceed the spread on the same trade. Forcing the sign booked all 39 of the reference
+      // run's net-credit trades as charges and made the `Fees charged` row read $415,990 against
+      // the pill's true $332,371 — 25% high, and **103% high on swap alone** ($514,315 vs
+      // $252,998). The stored convention here is negative = charge, and `cost_usd` is the other
+      // way round, so this subtracts.
+      //
+      // It ADDS to the point's own `costs_usd` rather than replacing it, so a run that was already
+      // priced at replay time keeps its own charges in the total. Those dollars were measured on
+      // the run's own equity path while the re-priced layers are measured on the new one; the two
+      // cannot be summed exactly, but the alternative is dropping the run's real costs from a row
+      // labelled with their name. Second-order today — no stored run charges anything (all 81 are
+      // `cost_layers` NULL or `[]`), and a layer the run DID charge is refused above rather than
+      // re-priced on top.
+      return { ...p, profit: t.profit, equity: t.equity, costs_usd: (p.costs_usd ?? 0) - t.cost_usd }
     })
     // The two dollar figures the reader will otherwise derive by subtracting, and which are NOT the
     // same number — see `balanceImpact` below. Both are summed off the SAME rows the Net hero sums,
@@ -3441,7 +3462,15 @@ function useCostFilter(run: Run | undefined) {
     // layer this page cannot compute; `notExact` is the honest caption for one it computes to
     // ~0.02%–0.3% rather than to the cent. Rendering either silently is the failure this whole
     // area exists to have stopped.
+    // A refusal must reach the reader as a refusal, never as "nothing to charge". The message is
+    // the server's own — it always names the missing thing.
+    failed: isError,
+    failReason: isError ? String((error as Error)?.message ?? '').replace(/^\d+\s*/, '') : null,
     needsRerun: report?.needs_rerun ?? [],
+    // Layers the run itself charged. Reported so the rows can render as already-on instead of
+    // silently doing nothing when ticked — the server refuses to re-price them (double billing),
+    // and a checkbox that changes no number is indistinguishable from a broken one.
+    alreadyCharged: report?.already_charged ?? [],
     notExact: !!report && !report.is_exact,
     derivedBasis: !!report?.derived_basis,
     approximateLayers: report?.approximate_layers ?? [],
@@ -3710,18 +3739,24 @@ function Figure({ label, hint, children }: {
 // panel would look broken while every number in it was correct. In R the size cancels, so these
 // sum exactly. It is also the unit a cost should be read in: 12R of cost turned $28.3M into $10.1M
 // on the reference run, so the dollars answer a different question from the one the row asks.
-function CostRule({ checked, onChange, label, note, costR, tone }: {
+function CostRule({ checked, onChange, label, note, costR, tone, locked = false }: {
   checked: boolean; onChange: () => void; label: string; note?: string
-  costR: number | undefined; tone: 'cost' | 'swap'
+  costR: number | undefined; tone: 'cost' | 'swap'; locked?: boolean
 }) {
   return (
     <button
-      onClick={onChange}
+      onClick={locked ? undefined : onChange}
+      disabled={locked}
+      title={locked ? 'This run was measured with this cost charged, so it is already in every '
+                    + 'number on the page. Charging it off again would be a re-run, not arithmetic.'
+                   : undefined}
       className={`w-full flex items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${
-        checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle hover:bg-bg-sunken/60'}`}
+        locked ? 'border-border-subtle bg-bg-sunken/40 cursor-default'
+        : checked ? 'border-border-default bg-bg-sunken' : 'border-border-subtle hover:bg-bg-sunken/60'}`}
     >
       <span className={`w-3.5 h-3.5 rounded-[3px] border flex items-center justify-center shrink-0 transition-colors ${
-        checked ? 'bg-accent border-accent' : 'border-border-default'}`}>
+        checked ? (locked ? 'bg-text-tertiary border-text-tertiary' : 'bg-accent border-accent')
+                : 'border-border-default'}`}>
         {checked && <Check size={10} className="text-bg-base" strokeWidth={3} />}
       </span>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === 'swap' ? 'bg-neg-text' : 'bg-gold-text'}`} />
@@ -3731,18 +3766,31 @@ function CostRule({ checked, onChange, label, note, costR, tone }: {
       </span>
       {/* A layer this broker genuinely does not charge says so in words. "0.00R" reads as a
           failure to compute; "none on this account" is the actual finding — a demo pays no
-          commission, and that is worth knowing rather than looking broken. */}
+          commission, and that is worth knowing rather than looking broken.
+          A LOCKED row states no R at all, and that is not a gap in the UI: what the run's own
+          charge came to is baked into its stored trades and never reported separately, so any
+          figure here would be invented. */}
       <span className="text-[12px] tabular-nums text-text-secondary shrink-0">
-        {costR == null ? '—' : costR === 0 ? 'none on this account' : `−${costR.toFixed(2)}R`}
+        {locked ? 'in the run'
+          : costR == null ? '—'
+          : costR === 0 ? 'none on this account'
+          : `−${costR.toFixed(2)}R`}
       </span>
     </button>
   )
 }
 
-function CostFilterPill({ costs }: { costs: CostFilter }) {
+// ⚠ `blocked` is NOT optional decoration — it is the same refusal `NewsFilterPill` takes, and this
+// pill went without it. `costOnKpis` already required `!newsBlocked`, so under a firm's SIZED
+// numbers the page correctly ignored every charge — while the pill stayed live, let you tick
+// layers, fetched a report and read `Charging 12.08R` over numbers that had not moved. A control
+// reporting a charge nothing applied is the same defect as the caption this popover just fixed,
+// one level up. A sized curve is PATH DEPENDENT (charging trade #7 changes #8's position size), so
+// the cost is not size-independent there and the whole justification for re-pricing evaporates.
+function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?: string | null }) {
   const {
     isLoading, layers, toggle, active, totalCost, totalCostR, needsRerun, notExact, derivedBasis,
-    approximateLayers, netBefore, netAfter, balanceImpact,
+    approximateLayers, netBefore, netAfter, balanceImpact, alreadyCharged, failed, failReason,
   } = costs
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -3767,7 +3815,9 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
   // was wrong; the fees are simply not the balance impact, and a pill has room for one number. R is
   // the one that cannot be misread: it is the true size of the charge, it is what the rows below add
   // up to, and it is comparable between runs. Both dollar figures live in the popover, named.
-  const label = isLoading ? 'Pricing…'
+  const label = blocked ? 'Charging n/a'
+    : failed ? 'Can’t price this run'
+    : isLoading ? 'Pricing…'
     : active ? `Charging ${Math.abs(totalCostR).toFixed(2)}R`
     : 'Charging nothing'
 
@@ -3775,8 +3825,10 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
     <div ref={wrapRef} className="relative shrink-0">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-          active ? 'border-gold-text/40 bg-gold-text/15 text-gold-text'
+        disabled={!!blocked}
+        title={blocked ?? undefined}
+        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          active && !blocked ? 'border-gold-text/40 bg-gold-text/15 text-gold-text'
                  : 'border-border-subtle bg-bg-sunken text-text-secondary hover:text-text-primary'}`}
       >
         <Coins size={12} className="shrink-0" />
@@ -3789,25 +3841,50 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
               Charge to these numbers
+              {/* WHOSE numbers these are. The two broker profiles differ by 50% on the gold spread
+                  ($0.22 Vantage vs $0.33 PU Prime), so a charge with no broker named is a figure
+                  whose provenance the reader cannot check — the defect this whole area exists to
+                  have stopped. Shown always, not only on hover. */}
+              {costs.report?.broker_profile && (
+                <span className="ml-1.5 font-normal normal-case tracking-normal text-text-tertiary">
+                  · {costs.report.broker_profile.replace(/_/g, ' ')}
+                </span>
+              )}
             </span>
-            <InfoTip text="The run was measured at whatever costs it was launched with — this re-prices its trades on top, without re-running. It works because each of these costs a fixed amount of R no matter what size the position was, so the R is knowable and the dollars follow. Reshapes the Performance numbers and the Equity chart only." />
+            <InfoTip text="The run was measured at whatever costs it was launched with — this re-prices its trades on top, without re-running. It works because each of these costs a fixed amount of R no matter what size the position was, so the R is knowable and the dollars follow. Every figure is priced off the named broker's own MEASURED spread and swap, never a typed-in number. Reshapes the Performance numbers and the Equity chart only." />
           </div>
 
-          {REPRICEABLE.map(l => (
-            <CostRule
-              key={l}
-              checked={layers.has(l)}
-              onChange={() => toggle(l)}
-              label={COST_ROW_LABEL[l] ?? l}
-              note={l === 'swap' ? 'approximate' : undefined}
-              costR={costs.layerCostR[l]}
-              tone={l === 'swap' ? 'swap' : 'cost'}
-            />
-          ))}
+          {REPRICEABLE.map(l => {
+            // A layer the RUN charged is shown ticked and LOCKED. It is already in every number on
+            // the page, the server refuses to charge it again, and it cannot be charged off from
+            // here either — the stored trades were measured with it, so removing it is a re-run.
+            const baked = alreadyCharged.includes(l)
+            return (
+              <CostRule
+                key={l}
+                checked={baked || layers.has(l)}
+                locked={baked}
+                onChange={() => toggle(l)}
+                label={COST_ROW_LABEL[l] ?? l}
+                note={baked ? 'charged in the run' : l === 'swap' ? 'approximate' : undefined}
+                costR={baked ? undefined : costs.layerCostR[l]}
+                tone={l === 'swap' ? 'swap' : 'cost'}
+              />
+            )
+          })}
 
           <div className="border-t border-border-subtle pt-2.5 space-y-1.5 text-[12px] text-text-secondary">
             {/* Both of these are things the page would otherwise imply falsely by staying quiet:
                 a layer it silently could not compute, and a figure that is close rather than exact. */}
+            {/* The server's refusal, verbatim. It always names the missing thing (which field, on
+                which trade), and that is far more useful than a generic failure — a run whose
+                curve predates the stored entry/stop/size genuinely cannot be re-priced and the
+                honest answer is a re-run. */}
+            {failed && (
+              <p className="text-neg-text">
+                {failReason || 'This run could not be re-priced.'}
+              </p>
+            )}
             {needsRerun.length > 0 && (
               <p className="text-gold-text">
                 {needsRerun.join(' and ')} can’t be applied here — {needsRerun.length === 1 ? 'it changes' : 'they change'} which
@@ -3816,8 +3893,13 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
             )}
             {active && notExact && (
               <p className="text-text-tertiary">
+                {/* "0.3%" now says OF WHAT. Measured against a real charged replay of the 161-trade
+                    reference run: 0.03% of the R and 0.32% of the final balance, all of it from a
+                    SINGLE trade held 28 Dec → 3 Jan, where the re-price books a New Year night the
+                    replay never charged because no bar existed to charge it on. Naming the cause
+                    matters — it is holiday-spanning holds, not a general fuzziness. */}
                 {approximateLayers.includes('swap' as CostLayer)
-                  ? 'Swap is accurate to about 0.3% — its real charge depends on which bars existed, and holiday closures aren’t in the stored trades.'
+                  ? 'Swap is accurate to about 0.3% of the final balance — its real charge depends on which bars existed, and market closures (Christmas, New Year) aren’t in the stored trades. It only differs on a trade held across one.'
                   : ''}
                 {derivedBasis
                   ? ' This run predates the stored per-trade R, so the figures are within ~0.02% rather than exact.'
@@ -3862,7 +3944,7 @@ function CostFilterPill({ costs }: { costs: CostFilter }) {
                 )}
               </div>
             )}
-            {!active && needsRerun.length === 0 && (
+            {!active && !failed && needsRerun.length === 0 && (
               <p>Nothing charged — these are the run’s own numbers.</p>
             )}
           </div>
@@ -3902,7 +3984,7 @@ function PerformanceHeader({ news, costs, blocked, filtered, collapsed, onToggle
           then the news filter removes some of them. The reverse would be wrong — a cost is a
           property of a trade, so it has to be charged before anything decides which trades count. */}
       <div className="flex items-center gap-2 shrink-0">
-        {costs.enabled && <CostFilterPill costs={costs} />}
+        {costs.enabled && <CostFilterPill costs={costs} blocked={blocked} />}
         {news.enabled && <NewsFilterPill news={news} blocked={blocked} />}
       </div>
     </div>

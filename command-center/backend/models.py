@@ -245,6 +245,16 @@ class BotStatus(BaseModel):
     account: str
     account_type: str       # "demo" | "live"
     balance: Optional[float] = None
+    # Is the bot's PROCESS still talking to its MT5 terminal? `None` = the bot predates the
+    # field or has not stamped one yet — never render an unasked question as a failure.
+    #
+    # ⚠ This exists because `balance: None` is not a diagnosis, and on 2026-08-04 it was the
+    # ONLY symptom of a bot that had been blind for 50 minutes: MetaTrader auto-updated and
+    # restarted itself, the running bot's IPC handle died with the old process, and every
+    # data call started returning an ABSENCE rather than an error — an empty bar frame reads
+    # as a quiet market, so the loop kept beating and this page kept saying RUNNING. A blank
+    # balance must always be attributable to one of the two causes, not to either.
+    mt5_link: Optional[bool] = None
     status: str             # "RUNNING" | "STOPPED" | "ERROR"
     uptime_seconds: Optional[int] = None
     total_pnl_pct: Optional[float] = None
@@ -842,6 +852,13 @@ class RunRepriceReport(BaseModel):
     derived_basis: bool = False          # run predates the stored per-trade R
     approximate_layers: list[str] = []   # chosen layers that cannot be exact (today: swap)
     needs_rerun: list[str] = []          # requested layers that cannot be re-priced at all
+    #: Layers the RUN ITSELF already charged at replay time, so they are baked into the stored
+    #: trades. Re-pricing one on top would bill it TWICE, and the page has no way to notice: the
+    #: numbers would move by a plausible amount and simply be wrong. They are reported, dropped
+    #: from `layers`, and the UI shows them as already-on rather than as available to tick.
+    #: ⚠ There is no way to charge one OFF from here either — the stored trades were measured with
+    #: it, so removing it is a re-run, not arithmetic.
+    already_charged: list[str] = []
     initial_capital: float
     final_equity: float
     sum_r: float

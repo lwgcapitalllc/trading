@@ -98,6 +98,10 @@ export interface RunRepriceReport {
   derived_basis: boolean
   approximate_layers: CostLayer[]
   needs_rerun: CostLayer[]           // asked for but un-repriceable — say so, never drop silently
+  /** Layers the RUN ITSELF charged at replay time. Already baked into the stored trades, so
+   *  re-pricing one on top would bill it twice; the server drops them from `layers` and the pill
+   *  shows them as already-on. There is no way to charge one OFF from here — that is a re-run. */
+  already_charged: CostLayer[]
   initial_capital: number
   final_equity: number
   sum_r: number
@@ -299,6 +303,19 @@ export interface BotStatus {
   account: string
   account_type: 'demo' | 'live'
   balance: number | null
+  /** Is the bot's process still talking to its MT5 terminal?
+   *
+   *  `null` means UNANSWERED — a stopped bot, or one predating the field — and must never be
+   *  rendered as a failure (same rule as `mt5_connected` on the sidebar's MT5 dot). Check it
+   *  `=== false`, never falsy.
+   *
+   *  ⚠ It exists because `balance: null` is not a diagnosis. On 2026-08-04 a blank balance was
+   *  the ONLY thing on this page that reflected a bot which had been blind for 50 minutes —
+   *  MetaTrader auto-updated and restarted itself, and the running bot's link died with the old
+   *  process. Every data call then returned an ABSENCE rather than an error, and an empty bar
+   *  frame is what a quiet market looks like, so the loop kept beating and the row kept saying
+   *  RUNNING. */
+  mt5_link: boolean | null
   status: 'RUNNING' | 'STOPPED' | 'ERROR'
   uptime_seconds: number | null
   total_pnl_pct: number | null

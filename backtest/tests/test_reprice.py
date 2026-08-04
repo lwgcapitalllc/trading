@@ -227,16 +227,36 @@ def test_a_short_is_credited_swap_rather_than_charged():
 # ── the reference: does it agree with a real replay? ───────────────────────────────────────────
 
 @pytest.mark.skipif(not _CACHE.exists(), reason="bar cache absent (git-ignored)")
-@pytest.mark.parametrize("layers,kwargs,tolerance", [
-    (["spread"], {"spread": 0.22}, 1e-5),
-    (["commission"], {"commission": 3.0}, 1e-5),
+@pytest.mark.parametrize("layers,kwargs,tolerance,equity_rel", [
+    (["spread"], {"spread": 0.22}, 1e-5, 1e-6),
+    (["commission"], {"commission": 3.0}, 1e-5, 1e-6),
+    # ⚠ **SWAP WAS NOT COVERED HERE UNTIL 2026-08-03, AND IT IS THE BIGGEST LAYER** — 6.41R of the
+    # reference run's 12.08R, against the spread's 5.67R. The two rows above are the exact ones, so
+    # a suite containing only them proved the cheap half and left the approximate half — the one
+    # whose docstring makes a numeric accuracy claim — resting on nothing.
+    #
+    # The tolerance is a MEASURED fact, not a loosened bound. Audited over the full 2020→2026 run
+    # (155,453 M15 bars, 161 trades) against a real charged replay: **exactly ONE trade disagrees**,
+    # by 0.0376R — the long held 2022-12-28 → 2023-01-03, where `rollovers_between` books a New Year
+    # night the replay never charged because no bar existed to charge it on. That is the holiday
+    # supersede the module docstring names, and it is the whole of the error: spread 0.0000R,
+    # commission 0.0000R, swap −0.0376R (0.03% of R, 0.32% of the final balance).
+    #
+    # So this asserts agreement to well under a tenth of an R over a two-year window. If it starts
+    # failing, the cause is a real divergence in the swap model — do NOT widen it.
+    (["swap"], {"swap": PROFILES["vantage_demo"].swap}, 0.05, 5e-3),
 ])
-def test_repricing_reproduces_a_real_charged_replay(layers, kwargs, tolerance):
+def test_repricing_reproduces_a_real_charged_replay(layers, kwargs, tolerance, equity_rel):
     """The claim, tested the only way that means anything: replay it charged for real, then rebuild
     that replay from the FREE run's stored curve and demand they agree.
 
-    Tolerance is 1e-5 R because `output.py` rounds stored prices to 5dp — the re-price sees exactly
-    what the page sees, so this pins that the rounding is all that separates them.
+    Tolerance is 1e-5 R for the EXACT layers because `output.py` rounds stored prices to 5dp — the
+    re-price sees exactly what the page sees, so this pins that the rounding is all that separates
+    them. `swap` carries its own measured bound and its own equity bound; see the parametrize block.
+
+    ⚠ `equity_rel` is separate from `tolerance` on purpose. A tiny R error COMPOUNDS through the
+    balance re-walk — swap's 0.0376R lands as 0.32% of the final balance on the full run — so one
+    shared bound would either let a real R divergence through or fail the exact layers on dollars.
     """
     import pandas as pd
 
@@ -275,7 +295,7 @@ def test_repricing_reproduces_a_real_charged_replay(layers, kwargs, tolerance):
     # closed trade and so does the re-price, which makes this the like-for-like comparison; using
     # the raw balance would fail the re-pricer for reproducing exactly what it is asked to.
     closed_balance = 10_000.0 + sum(t.pnl_usd for t in charged.trades)
-    assert rebuilt.final_equity == pytest.approx(closed_balance, rel=1e-6)
+    assert rebuilt.final_equity == pytest.approx(closed_balance, rel=equity_rel)
 
 
 @pytest.mark.skipif(not _CACHE.exists(), reason="bar cache absent (git-ignored)")

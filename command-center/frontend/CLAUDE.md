@@ -785,8 +785,39 @@ Rules the pill has to keep:
   pill and the card cannot disagree about what moved. The `Costs charged` KPI row was renamed
   **`Fees charged`** for the same reason — the old name invited exactly the subtraction that makes
   the two look like a contradiction.
+- 🔴 **`cost_usd` IS SIGNED, and `-Math.abs()` on it was a live 25% overstatement (fixed
+  2026-08-03).** A short's gold swap is a real CREDIT (+26.98 points/night on Vantage) and can
+  exceed the spread on the same trade, so `cost_usd` goes negative — on the reference run **39 of
+  161 trades are a net credit**. Forcing the sign booked every one of them as a charge, so the
+  `Fees charged` row read **$415,990 against the pill's true $332,371**, and **$514,315 against
+  $252,998 on swap alone — 103% high**. Two numbers, one label, six inches apart. The stored
+  convention is negative = charge and `cost_usd` is the other way round, so the view SUBTRACTS it;
+  it also adds to the point's own `costs_usd` rather than replacing it, so a run priced at replay
+  time keeps its own charges in the row that names them.
+- 🔴 **The pill was live under a firm's SIZED numbers while the page ignored it (fixed
+  2026-08-03).** `costOnKpis` has always required `!newsBlocked`, so the charge correctly never
+  reached a sized curve — but `CostFilterPill` took no `blocked` prop, so it stayed interactive,
+  fetched, and read `Charging 12.08R` over numbers that had not moved. It takes the same
+  `blocked` the news pill does now (`Charging n/a`, disabled, reason on the title). A sized curve
+  is PATH DEPENDENT — charging trade #7 changes #8's position size — so the size-independence the
+  whole control rests on is genuinely absent there.
+- 🔴 **A server REFUSAL rendered as "Charging nothing" (fixed 2026-08-03).** `useRunReprice`'s
+  `isError` was never destructured, so a 400 left `report` undefined → `view` null → `active`
+  false → the label read *Charging nothing* with the reader's boxes still ticked. `reprice.py`
+  refuses rather than guesses on purpose (a curve missing an entry price, a stop or a size is a
+  re-run, not arithmetic) and that discipline is worth nothing if the UI shows the refusal as
+  "no costs apply". The pill now says **Can't price this run** and prints the server's own
+  message, which always names the missing thing.
+- **The BROKER is named in the popover header** (`· vantage demo`). The two profiles differ by 50%
+  on the gold spread ($0.22 vs $0.33), so a charge with no broker beside it is a figure whose
+  provenance the reader cannot check.
 - **A layer this broker does not charge says so in words** — `none on this account` rather than
   `0.00R`, which reads as a failure to compute. A demo pays no commission and that is a finding.
+- **A layer the RUN charged renders ticked and LOCKED** (`charged in the run`, readout `in the
+  run`). It is already in every number on the page; the server refuses to charge it again (see
+  `backend/CLAUDE.md` → *already_charged*), and it cannot be charged OFF from here either, because
+  the stored trades were measured with it. The row states no R on purpose — what that charge came
+  to is baked into the trades and never reported separately, so any figure there would be invented.
 - **The report is fetched with NOTHING ticked too**, because that is when the per-layer prices are
   most useful: you see what a layer would cost before turning it on, exactly as the news filter
   shows each rule's trade count whether or not it is applied.
