@@ -87,6 +87,16 @@ command-center/backend/reports/lab/
 # Live bot state
 algos/markets/fx/instances/*/bot_state.json
 
+# The DEPLOYED CODE SNAPSHOT and its record. `algos/tools/promote.py` copies the strategy,
+# engines and backtest trees in here so a running bot stops importing from the repo working
+# tree — a `git pull` used to rewrite the code under a live bot and then the version pin
+# refused to restart it. This is a per-machine build artefact, reproducible from
+# `promoted_commit` in deployed.json, and promoting happens ON the VPS: committing either
+# would collide with the next pull, which is what makes a safety mechanism get switched off.
+algos/markets/fx/instances/*/deployed/
+algos/markets/fx/instances/*/deployed.new/
+algos/markets/fx/instances/*/deployed.json
+
 # Watchdog + process runtime state. Written by SYS_MONITOR and the Telegram bot on the
 # VPS. Per-machine runtime, never source.
 algos/monitor_state.json

@@ -221,26 +221,64 @@ class LiveRunner:
         self.ledger.event("warmed", bars=len(df), first=str(df.index[0]), last=str(df.index[-1]))
         return df
 
+    def _bind_code(self) -> None:
+        """Point every subsequent import at this bot's own code, before anything imports it.
+
+        A promoted bot imports out of `instances/<bot>/deployed/`, so the repo working tree
+        cannot reach it. The paths go to the FRONT of `sys.path`, ahead of the repo entries
+        `runner.py` added at module import.
+
+        The `sys.modules` check is the load-bearing part. `sys.path` only decides where a name
+        is looked up the FIRST time; anything already imported from the repo stays imported, and
+        the freeze would be silently half-applied — the worst outcome available, because the
+        startup log would still say "frozen". Nothing in `algos/live/` imports these at module
+        scope (checked), so this is a guard against a future import creeping upward, not a
+        theoretical worry.
+        """
+        if not self.cfg.is_frozen:
+            return
+        leaked = sorted(m for m in sys.modules
+                        if m == self.cfg.strategy_package
+                        or m.split(".")[0] in ("engines", "backtest")
+                        or m.startswith(f"{self.cfg.strategy_package}."))
+        if leaked:
+            raise RuntimeError(
+                f"Cannot freeze this deployment: {', '.join(leaked)} was already imported from "
+                f"the repo before the snapshot was bound. The bot would run a mix of deployed "
+                f"and repo code while reporting the deployed version. Move that import later.")
+        for p in reversed(self.cfg.import_paths):
+            sys.path.insert(0, str(p))
+
     # ── the loop ─────────────────────────────────────────────────────────────
     def run(self) -> int:
         commit = current_commit(self.cfg.repo_root)
         try:
-            self.source_hash = verify_pin(self.cfg.strategy_dir, self.cfg.strategy_source_hash)
-        except VersionMismatch as e:
+            self._bind_code()
+            self.source_hash = verify_pin(
+                self.cfg.source_roots, self.cfg.strategy_source_hash,
+                frozen=self.cfg.is_frozen, bot_key=self.cfg.bot_key)
+        except (VersionMismatch, RuntimeError) as e:
             self.log.error(str(e))
             self.ledger.event("version_mismatch", detail=str(e))
-            self._notify(f"⛔️ *{self.cfg.display_name}* refused to start — the strategy code on "
-                         f"disk is not the version it was promoted to run.")
+            self._notify(f"⛔️ *{self.cfg.display_name}* refused to start — the deployed code is "
+                         f"not the version it was promoted to run.")
             return 2
         if not self.cfg.strategy_source_hash:
             self.log.warning(
-                f"UNPINNED: this bot has no strategy_source_hash, so a `git pull` can change "
-                f"what it trades without anyone noticing. Running hash {self.source_hash}. "
-                f"Promote it to pin.")
+                f"UNPINNED: this bot has no strategy_source_hash, so nothing checks what it is "
+                f"running. Hash {self.source_hash}. Promote it to pin.")
+        if not self.cfg.is_frozen:
+            # Not fatal — a bot has to run unfrozen once to be promotable. But it is the state
+            # that let a `git pull` kill the live bot for three days, so it is never silent.
+            self.log.warning(
+                f"NOT FROZEN: importing from the repo working tree ({self.cfg.repo_root}), so a "
+                f"`git pull` or a lab edit changes what this bot trades. Promote it with "
+                f"`python algos/tools/promote.py --bot {self.cfg.bot_key}`.")
 
         self.log.info(
             f"{self.cfg.display_name} | {self.cfg.strategy_class} v{self.cfg.strategy_version} "
             f"| hash {self.source_hash[:12]} | commit {commit or '?'} "
+            f"| {'frozen' if self.cfg.is_frozen else 'REPO'} "
             f"| {'DRY RUN' if self.dry_run else 'LIVE'}")
         self.ledger.event("startup", version=self.cfg.strategy_version, hash=self.source_hash,
                           commit=commit, dry_run=self.dry_run, symbol=self.cfg.symbol,
@@ -508,6 +546,16 @@ class LiveRunner:
                 "symbol": self.cfg.symbol,
                 "version": self.cfg.strategy_version,
                 "source_hash": self.source_hash[:12],
+                # WHICH VERSION IS RUNNING, reported by the process that is running it.
+                # Aaron's requirement, and the reason it has to come from here rather than from
+                # reading a file on the VPS: `config.json` states intent and the repo moves under
+                # it, so either one can describe a version that is not the one in memory. These
+                # four are what the live process actually loaded, so "look at the params for
+                # that version" has an unambiguous answer.
+                "promoted_commit": self.cfg.promoted_commit,
+                "promoted_at": self.cfg.promoted_at,
+                "frozen": self.cfg.is_frozen,
+                "strategy_package": self.cfg.strategy_package,
                 "dry_run": self.dry_run,
                 "last_bar": str(self.feed.last_bar_time) if self.feed.last_bar_time else None,
                 "last_updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),

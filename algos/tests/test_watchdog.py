@@ -49,7 +49,9 @@ class _StateModule:
 def _runner(monkeypatch, *, balance_raises=False):
     r = LiveRunner.__new__(LiveRunner)
     r.cfg = SimpleNamespace(bot_key="bot", account=1, symbol="XAUUSD.s",
-                            strategy_version="1.0.0")
+                            strategy_version="1.0.0", strategy_package="demo_pkg",
+                            promoted_commit="abc1234", promoted_at="2026-08-03",
+                            is_frozen=True)
     r.bridge = SimpleNamespace(state=SimpleNamespace(value="idle"))
     r.source_hash = "0123456789abcdef"
     r.dry_run = True
@@ -161,6 +163,92 @@ def test_a_bot_that_just_booted_is_given_time_to_warm_up(watch):
     A false alarm on every single start is how a watchdog gets turned off."""
     assert watch.run({"started": time.time() - 30}) is not None
     assert watch.sent == []
+
+
+# ── bringing a dead bot back ────────────────────────────────────────────────────
+#
+# The gap this closes, measured. On 31 July a blanket `taskkill /f /im python.exe` killed the
+# trading bot and the Telegram bot together. Telegram had a watchdog that restarts it, and was
+# back within a minute. The trading bot only had an ALERT — one message, at 6pm on a Friday —
+# and stayed dead for three days.
+@pytest.fixture
+def down(monkeypatch):
+    """Drive `check_bot` against a bot whose process is gone, capturing the restart attempt."""
+    sent, attempts = [], []
+    monkeypatch.setattr(monitor, "send_alert", lambda msg: sent.append(msg))
+    monkeypatch.setattr(monitor, "is_running", lambda script: False)
+    monkeypatch.setattr(monitor._bot_state, "set_status", lambda *a, **k: None)
+    monkeypatch.setattr(monitor._bot_state, "read_bot", lambda k: {})
+
+    def run(carried=None, restart_succeeds=True):
+        def _restart(bot_key):
+            attempts.append(bot_key)
+            return restart_succeeds
+        monkeypatch.setattr(monitor, "restart_bot", _restart)
+        state = {"running": True, **(carried or {})}
+        return monitor.check_bot("mpc_sos_fade_demo", {"mpc_sos_fade_demo": state}, "2026-08-03")
+
+    return SimpleNamespace(run=run, sent=sent, attempts=attempts)
+
+
+def test_a_dead_bot_is_restarted_not_just_reported(down):
+    out = down.run()
+    assert down.attempts == ["mpc_sos_fade_demo"]
+    assert out["running"] is True
+    assert out["restart_tries"] == 0
+    assert any("Restarted" in m for m in down.sent)
+
+
+def test_a_deliberate_stop_is_not_fought(down, monkeypatch):
+    """Stopping a bot has to be possible. Without this the watchdog relaunches it every 60
+    seconds and the Stop button on the Bots page silently does nothing.
+
+    Two passes, because suppression is CONSUMED at the offline transition: the pass that sees
+    the bot go down reads the suppress key, and every pass after that reads the flag it left
+    behind. Both have to decline to restart, or the bot comes back a minute after you stop it.
+    """
+    monkeypatch.setattr(monitor, "_is_stop_suppressed", lambda key: True)
+    out = down.run()
+    assert down.attempts == []
+    assert out["stop_suppressed"] is True
+    assert not any("Offline" in m for m in down.sent)     # asked for, so not an alarm
+
+    steady = down.run(carried={"running": False, "stop_suppressed": True})
+    assert down.attempts == []
+    assert steady["running"] is False
+
+
+def test_a_failed_restart_counts_toward_the_ceiling(down):
+    out = down.run(restart_succeeds=False)
+    assert out["restart_tries"] == 1
+    assert out["running"] is False
+
+
+def test_a_bot_that_will_not_start_gives_up_and_says_so_once(down):
+    """A bot that dies on startup — a bad version pin, a refused MT5 login — must not be
+    relaunched forever. The log fills with identical failures and the real error is buried."""
+    out = down.run(carried={"running": False,
+                            "restart_tries": monitor.MAX_BOT_RESTARTS},
+                   restart_succeeds=False)
+    assert down.attempts == []
+    assert len(down.sent) == 1
+    assert "Will Not Start" in down.sent[0]
+    assert out["max_retry_alerted"]
+
+    down.sent.clear()
+    down.run(carried={"running": False,
+                      "restart_tries": monitor.MAX_BOT_RESTARTS,
+                      "max_retry_alerted": True})
+    assert down.sent == []
+
+
+def test_coming_back_clears_the_counter(watch):
+    """Otherwise three lifetime restarts is the budget forever, and the fourth crash months
+    later goes unattended."""
+    out = watch.run({"heartbeat": time.time()},
+                    carried={"running": False, "restart_tries": 2})
+    assert out["restart_tries"] == 0
+    assert not out["max_retry_alerted"]
 
 
 # ── the two sides agree about which bots exist ──────────────────────────────────

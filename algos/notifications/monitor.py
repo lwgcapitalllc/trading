@@ -75,6 +75,13 @@ BOTS = {
     },
 }
 
+# How many times a bot is restarted before this gives up and asks for a human. Same shape as the
+# Telegram watchdog's, and the ceiling matters as much as the restart does: a bot that dies on
+# startup (a bad config, a broker refusing the login, a failed version pin) would otherwise be
+# relaunched every 60 seconds forever, filling the log and hiding the real error behind a
+# thousand identical ones. Three tries distinguishes "something killed it" from "it cannot run".
+MAX_BOT_RESTARTS = 3
+
 
 def send_alert(message: str):
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -123,6 +130,45 @@ def _is_stop_suppressed(suppress_key: str) -> bool:
     return False
 
 
+def restart_bot(bot_key: str) -> bool:
+    """Relaunch one bot, detached, and report whether it came up.
+
+    **Why a trading bot may be auto-restarted at all.** It looks riskier than restarting a chat
+    bot, and it is not, because of what the restart walks into: the stop-loss lives AT THE BROKER
+    from the moment the order is placed, so a dead bot never leaves a naked position; and
+    `OrderBridge.adopt_broker_state()` HALTS rather than adopting a position it has no record of,
+    so a restart can never double the book. The genuine risk is the opposite one — a bot that
+    stays dead. It managed nothing for three days in July while the watchdog alerted once and
+    then went quiet.
+
+    Launched via the coordinator's single-bot mode, DETACHED, so the new process does not belong
+    to this one. The monitor is a short-lived scheduled task: a child would be torn down with it
+    seconds later, which looks exactly like the bot dying again.
+    """
+    coordinator = ALGOS_ROOT / "bots" / "startup_coordinator.py"
+    try:
+        flags = 0
+        if hasattr(subprocess, "DETACHED_PROCESS"):        # Windows only; harmless elsewhere
+            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(
+            [sys.executable, str(coordinator), "--bot", bot_key],
+            cwd=str(ALGOS_ROOT / "bots"),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+        )
+    except Exception as e:
+        print(f"Restart launch failed for {bot_key}: {e}")
+        return False
+
+    # The bot connects to MT5 and warms thousands of bars before it is meaningfully alive, but
+    # the PROCESS exists almost immediately, and that is all this needs to confirm. Waiting for
+    # the warm-up would hold the whole monitor pass open for a minute every time.
+    time.sleep(8)
+    return is_running(BOTS[bot_key]["script"])
+
+
 def check_bot(bot_key: str, state: dict, today: str) -> dict:
     """Check bot availability and heartbeat. P&L alerts are handled by pnl_tracker.py."""
     cfg       = BOTS[bot_key]
@@ -143,7 +189,7 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     f"🚨 *ALERT — Bot Offline*\n"
                     f"{cfg['name']} stopped unexpectedly\n"
                     f"Time: {now_str}\n"
-                    f"Action: run `algo restart` or use /restart"
+                    f"Restarting automatically…"
                 )
             _bot_state.set_status(bot_key, "offline")
         else:
@@ -154,11 +200,57 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
                     f"Time: {now_str}"
                 )
             bot_state["stop_suppressed"] = False
+            bot_state["restart_tries"] = 0
+            bot_state["max_retry_alerted"] = False
             _bot_state.set_status(bot_key, "running")
 
     bot_state["running"] = running
+
+    # ── Bring it back ────────────────────────────────────────────────────
+    #
+    # Until 2026-08-03 this function ALERTED and stopped there, while the Telegram bot below
+    # got a real watchdog that restarts it up to three times. That asymmetry is backwards: a
+    # dead chat bot costs you commands, a dead trading bot stops managing open positions. The
+    # live bot was killed on 31 July by a blanket `taskkill /f /im python.exe` — the same one
+    # that took Telegram down. Telegram was back in a minute. The trading bot stayed dead for
+    # three days, because one alert fired at 6pm on a Friday and nothing said it again.
+    #
+    # A DELIBERATE stop is never fought. `stop_suppressed` is set when the offline transition
+    # consumed a suppress key (the Bots page / Telegram asked for the stop), and it survives
+    # until the bot is started again — otherwise stopping a bot would be impossible, the
+    # watchdog relaunching it every 60 seconds.
     if not running:
         bot_state["stale_alerted"] = False
+        if bot_state.get("stop_suppressed"):
+            return bot_state
+
+        tries = bot_state.get("restart_tries", 0)
+        now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
+        if tries < MAX_BOT_RESTARTS:
+            print(f"{bot_key} is DOWN. Restart attempt {tries+1}/{MAX_BOT_RESTARTS}...")
+            if restart_bot(bot_key):
+                bot_state["restart_tries"] = 0
+                bot_state["running"] = True
+                send_alert(
+                    f"🟢 *ALERT — {cfg['name']} Restarted*\n"
+                    f"Was offline\\. Auto\\-restarted at {now_str}\\.\n"
+                    f"Check the log for why it stopped\\."
+                )
+                _bot_state.set_status(bot_key, "running")
+            else:
+                bot_state["restart_tries"] = tries + 1
+        elif not bot_state.get("max_retry_alerted"):
+            # It will not come up on its own. Say so ONCE and stop — a bot that cannot start
+            # needs a person to read the log, and repeating the alert every minute trains you
+            # to mute the channel that also carries the trade alerts.
+            bot_state["max_retry_alerted"] = True
+            send_alert(
+                f"🚨 *CRITICAL — {cfg['name']} Will Not Start*\n"
+                f"Failed {MAX_BOT_RESTARTS} restart attempts\\.\n"
+                f"It is NOT trading and will not retry\\.\n"
+                f"Check `{cfg['name']}` log — likely a version pin or MT5 login\\.\n"
+                f"Time: {now_str}"
+            )
         return bot_state
 
     # ── Heartbeat check — catches alive-but-frozen loops ─────────────────

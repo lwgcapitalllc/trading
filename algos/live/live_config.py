@@ -97,9 +97,59 @@ class LiveConfig:
     def instance_dir(self) -> Path:
         return _INSTANCES / self.bot_key
 
+    # ── the deployed snapshot ───────────────────────────────────────────────
+    # A promoted bot runs a FROZEN COPY of its code, held here, and the repo working tree
+    # becomes irrelevant to it. That is the whole point, and it is the half of the version
+    # isolation that was missing until 2026-08-03: `strategy_params` was frozen in this file
+    # from the start, but `strategy_dir` pointed straight at `strategies/python/<pkg>` in the
+    # repo. So a `git pull` on the VPS — for a lab fix, an agent update, anything — rewrote the
+    # code under a running bot, and the pin then refused to restart it. Backtesting a new
+    # version could brick the deployed one. Aaron's rule, and it is the right one: a bot runs
+    # what you last DEPLOYED until you deploy something else.
+    #
+    # Three trees, not one, because all three decide what the bot trades:
+    #   strategies/python/<pkg>   the strategy itself
+    #   engines/                  market structure, fibs, FVG, divergence, sessions, liquidity
+    #   backtest/                 replay + the fill model the live bridge mirrors
+    # Hashing only the first (which is all the pin used to do) leaves the engines free to move
+    # under a green pin — the bot starts happily and trades different logic. See version.py.
+    @property
+    def deployed_dir(self) -> Path:
+        return self.instance_dir / "deployed"
+
+    @property
+    def is_frozen(self) -> bool:
+        """True once this bot has been promoted — i.e. it has its own copy of the code."""
+        return (self.deployed_dir / "strategies" / "python" / self.strategy_package).is_dir()
+
+    @property
+    def code_root(self) -> Path:
+        """The tree this bot's imports resolve against: its snapshot, or the repo if unpromoted.
+
+        An UNPROMOTED bot falling back to the repo is deliberate — it is the state you pass
+        through while building a new bot, and refusing to run at all would make the first
+        promotion impossible. `runner.py` says loudly which of the two it is using.
+        """
+        return self.deployed_dir if self.is_frozen else _REPO_ROOT
+
     @property
     def strategy_dir(self) -> Path:
-        return _REPO_ROOT / "strategies" / "python" / self.strategy_package
+        return self.code_root / "strategies" / "python" / self.strategy_package
+
+    @property
+    def import_paths(self) -> list[Path]:
+        """What to put at the FRONT of `sys.path` so every import resolves inside `code_root`.
+
+        Mirrors the repo layout exactly, so a snapshot import and a repo import find the same
+        module by the same name — the freeze changes WHICH copy is loaded, never how it is
+        spelled.
+        """
+        return [self.code_root, self.code_root / "strategies" / "python"]
+
+    @property
+    def source_roots(self) -> list[Path]:
+        """Every tree the version pin must hash, in a fixed order (the hash depends on it)."""
+        return [self.strategy_dir, self.code_root / "engines", self.code_root / "backtest"]
 
     @property
     def repo_root(self) -> Path:
@@ -108,6 +158,29 @@ class LiveConfig:
 
 def config_path(bot_key: str) -> Path:
     return _INSTANCES / bot_key / "config.json"
+
+
+def deployed_path(bot_key: str) -> Path:
+    """The deployment record written by `algos/tools/promote.py`. Git-ignored, machine-local."""
+    return _INSTANCES / bot_key / "deployed.json"
+
+
+def deployed_record(bot_key: str) -> Dict[str, Any]:
+    """What is actually deployed on THIS machine, or `{}` if the bot was never promoted.
+
+    Separate from `config.json` because promoting happens on the VPS and `config.json` is tracked
+    in git — writing the pin there would make every deploy collide with the next `git pull`. See
+    `promote.write_pin`.
+    """
+    p = deployed_path(bot_key)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # A corrupt record must not stop a bot that is otherwise fine — the snapshot itself is
+        # still hash-checked, which is the guarantee that matters. Reported as unpromoted.
+        return {}
 
 
 def load(bot_key: str) -> LiveConfig:
@@ -134,6 +207,22 @@ def load(bot_key: str) -> LiveConfig:
     if missing:
         raise ValueError(f"{p} is missing required key(s): {', '.join(missing)}")
     raw.setdefault("display_name", raw["bot_key"])
+
+    # The DEPLOYMENT record wins on the version fields. `config.json` states the intent; only a
+    # promote can state what is actually on disk, and only the machine that ran it knows. Left
+    # alone, `config.json`'s copy of these would go stale the moment the repo moved and the bot
+    # would report a version it is not running — the exact confusion this whole mechanism exists
+    # to remove.
+    #
+    # `strategy_params` is deliberately NOT overridden: it stays live-editable in `config.json`
+    # so the Bots page can change `exec_risk_pct` on a running bot (see RUNTIME_RELOADABLE). The
+    # promoted set is recorded in `deployed.json` anyway, so the two can be compared and any
+    # drift shown rather than hidden.
+    deployed = deployed_record(raw["bot_key"])
+    for key in ("strategy_source_hash", "promoted_commit", "promoted_at", "strategy_version"):
+        if key in deployed:
+            raw[key] = deployed[key]
+
     return LiveConfig(**{k: v for k, v in raw.items() if not k.startswith("_")})
 
 
