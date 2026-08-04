@@ -86,12 +86,20 @@ component reads from. Nothing else is authoritative.
 git add . && git commit -m "..." && git push
 ssh forexvps "cd C:\trading && git pull origin main"
 
+# Deploy the pulled code to a bot. A pull alone changes nothing — a live bot runs a
+# frozen snapshot in its instance dir, so it keeps its version until this is run.
+ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot mpc_sos_fade_demo"
+
 # Restart bots (coordinator starts them sequentially)
-ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
-sleep 3
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
-sleep 60
-ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
+ssh forexvps "wmic process where \"name='python.exe'\" get commandline"
+```
+
+⚠ **Never `taskkill /f /im python.exe`** — it also kills the Telegram bot and both backtest
+agents, and it is what left the live bot dead for three days on 2026-07-31. Kill one bot:
+
+```bash
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
 ```
 
 ---

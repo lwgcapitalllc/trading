@@ -109,17 +109,35 @@ From-scratch Pine Script rewrite of the "Structure OS / SMC Engine" market-struc
 
 ## VPS Deploy Workflow
 
+**Pulling does NOT change what a bot trades — promoting does.** Since 2026-08-03 a live bot
+imports from a frozen snapshot in `algos/markets/fx/instances/<bot>/deployed/`, not from the
+repo, so a pull is safe at any time and a restart still comes back on the SAME version. See
+`algos/live/version.py`.
+
 ```bash
 # Push changes
 git add . && git commit -m "..." && git push
 
-# Pull on VPS and restart bots
+# Pull on the VPS — safe while a bot is running; it will not move the deployment
 ssh forexvps "cd C:\trading && git pull origin main"
-ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
-sleep 3
+
+# Deploy the code to a bot (the ONLY thing that changes what it trades).
+# Stages, verifies it imports, then swaps; a failure leaves the running bot untouched.
+ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\tools\promote.py --bot mpc_sos_fade_demo"
+
+# Restart onto the new version. SYS_MONITOR also restarts a dead bot on its own within
+# ~60s, so killing it is enough — but this is the deliberate path.
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
-sleep 60
-ssh forexvps "wmic process where \"name='python.exe'\" get commandline 2>nul"
+ssh forexvps "wmic process where \"name='python.exe'\" get commandline"
+```
+
+⚠ **NEVER `taskkill /f /im python.exe`.** It kills every Python process on the box — the
+trading bot, the Telegram bot, the MT5 backtest agent and the NT8 agent — and it is what
+killed the live bot on 2026-07-31 (dead for three days; nothing restarted it then). This
+workflow told you to run it, which is how it kept happening. Kill ONE bot by its commandline:
+
+```bash
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
 ```
 
 VPS path: `C:\trading\algos\` (main)

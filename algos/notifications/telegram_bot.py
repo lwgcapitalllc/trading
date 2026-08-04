@@ -404,17 +404,34 @@ def do_stop(bot_keys: list) -> str:
 
 
 def do_emergency_stop() -> str:
+    """Stop every live trading bot, and nothing else.
+
+    **This used to run `taskkill /f /im python.exe`, and it was a live landmine.** `BOTS` and
+    `TASK_NAMES` were emptied when the old suite was deleted, so the loop above iterated
+    nothing and the blanket kill was the entire function. It took down the MT5 backtest agent,
+    the NT8 agent, any in-flight lab run — and THIS PROCESS, so the reply below was never sent
+    and the operator saw an emergency stop that appeared to hang. It was also one of the five
+    paths that killed the live bot on 2026-07-31.
+
+    Matched on `runner.py` in the commandline, which is the entrypoint every live bot shares
+    and nothing else on the box runs. That way it needs no registry to keep in sync — an empty
+    registry silently doing nothing is exactly what went wrong here.
+    """
     _suppress_stop_alert(list(BOTS.keys()))
     for key in BOTS:
         task = TASK_NAMES.get(key)
         if task:
             task_stop(task)
     try:
-        subprocess.run(["taskkill", "/f", "/im", "python.exe"],
-                       capture_output=True, timeout=10)
+        subprocess.run(
+            ["wmic", "process", "where",
+             "name='python.exe' and commandline like '%runner.py%'",
+             "call", "terminate"],
+            capture_output=True, timeout=15,
+        )
     except Exception:
         pass
-    return "All bot processes terminated."
+    return "All trading bots terminated. Agents and alerts left running."
 
 
 # =============================================================================

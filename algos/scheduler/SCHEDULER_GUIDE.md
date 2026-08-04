@@ -78,8 +78,15 @@ ssh forexvps "schtasks /query /fo TABLE | findstr BOT_"
 # Run manually
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
 
+# Stop ONE bot (never `taskkill /f /im python.exe` — that also kills the Telegram bot and
+# both backtest agents, and is what left the live bot dead for three days on 2026-07-31)
+ssh forexvps "wmic process where \"name='python.exe' and commandline like '%--bot mpc_sos_fade_demo%'\" call terminate"
+
 # Restart everything
-ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul && taskkill /f /im python.exe"
-sleep 3
+ssh forexvps "del C:\trading\algos\mt5_connect.lock 2>nul"
 ssh forexvps "schtasks /run /tn SYS_STARTUP"
 ```
+
+Note SYS_MONITOR restarts a dead bot by itself within ~60s (up to 3 tries), so a stop that is
+not meant to stick will be undone. A deliberate stop from the Bots page or Telegram writes a
+suppress key that the watchdog honours.
