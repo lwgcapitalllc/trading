@@ -50,6 +50,7 @@ recovery re-warms through the same path a `gap_bars` overrun takes rather than r
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import sys
 import time
@@ -351,8 +352,58 @@ class LiveRunner:
         for p in reversed(self.cfg.import_paths):
             sys.path.insert(0, str(p))
 
+    # ── one bot, one process ─────────────────────────────────────────────────
+    def already_running(self) -> bool:
+        """Is another process ALREADY running this bot? Then this one must not start.
+
+        **Two copies of one bot is the worst duplicate in this system.** They share an account,
+        a magic number and a strategy, so they see the same setup on the same bar and each sizes
+        a full position off it — double the risk, from a state neither can see. Worse, the
+        bridge reconciles against `get_open_positions()` filtered by MAGIC, so each would find
+        the other's position and read it as its own; `adopt_broker_state` HALTS on an unknown
+        position at startup, which is the only reason this is survivable at all.
+
+        **Measured 2026-08-04:** `schtasks /run /tn SYS_STARTUP` on a box where the bot was
+        already up produced exactly this — two `runner.py --bot mpc_sos_fade_demo` processes,
+        four minutes apart, with nothing anywhere reporting it. `startup_coordinator` now skips
+        a running bot, which is the primary fix; this is the backstop, and it is the one that
+        covers the paths the coordinator does not own — the command center, the watchdog, and a
+        hand-typed command.
+
+        ⚠ **Matched on `--bot <key>`, not on the script name.** Every live bot is `runner.py`,
+        so the script identifies the FLEET; only the key identifies the bot. Matching the script
+        would stop a SECOND, different bot from ever starting.
+
+        ⚠ **An unreadable process list answers False and lets this one start.** The opposite
+        default would let one bad `wmic` call keep a dead bot down indefinitely, and "cannot
+        tell" must not become "refuse forever" for the process whose absence is silent.
+        """
+        import subprocess
+        try:
+            r = subprocess.run(
+                ["wmic", "process", "where", "name='python.exe'", "get", "processid,commandline"],
+                capture_output=True, text=True, timeout=10,
+            )
+        except Exception as e:
+            self.log.warning(f"Could not check for another copy of this bot ({e}) — starting anyway")
+            return False
+        me = str(os.getpid())
+        for line in r.stdout.splitlines():
+            if f"--bot {self.cfg.bot_key}" not in line:
+                continue
+            pid = line.strip().split()[-1]
+            if pid.isdigit() and pid != me:
+                self.log.error(
+                    f"{self.cfg.display_name} is already running as PID {pid}. Refusing to start "
+                    f"a second copy — two processes on one account would both size a full "
+                    f"position off the same setup. Stop that one first if this is deliberate.")
+                return True
+        return False
+
     # ── the loop ─────────────────────────────────────────────────────────────
     def run(self) -> int:
+        if self.already_running():
+            return 0        # not a failure — the bot IS running, just not as this process
         commit = current_commit(self.cfg.repo_root)
         try:
             self._bind_code()

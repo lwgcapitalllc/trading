@@ -142,6 +142,15 @@ def main():
     for bot_key, name, script, argv, log_path, ready_str, timeout in STARTUP_SEQUENCE:
         print(f"Starting {name}...")
 
+        # Already up? Leave it alone — the same rule the Telegram launch follows below, and
+        # for a worse reason. Launching a second copy of a bot that is already trading gives
+        # you TWO processes on one account and one magic number, both sizing full positions
+        # off the same setup. Measured 2026-08-04: a SYS_STARTUP run while the bot was up
+        # produced exactly that, and nothing anywhere reported it.
+        if bot_is_running(bot_key):
+            print(f"  ✓ Already running — left alone")
+            continue
+
         # Write started timestamp BEFORE launching
         set_started(bot_key)
 
@@ -166,6 +175,30 @@ def main():
     print("=" * 60)
 
     start_telegram_if_needed()
+
+
+def bot_is_running(bot_key: str) -> bool:
+    """Is this bot's runner process alive right now?
+
+    Matched on `--bot <bot_key>` in the commandline, because every live bot is the SAME script
+    (`algos/live/runner.py`) — the script name identifies the fleet, only the key identifies the
+    bot. This is the identity `monitor.py` and the command center's per-bot stop both use.
+
+    ⚠ **Answers False when the process list cannot be read, unlike `telegram_is_running`.** The
+    two failure directions are not equal here: a duplicate BOT is two positions on one account,
+    a duplicate Telegram is refused by its own singleton guard. So this reports "not running"
+    only when it can see the list and the bot is genuinely absent — an unreadable list is
+    treated as RUNNING and the bot is left alone, and `runner.py`'s own guard is the backstop.
+    """
+    try:
+        r = subprocess.run(
+            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception as e:
+        print(f"  ! Could not read the process list ({e}) — assuming {bot_key} is up, not starting it")
+        return True
+    return f"--bot {bot_key}" in r.stdout
 
 
 def telegram_is_running() -> bool:

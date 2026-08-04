@@ -18,6 +18,7 @@ No MT5 and no Telegram: `send_alert` is stubbed, so a test can never post to a r
 from __future__ import annotations
 
 import ast
+import os
 import sys
 import time
 from pathlib import Path
@@ -375,6 +376,86 @@ def test_an_unreadable_process_list_starts_one_rather_than_assuming_it_is_up():
     exec(compile(ast.Module(body=fns, type_ignores=[]), "<launcher>", "exec"), ns)
     ns["start_telegram_if_needed"]()
     assert len(spawns) == 1
+
+
+# ── one bot, one process ────────────────────────────────────────────────────────
+def _coordinator_fn(name, proc_stdout, *, raises=False):
+    """Exec one launcher function out of its AST, as above."""
+    src = (_REPO / "algos" / "bots" / "startup_coordinator.py").read_text()
+    fns = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == name]
+    assert fns, f"{name} missing from startup_coordinator.py"
+
+    def _run(*a, **k):
+        if raises:
+            raise OSError("wmic unavailable")
+        return SimpleNamespace(stdout=proc_stdout)
+
+    ns = {"subprocess": SimpleNamespace(run=_run), "print": lambda *a, **k: None}
+    exec(compile(ast.Module(body=fns, type_ignores=[]), "<launcher>", "exec"), ns)
+    return ns[name]
+
+
+def test_the_launcher_does_not_start_a_bot_that_is_already_running():
+    """MEASURED 2026-08-04: `schtasks /run /tn SYS_STARTUP` on a box where the bot was already
+    up produced TWO `runner.py --bot mpc_sos_fade_demo` processes four minutes apart, and
+    nothing anywhere reported it. They share an account, a magic number and a strategy, so both
+    size a full position off the same setup — double the risk from a state neither can see."""
+    fn = _coordinator_fn("bot_is_running",
+                         "python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo 8892")
+    assert fn("mpc_sos_fade_demo") is True
+
+
+def test_a_bot_that_is_genuinely_down_is_started():
+    fn = _coordinator_fn("bot_is_running", "python.exe C:\\trading\\algos\\notifications\\telegram_bot.py 12780")
+    assert fn("mpc_sos_fade_demo") is False
+
+
+def test_a_different_bot_running_does_not_block_this_one():
+    """Matched on the KEY, not the script. Every live bot is `runner.py`, so matching the script
+    name would stop a second, different bot from ever starting."""
+    fn = _coordinator_fn("bot_is_running",
+                         "python.exe C:\\trading\\algos\\live\\runner.py --bot other_bot_demo 4242")
+    assert fn("mpc_sos_fade_demo") is False
+
+
+def test_an_unreadable_process_list_leaves_the_bot_alone():
+    """The safe direction is the OPPOSITE of the Telegram case, and deliberately so: a duplicate
+    bot is two positions on one account, while a duplicate Telegram is refused by its own
+    singleton guard. `runner.py`'s guard is the backstop if this one is over-cautious."""
+    fn = _coordinator_fn("bot_is_running", "", raises=True)
+    assert fn("mpc_sos_fade_demo") is True
+
+
+def test_the_runner_refuses_to_be_a_second_copy(monkeypatch):
+    """The backstop, covering every path the launcher does not own — the command center, this
+    watchdog, and a hand-typed command."""
+    import subprocess as _sp
+
+    r = LiveRunner.__new__(LiveRunner)
+    r.cfg = SimpleNamespace(bot_key="mpc_sos_fade_demo", display_name="Bot")
+    r.errors = []
+    r.log = SimpleNamespace(error=lambda m: r.errors.append(m),
+                            warning=lambda m: None, info=lambda m: None)
+
+    other = str(os.getpid() + 1)
+    monkeypatch.setattr(_sp, "run", lambda *a, **k: SimpleNamespace(
+        stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {other}"))
+    assert r.already_running() is True
+    assert any("already running" in e for e in r.errors)
+
+
+def test_the_runner_does_not_mistake_itself_for_a_duplicate(monkeypatch):
+    """It appears in its own `wmic` output. Comparing PIDs is what stops every bot on the box
+    refusing to start."""
+    import subprocess as _sp
+
+    r = LiveRunner.__new__(LiveRunner)
+    r.cfg = SimpleNamespace(bot_key="mpc_sos_fade_demo", display_name="Bot")
+    r.log = SimpleNamespace(error=lambda m: None, warning=lambda m: None, info=lambda m: None)
+
+    monkeypatch.setattr(_sp, "run", lambda *a, **k: SimpleNamespace(
+        stdout=f"python.exe C:\\trading\\algos\\live\\runner.py --bot mpc_sos_fade_demo  {os.getpid()}"))
+    assert r.already_running() is False
 
 
 def test_sys_telegram_still_force_restarts():
