@@ -92,7 +92,17 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   `tests/test_output.py` — including one that builds the REAL `RawTrade` from our rows, so the
   contract can't silently drift. Each equity-curve point also carries `favorable`/`adverse` (the
   trade's excursion, read from `Trade.mfe_usd`/`mae_usd` via `getattr` default 0.0, so a trade
-  duck-type lacking them is fine) — the lab's TradingView-style equity chart reads them. Wired into
+  duck-type lacking them is fine) — the lab's TradingView-style equity chart reads them.
+  ⚠ **`costs_usd` on a point is SIGNED, and a positive value is a real outcome, not an error.**
+  The convention is the broker's (`execution.py::_charge`): **negative = charged, positive =
+  CREDITED**, because a short's gold swap genuinely pays you (+26.98 points/night on Vantage) and
+  can exceed the spread on the same trade — measured at **39 of 161 trades net-credit** on the
+  reference run. `reprice.py`'s `cost_usd` is the OPPOSITE sign (positive = charge), so anything
+  crossing between the two must negate, never take an absolute value. **Taking `Math.abs()` is the
+  bug this warning exists for**: the lab's `Fees charged` row did exactly that until 2026-08-03 and
+  read **$415,990 against a true $332,371 — and $514,315 against $252,998 on swap alone, 103%
+  high**, while the pill beside it showed the correct figure. A cost model that can pay you is not
+  an edge case here; it is the normal state of a short. Wired into
   the lab 2026-07-16 as `runner="python"`. **`blocked_setups`** (added 2026-07-27,
   `build_blocked_setups`) is the same idea for the trades that never happened: a setup one of the
   strategy's own rules refused places no order, so it is in no trade list and this is its ONLY
