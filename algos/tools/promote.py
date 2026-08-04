@@ -51,6 +51,7 @@ for _p in (str(_REPO / "algos" / "live"),):
         sys.path.insert(0, _p)
 
 import live_config  # noqa: E402
+from live_config import deployed_record  # noqa: E402
 from version import deployment_hash, current_commit  # noqa: E402
 
 # Directory names never copied into a snapshot, at any depth.
@@ -278,10 +279,14 @@ def main(argv=None) -> int:
     print(f"promote {cfg.bot_key} {'(dry run)' if args.dry_run else ''}".rstrip())
     print(f"  from commit {commit or '?'}{' [DIRTY]' if dirty else ''}")
 
-    staging, n = stage(cfg, trees, args.dry_run)
-    print(f"  {'would copy' if args.dry_run else 'staged'} {n} .py file(s) → {cfg.deployed_dir}")
-    if args.dry_run:
-        return 0
+    # A dry run STAGES AND VERIFIES like a real one — it just does not activate. Reporting a
+    # file count and stopping would be a preview of nothing: the two things worth knowing
+    # before you deploy are "does it import" and "which settings will change", and both need
+    # the snapshot to actually exist. Nothing live is touched either way — staging writes to
+    # `deployed.new`, and only `activate()` below swaps.
+    staging, n = stage(cfg, trees)
+    print(f"  staged {n} .py file(s) -> {cfg.deployed_dir}")
+    was = deployed_record(cfg.bot_key)
 
     if not args.no_verify:
         ok, detail = verify(cfg, staging)
@@ -302,6 +307,18 @@ def main(argv=None) -> int:
             for name, val in sorted(defaulted.items()):
                 print(f"      {name} = {val}")
             print("    Add them to strategy_params to state them deliberately.")
+
+    new_hash = deployment_hash([staging / r for _, r in trees])
+    old_hash = was.get("strategy_source_hash", "")
+    if old_hash and old_hash == new_hash:
+        print(f"  code is UNCHANGED from the running deployment ({old_hash[:12]})")
+    elif old_hash:
+        print(f"  code changes: {old_hash[:12]} -> {new_hash[:12]}")
+
+    if args.dry_run:
+        shutil.rmtree(staging, ignore_errors=True)
+        print("  dry run — nothing was deployed, the running bot is untouched.")
+        return 0
 
     activate(cfg, staging)
 

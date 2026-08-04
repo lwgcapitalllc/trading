@@ -388,6 +388,38 @@ export interface BotParamsView {
   readme: string | null
 }
 
+/**
+ * What a bot is ACTUALLY running, read off the VPS.
+ *
+ * Distinct from `BotParamsView.version`, which reads the tracked `config.json` — that states
+ * intent and goes stale the moment the repo moves. This comes from the deployment record
+ * written beside the bot's frozen code snapshot, so it describes the disk the bot is on.
+ * A version display that can be wrong is worse than none: it is what you check before
+ * deciding anything.
+ */
+export interface BotDeployedVersion {
+  frozen: boolean          // false = unpromoted, still importing from the repo tree
+  hash: string
+  commit: string           // the commit the snapshot was taken from
+  promoted_at: string
+  strategy_package: string
+  strategy_class: string
+  strategy_version: number
+  files: number
+  params: Record<string, unknown>   // the parameters AS DEPLOYED
+  repo_commit: string      // what the VPS working tree is on now
+  commits_ahead: number    // how far the repo has moved past the deployment
+  snapshot_ok: boolean     // the snapshot still hashes to its record
+  running_hash: string     // what the live PROCESS reports — may lag after a promote
+  params_drift: string[]   // settings config.json now states differently
+}
+
+export interface BotPromoteResult {
+  ok: boolean
+  output: string
+  restarted: boolean
+}
+
 // ── Lab — Strategies ─────────────────────────────────────────────────────────
 
 // How a run's position size is decided. 'consistent'/'bullet' are AUTOMATIC — the ruleset's

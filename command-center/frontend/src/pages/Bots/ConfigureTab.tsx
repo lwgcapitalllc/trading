@@ -1,6 +1,9 @@
 import { useState } from 'react'
-import { AlertTriangle, ChevronDown, Info, Lock } from 'lucide-react'
-import { useBotSnapshot, useBotParams, useSaveBotRuntime } from '@/hooks/useBots'
+import { AlertTriangle, ChevronDown, Info, Lock, PackageCheck, Upload } from 'lucide-react'
+import {
+  useBotSnapshot, useBotParams, useSaveBotRuntime,
+  useBotVersion, usePreviewPromote, usePromoteBot,
+} from '@/hooks/useBots'
 import type { BotParamRow, BotParamsView, BotStatus } from '@/types'
 
 /**
@@ -55,6 +58,133 @@ function Row({ label, children, title }: {
 function riskUsd(pct: number, balance: number | null): string {
   if (balance == null || !balance) return ''
   return `$${(balance * pct / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+}
+
+// ── which version is deployed, and deploying a new one ──────────────────────────
+//
+// The card this replaced read `config.json` — the tracked file — and so described what
+// SHOULD be deployed rather than what is. Those were the same thing until 2026-08-03, when
+// a bot stopped importing from the repo and started running a frozen snapshot. They are now
+// routinely different, and the difference is the whole point: you can build version 3 in the
+// repo all day and this keeps saying version 2, because version 2 is what is trading.
+//
+// Everything here comes from the VPS. Nothing is inferred from the local checkout.
+
+function Warn({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-[6px] text-[10px] leading-[1.5] text-amber-400/90
+                    bg-amber-400/[0.06] border border-amber-400/20 rounded px-[8px] py-[6px] mt-[8px]">
+      <AlertTriangle size={11} className="shrink-0 mt-[1px]" />
+      <span>{children}</span>
+    </div>
+  )
+}
+
+function DeployCard({ botName }: { botName: string }) {
+  const { data: v, isLoading } = useBotVersion(botName)
+  const preview = usePreviewPromote()
+  const promote = usePromoteBot()
+  const [output, setOutput] = useState<string | null>(null)
+
+  const busy = preview.isPending || promote.isPending
+
+  if (isLoading) return <Card title="Deployed version"><Row label="">loading…</Row></Card>
+  if (!v) return <Card title="Deployed version"><Row label="">unavailable</Row></Card>
+
+  // The live process reports a 12-char prefix; compare like for like. A mismatch means a
+  // promote landed after the bot started, so the NEW code is on disk and the OLD code is
+  // still trading — the most misleading state this page can show, so it is called out.
+  const running = v.running_hash && v.hash && !v.hash.startsWith(v.running_hash)
+  const behind = v.commits_ahead > 0
+
+  return (
+    <Card
+      title="Deployed version"
+      right={
+        <button
+          onClick={() => { setOutput(null); preview.mutate({ botName }, {
+            onSuccess: r => setOutput(r.output) }) }}
+          disabled={busy}
+          className="inline-flex items-center gap-[4px] text-[9px] uppercase tracking-[0.4px]
+                     text-gold-text hover:text-gold-bright disabled:opacity-40"
+        >
+          <Upload size={9} /> {busy ? 'working…' : 'promote'}
+        </button>
+      }
+    >
+      <Row label="Strategy">{fmt(v.strategy_package)}</Row>
+      <Row label="Version">v{fmt(v.strategy_version)}</Row>
+      <Row label="Code hash" title={v.hash}>{v.hash ? v.hash.slice(0, 12) : '—'}</Row>
+      <Row label="From commit">{fmt(v.commit)}</Row>
+      <Row label="Deployed on">{fmt(v.promoted_at)}</Row>
+      <Row label="Files">{v.files ? `${v.files} .py` : '—'}</Row>
+      <Row label="Repo now">
+        {fmt(v.repo_commit)}{behind ? ` · ${v.commits_ahead} ahead` : ' · same'}
+      </Row>
+
+      {!v.frozen && (
+        <Warn>
+          <strong>Not frozen.</strong> This bot still imports from the repo working tree, so a
+          pull changes what it trades and can stop it starting. Promote it.
+        </Warn>
+      )}
+      {v.frozen && !v.snapshot_ok && (
+        <Warn>
+          <strong>Snapshot modified.</strong> The deployed files no longer match their record —
+          someone edited them in place, bypassing promote. Re-promote to re-pin.
+        </Warn>
+      )}
+      {running && (
+        <Warn>
+          <strong>Restart pending.</strong> The running process reports{' '}
+          <span className="font-mono">{v.running_hash}</span>, not the deployed hash. The new
+          version is on disk but the old one is still trading.
+        </Warn>
+      )}
+      {v.params_drift.length > 0 && (
+        <Warn>
+          <strong>{v.params_drift.length} setting(s) changed since deploy:</strong>{' '}
+          <span className="font-mono">{v.params_drift.join(', ')}</span>. They take effect at
+          the next promote, except risk % which applies live.
+        </Warn>
+      )}
+
+      {output && (
+        <div className="mt-[10px] border-t border-border-subtle/60 pt-[8px]">
+          <p className="text-[9px] uppercase tracking-[0.4px] text-text-tertiary mb-[6px]">
+            Preview — nothing deployed yet
+          </p>
+          <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
+                          whitespace-pre-wrap break-all max-h-[220px] overflow-y-auto
+                          bg-bg-base/60 rounded p-[8px]">{output}</pre>
+          <div className="flex items-center gap-[8px] mt-[8px]">
+            <button
+              onClick={() => promote.mutate({ botName, restart: true }, {
+                onSuccess: r => setOutput(r.output) })}
+              disabled={busy}
+              className="inline-flex items-center gap-[4px] text-[10px] px-[10px] py-[4px]
+                         rounded bg-gold-text/15 text-gold-bright hover:bg-gold-text/25
+                         disabled:opacity-40"
+            >
+              <PackageCheck size={11} /> Deploy &amp; restart
+            </button>
+            <button
+              onClick={() => setOutput(null)}
+              className="text-[10px] px-[10px] py-[4px] rounded text-text-tertiary
+                         hover:text-text-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
+        This bot runs a frozen copy of its code. Pulling, backtesting or editing the repo does
+        not touch it — only promoting does.
+      </p>
+    </Card>
+  )
 }
 
 // ── the one editable lever ──────────────────────────────────────────────────────
@@ -271,7 +401,8 @@ function BotPanel({ bot }: { bot: BotStatus }) {
     return acc
   }, {})
 
-  const hash = v.version.strategy_source_hash
+  // NOTE: `v.version` (from config.json) is deliberately no longer rendered. It states what
+  // SHOULD be deployed and goes stale the moment the repo moves; DeployCard reads the VPS.
   const terminal = (v.identity.mt5_path ?? '').split('\\').filter(Boolean)[0] ?? '—'
 
   return (
@@ -297,16 +428,7 @@ function BotPanel({ bot }: { bot: BotStatus }) {
         <Row label="Magic">{fmt(v.identity.magic)}</Row>
       </Card>
 
-      <Card title="Version running">
-        <Row label="Strategy">{fmt(v.version.strategy_package)}</Row>
-        <Row label="Version">v{fmt(v.version.strategy_version)}</Row>
-        <Row label="Source hash" title={hash ?? ''}>{hash ? hash.slice(0, 12) : '—'}</Row>
-        <Row label="Promoted">{fmt(v.version.promoted_commit)}</Row>
-        <Row label="Promoted on">{fmt(v.version.promoted_at)}</Row>
-        <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
-          The bot re-hashes its own source at startup and refuses to run if it moved.
-        </p>
-      </Card>
+      <DeployCard botName={bot.name} />
 
       <div className="col-span-2">
         <Card

@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { BotSnapshot } from '@/types'
+import type { BotDeployedVersion, BotPromoteResult, BotSnapshot } from '@/types'
 
 export function useBotSnapshot() {
   return useQuery({
@@ -93,6 +93,57 @@ export function useBotParams(botName: string | null) {
     queryFn: () => api.get<BotParamsView>(`/bots/${encodeURIComponent(botName!)}/params`),
     enabled: !!botName,
     staleTime: 30_000,
+  })
+}
+
+// ── which version is actually deployed, and promoting a new one ────────────────
+//
+// Read from the VPS, never from the repo. `useBotParams().version` reads the tracked
+// config.json, which states INTENT and goes stale the moment the repo moves — it is what
+// made "which version is running?" unanswerable. This reads the deployment record written
+// beside the bot's frozen code snapshot, so it describes what is on that disk right now.
+
+export function useBotVersion(botName: string | null) {
+  return useQuery({
+    queryKey: ['bots', 'version', botName],
+    queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(botName!)}/version`),
+    enabled: !!botName,
+    staleTime: 30_000,
+  })
+}
+
+/** Stage + verify a promote without deploying it. The running bot is untouched. */
+export function usePreviewPromote() {
+  return useMutation({
+    mutationFn: ({ botName }: { botName: string }) =>
+      api.post<BotPromoteResult>(
+        `/bots/${encodeURIComponent(botName)}/promote/preview`, { pull: true, restart: false }),
+    onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
+  })
+}
+
+/** The only action that changes what a bot trades. */
+export function usePromoteBot() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ botName, restart }: { botName: string; restart: boolean }) =>
+      api.post<BotPromoteResult>(
+        `/bots/${encodeURIComponent(botName)}/promote`, { pull: true, restart }),
+    onSuccess: (data, { botName }) => {
+      if (data.ok) {
+        toast.success(data.restarted
+          ? `${botName} promoted and restarting`
+          : `${botName} promoted — restart it to run the new version`)
+      } else {
+        // Not a thrown error: promote REFUSES cleanly (dirty tree, a snapshot that will not
+        // import) and leaves the running bot alone. That is a result to read, not a crash.
+        toast.error(`${botName}: promote refused — see the output`)
+      }
+      qc.invalidateQueries({ queryKey: ['bots', 'version', botName] })
+      qc.invalidateQueries({ queryKey: ['bots', 'params', botName] })
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+    },
+    onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
   })
 }
 

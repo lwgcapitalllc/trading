@@ -322,6 +322,42 @@ class BotParamsView(BaseModel):
     readme: Optional[str] = None
 
 
+class BotDeployedVersion(BaseModel):
+    """What a bot is ACTUALLY running, read off the VPS.
+
+    Sourced from `deployed.json` beside the bot's frozen code snapshot — written only by
+    `algos/tools/promote.py`. Deliberately not from the tracked `config.json`, which states
+    INTENT and goes stale the moment the repo moves; a version display that can be wrong is
+    worse than none, because it is what you check before deciding anything.
+    """
+    frozen: bool                 # False = still importing from the repo tree (unpromoted)
+    hash: str = ""
+    commit: str = ""             # the commit the snapshot was taken from
+    promoted_at: str = ""
+    strategy_package: str = ""
+    strategy_class: str = ""
+    strategy_version: int = 0
+    files: int = 0
+    params: dict = {}            # the parameters AS DEPLOYED, not as config.json reads today
+    repo_commit: str = ""        # what the VPS working tree is on now
+    commits_ahead: int = 0       # how far the repo has moved past the deployment
+    snapshot_ok: bool = True     # on-disk hash still matches the record (tamper check)
+    running_hash: str = ""       # what the live PROCESS reports, from bot_state.json
+    params_drift: list[str] = []  # settings config.json now states differently from deployed
+
+
+class BotPromoteRequest(BaseModel):
+    pull: bool = True            # `git pull` on the VPS first
+    restart: bool = True         # restart the bot onto the new version
+    allow_dirty: bool = False
+
+
+class BotPromoteResult(BaseModel):
+    ok: bool
+    output: str                  # promote.py's own text — it is written to be read
+    restarted: bool = False
+
+
 class BotRuntimeUpdate(BaseModel):
     """A change to the levers that may move on a running bot.
 

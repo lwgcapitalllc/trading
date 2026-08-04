@@ -38,7 +38,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotParamsView, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
 from services import bot_params, lab_db
 from services.notify import send_telegram
 
@@ -648,6 +648,151 @@ def _launch_bot(bot_key: str) -> str:
     return _ssh(
         f'wmic process call create "{_PYTHON_EXE} {_COORDINATOR} --bot {bot_key}" 2>nul'
     )
+
+
+# ── Which version is deployed, and promoting a new one ────────────────────────
+#
+# Aaron's requirement: "I wanna see the version of the bot that is running, so I can know
+# exactly what version, and you could know too, so we could look at configs or parameters
+# from that version so we're not confused."
+#
+# Everything here reads the VPS, never the local repo. The local repo is where NEW versions
+# are built; it says nothing about what is deployed, and until 2026-08-03 the two were the
+# same files — which is exactly the confusion being removed.
+
+_VPS_REPO = r"C:\trading"
+_VPS_INSTANCES = r"C:\trading\algos\markets\fx\instances"
+_PROMOTE_PY = r"C:\trading\algos\tools\promote.py"
+
+
+def _deployed_json(bot_key: str) -> dict:
+    raw = _ssh(f"type {_VPS_INSTANCES}\\{bot_key}\\deployed.json 2>nul")
+    try:
+        return json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+@router.get("/{bot_name}/version", response_model=BotDeployedVersion)
+def get_bot_version(bot_name: str):
+    """What this bot is actually running, plus how far the repo has moved past it."""
+    _, bot_key = _resolve_bot(bot_name)
+    rec = _deployed_json(bot_key)
+
+    # One round trip for the three git/consistency facts. `--show` re-hashes the snapshot on
+    # disk, which is the tamper check: the record can only be trusted if the files still
+    # match it.
+    raw = _ssh(
+        f"cd {_VPS_REPO} & git rev-parse --short HEAD"
+        f" & echo. & echo ===AHEAD=== & git rev-list --count {rec.get('promoted_commit') or 'HEAD'}..HEAD"
+        f" & echo. & echo ===SHOW=== & {_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key} --show 2>nul"
+    )
+    parts = _parse_sections(raw, "head")
+    try:
+        ahead = int(parts.get("ahead", "0").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        ahead = 0
+
+    # The live PROCESS's own report. If this disagrees with deployed.json, a promote has
+    # happened since the bot started and it is still running the OLD code — the single most
+    # misleading state this page can be in, so it is surfaced rather than reconciled away.
+    running_hash = ""
+    try:
+        snap = _fetch_vps_snapshot()
+        state = json.loads(snap.get("state_mpc_sos_fade", "{}") or "{}")
+        running_hash = (state.get(bot_key) or {}).get("source_hash", "")
+    except Exception:
+        pass
+
+    # Settings config.json states differently from what was deployed. Not an error — the
+    # runtime panel writes exec_risk_pct to config.json on a running bot — but it is the gap
+    # between "what the file says" and "what is trading", which is the whole point of this.
+    drift: list[str] = []
+    deployed_params = rec.get("strategy_params") or {}
+    if deployed_params:
+        try:
+            current = _read_instance_config(bot_key).get("strategy_params", {})
+            drift = sorted(k for k, v in current.items() if deployed_params.get(k, v) != v)
+        except HTTPException:
+            pass
+
+    return BotDeployedVersion(
+        frozen=bool(rec),
+        hash=rec.get("strategy_source_hash", ""),
+        commit=rec.get("promoted_commit", ""),
+        promoted_at=rec.get("promoted_at", ""),
+        strategy_package=rec.get("strategy_package", ""),
+        strategy_class=rec.get("strategy_class", ""),
+        strategy_version=rec.get("strategy_version", 0),
+        files=rec.get("files", 0),
+        params=deployed_params,
+        repo_commit=parts.get("head", "").strip().splitlines()[0] if parts.get("head") else "",
+        commits_ahead=ahead,
+        snapshot_ok="SNAPSHOT MODIFIED" not in parts.get("show", ""),
+        running_hash=running_hash,
+        params_drift=drift,
+    )
+
+
+def _run_promote(bot_key: str, *, dry_run: bool, pull: bool, allow_dirty: bool) -> str:
+    steps = []
+    if pull:
+        steps.append(f"cd {_VPS_REPO} & git pull origin main")
+    flags = " --dry-run" if dry_run else ""
+    flags += " --allow-dirty" if allow_dirty else ""
+    steps.append(f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key}{flags}")
+    return _ssh(" & ".join(steps))
+
+
+@router.post("/{bot_name}/promote/preview", response_model=BotPromoteResult)
+def preview_bot_promote(bot_name: str, req: BotPromoteRequest):
+    """Stage and verify a promote WITHOUT deploying it. The running bot is untouched.
+
+    A real preview, not a file count: it copies the trees, imports the strategy out of the
+    copy, builds it with the promoted parameters, and reports which settings would change —
+    then deletes the staging. Those are the two questions worth answering before deploying
+    ("does it import", "what changes"), and neither can be answered without staging.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+    try:
+        out = _run_promote(bot_key, dry_run=True, pull=req.pull, allow_dirty=req.allow_dirty)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+    return BotPromoteResult(ok="dry run" in out, output=out)
+
+
+@router.post("/{bot_name}/promote", response_model=BotPromoteResult)
+def promote_bot(bot_name: str, req: BotPromoteRequest):
+    """Deploy the current VPS code to this bot, then restart it onto the new version.
+
+    This is the ONLY action that changes what a bot trades. A pull does not, a restart does
+    not, a lab experiment does not — see `algos/live/version.py`.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+    try:
+        out = _run_promote(bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
+
+    ok = "pinned" in out
+    restarted = False
+    if ok and req.restart:
+        # Kill it and let SYS_MONITOR bring it back — that path is exercised every time the
+        # watchdog fires, so it is the one most likely to work. The suppress key is NOT
+        # written: this stop is meant to be undone, immediately.
+        _kill_bot(bot_key)
+        _time.sleep(2)
+        _launch_bot(bot_key)
+        restarted = True
+    if ok:
+        _notify_telegram(
+            f"📦 *{_KEY_DISPLAY.get(bot_key, bot_key)}* promoted \\[command center\\]"
+        )
+    return BotPromoteResult(ok=ok, output=out, restarted=restarted)
 
 
 @router.get("/{bot_name}/config", response_model=BotConfigSections)
