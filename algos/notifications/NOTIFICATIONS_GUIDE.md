@@ -107,6 +107,31 @@ Individual `/restart <bot>` follows the same terminate-then-start pattern for th
 - 🟢 Telegram Bot Restarted — auto-restart succeeded
 - 🚨 Critical — Telegram Bot Down — 3 restarts failed
 
+⚠ **The bot's own alerts do NOT come from here** — see *Alerts the RUNNER sends* below. Do not add
+a duplicate for one of those: two alerts for one event is how a channel stops being read.
+
+### Alerts the RUNNER sends (algos/live/runner.py) — added 2026-08-04
+
+`monitor.py` watches the bot from OUTSIDE and can only see what a process list and a state file
+show. Two conditions are invisible from there and are alerted by the bot itself:
+
+- ⚠️ **Lost its MT5 connection** — the terminal stopped answering this process. Sent **ONCE per
+  outage**, not per poll (at a 10s poll that would be 6 messages a minute for as long as it lasts,
+  which trains you to ignore the channel).
+- ✅ **Reconnected after N min** — the link came back and the engines were re-warmed.
+
+**Why the watchdog cannot raise these.** MetaTrader auto-updates and restarts itself, taking a
+running bot's IPC handle with it (measured 2026-08-04: 50 minutes blind across an open session).
+The bot stays ALIVE and keeps stamping its heartbeat, so from `monitor.py`'s side it is indistinguishable
+from a healthy bot — `wmic` lists it, the heartbeat is fresh, and the stall check correctly does not
+fire. Only the process itself can tell, by asking the terminal a question. ⚠ **The heartbeat is
+still stamped while blind, deliberately**: dropping it would raise ⚠️ Loop Stalled, which describes a
+different failure and would restart a process whose problem is not the process.
+
+`bot_state.json` carries **`mt5_link`** alongside the heartbeat, which is what the Bots page renders
+as a `No MT5 link` chip. A blank balance is not a diagnosis — before this field, it was the only
+visible symptom anywhere in the system.
+
 ### pnl_tracker.py (SYS_PNLTRACKER — every 1 min)
 P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`. MT5 is the only source of truth.
 This is the sole source of P&L threshold alerts — monitor.py does not duplicate these.

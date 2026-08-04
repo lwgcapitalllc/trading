@@ -3,7 +3,7 @@
 **Purpose:** Standing instructions for the XAUUSD/forex MT5 bot suite running on the Windows VPS.
 **Scope:** This covers the bots, shared utilities, risk rules, scheduler, and deploy for `algos/`. It does NOT cover `command-center/`, `smart-money/`, or `engines/regime/` internals (regime is imported via the `shared_regime.py` shim).
 **Status:** Active — no live bots yet; all four first-attempt bots were deleted 2026-06-22 to rebuild backtest-first. Deployment plumbing preserved, and the live-trading pipeline for the first Python strategy is now being built (`docs/LIVE_TRADING_PIPELINE.md`).
-**Last reviewed:** 2026-08-02 — **no algos code changed; two cross-subsystem facts were recorded.** The MT5 agent's **`/status` is now a CONSUMED CONTRACT** — the command center reads `mt5_connected`/`account`/`server` from it to drive its MT5 health dot, because `/health` answers `ok` while the terminal is closed or logged out — and **both `MT5AgentRDP` and `NT8Agent` are now fired automatically** by a 60s supervisor loop on the Mac, which also re-probes after every `schtasks /run` (that command reports SUCCESS for a task Windows refuses to launch — the stored-password trap below). Both are written up under *Backtest data source*. Earlier: 2026-07-30 — **`algos/live/` landed: the live runtime for a `strategies/python/` bot on a named MT5 terminal** (see the section below and `docs/LIVE_TRADING_PIPELINE.md`), and `shared/mt5_ops.py` gained what it needs to drive one — pending/resting LIMIT orders (it could only send market orders, and the MPC strategies enter on a limit) plus the broker-clock fix on `get_candles`, which was labelling broker-server seconds as UTC and would have put every bar 2-3 hours out with a perfectly valid-looking timestamp. Also **credentials moved out of git.** The Telegram token was pasted into six files and committed; it has been revoked, and every copy is replaced by `shared/credentials.py`, which resolves env var → the git-ignored `algos/credentials.json` → empty. `credentials.template.json` (in git, values blank) is the setup path. Missing credentials are a no-op with one warning, never an exception. This is step 2 of `docs/LIVE_TRADING_PIPELINE.md`, the plan to take a validated `strategies/python/` bot to real orders on a named MT5 terminal — read it before touching anything under `bots/`, `shared/` or `notifications/`, because the pieces preserved from the deleted suite are about to get their first real consumer.
+**Last reviewed:** 2026-08-04 — 🔴 **METATRADER RESTARTED ITSELF UNDER THE LIVE BOT AND THE BOT WENT BLIND FOR 50 MINUTES WITHOUT ONE INDICATOR CHANGING.** `C:\MT5_FFT\terminal64.exe` was rewritten at 02:57:53 UTC by an auto-update and the replacement process started two seconds later, taking the running bot's IPC handle with it. From the 02:30 bar onward it saw no market at all — across an open session, in which it would have taken no entry and managed no exit. ✅ **Proven rather than inferred: a separate read-only probe attached to the same terminal and got balance $2,000, live ticks at 4056.77 and fresh M15 bars, while the bot's own process was getting `None` from every call.** The terminal was healthy; only the bot's link was dead. 🔴 **The reason nothing caught it is the transferable part, and it is NOT this repo's usual label-vs-code refrain: every failure on the MT5 path returns an ABSENCE rather than raising.** `copy_rates_from_pos` → None → `get_candles` returns an empty frame (documented "never None", which is right for its callers and fatal here) → `BarFeed.new_bars` reads *no bar has closed* and `gap_bars` reads *no gap*; `account_info` → None → the heartbeat wrote a null balance. So the loop kept stamping, **SYS_MONITOR saw a healthy bot**, `wmic` still listed the process, the **Bots page said RUNNING**, and the log carried not one warning. **The only visible symptom in the entire system was a blank balance cell** — which is how it was found, by Aaron asking why. **Fixed:** `runner.probe_link()` asks `account_info()` FIRST, every poll; `_recover_link()` logs, alerts ONCE, retries on a 30s floor, and on reconnect **RE-WARMS** — an outage is a hole in the bar stream, i.e. the `gap_bars() > 4` condition arriving by another route, and resuming on the next bar would leave the engines carrying a market history that never happened. ⚠ **A bar-based probe cannot do this job and would have looked reasonable**: an empty frame is also what a QUIET MARKET produces, so such a check either cries wolf out of hours or treats a dead link as a quiet market forever — which is exactly how it shipped. `account_info()` answers whenever the link is alive, 3am Sunday or mid-session, so `None` means one thing. ⚠ **It deliberately does not reason about an open position** — if the broker holds one the rebuilt emulator does not, `OrderBridge._agrees` HALTS on the next bar, which is correct and already built; a second, less-tested answer to that question is how a restart doubles a book. ⚠ **`bot_state.json` gained `mt5_link` because a null balance is not a diagnosis**, and the Bots page renders it as a `No MT5 link` chip BESIDE the Running pill rather than replacing it: the process being ALIVE and being BLIND are both true and are different facts (alive ⇒ a restart is the fix and the watchdog was right not to fire). ⚠ **The heartbeat is still stamped while blind, on purpose** — dropping it would fire the stall alert, which means something else entirely. 12 new tests (`algos/tests/test_mt5_link.py`), 198 algos tests green; deployed and verified live (`mt5_link: true`, balance $2,000, bars current). **The standing lesson: before trusting a probe, ask whether a HEALTHY system can produce its negative result. If it can, it is not a probe.** Every layer here was individually defensible; the defect was that "no data" and "cannot ask" were the same value at every hop, so the distinction was destroyed at the bottom and unrecoverable above it. ⚠ **Still open and this incident is the argument for it: there is NO external dead-man's switch.** Every alert in the suite originates ON the VPS, so if the box or its network dies, silence is indistinguishable from health. Earlier: 2026-08-02 — **no algos code changed; two cross-subsystem facts were recorded.** The MT5 agent's **`/status` is now a CONSUMED CONTRACT** — the command center reads `mt5_connected`/`account`/`server` from it to drive its MT5 health dot, because `/health` answers `ok` while the terminal is closed or logged out — and **both `MT5AgentRDP` and `NT8Agent` are now fired automatically** by a 60s supervisor loop on the Mac, which also re-probes after every `schtasks /run` (that command reports SUCCESS for a task Windows refuses to launch — the stored-password trap below). Both are written up under *Backtest data source*. Earlier: 2026-07-30 — **`algos/live/` landed: the live runtime for a `strategies/python/` bot on a named MT5 terminal** (see the section below and `docs/LIVE_TRADING_PIPELINE.md`), and `shared/mt5_ops.py` gained what it needs to drive one — pending/resting LIMIT orders (it could only send market orders, and the MPC strategies enter on a limit) plus the broker-clock fix on `get_candles`, which was labelling broker-server seconds as UTC and would have put every bar 2-3 hours out with a perfectly valid-looking timestamp. Also **credentials moved out of git.** The Telegram token was pasted into six files and committed; it has been revoked, and every copy is replaced by `shared/credentials.py`, which resolves env var → the git-ignored `algos/credentials.json` → empty. `credentials.template.json` (in git, values blank) is the setup path. Missing credentials are a no-op with one warning, never an exception. This is step 2 of `docs/LIVE_TRADING_PIPELINE.md`, the plan to take a validated `strategies/python/` bot to real orders on a named MT5 terminal — read it before touching anything under `bots/`, `shared/` or `notifications/`, because the pieces preserved from the deleted suite are about to get their first real consumer.
 
 This file is auto-loaded by Claude Code at the start of every session. Read it fully before touching any code.
 
@@ -69,7 +69,7 @@ comparable to a backtest result.
 
 | File | Role |
 |------|------|
-| `runner.py` | The loop — connect, verify the version pin, warm the engines, poll for a CLOSED bar, step, reconcile, heartbeat. `--dry-run` is the default; `--live` must be typed. |
+| `runner.py` | The loop — connect, verify the version pin, warm the engines, **probe the terminal link**, poll for a CLOSED bar, step, reconcile, heartbeat. `--dry-run` is the default; `--live` must be typed. The link probe is first on every pass and is `account_info()`, never a bar read — see the 2026-08-04 entry above. |
 | `bridge.py` | Strategy intent ⇄ MT5 orders. Places/moves/cancels the resting limit, ratchets the stop, reports fills, and **HALTS when the emulator and the broker disagree** rather than continuing on a fiction. |
 | `feed.py` | MT5 rates → the canonical replay frame. Never hands over the forming bar; reports how far behind it is so a gap re-warms instead of resuming. |
 | `ledger.py` | Append-only JSONL: one record per bar, per blocked/missed setup, per trade open/close. This is what makes "why did this not work" answerable later. |
@@ -213,32 +213,32 @@ n/a — no live bots.
 
 ### What I Am Working On
 
-🔧 **IN FLIGHT AND UNCOMMITTED (2026-08-03) — the DEPLOYED CODE SNAPSHOT. Three tests are red and
-they are this work, not a regression.** Read this before running `pytest algos/tests` and concluding
-something broke.
+✅ **THE DEPLOYED CODE SNAPSHOT LANDED 2026-08-04** (`88305b8`). This section described it as in
+flight with three red tests; both are now history, and the tests were fixed to the new contract
+rather than the contract reverted.
 
-**What is being built:** a promoted bot should run a FROZEN COPY of its code, so the repo working
-tree stops mattering to it. `strategy_params` has been frozen in the instance config from the start,
-but `strategy_dir` still points straight at `strategies/python/<pkg>` in the repo — so a `git pull`
-on the VPS, for a lab fix or anything else, rewrites the code under a running bot, and the version
-pin then refuses to restart it. **Backtesting a new version could brick the deployed one.** Aaron's
-rule: a bot runs what you last DEPLOYED until you deploy something else.
+**What it does:** a promoted bot imports from `instances/<bot>/deployed/`, never the repo working
+tree, so a `git pull` or a lab edit cannot reach it. **Proven live: three commits were pulled onto
+the VPS under a running bot and it kept its version, its PID and its hash.** Before this, `git pull`
+rewrote the code under a live bot and the version pin then refused to restart it — backtesting a new
+version could brick the deployed one. Aaron's rule, now enforced: a bot runs what you last DEPLOYED
+until you deploy something else.
 
-**Where it is:** working tree only — `live/live_config.py` (`deployed_dir` / `is_frozen` /
-`code_root`), `live/version.py` (`deployment_hash` over MANY roots), `live/runner.py`, the untracked
-`tools/promote.py`, and a `.gitignore` entry for `instances/*/deployed/` + `deployed.json` (a
-per-machine build artefact, reproducible from `promoted_commit`; promoting happens ON the VPS, so
-committing it would collide with the next pull).
+⚠ **The pin covers THREE trees, not one** — `strategies/python/<pkg>`, `engines/` and `backtest/`.
+Hashing only the strategy package left the other two free to move under a GREEN pin, so the bot
+would start, report the version it was promoted at, and trade different logic. Same shape as the
+phantom-exit bug: a guard that looks fine while the thing beneath it moved. `verify_pin` therefore
+takes a LIST of roots — do not "fix" it back to one.
 
-**The failures, and the one-line cause:** `algos/tests/test_live_version.py` —
-`test_verify_pin_passes_when_the_code_matches`, `..._refuses_when_the_repo_moved_underneath`,
-`..._an_unpinned_bot_is_allowed_and_returns_its_hash`, all `TypeError: 'PosixPath' object is not
-iterable`. `verify_pin` now takes a LIST of roots and those three still pass it a single path. The
-rest of the suite is green (162 passed). **Fix the tests to the new contract — do not "fix"
-`verify_pin` back to one root**, which is the whole point of the change: hashing only the strategy
-package leaves `engines/` and `backtest/` free to move under a GREEN pin, so the bot starts, reports
-the version it was promoted at, and trades different logic. Same shape as the phantom-exit bug — a
-guard that looks fine while the thing beneath it moved.
+**Promoting is `algos/tools/promote.py`** (stage → verify in a clean subprocess → activate, so a
+failed promote leaves the running bot untouched) or the **Promote button on the Bots page →
+Configure**, which previews before it deploys. `instances/*/deployed/` and `deployed.json` are
+git-ignored: they are a per-machine build artefact, reproducible from `promoted_commit`, and
+promoting happens ON the VPS, so committing them would collide with the next pull.
+
+⚠ **The freeze covers the STRATEGY, not `algos/live/`.** The runner itself is repo code loaded at
+process start, so a runner fix reaches a bot on `git pull` + restart with no promote — which is
+correct (it is plumbing, not trading logic) and worth knowing when you change one.
 
 **Phase:** No live bots. All four first-attempt bots were deleted 2026-06-22. The suite is being rebuilt backtest-first per the S.Y.S.T.E.M. method (`docs/BOT_DEVELOPMENT_METHOD.md`) — strategies are validated through the command-center backtest lab before any return to live demo trading. The reusable deployment infrastructure is preserved in `docs/BOT_DEPLOYMENT_INFRA.md`.
 
