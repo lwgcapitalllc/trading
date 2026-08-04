@@ -247,6 +247,38 @@ on the same structure break?).
 **Consequence for this plan: start with ONE bot.** A+ alone needs no allocator. Adding B-LEG needs
 the allocator plus the overlap audit first.
 
+### G11 — The Bots page is CORRECT for many bots and unreadable with them — raised 2026-08-04
+
+Aaron's question, and the answer is yes on the part that matters: `ConfigureTab` maps over
+`snapshot.bots` and renders a full section per bot — its own Deployed version card, its own promote
+button, its own risk editor — and every endpoint is keyed by bot name, so promoting or restarting one
+cannot reach another. Nothing here is single-bot by construction.
+
+**What does not scale is the READING of it, and it gets worse exactly when it matters most.** Both
+tabs are flat vertical stacks with no bot selector, no filter and no collapse:
+
+- **Configure** is roughly a full screen per bot (risk editor + Account + Deployed version + a 47-row
+  parameter accordion). Three bots is a scroll hunt; the promote button you want is somewhere in the
+  middle of it, and the promote controls of the two bots you do NOT want to touch are identical and
+  adjacent. That is a misclick surface, not just a layout complaint.
+- **Monitor** already has a table, so it scales further, but the per-bot start/stop/restart buttons
+  sit in rows that look alike, and the page-level Start / Stop / Restart act on ALL bots — a
+  distinction that is easy to miss with one bot registered and expensive to miss with four.
+- **The version card is per bot with nothing comparing them.** The question that will actually be
+  asked once there are several — *which bots are behind the repo, which have a restart pending* — has
+  no single place that answers it, even though `GET /bots/{name}/version` already returns everything
+  needed.
+
+**Fix before the second bot goes live, not after.** Sketch: a bot selector (or per-bot collapse,
+defaulting to collapsed past one) on Configure; a fleet-level version summary row; and the global
+Start/Stop/Restart visually separated from the per-bot ones. None of it is hard — it is layout over
+endpoints that already exist per bot — which is precisely why it should not be left until the day
+there is a live position on the line.
+
+⚠ **This pairs with G10 and neither is sufficient alone.** G10 stops two bots overdrawing one
+account; G11 stops a human doing the same thing by clicking the wrong row. Both are prerequisites for
+running more than one bot live.
+
 ---
 
 ## 4. Design decisions
@@ -555,7 +587,7 @@ believing it works.** Offline green means the logic is right, not that the bot s
 | 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | **Live `exec_risk_pct`** | 10% was measured at **−54.9% max drawdown** over 6.5 years, and Run 12 found the drawdown is a losing streak at that risk, not give-back — risk % is the only lever that moves it. On a demo this is a choice about what you want to learn, not a survival question, but it should be a deliberate number |
-| 4 | **A+ only, or A+ and B-LEG?** | Recommendation: **A+ only.** Two bots need the account-level allocator (unbuilt) and the A+/B-LEG overlap audit (never run). Both are real work and neither is on this plan |
+| 4 | **A+ only, or A+ and B-LEG?** | Recommendation: **A+ only.** Two bots need the account-level allocator (unbuilt), the A+/B-LEG overlap audit (never run), and the multi-bot Bots page (G11). All three are real work and none is on this plan |
 
 ---
 
@@ -567,6 +599,11 @@ believing it works.** Offline green means the logic is right, not that the bot s
   where both hold a position. Must happen before any two-bot live setup.
 - **Risk is budgeted per account and never layered** (`CLAUDE.md`). `exec_risk_pct` today is per-trade
   with nothing above it. The allocator is a prerequisite for bot #2, not a nice-to-have.
+- **The Bots page needs a multi-bot shape before bot #2** (G11, raised 2026-08-04). It is already
+  correct for many bots — per-bot cards, per-bot endpoints — but both tabs are flat stacks with no
+  selector, so the promote and stop controls of bots you do not want to touch sit adjacent to the one
+  you do. Layout work over endpoints that already exist; do it before there is a live position behind
+  the wrong row, not after.
 - **Never commit** `credentials.json`, `users.json`, `.env`, or tokens. Step 2 exists to make the repo
   actually obey this.
 - **Never hardcode a broker fact** — history depth, symbol suffix, clock offset. Measure it, or refuse
