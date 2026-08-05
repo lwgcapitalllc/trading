@@ -117,9 +117,14 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'startup_coordinator_task.xml'; Name = 'SYS_STARTUP' }
     [pscustomobject]@{ Xml = 'telegram_task.xml';            Name = 'SYS_TELEGRAM' }
     [pscustomobject]@{ Xml = 'monitor_task.xml';             Name = 'SYS_MONITOR' }
-    [pscustomobject]@{ Xml = 'pnl_tracker_task.xml';         Name = 'SYS_PNLTRACKER' }
-    [pscustomobject]@{ Xml = 'reporter_task.xml';            Name = 'SYS_REPORTER' }
+    [pscustomobject]@{ Xml = 'deadman_task.xml';             Name = 'SYS_DEADMAN' }
+    [pscustomobject]@{ Xml = 'logbackup_task.xml';           Name = 'SYS_LOGBACKUP' }
 )
+# SYS_PNLTRACKER and SYS_REPORTER were removed 2026-08-05 with the scripts behind them.
+# SYS_DEADMAN and SYS_LOGBACKUP were added in the same pass: both had task XMLs sitting in
+# algos/scheduler/ that this list never registered, so a rebuilt box came back with no
+# dead-man's switch — the one alarm that fires when the box itself dies — and nothing would
+# have said so, because a missing alarm is silent by construction.
 # BOT_ tasks are started by SYS_STARTUP only — disable so they never auto-fire.
 # No bots are registered yet, so this list is empty.
 $DisableTasks = @()
@@ -183,7 +188,7 @@ function Get-RunningBots {
     # Returns python processes whose command line references a bot script.
     try {
         Get-CimInstance Win32_Process -Filter "name='python.exe'" -ErrorAction Stop |
-            Where-Object { $_.CommandLine -and ($_.CommandLine -match 'bot_|startup_coordinator|telegram|monitor|pnl_tracker') }
+            Where-Object { $_.CommandLine -and ($_.CommandLine -match 'bot_|--bot |startup_coordinator|telegram|monitor') }
     } catch {
         @()
     }

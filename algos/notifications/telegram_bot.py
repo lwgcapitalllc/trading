@@ -6,8 +6,6 @@ READ-ONLY COMMANDS:
   /status          — all bots running/stopped with uptime
   /balance         — current balance per account
   /trades          — today's trade summary
-  /report          — trigger daily report (weekdays only)
-  /report-force    — trigger report even on weekends
   /help            — command list
 
 CONTROL COMMANDS (require /confirm within 30 seconds):
@@ -56,13 +54,15 @@ TEXAS           = ZoneInfo("America/Chicago")
 POLL_INTERVAL   = 10
 CONFIRM_TIMEOUT = 30
 
-# Commands allowed per role
+# Commands allowed per role.
+# ⚠ `/report`, `/demo`, `/live`, `/all` and `/force` were removed 2026-08-05 with
+# `reporter.py`. The group shortcuts existed ONLY to pick an account set for a report, and
+# `/force` only to push one out on a weekend — leaving any of them in this set would grant
+# a role a command that no longer dispatches, which reads as a working permission.
 ROLE_COMMANDS = {
-    "admin":    {"/status","/balance","/trades","/report","/demo","/live","/all",
-                 "/force","/help","/restart","/stop","/emergency","/confirm",
-                 "/users","/resume","/resetweek"},
-    "readonly": {"/status","/balance","/trades","/report","/demo","/live","/all",
-                 "/force","/help"},
+    "admin":    {"/status","/balance","/trades","/help","/restart","/stop",
+                 "/emergency","/confirm","/users","/resume","/resetweek"},
+    "readonly": {"/status","/balance","/trades","/help"},
 }
 
 
@@ -511,72 +511,6 @@ def cmd_trades() -> str:
     return "\n".join(lines)
 
 
-def cmd_report(user_id: str, force: bool = False, group: str | None = None) -> str:
-    """
-    Trigger the daily report.
-    - On weekdays: runs immediately for the requested group
-    - On weekends: prompts /force first, then asks for group
-    - group: None = ask user, "demo"/"live"/"all" = run directly
-    """
-    now_tx     = datetime.now(TEXAS)
-    is_weekend = now_tx.weekday() >= 5
-
-    # If no group specified, ask first
-    if group is None:
-        if is_weekend:
-            pending_actions[user_id] = {
-                "command":    lambda uid=user_id: _ask_report_group(uid, force=True),
-                "label":      "Weekend Report Group",
-                "expires_at": datetime.utcnow() + timedelta(seconds=120),
-            }
-            day = now_tx.strftime("%A")
-            return (
-                f"📅 It's {day} — gold markets are closed\\.\n\n"
-                f"Reply /demo, /live, or /all to send a report anyway\\."
-            )
-        else:
-            pending_actions[user_id] = {
-                "command":    lambda uid=user_id: _ask_report_group(uid, force=False),
-                "label":      "Report Group",
-                "expires_at": datetime.utcnow() + timedelta(seconds=120),
-            }
-            return (
-                f"📊 Which accounts?\n\n"
-                f"Reply /demo, /live, or /all"
-            )
-
-    # Group specified — run the report
-    if is_weekend and not force:
-        return (
-            f"📅 Weekend — markets closed\\.\n"
-            f"Send /report then /demo, /live or /all to force\\."
-        )
-    return _run_reporter(group=group, force=force)
-
-
-def _ask_report_group(user_id: str, force: bool = False) -> str:
-    """Called when user confirms a pending report — now ask for group."""
-    pending_actions[user_id] = {
-        "command":    lambda: _run_reporter(group="all", force=force),
-        "label":      "Report (All)",
-        "expires_at": datetime.utcnow() + timedelta(seconds=120),
-    }
-    return "Reply /demo, /live, or /all"
-
-
-def _run_reporter(group: str = "all", force: bool = False) -> str:
-    try:
-        args = ["python", str(ALGOS_ROOT / "notifications/reporter.py"),
-                "--group", group]
-        if force:
-            args.append("--force")
-        subprocess.Popen(args, cwd=str(ALGOS_ROOT))
-        label = group.upper() if group != "all" else "All accounts"
-        return f"📊 Generating {label} report\\. Check messages shortly\\."
-    except Exception as e:
-        return f"Failed to run reporter: {e}"
-
-
 def cmd_users(user_id: str) -> str:
     """Admin only — list all authorized users."""
     users  = load_users()
@@ -602,10 +536,6 @@ def cmd_help() -> str:
         "`/status`         Running status and uptime\n"
         "`/balance`        Account balances\n"
         "`/trades`         Today's trade summary\n"
-        "`/report`         Daily report — prompts for account group\n"
-        "`/demo`           Report for demo accounts only\n"
-        "`/live`           Report for live accounts only\n"
-        "`/all`            Report for all accounts\n"
         "`/help`           This message\n\n"
         "*Admin Only*\n"
         "`/users`          List authorized users\n\n"
@@ -681,31 +611,14 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
     if cmd == "/status":        return cmd_status() if can(user_id, cmd) else denied()
     if cmd == "/balance":       return cmd_balance() if can(user_id, cmd) else denied()
     if cmd == "/trades":        return cmd_trades() if can(user_id, cmd) else denied()
-    if cmd == "/report":        return cmd_report(user_id, force=False, group=None) if can(user_id, cmd) else denied()
     if cmd == "/help":          return cmd_help()
     if cmd == "/users":         return cmd_users(user_id) if can(user_id, cmd) else denied()
     if cmd == "/confirm":       return cmd_confirm(user_id) if can(user_id, cmd) else denied()
 
-    # Report group shortcuts
-    if cmd in ("/demo", "/live", "/all"):
-        if not can(user_id, cmd):
-            return denied()
-        group  = cmd.lstrip("/")
-        action = pending_actions.get(user_id, {})
-        if action.get("command") and datetime.utcnow() <= action["expires_at"]:
-            pending_actions.pop(user_id, None)
-            return _run_reporter(group=group, force=True)
-        return cmd_report(user_id, force=False, group=group)
-
-    if cmd == "/force":
-        if not can(user_id, cmd):
-            return denied()
-        action = pending_actions.get(user_id, {})
-        if action.get("command") and datetime.utcnow() <= action["expires_at"]:
-            fn = action["command"]
-            pending_actions.pop(user_id, None)
-            return fn()
-        return "No pending action."
+    # ⚠ `/force` was removed 2026-08-05 with the reporter. It existed to push a report out
+    # on a weekend, but it ran WHATEVER action was pending — so with reports gone it was an
+    # undocumented second way to fire /restart, /stop and /emergency, and `readonly` held it.
+    # /confirm is the one path, and one path is the point.
 
     if cmd == "/emergency":
         if not can(user_id, cmd):

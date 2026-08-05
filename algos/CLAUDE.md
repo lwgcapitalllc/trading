@@ -422,16 +422,38 @@ ledger reaches the repo when `algos/tools/ledger_sync.py` is run **on the Mac**,
 decision record is on one disk until someone runs it. Logs are COPIED, never rotated: the bot holds
 its log open and renaming an open file on Windows fails.
 
-Still deliberately **disabled**:
+**`SYS_PNLTRACKER` and `SYS_REPORTER` no longer exist — deleted 2026-08-05, tasks and scripts
+both.** They had sat here as "deliberately disabled, waiting for a bot registry", which is what
+made them look like features. They were not: both carried an EMPTY registry (`BOT_TRADES = {}`,
+`BOTS = {}`) inherited from the four bots deleted 2026-06-22, so enabling either would have run a
+script that found no bots and exited. The tracker sent daily-goal / daily-cap / weekly-cap Telegram
+alerts; the reporter sent a 4pm performance summary.
 
-| Task | Script | Why it waits |
-|---|---|---|
-| `SYS_PNLTRACKER` | `notifications/pnl_tracker.py` | Its bot registry is still empty |
-| `SYS_REPORTER` | `notifications/reporter.py` | Daily report at 21:00 — would send an empty one |
+⚠ **The reason for deleting rather than fixing is worth keeping, because it decides what replaces
+them.** A daily report on a strategy taking ~2 trades a month says "no trades today" almost every
+day, and a channel that is noise 95% of the time is the one nobody reads on the day it matters —
+the bot already pings on entry and exit. And the loss cap was **an alert, not a limit**: nothing in
+it could refuse a trade, so it read on the Bots page as protection while the bot traded straight
+through it. A real cap belongs in `algos/live/runner.py` where it can stop the loop.
 
-Re-enable with `schtasks /change /tn <NAME> /enable`. The Bots page renders a disabled task as
-**DISABLED**, not "scheduled — waiting for next trigger", so an off watchdog stops reading as a
-covered one.
+⚠ **Deleting them took out more than two files, and the collateral is the interesting half.**
+`shared/thresholds.json` and `BOT_THRESHOLDS` went (nothing else read them). The derived P&L fields
+went out of `bot_state.py`'s defaults — `daily_pnl`, `weekly_pnl`, `total_pnl_pct`, `peak_balance`,
+`trades_today` — rather than being left at `0.0`, because with no writer they would have rendered
+"+0.00% today" under a field nothing measures: **this repo's own rule, that a fabricated zero and a
+measured zero must never be the same value.** `balance` stays, written by `live/runner.py`. And
+Telegram lost `/report`, `/demo`, `/live`, `/all` and **`/force`** — the last one mattering most,
+because it fired *whatever* action was pending, so with reports gone it was an undocumented second
+route to `/restart`, `/stop` and `/emergency`, and the `readonly` role held it.
+
+⚠ **The same pass found `bootstrap_vps.ps1` registering neither `SYS_DEADMAN` nor `SYS_LOGBACKUP`**
+despite both task XMLs sitting in `scheduler/`. A rebuilt box came back with **no dead-man's
+switch** — the one alarm that fires when the box itself dies — and nothing anywhere would have said
+so, because a missing alarm is silent by construction. Both are in the list now.
+
+**The standing lesson: a job that is "disabled until later" and a job that does nothing are
+indistinguishable from the outside, and the label protects the second one.** Before switching any
+disabled task on, read what it would do with today's registries — not what its name says it does.
 
 ### Registering a bot — the five registries, and the crash if you miss one
 

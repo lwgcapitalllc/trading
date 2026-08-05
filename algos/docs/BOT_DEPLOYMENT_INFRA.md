@@ -54,9 +54,12 @@ moment during a simultaneous boot. Cleared by the coordinator at startup.
 
 ### 6. Liveness + control layer
 - `algos/shared/bot_state.py` — single source of truth (`bot_state.json` per instance): heartbeat,
-  status (running/stalled/stopped/offline), balance, daily/weekly P&L.
+  status (running/stalled/stopped/offline), balance, `mt5_link`.
 - `algos/notifications/monitor.py` — watches for stale logs / crashes and sends Telegram alerts.
-- `algos/notifications/reporter.py` + `pnl_tracker.py` — daily report + P&L tracking.
+- `algos/notifications/deadman.py` — the one alert that does not originate on the VPS.
+  ⚠ `reporter.py` (daily report) and `pnl_tracker.py` (P&L alerts) were DELETED 2026-08-05.
+  They were preserved through the 2026-06 rebuild carrying an empty bot registry, so they had
+  produced nothing since. See `algos/notifications/NOTIFICATIONS_GUIDE.md` before rebuilding either.
 - `algos/notifications/telegram_bot.py` — remote start / stop / restart of a bot from Telegram;
   the command-center Bots page drives the same actions over SSH.
 

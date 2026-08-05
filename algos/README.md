@@ -31,12 +31,9 @@ algos/
 │   ├── notify.py                    ← Telegram sender (per-bot chat + identity)
 │   ├── credentials.py               ← The one place secrets resolve (env → credentials.json)
 │   ├── shared_regime.py             ← Market regime detection
-│   ├── structure_engine.py          ← BOS/SOS/retracement event detection
-│   └── thresholds.json              ← Risk cap overrides (written by command-center deploy)
+│   └── structure_engine.py          ← BOS/SOS/retracement event detection
 ├── notifications/
 │   ├── monitor.py                   ← Process watchdog (every 1 min)
-│   ├── pnl_tracker.py               ← P&L engine (every 1 min)
-│   ├── reporter.py                  ← Daily 4pm CT report
 │   ├── telegram_bot.py              ← Telegram command bot
 │   ├── start_telegram.py            ← Telegram launcher
 │   └── NOTIFICATIONS_GUIDE.md
@@ -74,8 +71,8 @@ component reads from. Nothing else is authoritative.
 |---|---|---|
 | `started` | startup_coordinator + each bot at `run()` start | command-center, telegram /status |
 | `status` | monitor.py | telegram /status |
-| `balance`, P&L fields | pnl_tracker.py | telegram /balance, reporter |
-| `day_locked` | pnl_tracker.py | monitor alerts |
+| `balance`, `mt5_link` | `live/runner.py` every poll | command-center Bots page, telegram /balance |
+| `day_locked` | nothing today | monitor alerts, telegram /resume |
 
 ---
 

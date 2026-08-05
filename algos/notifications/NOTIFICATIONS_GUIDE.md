@@ -65,7 +65,7 @@ Bot status notifications are event-driven, not polling-based:
 | Bot comes back online after crash | `monitor.py` (same cycle as crash detection) | ≤ 1 min |
 | Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
 
-`shared/notify.py` is the single Telegram helper for VPS-side components. **The token half of the 2026-07-06 refactor note is DONE (2026-07-30)** — no script holds a token any more; the four here resolve theirs through `shared/credentials.py`, and `reporter.py` still has its own thin `send_telegram` body. Mac-side Telegram calls go through the command-center bots router, which delegates to `services/notify.py`.
+`shared/notify.py` is the single Telegram helper for VPS-side components. **The token half of the 2026-07-06 refactor note is DONE (2026-07-30)** — no script holds a token any more; every script here resolves its own through `shared/credentials.py`. Mac-side Telegram calls go through the command-center bots router, which delegates to `services/notify.py`.
 
 **Routing is per bot, and the default is shared.** `send_telegram(text, chat_id="", token_key="")`:
 
@@ -76,7 +76,7 @@ A named token that is missing falls back to the default one and prints the key o
 
 ### monitor.py (SYS_MONITOR — every 1 min)
 Bot availability and heartbeat monitor. Handles availability alerting and Telegram bot watchdog only.
-P&L threshold alerts are exclusively handled by `pnl_tracker.py`.
+There are no P&L threshold alerts anywhere any more — see the deleted-jobs note below.
 Persists state in `monitor_state.json` across runs.
 
 **Crash alerting with intentional-stop suppression:**
@@ -212,30 +212,22 @@ was never rung is indistinguishable from a working one right up until the outage
 Tests: `algos/tests/test_deadman.py` (21), weighted toward the ways a check can wrongly say "fine" —
 a bug here is silent by construction, so there is no user report coming.
 
-### pnl_tracker.py (SYS_PNLTRACKER — every 1 min)
-P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`. MT5 is the only source of truth.
-This is the sole source of P&L threshold alerts — monitor.py does not duplicate these.
+### pnl_tracker.py and reporter.py — DELETED 2026-08-05
+Both are gone, and it is worth saying why rather than leaving a hole here. `pnl_tracker.py`
+(SYS_PNLTRACKER, every minute) sent daily-goal / daily-cap / weekly-cap alerts; `reporter.py`
+(SYS_REPORTER, 4pm CT) sent a daily performance summary. Both belonged to the four bots deleted
+2026-06-22 and had carried an EMPTY registry ever since — `BOT_TRADES = {}` and `BOTS = {}` — so
+neither had produced a number in six weeks while both still appeared as switchable jobs.
 
-**LIVE** (bot `last_write` within 5 minutes):
-- Reads `balance`, `daily_start`, `weekly_start` directly from bot_state — MT5-authoritative
-  values the bot writes every loop iteration. No trades.json math.
+⚠ **Do not restore either from memory.** Recover the commit hash from `algos/docs/DELETED_CODE.md`
+if you want the old shape, then decide deliberately:
 
-**OFFLINE** (bot stopped or last_write stale):
-- Does nothing. Last-known state is preserved as-is. No alerts fired. No values overwritten.
-
-**RESET PENDING** (`reset_requested` flag is True in bot_state):
-- Skips alert evaluation for that bot until the bot processes the reset (within 60s).
-
-**Alerts sent:**
-- 🎯 Daily Goal Hit
-- 🛑 Daily Loss Cap Hit
-- 🚫 Weekly Loss Cap Hit
-- 🔒 Day Locked — fires when a bot sets `day_locked=True` in bot_state (all 4 bots set
-  this on weekly cap; Scalper also sets it on peak protection and daily ceiling).
-  Includes the exact stop reason and `/resume` hint.
-
-### reporter.py (SYS_REPORTER — daily 4pm CT)
-Sends daily performance summary to all Telegram users.
+- A **daily report** on a strategy taking ~2 trades a month is a message that says "no trades
+  today" almost every day, and a channel that is noise on 95% of days is one nobody reads on the
+  day it matters. The bot already pings on entry and exit, which is the event worth knowing.
+- A **loss cap** is worth having, but it belongs in `algos/live/runner.py`, not here. This one only
+  ever sent a Telegram message; nothing refused a trade. **An alert is not a limit** — a cap that
+  cannot stop the bot is a cap in name only, and it reads on the Bots page as protection.
 
 ### telegram_bot.py (SYS_TELEGRAM — persistent)
 Telegram command interface. Reads from `bot_state.json` for all data.
@@ -256,7 +248,6 @@ Telegram command interface. Reads from `bot_state.json` for all data.
 | `/resume scalper` | Resume a peak-protection-locked bot — no confirm. Clears lock within 60s. Peak protection stays OFF for rest of day. Admin only. |
 | `/resetweek` | Reset weekly and daily P&L references to current MT5 balance for all bots. Use after depositing funds. Bots apply within 60s and clear all alert flags. Admin only. |
 | `/resetweek smc` | Reset one bot only. |
-| `/report` | Request performance report |
 | `/help` | Command list |
 | `/users` | Manage users (admin only) |
 
@@ -264,12 +255,9 @@ Telegram command interface. Reads from `bot_state.json` for all data.
 
 ## Alert Thresholds
 
-| Bot | Daily Goal | Daily Cap | Weekly Cap |
-|---|---|---|---|
-| SMC Trend | +2% | -10% | -20% |
-| Mean Reversion | +2% | -10% | -20% |
-| Scalper | +10% | -8% | -20% |
-| FFT | +2% | -5% | -15% |
+None. The table that stood here listed the four bots deleted 2026-06-22, and the job that read it
+(`pnl_tracker.py`) was deleted 2026-08-05 along with `shared/thresholds.json`. The live bot's real
+risk lever is `strategy_params.exec_risk_pct` in its instance config.
 
 ---
 
@@ -283,19 +271,20 @@ All components read from `bot_state.json` — single source of truth.
 | `daily_start` | bots (every loop) | Balance at start of current UTC day |
 | `weekly_start` | bots (every loop) | Balance at start of current ISO week |
 | `last_week` | bots (startup + week rollover) | ISO week number — used by `load_weekly_start` to detect week boundaries across restarts. Replaces per-bot `*_weekly.json` files. |
-| `last_write` | bots (every loop) | UTC ISO timestamp — pnl_tracker uses to detect live mode |
+| `last_write` | bots (every loop) | UTC ISO timestamp of the last state write |
 | `heartbeat` | bots (every loop iteration, including during long sleeps) | Unix timestamp — monitor.py checks this to detect a frozen loop; if missing > 5 min, stall alert fires |
 | `status` | bots at startup; monitor.py on transitions | "running" / "stalled" / "offline" — monitor.py writes stalled/offline/running-recovery; bots write running at startup |
 | `started` | each bot at `run()` start; also startup_coordinator.py | Timestamp bot process launched |
 | `day_locked` | all bots | True when weekly cap / peak protection / daily ceiling fires |
 | `lock_reason` | all bots | Human-readable stop reason for the lock alert |
-| `lock_alerted` | pnl_tracker.py | Dedup flag — alert sent once per lock |
 | `resume_trading` | telegram_bot.py | Flag read by bot wait loop to break weekly-cap lock early |
-| `reset_requested` | telegram_bot.py `/resetweek` | When True, bot resets weekly_start and daily_start to current MT5 balance on its next loop iteration, then clears the flag. pnl_tracker.py skips alert evaluation while pending. |
+| `reset_requested` | telegram_bot.py `/resetweek` | When True, bot resets weekly_start and daily_start to current MT5 balance on its next loop iteration, then clears the flag. |
 
-Note: `pnl_tracker.py` calls `set_pnl()` which writes display-only balance/P&L fields back
-to bot_state for Telegram `/balance` to read. Only runs when the bot is LIVE — it echoes
-what the bot already wrote. When offline, bot_state is not touched.
+⚠ **There are no derived P&L fields in `bot_state.json` any more.** `daily_pnl`, `weekly_pnl`,
+`total_pnl_pct`, `peak_balance` and `trades_today` were written by `set_pnl()`, which went with
+`pnl_tracker.py` on 2026-08-05. They were removed from the defaults rather than left at `0.0`,
+because a fabricated zero and a measured zero must never be the same value — see `shared/bot_state.py`.
+`balance` survives and is written by `live/runner.py` on every poll, beside `mt5_link`.
 
 ### Weekly start persistence
 

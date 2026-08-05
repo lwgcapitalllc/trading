@@ -7,9 +7,11 @@ Sends Telegram alerts for:
   - Bot loop stalled (alive but no heartbeat for 5+ min)
   - Watchlist symbol not found on broker
 
-P&L threshold alerts (daily goal, daily cap, weekly cap) are handled
-exclusively by pnl_tracker.py (SYS_PNLTRACKER task) which reads
-authoritative daily_start/weekly_start from bot_state.json.
+⚠ There are NO P&L threshold alerts anywhere any more. Daily goal, daily cap and weekly
+cap belonged to pnl_tracker.py (SYS_PNLTRACKER), deleted 2026-08-05 — it had been an empty
+shell since the June bot suite went. Do not add them back here: this is the watchdog, and
+a cap that only sends a message is not a cap. A real one refuses the trade, which means it
+belongs in the bot's own loop.
 
 State is tracked in monitor_state.json.
 The Telegram bot (SYS_TELEGRAM) is watched as a priority watchdog —
@@ -170,7 +172,7 @@ def restart_bot(bot_key: str) -> bool:
 
 
 def check_bot(bot_key: str, state: dict, today: str) -> dict:
-    """Check bot availability and heartbeat. P&L alerts are handled by pnl_tracker.py."""
+    """Check bot availability and heartbeat. Nothing here alerts on P&L — see the header."""
     cfg       = BOTS[bot_key]
     bot_state = state.get(bot_key, {})
 

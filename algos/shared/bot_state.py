@@ -11,17 +11,20 @@ Schema per bot entry:
   "heartbeat":      1779077863.18,      # Unix timestamp — written every loop iteration
   "started":        1779077863.18,      # Unix timestamp of last start
   "account":        "700103491",
-  "balance":        2759.28,            # current balance (from pnl_tracker)
-  "daily_pnl":      45.20,              # today's P&L in dollars
-  "daily_pnl_pct":  1.64,              # today's P&L as %
-  "weekly_pnl":     120.50,
-  "weekly_pnl_pct": 4.37,
-  "total_pnl_pct":  175.9,             # total growth since $1,000 start
-  "peak_balance":   2759.28,
-  "trades_today":   3,
+  "balance":        2759.28,            # current balance — written by algos/live/runner.py
+  "mt5_link":       true,               # None = never asked, false = asked and blind
   "day_locked":     false,
   "last_updated":   "2026-05-18T04:17:43"
 }
+
+⚠ **There are no derived P&L fields here any more, and their absence is deliberate.**
+`daily_pnl`, `weekly_pnl`, `total_pnl_pct`, `peak_balance` and `trades_today` were written by
+`notifications/pnl_tracker.py`, which was DELETED on 2026-08-05 along with `reporter.py` — both
+were empty shells left over from the June bot suite (`BOT_TRADES = {}`, `BOTS = {}`), so neither
+had produced a number since. Defaulting them to `0.0` here would have put "+0.00% today" on the
+Bots page under a field nothing measures, which is this repo's standing rule broken in its usual
+direction: **a fabricated zero and a real zero must never be the same value.** A future P&L job
+adds them back with a writer attached, not before.
 """
 
 import json
@@ -59,28 +62,11 @@ BOT_NAMES = {
 }
 
 
-# Thresholds — defaults; overridden by thresholds.json if present.
-# EMPTY ON PURPOSE for mpc_sos_fade_demo: these are the pnl_tracker's daily/weekly alert
-# levels, and that job is disabled (see algos/CLAUDE.md → "On hold"). Seeding numbers here
-# would put caps on the Bots page that nothing on the VPS enforces.
-_BOT_THRESHOLDS_DEFAULT = {}
-
-_THRESHOLDS_PATH = Path(__file__).parent / "thresholds.json"
-
-
-def _load_bot_thresholds() -> dict:
-    result = {k: dict(v) for k, v in _BOT_THRESHOLDS_DEFAULT.items()}
-    if _THRESHOLDS_PATH.exists():
-        try:
-            for bot_key, caps in json.loads(_THRESHOLDS_PATH.read_text()).items():
-                if bot_key in result:
-                    result[bot_key].update(caps)
-        except Exception:
-            pass
-    return result
-
-
-BOT_THRESHOLDS = _load_bot_thresholds()
+# ⚠ `BOT_THRESHOLDS` and `shared/thresholds.json` were deleted 2026-08-05 with the P&L
+# tracker. They were that job's daily-goal / daily-cap / weekly-cap ALERT levels and had
+# no other consumer, so with the job gone they were a cap nothing read and nothing
+# enforced. A real risk cap has to live inside the bot's own loop, where it can refuse a
+# trade — an alert is a message, not a limit.
 
 
 def _state_file(bot_key: str) -> Path:
@@ -144,23 +130,6 @@ def set_status(bot_key: str, status: str):
     write_bot(bot_key, {"status": status})
 
 
-def set_pnl(bot_key: str, balance: float, daily_pnl: float, daily_pnl_pct: float,
-             weekly_pnl: float, weekly_pnl_pct: float, total_pnl_pct: float,
-             peak_balance: float, trades_today: int, day_locked: bool = False):
-    """Update all P&L fields. Called by pnl_tracker."""
-    write_bot(bot_key, {
-        "balance":        round(balance, 2),
-        "daily_pnl":      round(daily_pnl, 2),
-        "daily_pnl_pct":  round(daily_pnl_pct, 2),
-        "weekly_pnl":     round(weekly_pnl, 2),
-        "weekly_pnl_pct": round(weekly_pnl_pct, 2),
-        "total_pnl_pct":  round(total_pnl_pct, 2),
-        "peak_balance":   round(peak_balance, 2),
-        "trades_today":   trades_today,
-        "day_locked":     day_locked,
-    })
-
-
 def get_uptime_str(bot_key: str) -> str:
     """Get human-readable uptime string."""
     state = read_bot(bot_key)
@@ -195,13 +164,6 @@ def _default_state(bot_key: str) -> dict:
         "started":        0,
         "account":        BOT_ACCOUNTS.get(bot_key, ""),
         "balance":        0.0,
-        "daily_pnl":      0.0,
-        "daily_pnl_pct":  0.0,
-        "weekly_pnl":     0.0,
-        "weekly_pnl_pct": 0.0,
-        "total_pnl_pct":  0.0,
-        "peak_balance":   0.0,
-        "trades_today":   0,
         "day_locked":     False,
         "lock_reason":    "",
         "lock_alerted":   False,

@@ -11,8 +11,6 @@ All tasks run as `trader` user on the VPS.
 | SYS_STARTUP | Boot | At startup | `bots/startup_coordinator.py` |
 | SYS_TELEGRAM | Boot | At startup | `notifications/start_telegram.py` |
 | SYS_MONITOR | Scheduled | Every 1 min | `notifications/monitor.py` |
-| SYS_PNLTRACKER | Scheduled | Every 1 min | `notifications/pnl_tracker.py` |
-| SYS_REPORTER | Scheduled | Daily 4pm CT | `notifications/reporter.py` |
 | SYS_DEADMAN | Scheduled | Every 5 min | `notifications/deadman.py` |
 
 **No BOT_ tasks currently exist** — all four first-attempt bots were deleted 2026-06-22.
@@ -107,9 +105,8 @@ $tasks = @(
     "startup_coordinator_task.xml:SYS_STARTUP",
     "telegram_task.xml:SYS_TELEGRAM",
     "monitor_task.xml:SYS_MONITOR",
-    "pnl_tracker_task.xml:SYS_PNLTRACKER",
-    "reporter_task.xml:SYS_REPORTER",
-    "deadman_task.xml:SYS_DEADMAN"
+    "deadman_task.xml:SYS_DEADMAN",
+    "logbackup_task.xml:SYS_LOGBACKUP"
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")

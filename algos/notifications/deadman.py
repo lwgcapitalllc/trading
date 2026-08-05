@@ -1,7 +1,7 @@
 """deadman.py — the ONE alert that does not originate on the VPS.
 
 **The gap this closes.** Every other alert in this suite is sent BY the VPS: the bot's own
-Telegram messages, `monitor.py`'s watchdog, `pnl_tracker.py`, `reporter.py`. So the box has
+Telegram messages, `monitor.py`'s watchdog, the bot's own entry/exit pings. So the box has
 to be alive and networked to tell you it is in trouble — and if it is neither, you get
 silence, which looks exactly like everything being fine. On 2026-08-04 the live bot went
 blind for 50 minutes with its heartbeat ticking and the Bots page reading RUNNING; that was
@@ -34,7 +34,7 @@ trust a POSITIVE result a broken system can produce.
 ⚠ **This never restarts anything, and that is not laziness.** `monitor.py` owns recovery.
 Two independent things issuing starts for one bot is how you get two copies of it on one
 account, which is exactly what happened on 2026-08-04 when the startup coordinator and a
-running bot disagreed. A reporter that also repairs is a second recovery path nobody is
+running bot disagreed. A checker that also repairs is a second recovery path nobody is
 counting.
 
 ⚠ **It is a SEPARATE task from `monitor.py` on purpose.** The watchdog is the more complex

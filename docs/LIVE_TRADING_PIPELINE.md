@@ -329,7 +329,7 @@ trades, and it is not on this plan.
 ### G16 — No external dead-man's switch — **CLOSED 2026-08-04**
 
 Every alert this suite has ever sent originates ON the VPS: the bot's own Telegram messages,
-`monitor.py`, `pnl_tracker.py`, `reporter.py`. So the box has to be alive and networked to tell you
+`monitor.py`, the bot's own entry/exit pings. So the box has to be alive and networked to tell you
 it is in trouble, and if it is neither you get **silence** — which is exactly what a healthy Sunday
 produces. The 50-minute blind-bot incident (G12) was survivable only because the box was up.
 
