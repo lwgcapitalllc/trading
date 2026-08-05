@@ -286,6 +286,8 @@ All components read from `bot_state.json` — single source of truth.
 because a fabricated zero and a measured zero must never be the same value — see `shared/bot_state.py`.
 `balance` survives and is written by `live/runner.py` on every poll, beside `mt5_link`.
 
+🔴 **`total_pnl_pct` had no writer either, and that one HAD readers** — the Bots page's *Overall P&L* column and `/balance` here, both defaulting it to `0.0`, so a live account up 5% reported dead flat in two places. `live/runner.py` writes it now: it anchors `starting_balance` ONCE on the first poll that returns a balance, then derives the percentage each poll. ⚠ **`None` when the balance is unknown, never `0.0`** — a blind terminal returns no balance and `0.0` there is the claim *flat*. `/balance` reads both without a numeric default and prints `no MT5 link`, or the bare balance, rather than inventing one.
+
 ### Weekly start persistence
 
 `weekly_start` is stored exclusively in `bot_state.json`. There are no separate

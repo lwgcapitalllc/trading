@@ -764,11 +764,29 @@ class LiveRunner:
         if link_up is None:
             link_up, balance = self.probe_link()
 
+        # Overall P&L, and it is written HERE because this is the only process that can
+        # measure it. It used to be `pnl_tracker.py`'s, and that job was deleted 2026-08-05
+        # having carried an empty bot registry since June — so `total_pnl_pct` had NO writer
+        # while the Bots page's "Overall P&L" column and Telegram's /balance both defaulted
+        # it to 0.0. A live bot up 5% reported dead flat, in two places, with nothing on
+        # either screen able to say the number was never measured.
+        #
+        # ⚠ `None` when the balance is unknown, NEVER 0.0. A blind terminal returns no
+        # balance (see `probe_link`), and 0.0 there is the claim "flat" — the same
+        # fabricated-vs-measured collapse `mt5_link` exists to prevent, one field over.
+        total_pct = None
+        if balance is not None:
+            bot_state.ensure_starting_balance(self.cfg.bot_key, balance)
+            start = bot_state.read_bot(self.cfg.bot_key).get("starting_balance")
+            if start:
+                total_pct = round((balance - float(start)) / float(start) * 100, 2)
+
         try:
             bot_state.write_bot(self.cfg.bot_key, {
                 "status": self.bridge.state.value,
                 "heartbeat": time.time(),
                 "balance": balance,
+                "total_pnl_pct": total_pct,
                 "mt5_link": bool(link_up),
                 "account": self.cfg.account,
                 "symbol": self.cfg.symbol,

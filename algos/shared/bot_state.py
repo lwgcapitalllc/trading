@@ -163,7 +163,10 @@ def _default_state(bot_key: str) -> dict:
         "status":         "stopped",
         "started":        0,
         "account":        BOT_ACCOUNTS.get(bot_key, ""),
-        "balance":        0.0,
+        # None, not 0.0 — a bot that has never run has NO balance and NO P&L, and a zero
+        # here is the claim "flat account". `live/runner.py` writes both on every poll.
+        "balance":        None,
+        "total_pnl_pct":  None,
         "day_locked":     False,
         "lock_reason":    "",
         "lock_alerted":   False,

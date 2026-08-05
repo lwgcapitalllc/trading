@@ -46,6 +46,15 @@ class _StateModule:
     def write_bot(self, bot_key, updates):
         self.written.setdefault(bot_key, {}).update(updates)
 
+    # The two the heartbeat needs to derive total_pnl_pct. `_heartbeat` deliberately does
+    # NOT hasattr-guard them: a renamed bot_state function must fail here rather than
+    # silently stop reporting P&L on the live box.
+    def ensure_starting_balance(self, bot_key, balance):
+        self.written.setdefault(bot_key, {}).setdefault("starting_balance", balance)
+
+    def read_bot(self, bot_key):
+        return dict(self.written.get(bot_key, {}))
+
 
 def _runner(monkeypatch, *, balance_raises=False):
     r = LiveRunner.__new__(LiveRunner)
@@ -493,3 +502,38 @@ def test_the_stall_threshold_is_well_clear_of_the_poll_interval():
 
     poll = live_config.LiveConfig.__dataclass_fields__["poll_seconds"].default
     assert monitor.LOG_STALE_SECS >= poll * 10
+
+
+# ── Overall P&L ───────────────────────────────────────────────────────────────
+# `total_pnl_pct` was written by `notifications/pnl_tracker.py`, deleted 2026-08-05 having
+# carried an empty bot registry since June. Nothing wrote the field after that, while the
+# Bots page's "Overall P&L" column and Telegram's /balance BOTH defaulted it to 0.0 — so a
+# live account up 5% reported dead flat in two places, and neither could say the number was
+# never measured. The runner writes it now, because it is the only process that can.
+
+def test_the_runner_reports_overall_pnl_because_nothing_else_can(monkeypatch):
+    r = _runner(monkeypatch)
+    st = _StateModule()
+
+    r._heartbeat(st)                                   # first poll anchors the start
+    assert st.written["bot"]["starting_balance"] == 2000.0
+    assert st.written["bot"]["total_pnl_pct"] == 0.0
+
+    monkeypatch.setitem(sys.modules, "MetaTrader5",
+                        SimpleNamespace(account_info=lambda: SimpleNamespace(balance=2100.0)))
+    r._heartbeat(st)
+    assert st.written["bot"]["total_pnl_pct"] == 5.0
+    assert st.written["bot"]["starting_balance"] == 2000.0, \
+        "the anchor must be written ONCE — re-anchoring makes every account read flat forever"
+
+
+def test_an_unreadable_balance_reports_no_pnl_rather_than_flat(monkeypatch):
+    """The whole point of the field. A blind terminal returns no balance, and 0.0 there is
+    the CLAIM 'flat' — the same fabricated-vs-measured collapse `mt5_link` exists to stop."""
+    r = _runner(monkeypatch)
+    st = _StateModule()
+    r._heartbeat(st, link_up=False, balance=None)
+
+    assert st.written["bot"]["total_pnl_pct"] is None
+    assert "starting_balance" not in st.written["bot"], \
+        "a None balance must never anchor the account at zero"

@@ -90,6 +90,16 @@ class _StateModule:
     def set_started(self, bot_key):
         pass
 
+    # The two the heartbeat needs to derive total_pnl_pct. A fake that is MISSING a method
+    # the real module has fails loudly here (AttributeError) rather than quietly, which is
+    # the behaviour to keep: `_heartbeat` deliberately does not hasattr-guard these, or a
+    # renamed bot_state function would silently stop reporting P&L on the live box.
+    def ensure_starting_balance(self, bot_key, balance):
+        self.written.setdefault(bot_key, {}).setdefault("starting_balance", balance)
+
+    def read_bot(self, bot_key):
+        return dict(self.written.get(bot_key, {}))
+
 
 def _runner(monkeypatch, *, account_info):
     """A LiveRunner with only the link path wired.

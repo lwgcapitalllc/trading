@@ -482,11 +482,23 @@ def cmd_balance() -> str:
     lines  = [f"💰 *Account Balances*  _{now_tx}_", ""]
     all_states = read_all()
     for key, state in all_states.items():
-        balance = state.get("balance", state.get("starting_balance", 0.0))
-        pct     = state.get("total_pnl_pct", 0.0)
+        # ⚠ Both of these are read WITHOUT a numeric default, and that is the point.
+        # `.get("balance", ...)` and `.get("total_pnl_pct", 0.0)` printed "$0.00 — +0.0%"
+        # for a bot whose terminal had gone (a blind link returns no balance) and, until
+        # 2026-08-05, for EVERY bot at every moment: `total_pnl_pct` was written by
+        # `pnl_tracker.py`, which had been deleted, so this line reported dead flat on a
+        # live account. A number nobody measured must not be printed as a measurement.
+        balance = state.get("balance")
+        pct     = state.get("total_pnl_pct")
         name    = BOT_NAMES.get(key, key)
-        arrow   = "↑" if pct > 0 else "↓" if pct < 0 else "—"
-        sign    = "+" if pct >= 0 else ""
+        if balance is None:
+            lines.append(f"`{name:<16}` _no MT5 link_")
+            continue
+        if pct is None:
+            lines.append(f"`{name:<16}` *${balance:,.2f}*")
+            continue
+        arrow = "↑" if pct > 0 else "↓" if pct < 0 else "—"
+        sign  = "+" if pct >= 0 else ""
         lines.append(f"`{name:<16}` *${balance:,.2f}*  {arrow} {sign}{pct:.1f}%")
     return "\n".join(lines)
 
