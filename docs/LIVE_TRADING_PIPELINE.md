@@ -770,28 +770,35 @@ setups the Python took while the comparator reported green), the decode in `comp
 them. Default `"Off"` ⇒ byte-identical to the previous build ⇒ no historical result moves. 11 new
 tests; 111 green.
 
-**PARTLY CLOSED 2026-08-05 — the export arrived, the gate is green, and it proves LESS than it
-looks.** Aaron exported `VANTAGE_XAUUSD, 15m` (21,897 bars) with the guard enabled, and
-`compare_strategy.py` is **exit 0 at warmups 100 / 500 / 2000**. So the port is not broken by
-switching the guard on — which was a real risk and is now retired.
+✅ **CLOSED 2026-08-05 — parity proven with the guard FIRING, and shipped live at `"% of price"`
+0.10.** `algos/markets/fx/instances/mpc_sos_fade_demo/config.json` now carries
+`exec_min_stop_mode = "% of price"`, `exec_min_stop_val = 0.1`. `compare_strategy.py` is **exit 0 at
+warmups 100 / 500 / 1000 / 2000** on a 21,899-bar `VANTAGE_XAUUSD, 15m` export taken with the guard
+enabled at `"% of price"` 0.30, and **block code 7 ("Stop too tight") fires 213 times in it** — 49
+long, 164 short.
 
-🔴 **But the guard never FIRED in that window, so its arithmetic is still unproven against Pine.**
-Two independent checks say so. The export's own config columns read `cfg_min_stop = 2` and
-`cfg_min_stop_val = 0.1` — and **mode 2 is `"Fixed $"`, not `"% of price"`** (`_MIN_STOP =
-{0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}`), i.e. a **10-cent** minimum stop on a
-$4,000 instrument, which every real stop clears trivially. And **block code 7 ("Stop too tight")
-appears zero times** in 21,897 bars; the codes present are 3, 4, 30 and 40. The tightest stop on any
-filled entry was **$6.76 (0.1625% of price)** — 67× the floor that was actually in force.
+🔴 **It took TWO exports, and the first one is the lesson.** The 2026-08-05 morning export
+(21,897 bars) was also green at three warmups, and proved nothing about the guard. Its own config
+columns read `cfg_min_stop = 2`, and **mode 2 is `"Fixed $"`, not `"% of price"`** (`_MIN_STOP =
+{0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}`) — a **10-cent** floor on a $4,000
+instrument. **Code 7 appeared zero times in 21,897 bars**, and the tightest stop on any filled entry
+was **$6.76**, 67× the floor in force. The gate was green on a branch neither side ever entered.
 
-**This is the repo's own standing lesson pointed at its own gate: a green parity run says the two
-implementations AGREE, never that either is RIGHT — and it cannot say even that about a branch
-neither one entered.**
+**The standing lesson, and it is aimed at this repo's own gates rather than at any bug: a green
+parity run says the two implementations AGREE, never that either is RIGHT — and it cannot say even
+that about a branch neither one entered. Before trusting a gate on a feature, check the feature was
+EXERCISED.** The check is cheap and mechanical: this one is a block-code histogram over the export.
 
-**Outstanding, and now a specific ask rather than a general one:** re-export with a floor that
-actually bites, so code 7 is raised on several bars and the comparator has something to diff. From
-the measured distribution, `"% of price"` **0.30** or `"Fixed $"` **20** would refuse roughly the
-six tightest setups in the window. Ship at `"% of price"` 0.10 (Run 7's measured best) once that
-export is green.
+⚠ **Parity was proven at 0.30 and the live config ships 0.10.** Same code path, same floor formula
+(`px * val / 100`), same refusal and the same block code — only the constant differs. State it that
+way rather than claiming 0.10 was itself diffed.
+⚠ **This CHANGES which trades the bot takes** versus every result measured at `"Off"`, including the
+161-trade / +135.94R baseline. 0.10 is Run 7's measured best, not a safe-looking round number.
+⚠ **It does not replace the two independent backstops** and must not be read as doing so: the
+broker's own 20-point `SYMBOL_TRADE_STOPS_LEVEL` rejects a degenerate stop at the terminal, and
+`place_pending_limit` refuses one before it is sent. This guard is the one acting on OUR side of the
+wire — which is where `qty = risk / stop_distance` is computed, and therefore the only one that can
+stop the position being SIZED off a collapsed stop in the first place.
 
 ### Step 2 — Secrets out of git (G7) — **DONE 2026-07-30**
 
