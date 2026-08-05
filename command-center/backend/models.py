@@ -1224,21 +1224,42 @@ class InstrumentSummary(BaseModel):
 # ── Stress Tests ──────────────────────────────────────────────────────────────
 
 class StressTestCreate(BaseModel):
+    """⚠ Every count here is BOUNDED, and the bounds are the point.
+
+    `run_monte_carlo` allocates `(num_simulations, n_trades)` float64 arrays — several of them —
+    so an extra typed zero is not a slow test, it is gigabytes in a worker thread. That is the same
+    shape as the optimizer's `step: 0`, which hung the entire backend until 2026-08-04, and the
+    same fix: refuse it at the REQUEST, before anything is allocated. `walk_forward_windows` is
+    bounded for a different reason — each window is TWO real backtests on the VPS, so the number
+    is a multiplier on wall-clock time and on the platform lock.
+    """
     run_id: str
     ruleset_id: Optional[str] = None
     include_walk_forward: bool = False
     include_sensitivity: bool = False
-    num_simulations: int = 10_000
-    num_bootstrap: int = 1_000
-    walk_forward_windows: int = 5
+    num_simulations: int = Field(10_000, ge=100, le=100_000)
+    num_bootstrap: int = Field(1_000, ge=100, le=100_000)
+    walk_forward_windows: int = Field(5, ge=2, le=20)
 
 
 class WalkForwardWindow(BaseModel):
+    """⚠ Every field the engine writes must be DECLARED here or Pydantic drops it silently on the
+    way to the browser — the trap `entry_ms`, `exit_ms` and `favorable`/`adverse` each hit on
+    `EquityPoint`. `is_trades`/`oos_trades` were written by the engine and missing here, so the
+    page could never show that a window's out-of-sample half closed six trades — the single most
+    important fact about a walk-forward on a low-frequency strategy, and the reason its degradation
+    is refused. `is_pf`/`oos_pf` are the NATIVE path's metric (it has no trade-level data, so it
+    degrades on profit factor and leaves both Sharpes null), so without them that path had nothing
+    renderable at all."""
     window: int
     is_pnl: Optional[float] = None
     oos_pnl: Optional[float] = None
     is_sharpe: Optional[float] = None
     oos_sharpe: Optional[float] = None
+    is_trades: Optional[int] = None
+    oos_trades: Optional[int] = None
+    is_pf: Optional[float] = None
+    oos_pf: Optional[float] = None
 
 
 class StressTest(BaseModel):
@@ -1274,6 +1295,14 @@ class StressTest(BaseModel):
     walk_forward_degradation: Optional[float] = None
     sensitivity_summary: Optional[dict] = None
     sensitivity_max_degradation: Optional[float] = None
+    # What the sensitivity phase could NOT measure. A page reporting "12 params tested" over a run
+    # that refused 30 shifts is describing coverage that never happened.
+    sensitivity_coverage: Optional[dict] = None
+    # Which phases were ASKED for, and which of them failed. The ONLY thing separating "walk-forward
+    # was not requested" from "walk-forward ran and crashed" — a NULL summary means both, and
+    # grading read both as not-run, so a failed phase cost the test nothing and left no mark.
+    phases_requested: Optional[list[str]] = None
+    phase_failures: Optional[dict[str, str]] = None
     grade: Optional[str] = None
     grade_reasons: Optional[list[str]] = None
     equity_paths_path: Optional[str] = None
@@ -1288,6 +1317,10 @@ class StressTest(BaseModel):
 class StressTestDetail(StressTest):
     equity_paths: Optional[list] = None
     distribution: Optional[dict] = None
+    # A results file that is PRESENT and unreadable is not the same fact as one that was never
+    # written, and both used to arrive as `None` — so a corrupt result rendered as a test that
+    # simply had no chart. Same rule as `mt5_link`: never let "no" and "cannot ask" be one value.
+    results_error: Optional[str] = None
 
 
 # ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────
@@ -1366,3 +1399,12 @@ class CalendarResponse(BaseModel):
     server_now_ms: int
     from_ms: int
     to_ms: int
+
+
+class CalendarCurrencies(BaseModel):
+    """The ISO currencies the calendar's own query can return, in query order.
+
+    Served so the page's currency chips are DERIVED from the backend's country list rather than
+    hand-copied beside it. The two are different namespaces — TradingView is queried by bloc code
+    (US/EU/GB) and answers with a currency (USD/EUR/GBP) — so only the backend can state this."""
+    currencies: list[str] = []

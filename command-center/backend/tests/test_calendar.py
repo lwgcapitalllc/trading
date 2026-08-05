@@ -286,3 +286,43 @@ def test_a_repeat_window_is_served_from_cache(monkeypatch):
     cal._fetch_window_cached(0, 500, ("US",))
     cal._fetch_window_cached(0, 500, ("US",))
     assert calls["n"] == 1
+
+
+# ── The currency roster ─────────────────────────────────────────────────────────
+#
+# The page's chips are DERIVED from this now rather than hand-copied beside it. The guard is the
+# same shape as the dead-key test above: the build fails if the two namespaces drift, because the
+# failure mode is otherwise invisible — a bloc with no mapping simply never gets a chip, and a
+# currency that cannot be filtered looks exactly like a week that had no events for it.
+
+
+def test_every_queried_country_maps_to_a_currency():
+    unmapped = [c for c in cal.DEFAULT_COUNTRIES if c not in cal._COUNTRY_CURRENCY]
+    assert not unmapped, (
+        f"country codes with no currency: {unmapped}. Add them to _COUNTRY_CURRENCY — an "
+        f"unmapped bloc falls back to its own code and renders a chip that matches no event."
+    )
+
+
+def test_the_roster_is_the_currencies_the_feed_actually_returns():
+    """Measured, not asserted from the map: every currency on the chip row appears in the real
+    corpus, and every currency in the corpus has a chip. A roster is a claim about the feed."""
+    roster = set(cal.currencies_for())
+    seen = {cur for _imp, cur, _title in _corpus()}
+    assert not (seen - roster), f"the feed returns currencies with no chip: {sorted(seen - roster)}"
+    assert not (roster - seen), f"chips for currencies the feed never returns: {sorted(roster - seen)}"
+
+
+def test_the_roster_follows_the_query_not_a_constant():
+    assert cal.currencies_for(("US", "JP")) == ["USD", "JPY"]
+    assert cal.currencies_for(("gb",)) == ["GBP"]
+
+
+def test_an_unmapped_code_is_visible_rather_than_dropped():
+    # Silently narrowing the roster is the defect this replaced; falling back to the code itself
+    # puts something odd on screen instead of nothing at all.
+    assert cal.currencies_for(("US", "ZZ")) == ["USD", "ZZ"]
+
+
+def test_the_roster_is_deduped_and_ordered():
+    assert cal.currencies_for(("US", "US", "EU")) == ["USD", "EUR"]

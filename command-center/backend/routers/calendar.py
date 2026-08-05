@@ -10,11 +10,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from models import CalendarResponse
+from models import CalendarCurrencies, CalendarResponse
 from services import calendar_service
 from services.calendar_service import iso_to_ms
 
 router = APIRouter(tags=["calendar"])
+
+
+@router.get("/calendar/currencies", response_model=CalendarCurrencies)
+def get_calendar_currencies() -> CalendarCurrencies:
+    """The currency roster the tab's chips are drawn from. Static, no upstream call — it is derived
+    from the country list this service queries, so the chips cannot drift from the query."""
+    return CalendarCurrencies(currencies=calendar_service.currencies_for())
 
 
 @router.get("/calendar", response_model=CalendarResponse)

@@ -115,6 +115,41 @@ _cache_lock = threading.Lock()
 _MAX_SPAN_MS = 60 * 86_400_000  # 60 days
 
 
+# ── The currency roster the tab filters by ──────────────────────────────────────
+#
+# TradingView is QUERIED by country/bloc code (US, EU, GB, …) and each row comes back tagged with an
+# ISO CURRENCY (USD, EUR, GBP, …). Two namespaces, and the calendar page filters on the second one —
+# so the chip row is a claim about which currencies this backend's query can produce, and until
+# 2026-08-05 it was a hand-maintained copy of that claim living in the frontend. A tenth bloc added
+# here would simply never have got a chip, and nothing would have said so.
+#
+# ⚠ The mapping is the ONE place the two namespaces meet. A code with no entry falls back to itself,
+# which renders as a chip matching no event — visibly odd rather than silently absent — and
+# `tests/test_calendar.py` fails the build on any `DEFAULT_COUNTRIES` entry that is not mapped, the
+# same guard shape as the polarity keys above.
+_COUNTRY_CURRENCY: dict[str, str] = {
+    "US": "USD",
+    "EU": "EUR",
+    "GB": "GBP",
+    "JP": "JPY",
+    "CA": "CAD",
+    "AU": "AUD",
+    "NZ": "NZD",
+    "CH": "CHF",
+    "CN": "CNY",
+}
+
+
+def currencies_for(countries: Sequence[str] = DEFAULT_COUNTRIES) -> List[str]:
+    """The ISO currencies the given country/bloc query can return, in query order and deduped."""
+    out: List[str] = []
+    for c in countries:
+        cur = _COUNTRY_CURRENCY.get(c.upper(), c.upper())
+        if cur not in out:
+            out.append(cur)
+    return out
+
+
 def _now_ms() -> int:
     return int(datetime.now(timezone.utc).timestamp() * 1000)
 

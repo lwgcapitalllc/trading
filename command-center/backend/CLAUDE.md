@@ -41,7 +41,7 @@ backend/
 │   ├── stress_tests.py    lab — stress test CRUD + trigger (GET /stress-tests, GET /running-lock, GET /strategy-grades, GET /:id, POST /run, DELETE /:id)
 │   ├── sweeps.py          lab — instrument sweep (POST /backtests/sweep, GET /backtests/sweeps, GET/DELETE /backtests/sweeps/:id)
 │   ├── optimizations.py   lab — optimizer (POST /optimizations/run, GET /optimizations/*, DELETE /optimizations/:id)
-│   ├── calendar.py        live News Calendar tab — thin GET /calendar?from&to (ISO); returns the whole week unfiltered, 400 on bad ISO/window, 502 on feed error
+│   ├── calendar.py        live News Calendar tab — thin GET /calendar?from&to (ISO); returns the whole week unfiltered, 400 on bad ISO/window, 502 on feed error. GET /calendar/currencies serves the filter roster (static, no upstream call) so the page's chips cannot drift from the query
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
@@ -86,7 +86,7 @@ backend/
 │   │                      date for an (instrument, timeframe, runner); `validate_window()` raises ValueError
 │   │                      which routers turn into a 400. PYTHON RUNNER ONLY — NT8/MT5 read history from their
 │   │                      own terminals, so a Vantage floor must never be imposed on them (see "History floors")
-│   ├── calendar_service.py  live News Calendar tab — calls engines/news/ TradingViewSource.fetch_window() (never a 2nd impl), 60s in-memory cache keyed on (from,to,countries) and BOUNDED at 64 entries under one lock, computes beat/miss "surprise" server-side via _LOWER_IS_BETTER. Read-only: does NOT touch the shared EventStore cache. Returns the whole week; the frontend filters client-side. ⚠ Every upstream failure is normalised to RuntimeError in `_fetch` — a JSONDecodeError IS a ValueError and used to surface as a 400. See "The calendar's polarity list" below
+│   ├── calendar_service.py  live News Calendar tab — calls engines/news/ TradingViewSource.fetch_window() (never a 2nd impl), 60s in-memory cache keyed on (from,to,countries) and BOUNDED at 64 entries under one lock, computes beat/miss "surprise" server-side via _LOWER_IS_BETTER. Read-only: does NOT touch the shared EventStore cache. Returns the whole week; the frontend filters client-side. ⚠ Every upstream failure is normalised to RuntimeError in `_fetch` — a JSONDecodeError IS a ValueError and used to surface as a 400. See "The calendar's polarity list" below. Also owns `currencies_for()` — the chip roster the page draws, DERIVED from the queried country list via `_COUNTRY_CURRENCY` (bloc codes and ISO currencies are different namespaces, so only this side can map them)
 │   ├── agent_supervisor.py  keeps the SSH tunnel + both VPS agents up — one 60s loop, identical on
 │   │                      every pass, so a cold start and a wake-from-sleep are the same code path.
 │   │                      Owns `restart_tunnel()` / `schtasks_run()` (moved out of routers/system.py,
@@ -623,6 +623,20 @@ Two smaller fixes in the same pass:
 ✅ `_MAX_SPAN_MS` (60 days) was checked rather than assumed: a 60-day window returns ~1,495 events,
 inside the provider's ~2,000 cap, so no window the router accepts can be silently truncated. (105
 days returns exactly 2,000 — truncated — which is what the guard is for.)
+
+**And the chip roster is served rather than restated (`GET /calendar/currencies`, same day).** The
+page's currency chips were a hardcoded nine sitting beside a comment saying they mirrored the
+backend — a second statement of the same claim, which is the disease this whole audit is about, in
+its mildest form: **the two are not even the same namespace.** TradingView is QUERIED by bloc code
+(`US`, `EU`, `GB`) and ANSWERS with an ISO currency (`USD`, `EUR`, `GBP`), so the frontend could
+never have derived it, and a tenth bloc added to `DEFAULT_COUNTRIES` would simply never have got a
+chip — a currency present in the data and absent from the filter, which reads as a quiet week.
+`calendar_service._COUNTRY_CURRENCY` is the one place the two namespaces meet. ⚠ **An unmapped code
+falls back to itself** (a chip matching no event — visibly odd rather than silently absent), and the
+build fails first: `test_every_queried_country_maps_to_a_currency` plus
+`test_the_roster_is_the_currencies_the_feed_actually_returns`, which checks the roster **against the
+811-title corpus in both directions** — no currency in the corpus without a chip, no chip for a
+currency the feed never returns. Same guard shape as the dead polarity key, for the same reason.
 
 ## Readiness — the checks whose failure mode is silence
 
