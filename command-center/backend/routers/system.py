@@ -223,6 +223,18 @@ def start_mt5_agent():
     return _start_agent(agent_supervisor.MT5_TASK)
 
 
+@router.get("/system/activity")
+def system_activity() -> dict:
+    """Three booleans for the sidebar's running-dots: `{backtests, optimizations, stress_tests}`.
+
+    The sidebar used to derive these client-side from the FULL runs / optimizations / stress-test
+    lists, which it therefore polled on every page in the app — a ~137 KB response at 81 runs, two
+    thirds of it strategy params, to decide whether to draw three dots.
+    """
+    from services import lab_db
+    return lab_db.get_nav_activity()
+
+
 @router.get("/system/readiness")
 def system_readiness() -> dict:
     """The silently-degrading dependencies — news calendar cache, Telegram credentials.

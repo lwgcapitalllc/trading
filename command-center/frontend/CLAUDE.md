@@ -1123,11 +1123,47 @@ repo's most-repeated failure, and the exact argument that made the Bots page's f
 one `versionFlags` derivation. A health strip that disagreed with the sidebar six inches away
 would be worse than no strip.
 
-⚠ **`GET /system/readiness` is a different question and is still unanswered anywhere in the UI.**
-It reports the dependencies whose failure mode is SILENCE — an un-backfilled news calendar makes
-the News & Holiday filter inert, missing credentials make every Telegram send a no-op — and
-neither is visible on any page today. That is a real gap and a candidate for its own small card;
-it is just not "put the health dots on the Overview".
+⚠ **`GET /system/readiness` is a different question, and THAT one the Overview does answer**
+(built the same day, `useReadiness` → the warning block above the stat row). It reports the
+dependencies whose failure mode is SILENCE — an un-backfilled news calendar makes the News &
+Holiday filter tag zero trades, missing credentials make every Telegram send a no-op — and
+neither raises, neither turns a dot red, and neither was visible anywhere in the app. That is
+the opposite case from the health dots: not a second copy of something already on screen, but
+the only copy of something that was on none.
+
+- ⚠ **It renders ONLY when `warnings` is non-empty.** A card reading "all dependencies OK" is a
+  permanent green tick, and a permanent green tick teaches the reader to stop looking at that
+  spot — which is fatal for the one row that must be read on the day it finally speaks.
+- ⚠ **Polled at 5 min with a 2 min `staleTime`**, not the usual 30s: it reads the whole news
+  event store (~0.3s measured server-side) and its answer changes when somebody runs a backfill,
+  not minute to minute.
+- Rows are keyed on the message, because the backend returns bare sentences with no ids and the
+  sentence IS the finding.
+
+## The sidebar stopped pulling three lists to draw three dots
+
+**2026-08-05.** `Sidebar.tsx` is mounted on every page, and `activeByRoute` derived its three
+running-dots client-side from `useBacktestRuns()` / `useOptimizations()` / `useStressTests()`. So
+merely having the app open polled the full runs list — **measured 1.69 KB per run, two thirds of
+it the 54-key `params` dict**, ~137 KB at 81 runs — to answer three yes/no questions. It reads
+`useNavActivity()` (`GET /system/activity`, 62 bytes) now.
+
+⚠ **The predicates moved to the server and are no longer visible beside the dot they draw.**
+`lab_db.get_nav_activity` is the only statement of them and `backend/tests/test_nav_activity.py`
+pins each one — an optimization COMBO must not light the Backtests dot, sweep and stack children
+must, and a stress test is `running_wf` / `running_sens` for most of its life. **Change one side
+and change the other in the same commit.**
+
+⚠ **This is NOT the same question as `useRunningVpsJob()`** — that partitions by PLATFORM (is NT8
+/ MT5 / python free to take work) and this partitions by NAV SECTION (is this part of the app
+busy). Do not merge them: an MT5 optimization belongs to `mt5` there and `optimizations` here.
+
+⚠ **The runs list itself was NOT trimmed, deliberately.** Dropping `params` from it was measured
+and rejected — `TuningWorkbench` genuinely reads it off the list for per-iteration deltas, so a
+conditional field would make `params: {}` mean both "not requested" and "none exist", landing in
+the tune page as a confident "no parameters changed". Same *no data vs cannot ask* rule as
+`mt5_link`. The pages that render those lists still fetch them; only the sidebar stopped.
+
 
 Also decided, and recorded so nobody "fixes" it: **"best grade" and "N robust" span ALL stress
 tests ever, on purpose** (Aaron's call). They are a *has this lab ever produced something solid*

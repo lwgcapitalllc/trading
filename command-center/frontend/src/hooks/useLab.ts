@@ -7,7 +7,7 @@ import type {
   Ruleset, RulesetCreate, PersonalRulesetPatch,
   BacktestRunRequest, BacktestSummary, BacktestDetail, RunNewsReport, HistoryLimit,
   BrokerProfile, CostLayer, RunRepriceReport,
-  LabProgress, SystemHealth,
+  LabProgress, SystemHealth, NavActivity, ReadinessReport,
   SweepRequest, SweepResponse, SweepDetail,
   StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
   StackPreviewRequest, StackPreviewResponse,
@@ -522,6 +522,42 @@ export function useSystemHealth() {
     queryKey: ['system', 'health'],
     queryFn: () => api.get<SystemHealth>('/system/health'),
     refetchInterval: 30_000,
+  })
+}
+
+/** Three booleans for the sidebar's running-dots.
+ *
+ * ⚠ **It exists so the sidebar stops polling three FULL list endpoints on every page in the app.**
+ * `activeByRoute` used to derive these client-side off `useBacktestRuns()` /
+ * `useOptimizations()` / `useStressTests()` — and because `Sidebar.tsx` is always mounted, that
+ * made a ~137 KB runs response (measured at 81 runs, **two thirds of it the 54-key `params`
+ * dict**) a permanent background cost of having the app open, to decide whether to draw a dot.
+ *
+ * ⚠ **The predicates now live in `lab_db.get_nav_activity` and are pinned by
+ * `tests/test_nav_activity.py`.** Nothing in the browser can contradict them any more, which is
+ * the saving and equally the risk: an optimization COMBO must not light the Backtests dot, and a
+ * stress test is `running_wf` / `running_sens` for most of its life. Change one side and change
+ * the other in the same commit. */
+export function useNavActivity() {
+  return useQuery({
+    queryKey: ['system', 'activity'],
+    queryFn: () => api.get<NavActivity>('/system/activity'),
+    refetchInterval: 5_000,
+  })
+}
+
+/** The dependencies whose failure mode is SILENCE — an un-backfilled news calendar (the News &
+ *  Holiday filter tags nothing, indistinguishable from a broken filter), missing Telegram
+ *  credentials (every send is a no-op). Nothing else in the UI answers this.
+ *
+ *  ⚠ Polled slowly on purpose: it reads the whole news event store (~0.3s measured) and its
+ *  answer changes when somebody runs a backfill, not minute to minute. */
+export function useReadiness() {
+  return useQuery({
+    queryKey: ['system', 'readiness'],
+    queryFn: () => api.get<ReadinessReport>('/system/readiness'),
+    refetchInterval: 300_000,
+    staleTime: 120_000,
   })
 }
 

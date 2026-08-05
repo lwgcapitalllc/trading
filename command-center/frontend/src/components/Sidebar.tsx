@@ -7,8 +7,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
-import { useBacktestRuns, useOptimizations } from '@/hooks/useLab'
-import { useStressTests } from '@/hooks/useStressTests'
+import { useNavActivity } from '@/hooks/useLab'
 import { FEATURES } from '@/lib/features'
 import type { FeatureKey } from '@/lib/features'
 
@@ -160,16 +159,21 @@ export function Sidebar() {
     try { return localStorage.getItem('sidebar_collapsed') === '1' } catch { return false }
   })
 
-  // Running-job indicators, mapped per nav route. Each mirrors the "active" logic of its page:
-  // a backtest/sweep run in progress (excluding optimization combos, which belong to Optimizations),
-  // an optimization grid running, or any stress-test phase running. Hooks already poll on their own.
-  const { data: runs } = useBacktestRuns()
-  const { data: optimizations } = useOptimizations()
-  const { data: stressTests } = useStressTests()
+  // Running-job indicators, mapped per nav route: a backtest/sweep run in progress (excluding
+  // optimization combos, which belong to Optimizations), an optimization grid running, or any
+  // stress-test phase running.
+  //
+  // ⚠ These three booleans come from ONE small endpoint now, and that is the whole point. This
+  // component is mounted on every page, and it used to derive them client-side from the FULL
+  // runs / optimizations / stress-test lists — so having the app open cost a ~137 KB runs
+  // response on a poll (measured at 81 runs, two thirds of it the 54-key `params` dict) to
+  // decide whether to draw three dots. The predicates moved to `lab_db.get_nav_activity` and are
+  // pinned there by `tests/test_nav_activity.py`; do not re-derive them here from a list.
+  const { data: activity } = useNavActivity()
   const activeByRoute: Record<string, boolean> = {
-    '/backtests':     runs?.some(r => r.status === 'running' && !r.optimization_id) ?? false,
-    '/optimizations': optimizations?.some(o => o.status === 'running') ?? false,
-    '/stress-tests':  stressTests?.some(s => s.status.startsWith('running')) ?? false,
+    '/backtests':     activity?.backtests ?? false,
+    '/optimizations': activity?.optimizations ?? false,
+    '/stress-tests':  activity?.stress_tests ?? false,
   }
   const toggle = () => setCollapsed(c => {
     const next = !c

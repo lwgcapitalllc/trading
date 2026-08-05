@@ -1988,6 +1988,46 @@ _SCOPE_RUNNER_SQL = {
 }
 
 
+def get_nav_activity() -> dict:
+    """Is anything running under each nav section — three booleans, nothing else.
+
+    This exists to stop the SIDEBAR pulling entire list endpoints on every page just to decide
+    whether to draw a pulsing dot. It was reading `GET /backtests/runs` (measured: 1.69 KB per
+    run, **66% of it the 54-key `params` dict nobody in the sidebar reads**), plus the full
+    optimization and stress-test lists, on a poll, on every page in the app — to answer three
+    yes/no questions.
+
+    ⚠ **The predicates must mirror `Sidebar.tsx`'s `activeByRoute` exactly, because the dot is
+    the claim and this is now the only thing making it.** In particular a run with an
+    `optimization_id` is NOT a Backtests-section job — it belongs to the Optimizations section,
+    whose own grid reports it — while sweep and stack children ARE, since they surface in the
+    Runs tab. Change one side and change the other in the same commit.
+
+    ⚠ It is deliberately NOT `has_running_job()`. That one answers "may I start work on this
+    PLATFORM" and partitions by runner; this one answers "is this NAV SECTION busy" and
+    partitions by job kind. Collapsing them would make an MT5 optimization light the Backtests
+    dot, or a python backtest fail to.
+    """
+    with _connect() as conn:
+        def exists(sql: str) -> bool:
+            return conn.execute(sql).fetchone() is not None
+        return {
+            "backtests": exists(
+                "SELECT 1 FROM backtest_runs WHERE status = 'running' "
+                "AND optimization_id IS NULL LIMIT 1"
+            ),
+            "optimizations": exists(
+                "SELECT 1 FROM optimizations WHERE status = 'running' LIMIT 1"
+            ),
+            # LIKE 'running%', not '= running' — a stress test is `running`, `running_wf` or
+            # `running_sens` depending on the phase, and matching only the first would leave the
+            # dot off for most of the test's life.
+            "stress_tests": exists(
+                "SELECT 1 FROM stress_tests WHERE status LIKE 'running%' LIMIT 1"
+            ),
+        }
+
+
 def has_running_job(runner: str) -> bool:
     """Canonical platform-scoped lock check. One physical terminal per platform
     (one NT8 Strategy Analyzer, one MT5 Strategy Tester), so a platform runs at most

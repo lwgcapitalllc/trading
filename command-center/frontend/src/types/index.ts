@@ -790,6 +790,25 @@ export interface SystemHealth {
   checked_at: string
 }
 
+/** Is anything running under each nav section — what the sidebar's pulsing dots read.
+ *
+ * ⚠ Mirrors `lab_db.get_nav_activity`, NOT `RunningJobInfo`. That one partitions by PLATFORM
+ * (may I start work on NT8 / MT5 / python); this partitions by nav SECTION (is this part of the
+ * app busy). An MT5 optimization is `mt5` there and `optimizations` here, and conflating them
+ * would light the wrong dot. */
+export interface NavActivity {
+  backtests: boolean
+  optimizations: boolean
+  stress_tests: boolean
+}
+
+/** The dependencies that fail SILENTLY — see `backend/services/readiness.py`. An empty
+ *  `warnings` array is the healthy answer and must render as NOTHING, not as an empty card. */
+export interface ReadinessReport {
+  warnings: string[]
+  checked_at: string
+}
+
 // ── Stress Tests ─────────────────────────────────────────────────────────────
 
 export interface WalkForwardWindow {

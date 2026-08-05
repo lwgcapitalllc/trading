@@ -4,7 +4,7 @@ import { Bot, Radar, FlaskConical, BookOpen, ClipboardList, BarChart2, Sliders, 
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
-import { useBacktestRuns, useStrategies, useOptimizations, useRulesets } from '@/hooks/useLab'
+import { useBacktestRuns, useStrategies, useOptimizations, useRulesets, useReadiness } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
 import { useCalendar, useServerClock } from '@/hooks/useCalendar'
 import { FEATURES } from '@/lib/features'
@@ -215,6 +215,7 @@ export function Overview() {
   const { data: rulesets } = useRulesets()
   const { data: optimizations } = useOptimizations()
   const { data: stressTests } = useStressTests()
+  const { data: readiness } = useReadiness()
 
   const latestRun = runs?.[0] ?? null
   const totalStrategies = strategies?.length ?? 0
@@ -317,6 +318,40 @@ export function Overview() {
   return (
     <div>
       <h1 className="text-h1 font-semibold mb-[18px]">Overview</h1>
+
+      {/* ── Silent-failure warnings ───────────────────────────────────────────
+          The dependencies that break by doing NOTHING: an un-backfilled news calendar makes the
+          News & Holiday filter tag zero trades (indistinguishable from a filter that works and
+          found none), and missing credentials make every Telegram send a no-op. Neither raises,
+          neither is visible anywhere else in the app, and both are exactly what this page is for.
+
+          ⚠ It renders only when there is something to say. A card reading "all dependencies OK"
+          is a permanent green tick that teaches the reader to stop looking at this spot — and
+          this is the one row that must be read on the day it finally says something. */}
+      {readiness && readiness.warnings.length > 0 && (
+        <div className="mb-5 rounded-lg border border-warn-text/25 bg-warn-muted px-[15px] py-[11px]">
+          <div className="flex items-center gap-[7px] mb-[6px]">
+            <AlertCircle size={13} className="text-warn-text flex-shrink-0" />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-warn-text">
+              {readiness.warnings.length === 1
+                ? 'A dependency is degraded'
+                : `${readiness.warnings.length} dependencies are degraded`}
+            </span>
+          </div>
+          <ul className="space-y-[3px]">
+            {readiness.warnings.map(w => (
+              // Keyed on the message: the backend returns a list of sentences with no ids, and
+              // the sentence IS the finding — two identical ones would be one finding twice.
+              <li key={w} className="text-[12px] text-text-secondary leading-[1.45] pl-[20px]">
+                {w}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-text-tertiary mt-[7px] pl-[20px]">
+            These fail by doing nothing, so nothing else will report them.
+          </p>
+        </div>
+      )}
 
       {/* ── Stat Row ──────────────────────────────────────────────────────────── */}
       {/* Column count follows what is actually rendered — two cards in a 4-column

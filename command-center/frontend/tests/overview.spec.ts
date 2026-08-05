@@ -266,6 +266,69 @@ test.describe('Overview — the clock', () => {
   })
 })
 
+test.describe('Overview — the silent-failure warnings', () => {
+  const degraded = {
+    warnings: [
+      'news calendar cache is EMPTY — the News & Holiday filter will tag nothing.',
+      'algos/credentials.json missing — every Telegram notification is a no-op',
+    ],
+    checked_at: new Date().toISOString(),
+  }
+
+  test('names each degraded dependency', async ({ page }) => {
+    await page.route('**/api/system/readiness', r =>
+      r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(degraded) }))
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText('2 dependencies are degraded')).toBeVisible()
+    await expect(page.getByText(/News & Holiday filter will tag nothing/)).toBeVisible()
+    await expect(page.getByText(/Telegram notification is a no-op/)).toBeVisible()
+  })
+
+  test('renders NOTHING when everything is fine', async ({ page }) => {
+    // ⚠ Not "all dependencies OK". A permanent green tick in this spot teaches the reader to
+    // stop looking at it, and this is the one row that must be read the day it speaks up.
+    await page.route('**/api/system/readiness', r => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ warnings: [], checked_at: new Date().toISOString() }),
+    }))
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText(/dependenc(y|ies) (is|are) degraded/)).toHaveCount(0)
+  })
+})
+
+test.describe('Sidebar — the running dots', () => {
+  test('reads three booleans, and does NOT pull the run list to do it', async ({ page }) => {
+    // The whole point of the change: Sidebar.tsx is mounted on every page, so deriving these
+    // client-side made a ~137 KB runs response a permanent cost of having the app open.
+    const calls: string[] = []
+    page.on('request', r => {
+      const m = r.url().match(/\/api\/(backtests\/runs|optimizations|stress-tests|system\/activity)(\?|$)/)
+      if (m) calls.push(m[1])
+    })
+    // A page that does not itself render any of those lists.
+    await page.goto('/rulesets')
+    await page.waitForLoadState('networkidle')
+    await page.waitForTimeout(6000)   // past one activity poll
+
+    expect(calls).toContain('system/activity')
+    expect(calls).not.toContain('backtests/runs')
+    expect(calls).not.toContain('optimizations')
+    expect(calls).not.toContain('stress-tests')
+  })
+
+  test('lights the Backtests dot when the endpoint says so', async ({ page }) => {
+    await page.route('**/api/system/activity', r => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ backtests: true, optimizations: false, stress_tests: false }),
+    }))
+    await page.goto('/rulesets')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByText('Running').first()).toBeVisible()
+  })
+})
+
 test.describe('Overview — layout', () => {
   // 6px of bleed hid inside the card's 15px padding, so this was invisible by eye at every width
   // including the one the first verification pass called "verified".

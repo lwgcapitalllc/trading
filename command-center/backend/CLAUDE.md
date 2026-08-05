@@ -591,6 +591,38 @@ It **reports and does not act** — neither is repairable from here, and neither
 boot over. `_news_calendar()` catches everything: it runs inside the startup hook, and an exception
 there would stop the backend booting over a git-ignored cache file.
 
+## Nav activity — three booleans so the sidebar stops pulling three lists
+
+`GET /system/activity` → `lab_db.get_nav_activity()` → `{backtests, optimizations, stress_tests}`.
+
+**Added 2026-08-05 because `Sidebar.tsx` is mounted on EVERY page** and derived those three
+booleans client-side from the full runs / optimizations / stress-test lists. So having the app
+open at all cost a `GET /backtests/runs` on a poll — **measured 1.69 KB per run, 66% of it the
+54-key `params` dict** (~137 KB at 81 runs), plus the other two lists — to decide whether to draw
+three pulsing dots. The endpoint is 62 bytes.
+
+⚠ **The predicates must mirror `Sidebar.tsx`'s `activeByRoute` exactly, and they are now the ONLY
+statement of them** — the dot used to be derived next to the thing it drew, and nothing in the
+browser can contradict this any more. That is the saving and equally the risk, so every one is
+pinned in `tests/test_nav_activity.py`, including the ones that must NOT match:
+
+- a run carrying `optimization_id` is **not** a Backtests-section job (it belongs to the
+  Optimizations section, whose own grid reports it) — one job must not light two dots;
+- sweep and stack children **are**, because they surface in the Runs tab;
+- stress tests match **`LIKE 'running%'`**, never `= 'running'` — a test spends most of its life
+  in `running_wf` / `running_sens`, and an equality check leaves the dot off for the bulk of the
+  run, which looks exactly like a test that already finished.
+
+⚠ **It is deliberately NOT `has_running_job()`.** That answers *may I start work on this PLATFORM*
+and partitions by runner; this answers *is this NAV SECTION busy* and partitions by job kind.
+Collapsing them makes an MT5 optimization light the Backtests dot, or a python backtest fail to.
+
+⚠ **The trimming stops here.** Dropping `params` from the runs LIST was considered and rejected:
+`TuningWorkbench` genuinely reads it off that list to compute per-iteration deltas, so making it
+conditional would produce a response where `params: {}` means both *"I did not ask for it"* and
+*"there are none"* — the same **no data vs cannot ask** defect as `mt5_link` and
+`grid_sensitivity_score`, landing in the tune page as "no parameters changed".
+
 ## Worthiness scoring
 
 `services/worthiness.py`. Scored against the strictest evaluated prop firm (smallest `max_loss_eod`). When a run is evaluated against personal/demo rulesets only (e.g. a forex run — no prop firm covers forex), it falls back to the strictest personal drawdown limit (`account_size × max_drawdown_from_peak_pct`, via `metrics.effective_dd_limit_usd`) so forex runs still get a tier. Prop rows always win the pick when present.
