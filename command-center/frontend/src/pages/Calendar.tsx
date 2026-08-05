@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CalendarDays, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { useCalendar, useServerClock } from '@/hooks/useCalendar'
-import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown, localWeekStart, localWeekEnd } from '@/lib/calendar'
+import {
+  flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtDay, fmtWeekRange, fmtCountdown,
+  localWeekStart, localWeekEnd, dayIndexOf as weekDayIndex,
+} from '@/lib/calendar'
 import type { CalendarEvent, Impact, Surprise } from '@/types'
 
-const DAY_MS = 86_400_000
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // The nine majors' currencies (mirrors the backend DEFAULT_COUNTRIES). Chips toggle these; none
@@ -16,19 +18,10 @@ const IMPACTS: Impact[] = ['HIGH', 'MEDIUM', 'LOW']
 
 // ── time helpers (all display in the browser's local timezone) ──────────────────
 
-// `localWeekStart` / `localWeekEnd` live in `lib/calendar.ts` — the Overview preview reads the
-// same week, and the pair IS the query's cache key, so one definition is what keeps the two
-// pages sharing a single fetch.
-
-const fmtDay = (ms: number) =>
-  new Date(ms).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
-
-const fmtWeekRange = (fromMs: number) => {
-  const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
-  const end = new Date(fromMs)
-  end.setDate(end.getDate() + 6)
-  return `${new Date(fromMs).toLocaleDateString([], opts)} – ${end.toLocaleDateString([], opts)}`
-}
+// `localWeekStart` / `localWeekEnd` / `fmtDay` / `fmtWeekRange` / `dayIndexOf` all live in
+// `lib/calendar.ts` — the Overview preview reads the same week and links in with the same day
+// index, and the `(weekStart, weekEnd)` pair IS the query's cache key, so one definition is what
+// keeps the two pages sharing a single fetch instead of issuing two.
 
 function actualCls(s: Surprise | null): string {
   if (s === 'beat') return 'text-pos-text'
@@ -49,7 +42,7 @@ function ImpactDot({ impact }: { impact: Impact }) {
 
 function NowLine({ nowMs, nextHigh }: { nowMs: number; nextHigh: CalendarEvent | null }) {
   return (
-    <div className="flex items-center gap-2 py-1.5">
+    <div data-testid="now-line" className="flex items-center gap-2 py-1.5">
       <span className="text-[10px] font-semibold uppercase tracking-[0.5px] text-accent px-1.5 py-0.5 rounded bg-accent/10 font-mono tabular-nums">
         Now {fmtTime(nowMs)}
       </span>
@@ -64,9 +57,13 @@ function NowLine({ nowMs, nextHigh }: { nowMs: number; nextHigh: CalendarEvent |
   )
 }
 
-function EventRow({ event, passed }: { event: CalendarEvent; passed: boolean }) {
+// ⚠ MEMOISED, and the reason is the clock rather than the data. `useServerClock` re-renders this
+// page once a second so the countdown stays honest, and a week is ~200 events — so without this
+// every row rebuilt every second to render text that changes when a single row crosses `now`.
+// Both props are primitives, so the memo holds for every row but that one.
+const EventRow = memo(function EventRow({ event, passed }: { event: CalendarEvent; passed: boolean }) {
   return (
-    <div className={`grid grid-cols-[64px_44px_16px_1fr_90px_90px_90px] items-center gap-2 py-2 px-3 border-b border-border-subtle/40 text-sm ${passed ? 'opacity-55' : ''}`}>
+    <div data-testid="calendar-row" className={`grid grid-cols-[64px_44px_16px_1fr_90px_90px_90px] items-center gap-2 py-2 px-3 border-b border-border-subtle/40 text-sm ${passed ? 'opacity-55' : ''}`}>
       <span className="font-mono tabular-nums text-text-secondary text-xs">{fmtTime(event.timestamp_ms)}</span>
       <span className="text-base leading-none" title={event.currency}>{flagOf(event.currency)}</span>
       <ImpactDot impact={event.impact} />
@@ -78,7 +75,7 @@ function EventRow({ event, passed }: { event: CalendarEvent; passed: boolean }) 
       <span className="font-mono tabular-nums text-xs text-right text-text-tertiary">{event.previous ?? '—'}</span>
     </div>
   )
-}
+})
 
 // ── page ────────────────────────────────────────────────────────────────────────
 
@@ -86,7 +83,14 @@ export function Calendar() {
   const [sp, setSp] = useSearchParams()
   const weekOffset = parseInt(sp.get('week') ?? '0', 10) || 0
   const dayParam = sp.get('day')
-  const selectedDay = dayParam === null ? null : parseInt(dayParam, 10)
+  // ⚠ Range-checked, not just parsed. `?day=abc` gave NaN, which matches no event, so the page
+  // rendered "No events" with every filter looking untouched — a hand-typed or truncated URL
+  // reading as an empty week.
+  const parsedDay = dayParam === null ? null : parseInt(dayParam, 10)
+  const selectedDay =
+    parsedDay === null || !Number.isInteger(parsedDay) || parsedDay < 0 || parsedDay > 6
+      ? null
+      : parsedDay
   const selectedCurrencies = (sp.get('cur') ?? '').split(',').filter(Boolean)
   const impRaw = sp.get('imp') // null = all, '' = none, else CSV of levels
   const enabledImpacts = new Set<Impact>(
@@ -95,22 +99,33 @@ export function Calendar() {
   const impactAll = enabledImpacts.size === IMPACTS.length // default → also lets NONE-impact rows show
   const category = sp.get('cat') ?? ''
 
-  const fromMs = useMemo(() => localWeekStart(weekOffset), [weekOffset])
-  const toMs = useMemo(() => localWeekEnd(fromMs), [fromMs])
+  // ⚠ Recomputed EVERY RENDER, never memoized on `[weekOffset]`. A value derived from the CLOCK
+  // cannot be cached on a key that does not contain the clock: `weekOffset` does not change at
+  // midnight, so a tab left open across Sunday→Monday went on asking for LAST week for ever, with
+  // the day-strip dates and the Today highlight stale to match. The Overview fixed exactly this on
+  // 2026-08-05 and its comment claimed this page already recomputed — it did not. The 1s
+  // `useServerClock` tick is what carries the value over the boundary with no reload.
+  const fromMs = localWeekStart(weekOffset)
+  const toMs = localWeekEnd(fromMs)
 
-  const { data, isLoading, isError } = useCalendar(fromMs, toMs)
+  const { data, isLoading, isError, isPlaceholderData, dataUpdatedAt } = useCalendar(fromMs, toMs)
 
   // Server-clock offset drives the "now" line + countdown, not the (possibly wrong) browser clock.
   const nowMs = useServerClock(data?.server_now_ms)
 
-  const allEvents = data?.events ?? []
+  // ⚠ `placeholderData` keeps the PREVIOUS week's payload on screen while a new week loads, and
+  // the previous week is simply the wrong answer to the question now on screen. Rendering it gave
+  // the pill "Aug 10 – 16" over an all-zero day strip (counts are computed against the new
+  // `fromMs`) and a list of the week before. Held data is only honest when the key is unchanged.
+  const loadingWeek = isLoading || isPlaceholderData
+  const allEvents = loadingWeek ? [] : (data?.events ?? [])
+  // TanStack keeps `data` through a failed background refetch. Discarding a good week over one
+  // failed poll is worse than showing it — so a failure with data on hand is a dated BANNER, and
+  // only a failure with nothing to show takes the page.
+  const staleAfterError = isError && !!data && !loadingWeek
+  const fatalError = isError && !data
 
-  // Which day (0=Mon … 6=Sun) an event falls on, in local time (round absorbs DST hour drift).
-  const dayIndexOf = (ts: number) => {
-    const d = new Date(ts)
-    d.setHours(0, 0, 0, 0)
-    return Math.round((d.getTime() - fromMs) / DAY_MS)
-  }
+  const dayIndexOf = (ts: number) => weekDayIndex(ts, fromMs)
 
   const passFilters = (e: CalendarEvent) =>
     (selectedCurrencies.length === 0 || selectedCurrencies.includes(e.currency)) &&
@@ -135,8 +150,15 @@ export function Calendar() {
     [filtered, selectedDay, fromMs],
   )
 
-  const nowIdx = visible.findIndex((e) => e.timestamp_ms > nowMs) // -1 = all shown events passed
-  const nextHigh = visible.find((e) => e.timestamp_ms > nowMs && e.impact === 'HIGH') ?? null
+  // ⚠ The "now" line belongs to the week that CONTAINS now. It used to render on every week, so
+  // paging to next week put `Now 14:32` above its first event and paging back put it under the
+  // last — a marker for a moment nowhere on screen. Derived from the clock, not from `weekOffset`,
+  // so it survives the midnight rollover with everything else.
+  const isCurrentWeek = nowMs >= fromMs && nowMs < toMs
+  const nowIdx = isCurrentWeek ? visible.findIndex((e) => e.timestamp_ms > nowMs) : -2 // -2 = don't draw
+  const nextHigh = isCurrentWeek
+    ? visible.find((e) => e.timestamp_ms > nowMs && e.impact === 'HIGH') ?? null
+    : null
 
   const groups = useMemo(() => {
     const byDay = new Map<number, CalendarEvent[]>()
@@ -154,6 +176,11 @@ export function Calendar() {
     () => Array.from(new Set(allEvents.map((e) => e.category).filter(Boolean))).sort() as string[],
     [allEvents],
   )
+  // ⚠ A category is a property of the LOADED WEEK, and the selection lives in the URL, so paging to
+  // a week with no `Labor` rows left the `<select>` matching no option — it rendered BLANK over an
+  // empty list, which reads as the page breaking rather than as a filter still being applied. The
+  // selection is kept (paging back must restore it) and the empty state names it instead.
+  const categoryMissing = category !== '' && !loadingWeek && allEvents.length > 0 && !categories.includes(category)
 
   const todayWeekdayIdx = (new Date().getDay() + 6) % 7 // 0 = Mon — today's weekday, any week
   const todayIdx = weekOffset === 0 ? todayWeekdayIdx : -1
@@ -240,7 +267,12 @@ export function Calendar() {
               </div>
               <div className="mt-1 flex items-center justify-between text-[11px]">
                 <span className="text-text-tertiary">Economic</span>
-                <span className="font-mono tabular-nums text-text-secondary">{dayCounts[i]}</span>
+                {/* An em-dash while the week loads, never `0`. The counts are computed against the
+                    NEW week's `fromMs`, so with the previous week's events still held they were
+                    all genuinely zero — a strip confidently reporting an empty week. */}
+                <span data-testid="day-count" className="font-mono tabular-nums text-text-secondary">
+                  {loadingWeek ? '—' : dayCounts[i]}
+                </span>
               </div>
             </button>
           )
@@ -274,6 +306,9 @@ export function Calendar() {
           className="text-[12px] bg-bg-surface border border-border-default rounded px-2 py-1 text-text-secondary hover:text-text-primary focus:outline-none focus:border-accent/50 cursor-pointer"
         >
           <option value="">All categories</option>
+          {/* The held selection is offered even when this week has no such row, or the `<select>`
+              would match no option and render blank while still filtering. */}
+          {categoryMissing && <option value={category}>{category}</option>}
           {categories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
@@ -301,28 +336,49 @@ export function Calendar() {
         </div>
       </div>
 
-      {/* ── List ── */}
-      {isLoading && <div className="p-6 text-text-secondary text-sm">Loading calendar…</div>}
+      {/* ── List ──
+          Order matters: a week still loading must never fall through to "No events", and a failed
+          refetch that still has a good week must never take the list away. */}
+      {loadingWeek && (
+        <div className="p-6 text-text-secondary text-sm">Loading {fmtWeekRange(fromMs)}…</div>
+      )}
 
-      {isError && (
+      {fatalError && (
         <EmptyState icon={<AlertCircle size={22} />} title="Couldn't load the calendar"
           description="The TradingView feed didn't respond. It will retry automatically on the next poll." />
       )}
 
-      {!isLoading && !isError && visible.length === 0 && (
-        <EmptyState icon={<CalendarDays size={22} />} title="No events"
-          description="Nothing matches the current filters. Widen the impact, category, currency or day selection." />
+      {/* A failed poll over a week already on screen. The rows stay — they were true — and the
+          banner DATES them, so nothing on this page is left looking live when it is not. */}
+      {staleAfterError && (
+        <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-md border border-warn-text/30 bg-warn-muted text-[12px] text-warn-text">
+          <AlertCircle size={13} className="flex-shrink-0" />
+          <span>
+            The feed didn't answer the last refresh — showing the calendar as of{' '}
+            <span className="font-mono tabular-nums">{fmtTime(dataUpdatedAt)}</span>. Retrying automatically.
+          </span>
+        </div>
       )}
 
-      {!isLoading && !isError && visible.length > 0 && (
+      {!loadingWeek && !fatalError && visible.length === 0 && (
+        categoryMissing ? (
+          <EmptyState icon={<CalendarDays size={22} />} title={`No “${category}” events this week`}
+            description="That category is still selected but nothing in this week is filed under it. Pick another category, or switch back to all." />
+        ) : (
+          <EmptyState icon={<CalendarDays size={22} />} title="No events"
+            description="Nothing matches the current filters. Widen the impact, category, currency or day selection." />
+        )
+      )}
+
+      {!loadingWeek && !fatalError && visible.length > 0 && (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <div className="grid grid-cols-[64px_44px_16px_1fr_90px_90px_90px] gap-2 py-2 px-3 border-b border-border-subtle text-[10px] uppercase tracking-[0.5px] text-text-tertiary font-semibold">
             <span>Time</span><span>Cur</span><span /><span>Event</span>
             <span className="text-right">Actual</span><span className="text-right">Forecast</span><span className="text-right">Previous</span>
           </div>
 
-          {groups.map((dayEvents, gi) => (
-            <div key={gi}>
+          {groups.map((dayEvents) => (
+            <div key={dayIndexOf(dayEvents[0].timestamp_ms)}>
               <div className="px-3 py-1.5 bg-bg-sunken/60 border-b border-border-subtle/60 text-xs font-semibold text-text-secondary">
                 {fmtDay(dayEvents[0].timestamp_ms)}
               </div>
@@ -330,7 +386,10 @@ export function Calendar() {
                 flatIdx += 1
                 const showNow = flatIdx === nowIdx
                 return (
-                  <div key={e.timestamp_ms + e.currency + e.title}>
+                  // ⚠ The position is part of the key. `(time, currency, title)` is NOT unique in
+                  // real data — the live feed carries e.g. two `CAD Budget Balance` rows at one
+                  // timestamp — and duplicate keys are how React silently drops or mis-reuses a row.
+                  <div key={`${e.timestamp_ms}|${e.currency}|${e.title}|${flatIdx}`}>
                     {showNow && <div className="px-3"><NowLine nowMs={nowMs} nextHigh={nextHigh} /></div>}
                     <EventRow event={e} passed={e.timestamp_ms <= nowMs} />
                   </div>

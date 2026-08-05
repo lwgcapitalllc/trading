@@ -8,11 +8,11 @@ import { useBacktestRuns, useStrategies, useOptimizations, useRulesets, useReadi
 import { useStressTests } from '@/hooks/useStressTests'
 import { useCalendar, useServerClock } from '@/hooks/useCalendar'
 import { FEATURES } from '@/lib/features'
-import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown, localWeekStart, localWeekEnd } from '@/lib/calendar'
+import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown, localWeekStart, localWeekEnd, dayIndexOf as weekDayIndex } from '@/lib/calendar'
 import { StatCard } from '@/components/StatCard'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
-import type { BotStatus, BacktestSummary } from '@/types'
+import type { BotStatus, BacktestSummary, CalendarEvent } from '@/types'
 
 /** A "best result" needs a sample size behind it or profit factor ranks luck.
  *
@@ -298,7 +298,7 @@ export function Overview() {
   const calTo   = localWeekEnd(calFrom)
   // 5 min, not the page's 45s: this preview shows a title, a time and an impact dot, none of
   // which change once an event is published. It re-pulls the whole 33 KB week either way.
-  const { data: calendar, isError: calError } = useCalendar(calFrom, calTo, 300_000)
+  const { data: calendar, isError: calError, dataUpdatedAt: calUpdatedAt } = useCalendar(calFrom, calTo, 300_000)
   // Ticks every second off the SERVER's clock, which is also what advances `calFrom` past
   // midnight. Reading `server_now_ms` straight from the response freezes "now" between polls,
   // so the countdown sits still and a fired event stays listed as upcoming.
@@ -308,12 +308,9 @@ export function Overview() {
   const upcomingList = upcoming.filter(e => e !== nextHigh).slice(0, 6)
   // The Calendar page keeps the selected day in the URL (0 = Monday), so a click can land on
   // the day the event is on instead of dumping the reader on the current week.
-  const dayIndexOf = (ts: number) => {
-    const d = new Date(ts)
-    d.setHours(0, 0, 0, 0)
-    return Math.round((d.getTime() - calFrom) / 86_400_000)
-  }
-  const goToEvent = (ts: number) => navigate(`/calendar?day=${dayIndexOf(ts)}`)
+  // ⚠ `dayIndexOf` is the SHARED one in `lib/calendar.ts`, not a private copy. This page WRITES the
+  // index the Calendar page READS, so two definitions is two ways to answer one question.
+  const goToEvent = (ts: number) => navigate(`/calendar?day=${weekDayIndex(ts, calFrom)}`)
 
   return (
     <div>
@@ -716,16 +713,25 @@ export function Overview() {
             </button>
           )}
 
-          {/* A failed fetch must not render as "Loading…" for ever — the feed is a third party
-              and it does go down. `calError` is checked FIRST because a stale week can still be
-              on screen (placeholderData), which would otherwise hide the failure entirely. */}
-          {calError ? (
+          {/* A failed fetch must not render as "Loading…" for ever — the feed is a third party and
+              it does go down. But a failed REFRESH over a week already on screen must not delete
+              it either: those rows were true, so they stay and the notice DATES them. Only a
+              failure with nothing to show takes the card. Same rule as the bot snapshot above. */}
+          {calError && !calendar ? (
             <p className="flex items-center justify-center gap-[6px] text-[12px] text-neg-text py-2">
               <AlertCircle size={12} className="flex-shrink-0" />
               Calendar unavailable — the feed did not answer.
             </p>
           ) : !calendar ? (
             <p className="text-[12px] text-text-tertiary py-2 text-center">Loading…</p>
+          ) : calError ? (
+            <>
+              <p className="flex items-center gap-[6px] text-[11px] text-warn-text mb-[6px]">
+                <AlertCircle size={11} className="flex-shrink-0" />
+                Feed didn't answer the last refresh — as of <span className="font-mono tabular-nums">{fmtTime(calUpdatedAt)}</span>.
+              </p>
+              <CalendarUpcoming events={upcomingList} onPick={goToEvent} />
+            </>
           ) : upcomingList.length === 0 ? (
             // Not `upcoming.length` — with the only remaining event promoted into the callout
             // above, that test passes and renders an empty grid: a blank strip under the banner.
@@ -733,27 +739,38 @@ export function Overview() {
               {upcoming.length === 0 ? 'No more events this week' : 'Nothing else this week'}
             </p>
           ) : (
-            // The bleed for the rows' hover fill lives on the CONTAINER, not on each row. A grid
-            // ITEM cannot carry a negative margin without escaping its own track — the rows had
-            // `-mx-[6px]` and the grid overflowed by exactly 6px at every width, hover fill
-            // included, since a track is sized before the margin is applied.
-            <div className="grid grid-cols-2 gap-x-6 gap-y-[2px] -mx-[6px]">
-              {upcomingList.map(e => (
-                <button
-                  key={e.timestamp_ms + e.currency + e.title}
-                  onClick={() => goToEvent(e.timestamp_ms)}
-                  className="flex items-center gap-[8px] py-[5px] px-[6px] min-w-0 rounded-md hover:bg-bg-hover transition-colors text-left group"
-                >
-                  <span className="text-[11px] font-mono tabular-nums text-text-tertiary w-[42px] flex-shrink-0">{fmtTime(e.timestamp_ms)}</span>
-                  <span className="text-sm leading-none flex-shrink-0" title={e.currency}>{flagOf(e.currency)}</span>
-                  <span className={`inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 ${IMPACT_DOT[e.impact]}`} title={`${IMPACT_LABEL[e.impact]} impact`} />
-                  <span className="text-[12px] text-text-secondary group-hover:text-text-primary transition-colors truncate flex-1 min-w-0">{e.title}</span>
-                </button>
-              ))}
-            </div>
+            <CalendarUpcoming events={upcomingList} onPick={goToEvent} />
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** The preview's upcoming-event grid. Extracted so the healthy branch and the stale-after-error
+ *  branch render ONE list — two copies is two places for the row markup to drift. */
+function CalendarUpcoming({ events, onPick }: { events: CalendarEvent[]; onPick: (ts: number) => void }) {
+  return (
+    // The bleed for the rows' hover fill lives on the CONTAINER, not on each row. A grid ITEM
+    // cannot carry a negative margin without escaping its own track — the rows had `-mx-[6px]`
+    // and the grid overflowed by exactly 6px at every width, hover fill included, since a track
+    // is sized before the margin is applied.
+    <div className="grid grid-cols-2 gap-x-6 gap-y-[2px] -mx-[6px]">
+      {/* ⚠ The position is part of the key: `(time, currency, title)` is NOT unique in real feed
+          data (two `CAD Budget Balance` rows share a timestamp), and a duplicate key is how React
+          silently drops or mis-reuses a row. Same fix on the Calendar page. */}
+      {events.map((e, i) => (
+        <button
+          key={`${e.timestamp_ms}|${e.currency}|${e.title}|${i}`}
+          onClick={() => onPick(e.timestamp_ms)}
+          className="flex items-center gap-[8px] py-[5px] px-[6px] min-w-0 rounded-md hover:bg-bg-hover transition-colors text-left group"
+        >
+          <span className="text-[11px] font-mono tabular-nums text-text-tertiary w-[42px] flex-shrink-0">{fmtTime(e.timestamp_ms)}</span>
+          <span className="text-sm leading-none flex-shrink-0" title={e.currency}>{flagOf(e.currency)}</span>
+          <span className={`inline-block w-[7px] h-[7px] rounded-full flex-shrink-0 ${IMPACT_DOT[e.impact]}`} title={`${IMPACT_LABEL[e.impact]} impact`} />
+          <span className="text-[12px] text-text-secondary group-hover:text-text-primary transition-colors truncate flex-1 min-w-0">{e.title}</span>
+        </button>
+      ))}
     </div>
   )
 }

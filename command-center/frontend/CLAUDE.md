@@ -974,6 +974,84 @@ could not be asked — not that the terminal is disconnected. The checks are wri
 falsy, so an unanswered question renders as *"terminal state unknown"* rather than as a failure the
 UI invented. Same rule as `DrawdownMeter`'s refusal to draw an unmeasured tail as an absent one.
 
+## The Calendar page was audited 2026-08-05
+
+**Read before touching `pages/Calendar.tsx`, `lib/calendar.ts` or the Overview's preview.** Nine
+defects, and the frame is the Overview's own from one page over: **not one of them rendered an
+error.** A calendar that is confidently wrong about which week it is showing is worse than one that
+says it does not know — and four of these made it wrong about exactly that.
+
+🔴 **The week was frozen at mount.** `useMemo(() => localWeekStart(weekOffset), [weekOffset])` —
+and `weekOffset` does not change at midnight, so a tab left open across Sunday→Monday went on asking
+for LAST week for ever, with the day-strip dates and the Today highlight stale to match. ⚠ **This is
+the identical defect the Overview fixed on 2026-08-05, and the Overview's own comment asserted that
+THIS page recomputed and was right.** It did not. **A value derived from the CLOCK cannot be
+memoized on a key that does not contain the clock** — the rule was written down here and the second
+instance of it was sitting two files away the whole time. The 1s `useServerClock` tick is what
+carries the recomputed value over the boundary with no reload.
+
+🔴 **Paging a week rendered the PREVIOUS week under the new week's header.** `placeholderData: prev`
+holds the old payload, and the page only checked `isLoading` — which is false, because placeholder
+data exists. So for the length of the fetch the pill read `Aug 10 – 16` over a day strip reading
+**0 0 0 0 0 0 0** (counts are computed against the NEW `fromMs`, so the old events all fall outside
+0…6) and a list of the week before. ⚠ **Held data is only honest while the KEY is unchanged.** When
+the key changes the held payload is not stale, it is the answer to a different question — so
+`isPlaceholderData` now renders the loading state and the strip prints `—`, never `0`.
+
+🔴 **A failed background poll deleted a good week.** `isError && <EmptyState/>` sat before the list,
+so one 502 on a 45s poll replaced a fully-loaded calendar with "Couldn't load the calendar" while
+TanStack still held the data. Now: a failure **with data on hand** is a dated banner above the
+retained rows (`showing the calendar as of 14:32`), and only a failure with **nothing** to show
+takes the page. Same rule, same wording, as the bot snapshot on the Overview — and the Overview's
+own calendar card had the same bug and got the same fix.
+
+🔴 **`?day=abc` rendered as an empty week.** `parseInt` gave NaN, which matches no event, so the
+page said "No events" with every filter looking untouched. Range-checked to 0…6 now; anything else
+reads as "no day selected", which is the honest interpretation of a URL nobody can satisfy.
+
+🔴 **A category the loaded week has none of rendered as a BROKEN page.** The options come from the
+loaded week and the selection lives in the URL, so paging to a week with no `Labor` rows left the
+`<select>` matching no option — blank, over an empty list, with nothing saying a filter was still
+applied. The selection is KEPT (paging back must restore it), the held value is offered as an
+option, and the empty state names it.
+
+⚠ **Duplicate React keys, and they are real rather than theoretical.** `timestamp_ms + currency +
+title` is NOT unique in live feed data — the calendar carries two `CAD Budget Balance` rows at one
+timestamp. The position is part of the key now, **on both surfaces**.
+
+⚠ **The "now" line belongs to the week that CONTAINS now.** It used to draw on every week, so
+paging forward put `Now 14:32` above next week's first event. Derived from the clock
+(`nowMs >= fromMs && nowMs < toMs`), never from `weekOffset`, so it survives the rollover with
+everything else.
+
+**Efficiency, and the cost was the clock rather than the data.** `useServerClock` re-renders this
+page every second and a week is ~200 events, so every row was rebuilt once a second — each one
+calling `toLocaleTimeString`, which CONSTRUCTS a formatter per call. `EventRow` is `memo`'d (both
+props are primitives, so only the row crossing `now` re-renders) and `lib/calendar.ts` holds three
+module-level `Intl.DateTimeFormat` instances. ⚠ Do not inline a `toLocale*` call into a row again.
+
+**Shared, not copied:** `fmtDay`, `fmtWeekRange` and `dayIndexOf` moved into `lib/calendar.ts`
+beside `localWeekStart`. `dayIndexOf` matters most — **the Overview WRITES the index this page
+READS** (`/calendar?day=N`), so two private copies were two ways to answer one question. And
+`fmtCountdown` grew a day unit: the week view legitimately counts down to something six days out,
+and `152h 12m` is a number the reader has to divide.
+
+✅ **`tests/calendar.spec.ts` — 11 checks, and 10 of them were WATCHED TO FAIL against the page at
+`HEAD`.** The 11th passed there and was kept deliberately: it pins the half of the error rule that
+was always right (an error with no data may take the page), and a rule stated in one direction only
+is the one that gets "simplified" back. ⚠ **This suite needs NO BACKEND** — only the dev server —
+because the calendar reads one endpoint, so intercepting it whole makes the suite runnable without
+the SSH tunnel or the live MT5 box. **Prefer that shape for a new suite whenever the page allows
+it**; `overview.spec.ts` needs the live snapshot and is the exception, not the model. ⚠ Two traps
+the spec had to learn: **the page OPENS ON TODAY**, so a fixture built on a fixed weekday renders
+empty on every other day of the real week (pass `?day=` explicitly), and a **`focus` event does not
+force a refetch** — the app's global `staleTime: 30_000` skips it, so a poll failure has to be
+driven by fast-forwarding the clock past the 45s interval.
+
+The backend half — the beat/miss polarity list that had been written for the wrong provider, and
+the HIGH-impact inflation print it coloured backwards — is in `../backend/CLAUDE.md` →
+*The calendar's polarity list was written for the wrong provider*.
+
 ## The Overview was audited 2026-08-05, and its job was to be WRONG quietly
 
 **Read this before adding anything to `pages/Overview.tsx`.** It is the first page anybody opens
