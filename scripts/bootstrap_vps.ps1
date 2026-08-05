@@ -119,6 +119,7 @@ $Tasks = @(
     [pscustomobject]@{ Xml = 'monitor_task.xml';             Name = 'SYS_MONITOR' }
     [pscustomobject]@{ Xml = 'deadman_task.xml';             Name = 'SYS_DEADMAN' }
     [pscustomobject]@{ Xml = 'logbackup_task.xml';           Name = 'SYS_LOGBACKUP' }
+    [pscustomobject]@{ Xml = 'logreview_task.xml';           Name = 'SYS_LOGREVIEW' }
 )
 # SYS_PNLTRACKER and SYS_REPORTER were removed 2026-08-05 with the scripts behind them.
 # SYS_DEADMAN and SYS_LOGBACKUP were added in the same pass: both had task XMLs sitting in

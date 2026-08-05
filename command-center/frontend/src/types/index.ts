@@ -298,6 +298,20 @@ export interface TelegramUserCreate {
   role: string
 }
 
+export interface BotReviewFinding {
+  key: string
+  level: 'alert' | 'warn'
+  title: string
+  detail: string
+}
+
+export interface BotReview {
+  /** The worst level among the findings. */
+  level: 'alert' | 'warn'
+  checked_at: string
+  findings: BotReviewFinding[]
+}
+
 export interface BotStatus {
   /** The bot's STABLE identifier (`mpc_sos_fade_demo`) — the same string on the VPS process
    *  commandline. Use it for URLs, selection state and API paths. `name` is a label chosen
@@ -321,6 +335,13 @@ export interface BotStatus {
    *  frame is what a quiet market looks like, so the loop kept beating and the row kept saying
    *  RUNNING. */
   mt5_link: boolean | null
+  /** What the hourly log review found in this bot's own health record, or null for nothing.
+   *
+   *  ⚠ It answers the question no other field here can: the process can be alive, stamping its
+   *  heartbeat and showing RUNNING while the order bridge is HALTED and the bot places nothing.
+   *  Written by `algos/notifications/log_review.py`; the Telegram ping is the moment, this is
+   *  the state that is still here tomorrow. */
+  review: BotReview | null
   status: 'RUNNING' | 'STOPPED' | 'ERROR'
   uptime_seconds: number | null
   total_pnl_pct: number | null

@@ -1299,6 +1299,33 @@ tests ever, on purpose** (Aaron's call). They are a *has this lab ever produced 
 reading, not a recent-form one. **`MIN_TRADES_FOR_BEST` is a different thing and stays** — a
 sample floor is about whether a number means anything, not about how far back it looks.
 
+## The `Needs review` chip — a notification is a moment, a chip is a state
+
+**Added 2026-08-05.** `ReviewChip` on the Bots page's Monitor row, fed by `BotStatus.review`, which
+`algos/notifications/log_review.py` writes hourly after reading the bot's own health record.
+
+**It answers the question no other signal on this page can.** Everything else here is about the
+PROCESS — the Running pill, the uptime, the `No MT5 link` chip — and a bot can be alive, stamping its
+heartbeat and showing RUNNING **while its order bridge is HALTED and it places nothing.** Same for a
+bot that crash-looped overnight, or lost its terminal four times and recovered each time, or had a
+settings change REFUSED so the page shows values it is not using.
+
+⚠ **The chip and the Telegram alert are a PAIR, and neither replaces the other.** The ping gets your
+attention when it happens; the chip is still on the row tomorrow if you scrolled past it at 3am. A
+finding that only ever existed as a notification is a finding you can miss exactly once.
+
+⚠ **It is deliberately NOT hidden on a stopped bot**, which is the opposite call from `No MT5 link`
+one chip to the left. The findings worth most — it crashed, it was killed, it refused to start — are
+precisely the ones you can only read once the bot has stopped, so hiding it there would suppress the
+explanation at the moment somebody is hunting for it.
+
+⚠ **Red vs amber is the WORST finding's level, not a count.** One halted bridge is red however many
+warnings sit beside it; the count in the label says how many there are.
+
+⚠ **The whole finding text goes on the `title`.** The point of the chip is that "why does this bot
+need attention" is answerable without opening a JSONL file on a Windows box over SSH — a chip that
+only says *something is wrong* has moved the question rather than answered it.
+
 ## A blank cell is not a diagnosis — the Bots page's `No MT5 link` chip
 
 **Added 2026-08-04, and this page was the ONLY place the incident was visible.** MetaTrader

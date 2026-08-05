@@ -729,6 +729,22 @@ real stress test on a real **charged** 161-trade XAUUSD M15 baseline (`spread`+`
 - **Every child carries the baseline's physics.** All of them, walk-forward and sensitivity alike,
   in ONE group: `["spread","swap"] / vantage_demo / consistent`. Under the old code that group
   would have been `NULL / NULL / consistent`.
+- 🔴 **And the charge is REAL, which is a separate claim and needed its own measurement.** Carrying
+  a field proves nothing about whether anything downstream reads it, so a walk-forward child of a
+  charged baseline was re-run FREE over its own window and params — the body the stress tester used
+  to send:
+
+  | `wf_1_is`, 2020-01-01 → 2022-04-22 | charged | free |
+  |---|---|---|
+  | trades | 51 | **51 — identical** |
+  | profit factor | 1.463 | 1.612 |
+  | net P&L | $69,838.19 | $108,443.55 |
+
+  **The identical trade count is the check that says the charge is correctly placed** — spread and
+  swap change what a trade MAKES, never whether it happens, so a moved count would mean something
+  else had changed. That $38,605 is what the old code reported as the strategy's out-of-sample
+  behaviour while its parent was measured charged. The same pair on the full-history baseline
+  itself: **159 trades either way, PF 3.942 → 3.668, $34,877,368 → $13,012,425.**
 - **`phases_requested` is readable while the test is still running** — `["monte_carlo",
   "walk_forward", "sensitivity"]` at `running_sens`, so the page's pipeline stepper draws all three
   with per-phase elapsed (MC 1s, WF 1m 31s, sensitivity in flight). It was NULL until the very end.
@@ -861,6 +877,42 @@ re-grades. ⚠ **It may only RE-DERIVE from stored inputs — it never re-runs a
 whose child data is gone is left alone rather than being given a number nothing measured.
 
 ---
+
+## The "needs review" flag — the one thing this page could not see
+
+`BotStatus.review`, served from `<instance>/review.json` on the VPS, written hourly by
+`algos/notifications/log_review.py` (`SYS_LOGREVIEW`), which reads each bot's own health record.
+
+**Why it exists.** Every other signal on the Bots page is about the PROCESS — is it in the process
+list, is it stamping a heartbeat, does it still hold its MT5 link. **None of them can see a HALTED
+order bridge**: the loop runs, the heartbeat ticks, `wmic` lists the process, the page says RUNNING,
+and the bot places nothing. Nor a bot that crash-looped overnight, nor a link outage that recovered
+before anyone looked, nor a runtime config change the bot REFUSED (so the page shows settings it is
+not using). All of those are in the bot's health stream and nothing here read a line of it.
+
+⚠ **It is fetched on the SAME batched snapshot connection as `bot_state.json`.** A second ssh round
+trip per bot is precisely the cost `_fetch_vps_snapshot` exists to avoid — the same reasoning that
+moved `GET /{bot}/version`'s state read onto its git round trip (8.5s → 3.7s).
+
+⚠ **The section name is DERIVED, `_review_section(key)`, used by the fetch and the parse both.** A
+marker written under one spelling and read under another produces a flag that is always absent —
+which renders exactly like a healthy bot, i.e. it fails in the reassuring direction and nothing
+anywhere raises. `tests/test_bot_review_flag.py` pins that the two agree.
+
+⚠ **`review_file` is PER BOT even when two bots share a `bot_state.json`.** A review is about one
+bot's own record, and merging two into one file makes *which bot needs attention* unanswerable from
+the file whose entire job is answering it.
+
+⚠ **A missing file means NOTHING TO REVIEW, and that is the normal state** — `log_review.py` deletes
+it when a bot comes back clean, so absence must stay quiet. A malformed one is dropped rather than
+raised: this page must not invent an alarm out of its own plumbing failing, and the review job's own
+absence is visible where it belongs, as a DISABLED `SYS_LOGREVIEW` in the scheduled-jobs list.
+
+⚠ **It is NOT gated on `status == "RUNNING"`, unlike `mt5_link` directly above it.** The findings
+that matter most — it crashed, it was killed, it refused to start — are exactly the ones you can only
+read once the bot is no longer running, so hiding the flag on a stopped bot would suppress the
+explanation at the moment somebody is looking for it. `mt5_link` is gated because a stopped bot's
+last link stamp describes a process that no longer exists; a review describes the record, which does.
 
 ## Nav activity — three booleans so the sidebar stops pulling three lists
 

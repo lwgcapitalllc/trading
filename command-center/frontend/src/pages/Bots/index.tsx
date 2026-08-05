@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug } from 'lucide-react'
+import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug, AlertTriangle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
   useBotSnapshot, useBotLog,
@@ -8,7 +8,7 @@ import {
   useBotStartOne, useBotStopOne, useBotRestartOne,
 } from '@/hooks/useBots'
 import { StatCard } from '@/components/StatCard'
-import type { BotStatus, JobStatus } from '@/types'
+import type { BotStatus, BotReview, JobStatus } from '@/types'
 import { ConfigureTab } from './ConfigureTab'
 import { UsersTab } from './UsersTab'
 
@@ -66,6 +66,35 @@ function NoLinkChip() {
                  rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
     >
       <Unplug size={9} /> No MT5 link
+    </span>
+  )
+}
+
+/** The standing "needs review" flag, raised by the hourly `algos/notifications/log_review.py`.
+ *
+ * ⚠ It exists because a Telegram alert is a MOMENT and this is a STATE. The ping you scrolled
+ * past at 3am is gone; this chip is still on the row tomorrow. That pair is the whole design —
+ * the notification gets your attention, the chip survives not having had it.
+ *
+ * ⚠ It is deliberately NOT hidden on a stopped bot. The findings that matter most — it crashed,
+ * it was killed, it refused to start — are exactly the ones you can only read once the bot is
+ * no longer running, so hiding it there would suppress the explanation at the moment somebody
+ * is looking for it.
+ *
+ * The title carries every finding, because the whole point is that the chip has to be readable
+ * without opening a log file on a Windows box. */
+function ReviewChip({ review }: { review: BotReview }) {
+  const alert = review.level === 'alert'
+  return (
+    <span
+      title={review.findings.map(f => `• ${f.title}\n  ${f.detail}`).join('\n\n')
+             + `\n\nChecked ${review.checked_at}`}
+      className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                  rounded-pill uppercase tracking-[0.4px] cursor-default ${
+                    alert ? 'bg-neg-muted text-neg-text' : 'bg-warn-muted text-warn-text'}`}
+    >
+      <AlertTriangle size={9} /> Needs review{review.findings.length > 1
+        ? ` (${review.findings.length})` : ''}
     </span>
   )
 }
@@ -479,6 +508,7 @@ export function Bots() {
                           <div className="flex items-center gap-[6px]">
                             <StatusPill status={bot.status} />
                             {bot.mt5_link === false && <NoLinkChip />}
+                            {bot.review && <ReviewChip review={bot.review} />}
                           </div>
                         </td>
                         <td className="px-6 py-[11px] font-mono text-small align-middle">

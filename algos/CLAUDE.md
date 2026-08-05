@@ -596,6 +596,61 @@ simply knew the name, the commit hook knew a third, and `.gitignore` knew a four
 the four failed silently and three of them reported success.** Tests:
 `tests/test_startup_coordinator.py` (10, **7 watched red**).
 
+### `SYS_LOGREVIEW` — reading the record, because nothing did
+
+**Built 2026-08-05, hourly, `notifications/log_review.py`.** The health stream above is only worth
+writing if something reads it. Nothing did: `monitor.py` asks whether the PROCESS is there and
+stamping, `deadman.py` asks whether the BOX can still talk, and neither opens a line the bot wrote.
+
+🔴 **So the bridge could be HALTED and no alert in this system could see it** — the loop runs, the
+heartbeat ticks, `wmic` lists the process, the Bots page says RUNNING, and the bot places nothing.
+Same for a crash loop overnight, a terminal link lost and regained four times, a re-warm storm, or a
+runtime config change the bot REFUSED (so the command center shows settings it is not using).
+
+**The charter, stated so this does not grow into a second watchdog: `monitor.py` owns NOW, this owns
+THE RECORD.** The watchdog answers *is it alive this minute* and restarts it; this answers *what does
+today's record say happened*, including things that recovered before anyone looked. That split is why
+this deliberately does NOT alert on "process gone" or "heartbeat stale" — those are the watchdog's,
+and two alerts for one event is how a channel gets muted.
+
+⚠ **It restarts nothing and starts nothing.** The watchdog owns recovery; two things issuing starts
+for one bot is how a book gets doubled (measured 2026-08-04).
+
+⚠ **Silent when clean — no "nothing to report" message, ever.** The reason `reporter.py` was deleted
+rather than fixed applies here in full: a channel that is noise 95% of the time is the one nobody
+reads on the day it matters.
+
+⚠ **One alert per OCCURRENCE, not per run.** Findings carry a key containing the timestamp of the
+thing that happened, so the same halt does not ping 24 times a day **and a NEW halt still does**.
+Keying on the KIND of thing would alert once and then stay silent through every future incident —
+the classic de-duplicating-alerter bug, and it is silent by construction. State lives in
+`algos/log_review_state.json`; an unreadable state file RE-ANNOUNCES rather than suppressing, because
+noisy once beats silent forever.
+
+⚠ **Being unable to read is a FINDING, never silence** — but only for a bot whose state says it
+should be running. The rule this repo has now met five times, and here the reassuring answer is the
+dangerous one: a checker with nothing to say is indistinguishable from a system with nothing wrong.
+The other half matters just as much: **a bot you stopped on purpose has no record to write**, and an
+alarm that fires every time you stop one is an alarm you learn to ignore.
+
+**It reports in two places because they fail differently.** Telegram gets one message per new
+finding — an alert you scrolled past is gone. `<instance>/review.json` is a standing flag the command
+center renders as a **Needs review** chip on the Bots page, and it is still there tomorrow. ⚠ **Its
+own file, NOT `bot_state.json`**: the runner rewrites that every poll through a read-modify-write, so
+a review written into it would race the heartbeat and could be lost, or clobber a balance.
+
+⚠ **`telegram_health_chat` in `credentials.json` sends findings to a SEPARATE chat from the one
+carrying fills.** These messages are routine chatter ("reconnected twice, re-warmed"), and the day you
+mute them you must not also mute your trades — the same reasoning behind the dead-man's switch using
+EMAIL. Unset falls back to the main group and says which it used on stdout: an alert in the wrong
+room beats no alert, which is the OPPOSITE call from `deadman_url`, where unset means the check
+cannot work at all.
+
+Tests: `tests/test_log_review.py` (22), weighted toward the ways a checker wrongly says "fine" — the
+same reason `test_deadman.py` is. **A bug in this module is silent by construction: every other alarm
+here fails loudly and gets reported, this one fails by having nothing to say, and having nothing to
+say is also what a healthy day looks like.**
+
 ### Registering a bot — the five registries, and the crash if you miss one
 
 **2026-07-31: `mpc_sos_fade_demo` is registered.** It is the first bot in the rebuilt suite. Five

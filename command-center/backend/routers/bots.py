@@ -98,6 +98,11 @@ class BotReg:
     config_section: str = "strategy_params"
     state_section: str = ""           # ⇒ state_<key>; bots SHARING a bot_state.json share this
     state_file: str = ""              # ⇒ <instances>\<instance_dir>\bot_state.json
+    # ⇒ <instances>\<instance_dir>\review.json — the hourly log review's standing flag.
+    # PER BOT even when two bots share a bot_state.json, because a review is about one bot's
+    # own health record and merging two into one file would make "which bot needs attention"
+    # unanswerable from the file that is supposed to answer it.
+    review_file: str = ""
 
     def __post_init__(self):
         if self.account_type not in ("demo", "live"):
@@ -110,6 +115,8 @@ class BotReg:
         self.state_section = self.state_section or f"state_{self.key}"
         self.state_file = self.state_file or \
             rf"{_VPS_INSTANCES}\{self.instance_dir}\bot_state.json"
+        self.review_file = self.review_file or \
+            rf"{_VPS_INSTANCES}\{self.instance_dir}\review.json"
 
     @property
     def config_path(self) -> Path:
@@ -330,6 +337,12 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     #    caught before a bot has run once.
     parts = [f"echo. & echo ==={s.upper()}=== & type {_BOT_STATE_PATHS[s]} 2>nul"
              for s, _ in _BOT_STATE_SECTIONS]
+    # The hourly review's flag, one per bot. It rides on the SAME connection for the same
+    # reason the state files do — a second ssh round trip per bot is the cost this batching
+    # exists to avoid. Missing is the normal case and means "nothing to review", so the
+    # `2>nul` swallowing it is correct rather than lossy.
+    parts += [f"echo. & echo ==={_review_section(b.key).upper()}=== & type {b.review_file} 2>nul"
+              for b in _BOTS]
     parts.append("echo. & echo ===TELEGRAM_START=== "
                  "& type C:\\trading\\algos\\telegram_start.json 2>nul")
     sections.update(_parse_sections(_ssh(" & ".join(parts)), "state_main"))
@@ -347,6 +360,35 @@ _BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = [
 # section → the VPS path `_fetch_vps_snapshot` types. Windows paths throughout — never
 # anything derived from this Mac's filesystem.
 _BOT_STATE_PATHS: dict[str, str] = {b.state_section: b.state_file for b in _BOTS}
+
+
+def _review_section(bot_key: str) -> str:
+    """The snapshot section name for one bot's review flag. Derived, never restated — the
+    fetch and the parse must agree, and the way they drift is a flag that is fetched and then
+    looked for under a different name, i.e. silently always absent."""
+    return f"review_{bot_key}"
+
+
+def _parse_reviews(snap: dict[str, str]) -> dict[str, dict]:
+    """{bot key: review flag} for every bot that has one.
+
+    ⚠ An absent section means NOTHING TO REVIEW, and a malformed one is dropped. Neither is
+    reported as a fault here on purpose: this page must not invent an alarm out of its own
+    plumbing failing, and the review job's own absence is visible where it belongs — as a
+    DISABLED `SYS_LOGREVIEW` in the scheduled-jobs list below.
+    """
+    out: dict[str, dict] = {}
+    for b in _BOTS:
+        raw = (snap.get(_review_section(b.key)) or "").strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("findings"):
+            out[b.key] = data
+    return out
 
 
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
@@ -587,6 +629,7 @@ def get_snapshot():
         raise HTTPException(status_code=502, detail=f"VPS fetch failed: {e}")
 
     bot_states = _parse_bot_states(snap)
+    reviews = _parse_reviews(snap)
     task_statuses = _parse_tasks(snap)
     now = datetime.now(timezone.utc)
 
@@ -638,6 +681,12 @@ def get_snapshot():
             # coercing that to False would paint a healthy bot as disconnected — the same
             # rule `mt5_connected` follows on the sidebar's MT5 dot.
             mt5_link=state.get("mt5_link") if status == "RUNNING" else None,
+            # ⚠ NOT gated on `status == "RUNNING"`, unlike `mt5_link` above. A review is about
+            # what the RECORD says happened, and the findings that matter most — it crashed, it
+            # was killed, it refused to start — are precisely the ones you can only read once
+            # the bot is no longer running. Hiding the flag on a stopped bot would suppress the
+            # explanation at the exact moment somebody wants it.
+            review=reviews.get(bot_key),
             status=status,
             uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
             total_pnl_pct=total_pnl,

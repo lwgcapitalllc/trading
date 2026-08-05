@@ -435,9 +435,22 @@ def _execute_opt(job_id: str, spec: dict) -> None:
         raise ValueError("opt_spec.instrument is required")
     tf = _timeframe_minutes(spec)
 
-    param_sets = expand_grid(spec.get("param_ranges") or {})
+    # `param_sets` is an EXPLICIT list of configurations, used instead of expanding a grid. It
+    # exists for stress-test sensitivity, which is one-param-at-a-time: it wants
+    # [{A: a1}, {A: a2}, {B: b1}, {B: b2}], and `expand_grid` would return their CARTESIAN PRODUCT
+    # — a different, much larger experiment answering a different question.
+    #
+    # ⚠ It shares this path deliberately rather than calling `run_sweep` from the caller. The cost
+    # profile is built HERE, by `_cost_profile`, from the same spec fields a single run uses — and a
+    # second call site building its own is exactly how the stress tester came to measure its
+    # children on a free book while their parent was charged (2026-08-05). One reader, one place.
+    explicit = spec.get("param_sets")
+    if explicit:
+        param_sets = [dict(ps) for ps in explicit]
+    else:
+        param_sets = expand_grid(spec.get("param_ranges") or {})
     if not param_sets:
-        raise ValueError("param_ranges expanded to no combinations")
+        raise ValueError("param_sets was empty and param_ranges expanded to no combinations")
 
     _set(job_id, total_count=len(param_sets),
          message=f"loading {symbol} {tf}m bars for {len(param_sets)} combos…", pct=5)

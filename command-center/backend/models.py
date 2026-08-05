@@ -240,6 +240,26 @@ class DisqualifiedCandidate(BaseModel):
 
 # ── Bots ─────────────────────────────────────────────────────────────────────
 
+class BotReviewFinding(BaseModel):
+    key: str
+    level: str              # "alert" | "warn"
+    title: str
+    detail: str
+
+
+class BotReview(BaseModel):
+    """What the hourly log review found in this bot's own health record.
+
+    Written by `algos/notifications/log_review.py` to `<instance>/review.json` on the VPS and
+    read here. It answers the question no other indicator on this page can: **the process can be
+    alive, stamping its heartbeat and showing RUNNING while the order bridge is HALTED and the
+    bot places nothing.** Nothing in the system reported that before 2026-08-05.
+    """
+    level: str              # the worst level among the findings
+    checked_at: str
+    findings: list[BotReviewFinding] = []
+
+
 class BotStatus(BaseModel):
     # The bot's STABLE identifier — `mpc_sos_fade_demo`, the same string that appears on the
     # VPS process commandline (`runner.py --bot <key>`). Use this for URLs, selection state
@@ -260,6 +280,17 @@ class BotStatus(BaseModel):
     # as a quiet market, so the loop kept beating and this page kept saying RUNNING. A blank
     # balance must always be attributable to one of the two causes, not to either.
     mt5_link: Optional[bool] = None
+    # A standing flag raised by `algos/notifications/log_review.py`, which reads the bot's own
+    # health record hourly. `None` = nothing to review.
+    #
+    # ⚠ It exists because a Telegram alert is a MOMENT and this is a STATE. An alert you
+    # scrolled past at 3am is gone; this chip is still on the page tomorrow. The pair is
+    # deliberate — the notification gets your attention, the flag survives not having it.
+    #
+    # ⚠ It reads a SEPARATE `review.json`, never `bot_state.json`: the live runner rewrites
+    # that file every poll through a read-modify-write, so a review written into it would race
+    # the heartbeat and could be lost, or clobber a balance on the way past.
+    review: Optional[BotReview] = None
     status: str             # "RUNNING" | "STOPPED" | "ERROR"
     uptime_seconds: Optional[int] = None
     total_pnl_pct: Optional[float] = None
