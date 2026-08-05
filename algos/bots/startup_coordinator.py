@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional, Tuple
 
 PYTHON = sys.executable
 ALGOS  = Path("C:/trading/algos")
@@ -78,20 +79,58 @@ def clear_lock():
         print("Cleared stale MT5 lock")
 
 
-def get_log_size(log_path: str) -> int:
+def live_log(log_path: str) -> Path:
+    """The file the bot is ACTUALLY writing, for a configured log path.
+
+    🔴 **`runner.py` writes one text log per UTC day since 2026-08-05** —
+    `<bot>-YYYY-MM-DD.log`, via `DailyFileHandler` — so the plain `<bot>.log` named in
+    `STARTUP_SEQUENCE` stopped being written and nothing here noticed. `wait_for_connection`
+    would then have watched a file that never grows and reported *"timed out after 180s"* for a
+    bot that had started perfectly, setting its status to `offline` in the same breath. **A
+    healthy start reported as a failure is worse than a silent one — it sends you to fix a bot
+    that is fine.**
+
+    Resolved fresh on every poll rather than once, because the file does not exist yet at
+    launch: the bot creates it on its first log line, which is the thing being waited for.
+    Falls back to the configured path so a strategy or a tool that still writes a plain log
+    keeps working.
+    """
     p = Path(log_path)
-    return p.stat().st_size if p.exists() else 0
+    dated = sorted(p.parent.glob(f"{p.stem}-????-??-??.log"))
+    return dated[-1] if dated else p
+
+
+def log_baseline(log_path: str) -> Tuple[Path, int]:
+    """Which file was being written before the launch, and how much was in it.
+
+    ⚠ **The PATH has to travel with the size, and that is not fussiness.** With per-day logs the
+    file the bot writes after launching is very often a DIFFERENT file from the one measured a
+    moment earlier — every first start of a UTC day, and every start that crosses midnight. A
+    size taken from yesterday's log applied as an offset into today's would slice the front off
+    the new file and hide the very line being waited for, which reads as a bot that started and
+    never connected.
+    """
+    p = live_log(log_path)
+    return p, (p.stat().st_size if p.exists() else 0)
+
+
+def get_log_size(log_path: str) -> int:
+    return log_baseline(log_path)[1]
 
 
 def wait_for_connection(log_path: str, ready_string: str,
-                        size_before: int, timeout: int, name: str) -> bool:
+                        size_before: int, timeout: int, name: str,
+                        baseline_path: Optional[Path] = None) -> bool:
     start = time.time()
     while time.time() - start < timeout:
-        p = Path(log_path)
+        p = live_log(log_path)
         if p.exists():
             try:
-                content     = p.read_text(errors="replace")
-                new_content = content[size_before:]
+                content = p.read_text(errors="replace")
+                # A file the baseline was never measured against starts at 0 — it is new, so all
+                # of it belongs to this run.
+                offset      = size_before if (baseline_path is None or p == baseline_path) else 0
+                new_content = content[offset:]
                 if ready_string in new_content:
                     print(f"  ✓ {name} connected in {time.time()-start:.0f}s")
                     return True
@@ -186,7 +225,7 @@ def main():
         # Write started timestamp BEFORE launching
         set_started(bot_key)
 
-        size_before = get_log_size(log_path)
+        baseline_path, size_before = log_baseline(log_path)
 
         subprocess.Popen(
             [PYTHON, script, *argv],
@@ -194,7 +233,8 @@ def main():
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
         )
 
-        connected = wait_for_connection(log_path, ready_str, size_before, timeout, name)
+        connected = wait_for_connection(log_path, ready_str, size_before, timeout, name,
+                                        baseline_path=baseline_path)
         if not connected:
             set_status(bot_key, "offline")
             all_ok = False
@@ -221,6 +261,18 @@ def bot_is_running(bot_key: str) -> bool:
     a duplicate Telegram is refused by its own singleton guard. So this reports "not running"
     only when it can see the list and the bot is genuinely absent — an unreadable list is
     treated as RUNNING and the bot is left alone, and `runner.py`'s own guard is the backstop.
+
+    🔴 **It must also not match ITSELF, and until 2026-08-05 it did.** In single-bot mode this
+    very process is `startup_coordinator.py --bot <key>`, so a substring search for
+    `--bot <key>` found its own commandline and reported the bot as already running — **on the
+    exact path the command center's Start button drives.** The bot could never be started that
+    way, and the message said the reassuring thing: *"already running — left alone"*. Found by
+    stopping the live bot for a deploy and being unable to start it again.
+
+    So the match requires the RUNNER SCRIPT as well as the key. The key alone identifies which
+    bot (every live bot is the same `runner.py`, so the script names the fleet); the script
+    alone identifies which fleet. **Only the pair identifies a running bot**, and a coordinator
+    holding the same key is not one.
     """
     try:
         r = subprocess.run(
@@ -230,7 +282,8 @@ def bot_is_running(bot_key: str) -> bool:
     except Exception as e:
         print(f"  ! Could not read the process list ({e}) — assuming {bot_key} is up, not starting it")
         return True
-    return f"--bot {bot_key}" in r.stdout
+    return any(f"--bot {bot_key}" in line and "runner.py" in line
+               for line in r.stdout.splitlines())
 
 
 def telegram_is_running() -> bool:

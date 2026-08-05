@@ -532,6 +532,35 @@ committed — which looks exactly like a stream that was never written.
 Tests: `tests/test_ledger_streams.py` (12), `tests/test_live_health_stream.py` (13, **12 watched
 red against HEAD** before the fix), `tests/test_log_backup.py` (26).
 
+🔴 **DEPLOYING THAT SPLIT BROKE STARTING THE BOT, TWICE OVER, AND BOTH FAILURES REPORTED SUCCESS.**
+Found by stopping the live bot to deploy and being unable to bring it back — not by the suite.
+
+1. **`startup_coordinator.bot_is_running` matched the coordinator ITSELF.** In single-bot mode
+   this process is `startup_coordinator.py --bot <key>`, and the check was a substring search for
+   `--bot <key>` over the whole `wmic` dump, so it found its own commandline. **That is the path
+   the command center's Start button drives** — the button could never start a bot, and it said
+   the reassuring thing while failing: *"already running — left alone"*. ⚠ The anti-duplicate
+   guard it belongs to was one day old and right in intent. **`runner.already_running()` got the
+   same check right by excluding its own PID** — two implementations of one rule, one wrong, the
+   shape this repo keeps meeting. The match now requires the RUNNER SCRIPT *and* the key, per
+   line: the key alone says which bot, the script alone says which fleet, **only the pair says a
+   running bot**, and a coordinator holding the same key is not one.
+2. **`wait_for_connection` watched `<bot>.log`, which the dated handler had stopped writing.** A
+   perfectly healthy start would have timed out after 180s and been marked `offline`. ⚠ **A
+   healthy start reported as a failure is worse than a silent one — it sends you to fix a bot
+   that is fine.** `live_log()` resolves the newest `<bot>-YYYY-MM-DD.log` each poll, falling back
+   to the plain path. ⚠ **The baseline PATH now travels with the baseline SIZE** (`log_baseline`):
+   on the first start of a UTC day the bot writes a *different* file from the one measured a
+   moment earlier, and applying yesterday's size as an offset into today's file slices off its
+   front and hides the very line being waited for.
+
+⚠ **`schtasks /run` reported SUCCESS for the run that started nothing**, exactly as this file
+already warns. The check that caught it was `wmic` — probe the thing you are claiming, every time.
+
+**The standing lesson: a rename is a contract change, and the readers of a filename are invisible
+from the file that writes it.** Nothing imports `<bot>.log`; two separate pieces of the launcher
+simply knew the name. Tests: `tests/test_startup_coordinator.py` (10, **7 watched red**).
+
 ### Registering a bot — the five registries, and the crash if you miss one
 
 **2026-07-31: `mpc_sos_fade_demo` is registered.** It is the first bot in the rebuilt suite. Five
