@@ -570,10 +570,26 @@ the sync fails in the suite instead of at midnight. ⚠ **The exemptions stay na
 `*.jsonl` / `*.log`**, and a test pins that: a future file holding a contract under either
 extension must still demand its doc, the way `*.meta.json` explicitly does.
 
+🔴 **Then `.gitignore`'s blanket `*.log` swallowed the text log — the THIRD silent break of one
+backup in one day, and the quietest.** The sync fetched the file, `git status` did not list it (an
+ignored file is not a changed one), `pending()` dropped it without a word, and the run printed
+**"2 file(s) pushed"** having committed two of the three streams it had just downloaded. ⚠ **From
+the commit side an ignored file and a file that was never written are identical** — this repo's
+own two-things-one-value rule, arriving through git's config where nothing was looking. Fixed
+twice over, because either alone leaves the hole open: a `!algos/ledger_archive/**/*.log`
+negation, and `ledger_sync.ignored()`, which NAMES an unbackupable fetch and **returns non-zero**
+rather than reporting success. ⚠ **`git check-ignore` must be read WITHOUT `-v`**: with it, git
+reports the last matching pattern *including negations* and exits 0 for a path a `!` rule has
+re-included — the first version of the test failed on a correctly-committable file for exactly
+that reason. Tests: `tests/test_ledger_archive_is_committable.py` (5), one of them run against
+**this repo's real `.gitignore`** rather than a fixture, because the rule that broke the backup
+was a real line in a real file and a fixture would have been written to pass.
+
 **The standing lesson: a rename is a contract change, and the readers of a filename are invisible
 from the file that writes it.** Nothing imports `<bot>.log`; two separate pieces of the launcher
-simply knew the name, and the hook knew a third. Tests: `tests/test_startup_coordinator.py` (10,
-**7 watched red**).
+simply knew the name, the commit hook knew a third, and `.gitignore` knew a fourth. **Every one of
+the four failed silently and three of them reported success.** Tests:
+`tests/test_startup_coordinator.py` (10, **7 watched red**).
 
 ### Registering a bot — the five registries, and the crash if you miss one
 

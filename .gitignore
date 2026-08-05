@@ -44,6 +44,15 @@ Thumbs.db
 # =============================================================
 *.log
 
+# ...EXCEPT the live bot's archived daily logs, which are the point of the backup rather than
+# scratch. `algos/tools/ledger_sync.py` fetches them off the VPS twice a day, and this `*.log`
+# rule silently swallowed them on the first run: the file was copied down, `git status` did not
+# list it because it was ignored, and the sync reported success having committed two of three
+# streams. ⚠ Nothing anywhere said a stream was missing — an ignored file and a file that was
+# never written look identical from the commit side. The sync now NAMES an ignored fetch, and
+# `algos/tests/test_ledger_archive_is_committable.py` fails if this negation is removed.
+!algos/ledger_archive/**/*.log
+
 # =============================================================
 # Misc artefacts
 # =============================================================

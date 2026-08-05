@@ -165,6 +165,28 @@ def fetch(host: str, rel_paths: list[str], dry_run: bool = False) -> list[Path]:
     return got
 
 
+def ignored(paths: list[Path]) -> list[Path]:
+    """Which of these files git is configured to ignore — i.e. can never be backed up.
+
+    🔴 **This exists because the failure it catches is completely silent.** `.gitignore` carries
+    a blanket `*.log`, so the first real sync copied the bot's daily text log down, `git status`
+    did not list it (ignored files are not "changed"), `pending()` dropped it without a word, and
+    the run reported success having committed two of the three streams. ⚠ **From the commit side
+    an ignored file and a file that was never written are identical**, which is this repo's
+    own never-let-two-different-things-be-one-value rule arriving through git's config.
+
+    So an ignored fetch is NAMED and the run does not claim to be up to date.
+    """
+    if not paths:
+        return []
+    rel = [str(p.relative_to(REPO_ROOT)) for p in paths]
+    # `check-ignore` exits 1 when NOTHING matches, which is the ordinary case — so the return
+    # code says nothing here and only the output is read.
+    out = _run("git", "-C", str(REPO_ROOT), "check-ignore", "--", *rel)
+    hit = {line.strip() for line in out.stdout.splitlines() if line.strip()}
+    return [p for p, r in zip(paths, rel) if r in hit]
+
+
 def pending(paths: list[Path]) -> list[Path]:
     """Narrow to files git does not already have identical content for."""
     if not paths:
@@ -241,14 +263,24 @@ def main(argv=None) -> int:
     # correctly reported as done; a day whose local copy is somehow STALE would be reported as
     # done too, and only the real run would catch it. That is the honest limit of previewing a
     # copy you have not made.
+    # Before anything else: a file git is configured to ignore can never reach origin, and it
+    # drops out of `pending()` looking exactly like a file that is already committed.
+    blocked = ignored(local)
+    for p in blocked:
+        print(f"  ! IGNORED by .gitignore, so it can never be backed up: "
+              f"{p.relative_to(REPO_ROOT)}")
+
     todo = pending(local)
     if not todo:
+        if blocked:
+            print(f"  {len(blocked)} file(s) fetched but unbackupable — fix .gitignore")
+            return 1
         print(f"  up to date ({len(rel)} file(s) on the VPS, all already committed)")
         return 0
 
     ok = commit(todo, push=not args.no_push, dry_run=args.dry_run)
     print(f"  {len(todo)} file(s) {'pushed' if ok else 'NOT pushed'}")
-    return 0 if ok else 1
+    return 0 if (ok and not blocked) else 1
 
 
 if __name__ == "__main__":
