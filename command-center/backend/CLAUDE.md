@@ -591,6 +591,34 @@ It **reports and does not act** — neither is repairable from here, and neither
 boot over. `_news_calendar()` catches everything: it runs inside the startup hook, and an exception
 there would stop the backend booting over a git-ignored cache file.
 
+## A unit test may not reach the VPS, and now it cannot
+
+**2026-08-05.** `tests/conftest.py`'s `client` fixture has said *"all outbound VPS calls
+stubbed"* since it was written, and it was not true: `list_strategy_files` was unstubbed on
+both agents, so `GET /strategy-files/sync-status` really did call the NT8 agent over the live
+SSH tunnel. **The test around it passed whenever the box happened to be up** and 502'd
+otherwise — green on the machine with the tunnel open, red on a fresh clone or after a laptop
+sleep, and pointing at the wrong thing either way.
+
+`_no_live_agent_http` (autouse) now patches `_get`/`_post` on **both** agent clients to raise
+a message naming the fix. A test that legitimately needs one stubs the specific function and
+its patch wins. ⚠ **Verified by removing a stub and watching it fire** — an interlock nobody
+has seen trip is a configuration, not an interlock. ✅ The whole suite passes with the NT8
+agent confirmed unreachable, which is the evidence that nothing else was quietly depending
+on it.
+
+⚠ **HTTP only.** SSH (`subprocess.run(["ssh", ...])`, which `routers/bots.py` uses) is a
+second channel with its own stubs, and a green suite here is not proof that nothing shells
+out to the box.
+
+**Same pass, the stale roster:** `EXPECTED_CLASS_NAMES` in `tests/test_strategies.py` still
+listed `MpcBosStrategy`, three tests deep, after `1946f8b` deleted the unfinished port. That
+commit's message says "and its roster line with it" and means `backtest/tools/run_report.py`,
+which it correctly called "the ONLY live reference" — this is a SECOND roster, in another
+subsystem, and it went unnoticed for a day. ⚠ **A roster stated once per file is still stated
+N times across the repo: when you delete a strategy, grep the CLASS NAME, not the package
+path.**
+
 ## Nav activity — three booleans so the sidebar stops pulling three lists
 
 `GET /system/activity` → `lab_db.get_nav_activity()` → `{backtests, optimizations, stress_tests}`.

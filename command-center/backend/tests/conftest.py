@@ -4,8 +4,9 @@ Shared fixtures for the lab test suite.
 DB isolation: every test gets a fresh SQLite DB via monkeypatching lab_db.DB_PATH
 to a temp path before any lab_db function runs.
 
-VPS isolation: client fixture stubs out all runner_dispatch calls and the async
-background job (run_backtest_job), so unit tests never open network connections.
+VPS isolation: the client fixture stubs the runner_dispatch calls a test is meant
+to exercise, and `_no_live_agent_http` (autouse, below) makes any call it MISSED
+fail loudly instead of quietly reaching the live box.
 
 The agent supervisor is disabled process-wide (see below) — the `client` fixture
 runs the real startup hook, and a supervisor loose in a test run would restart
@@ -39,6 +40,42 @@ def fresh_db(tmp_path, monkeypatch):
     return db
 
 
+# ── VPS isolation, enforced ───────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _no_live_agent_http():
+    """Any HTTP call to the NT8 or MT5 agent that a test did not stub RAISES here.
+
+    ⚠ **This exists because the `client` fixture's docstring was a claim nobody checked.**
+    It said "all outbound VPS calls stubbed" while `list_strategy_files` was not, so
+    `GET /strategy-files/sync-status` really did reach the NT8 agent over the live SSH
+    tunnel — and the test around it PASSED whenever the box happened to be up. That is the
+    worst shape for this defect: green on the machine that has the tunnel open, red on a
+    fresh clone or a slept laptop, and pointing at the wrong thing either way.
+
+    Both agent clients funnel through `_get`/`_post`, so patching those four is the whole
+    surface. A test that legitimately needs one stubs the named function above this
+    fixture, and its patch wins.
+
+    ⚠ This covers the HTTP channel only. SSH (`subprocess.run(["ssh", ...])`, used by
+    `routers/bots.py`) is a SECOND channel with its own stubs — a green suite here is not
+    proof that nothing shells out to the VPS.
+    """
+    def refuse(*a, **kw):
+        raise AssertionError(
+            "A test tried to call the live VPS agent over HTTP. Stub the specific "
+            "runner_dispatch / mt5_agent_client function it needs — do not let a unit "
+            "test's result depend on whether the SSH tunnel happens to be up."
+        )
+    with (
+        patch("services.runner_dispatch._get", side_effect=refuse),
+        patch("services.runner_dispatch._post", side_effect=refuse),
+        patch("services.mt5_agent_client._get", side_effect=refuse),
+        patch("services.mt5_agent_client._post", side_effect=refuse),
+    ):
+        yield
+
+
 # ── API client ────────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -59,6 +96,17 @@ def client(fresh_db):
         patch("services.runner_dispatch.start_backtest", return_value={"status": "ok"}),
         patch("services.runner_dispatch.job_log", return_value=""),
         patch("services.runner_dispatch.health", return_value={"status": "ok"}),
+        # ⚠ These two were NOT stubbed until 2026-08-05, so `GET /strategy-files/sync-status`
+        # really did call the NT8 agent over the live SSH tunnel — `test_sync_status_skips_
+        # python_and_still_reports_the_others` passed only while the VPS happened to be up and
+        # 502'd otherwise. The docstring above has claimed "all outbound VPS calls stubbed"
+        # the whole time, which is what made it invisible: a fixture is a CLAIM about what a
+        # test can reach, and nothing was checking it.
+        # `[]` is the honest stub — sync-status emits a row per strategy either way, with
+        # `file_exists_on_vps` False, so the assertions stay about what the endpoint decides
+        # rather than about what happens to be deployed on the box today.
+        patch("services.runner_dispatch.list_strategy_files", return_value=[]),
+        patch("services.mt5_agent_client.list_strategy_files", return_value=[]),
         patch("routers.backtests.run_backtest_job", new_callable=AsyncMock),
         patch("routers.backtests.read_progress", return_value={"status": "idle", "pct": 0}),
     ):

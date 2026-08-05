@@ -3,14 +3,22 @@ Strategy scanning — current contract.
 
 The scanner reads from `<MONOREPO_ROOT>/strategies/**` : 1 NinjaTrader .cs (ORB; VWAP_MR
 and Momentum deleted 2026-06-21) + 1 MT5 .mq5 (LondonBreakout; MeanReversion deleted
-2026-06-22) + 3 Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
-mpc_bleg 2026-07-24, mpc_bos). NT8 and Python strategies get a suggested_instrument; MT5
-does not. Param types span int/double/bool (NT8), string (MT5), and all four off a
-dataclass (Python).
+2026-06-22) + 2 Python packages, each declaring LAB_STRATEGY (mpc_sos_fade 2026-07-16,
+mpc_bleg 2026-07-24; mpc_bos deleted 2026-08-04). NT8 and Python strategies get a
+suggested_instrument; MT5 does not. Param types span int/double/bool (NT8), string (MT5),
+and all four off a dataclass (Python).
 
 `EXPECTED_CLASS_NAMES` is the single place the roster is stated — every count below is
 `len()` of it, never a repeated literal. Adding a strategy is then a one-line edit here
 instead of three failing tests that each have to be traced back to the same cause.
+
+⚠ **That is only true of the counts INSIDE this file.** `1946f8b` deleted the unfinished
+`mpc_bos` port and its message says "and its roster line with it" — meaning the one in
+`backtest/tools/run_report.py`, which that commit correctly called "the ONLY live
+reference". This roster is a SECOND one, in another subsystem, and it was missed: three
+tests here failed from that day until 2026-08-05. **A roster stated once per file is still
+stated N times across the repo** — when you delete a strategy, grep for its class name, not
+just its package path.
 """
 
 import textwrap
@@ -21,7 +29,6 @@ EXPECTED_CLASS_NAMES = {
     "LondonBreakout",
     "MpcSosFadeStrategy",
     "MpcBLegStrategy",
-    "MpcBosStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\
