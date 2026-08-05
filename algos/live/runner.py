@@ -473,6 +473,28 @@ class LiveRunner:
         bot_state.set_started(self.cfg.bot_key)
         consecutive_errors = 0
 
+        # 🔴 A bar that RAISED while being processed is a hole in the stream, and until
+        # 2026-08-05 it was an INVISIBLE one. `BarFeed.new_bars` advances `last_bar_time`
+        # when it hands the rows out, not when the caller finishes with them — so an
+        # exception in `_on_bar` left the bookmark past a bar the engines never saw.
+        # `gap_bars()` then reported 0 (it compares against that same bookmark), the next
+        # poll returned nothing, and the bar was gone for good. **Measured against the real
+        # `BarFeed`: one fresh bar handed out, bookmark advanced, gap_bars 0, next call
+        # empty.** The engines are a streaming state machine, so from that point on every
+        # structure and fib reading is computed over a market history that never happened —
+        # exactly what `new_bars`' own docstring says must not be allowed to happen silently.
+        #
+        # It could not surface anywhere either: the outer handler only alerts at TEN
+        # CONSECUTIVE loop errors, and one lost bar is one error.
+        #
+        # Re-delivering the bar is NOT the fix. `_on_bar` steps the strategy and then mirrors
+        # its intent onto the broker, so a failure part-way through leaves the engines already
+        # advanced; replaying it would step them twice, which is the same desync from the other
+        # side. The one recovery that is known-good is the one the gap branch below already
+        # uses — rebuild and re-warm from history — so a bar error routes into it.
+        stream_broken = False
+        bar_errors = 0
+
         while not _stop_requested:
             try:
                 # FIRST, before anything reads a bar. Every data call below returns an empty
@@ -484,19 +506,53 @@ class LiveRunner:
                     self._recover_link()
                 else:
                     gap = self.feed.gap_bars()
-                    if gap > 4:
+                    if gap > 4 or stream_broken:
                         # See the module docstring: a hole in the stream is a different market
-                        # history, not a recoverable lag.
-                        self.log.warning(f"{gap} bars missed — re-warming the engines rather "
+                        # history, not a recoverable lag. Two ways to get one, and they are
+                        # reported apart because they mean different things — bars we never
+                        # ASKED for (the bot was asleep, the link was down) versus a bar we
+                        # were handed and DROPPED, which is a defect on this side.
+                        why = (f"{gap} bars missed" if gap > 4
+                               else "a bar raised while being processed")
+                        self.log.warning(f"{why} — re-warming the engines rather "
                                          f"than resuming with a hole in the stream.")
-                        self.ledger.event("rewarm", missed_bars=gap)
+                        self.ledger.event("rewarm", missed_bars=gap,
+                                          after_bar_error=stream_broken)
                         self.strategy, _ = self._build_strategy()
                         self.bridge._ex = self.strategy.execution
                         self.warm()
                         self.bridge.begin_live()
+                        stream_broken = False
 
                     for _, row in self.feed.new_bars().iterrows():
-                        self._on_bar(row)
+                        try:
+                            self._on_bar(row)
+                            bar_errors = 0
+                        except Exception as e:
+                            # BREAK, never continue: the bookmark is already past this bar, so
+                            # the rows after it would be fed to engines carrying a hole. Let
+                            # the re-warm above rebuild the state on the next poll instead.
+                            stream_broken = True
+                            bar_errors += 1
+                            self.log.error(
+                                f"Bar {row.name} raised ({bar_errors}): {e}\n"
+                                f"{traceback.format_exc()}")
+                            self.ledger.event("bar_error", error=str(e),
+                                              bar=str(row.name), count=bar_errors)
+                            if bar_errors == 1:
+                                # Once per outage, on the transition — the re-warm clears the
+                                # counter as soon as a bar lands cleanly, so a recurrence after
+                                # a real recovery alerts again. Repeating it every poll is how
+                                # a channel that also carries trade alerts gets muted.
+                                self._notify(
+                                    f"⚠️ *{self.cfg.display_name}* dropped a bar "
+                                    f"({row.name}) and is re-warming.\n`{e}`")
+                            if bar_errors >= 10:
+                                self._notify(
+                                    f"⛔️ *{self.cfg.display_name}* stopping — 10 bars in a row "
+                                    f"failed to process. A re-warm is not fixing it. Last: {e}")
+                                return 6
+                            break
 
                     self._maybe_reload_runtime()
 
