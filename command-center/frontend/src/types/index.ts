@@ -341,22 +341,8 @@ export interface BotSnapshot {
   telegram: ProcessStatus
 }
 
-export interface BotConfigSections {
-  risk: Record<string, unknown>
-  protection: Record<string, unknown>
-  strategy: Record<string, unknown>
-  regime: Record<string, unknown>
-  dead_zone: Record<string, unknown>
-}
-
-export interface BotConfigUpdate {
-  risk?: Record<string, unknown>
-  protection?: Record<string, unknown>
-  strategy?: Record<string, unknown>
-  regime?: Record<string, unknown>
-  dead_zone?: Record<string, unknown>
-  deploy?: boolean
-}
+// `BotConfigSections` / `BotConfigUpdate` deleted 2026-08-04 with the endpoints they typed —
+// see the note in `hooks/useBots.ts`. `BotParamsView` below is what reads a bot's settings.
 
 /** One line of a live bot's configuration. Mirrors `models.BotParamRow`. */
 export interface BotParamRow {

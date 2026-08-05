@@ -19,6 +19,13 @@ import json
 from routers import bots
 
 
+# The section NAME is derived from the registry, never spelled out here — the whole point
+# of the 2026-08-04 registry change is that a bot is declared once. A literal in the test
+# would keep passing while the fetch command asked for a different section entirely.
+_SECTION = bots._BOTS[0].state_section          # e.g. "state_mpc_sos_fade_demo"
+_MARKER  = f"==={_SECTION.upper()}==="
+
+
 def _state_blob() -> str:
     return json.dumps({
         "mpc_sos_fade_demo": {
@@ -33,15 +40,15 @@ def _state_blob() -> str:
 def test_a_section_marker_glued_to_the_previous_line_is_still_found():
     """`type` leaves no trailing newline. Without the `echo.` guard in the fetch command
     this is exactly what comes back, and BOTH sections are lost."""
-    raw = (f"===STATE_MPC_SOS_FADE===\n{_state_blob()}"
+    raw = (f"{_MARKER}\n{_state_blob()}"
            '===TELEGRAM_START===\n{"started": 1785468642.7}')
     sections = bots._parse_sections(raw, "head")
     assert "telegram_start" in sections, "the glued marker was not recognised"
-    json.loads(sections["state_mpc_sos_fade"])      # must be parseable on its own
+    json.loads(sections[_SECTION])                  # must be parseable on its own
 
 
 def test_bot_state_is_read_out_of_its_section():
-    raw = f"===STATE_MPC_SOS_FADE===\n{_state_blob()}\n===TELEGRAM_START===\n"
+    raw = f"{_MARKER}\n{_state_blob()}\n===TELEGRAM_START===\n"
     states = bots._parse_bot_states(bots._parse_sections(raw, "head"))
     assert states["mpc_sos_fade_demo"]["balance"] == 2000.0
 
@@ -49,10 +56,10 @@ def test_bot_state_is_read_out_of_its_section():
 def test_a_bot_that_has_never_run_leaves_the_later_sections_intact():
     """The empty-state-file case — the first cmd quirk. A bot with no state file yet must
     not take the Telegram row down with it."""
-    raw = ('===STATE_MPC_SOS_FADE===\n'
+    raw = (f"{_MARKER}\n"
            '===TELEGRAM_START===\n{"started": 1785468642.7}')
     sections = bots._parse_sections(raw, "head")
-    assert sections["state_mpc_sos_fade"] == ""
+    assert sections[_SECTION] == ""
     assert json.loads(sections["telegram_start"])["started"] == 1785468642.7
 
 

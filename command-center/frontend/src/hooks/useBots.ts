@@ -70,17 +70,18 @@ export const useBotStopOne    = () => useBotAction('stop')
 export const useBotRestartOne = () => useBotAction('restart')
 
 // ── Config ───────────────────────────────────────────────────────────────────
+//
+// 🔴 `useBotConfig` / `useSaveBotConfig` / `useSaveBotCaps` were DELETED 2026-08-04 along
+// with the three endpoints behind them. Nothing rendered any of them, and two of the
+// endpoints restarted a LIVE bot — `PATCH /config` wrote arbitrary sections (including
+// strategy params, going around the runtime-editable allowlist) and `PATCH /caps` restarted
+// a bot to write a threshold file for a disabled job. Recover with
+// `git show 407d716^:command-center/frontend/src/hooks/useBots.ts`.
+//
+// `useBotParams` reads and `useSaveBotRuntime` writes the one lever that may move — and
+// that one does NOT restart the bot.
 
-import type { BotConfigSections, BotConfigUpdate, BotParamsView, TelegramUser, TelegramUserCreate } from '@/types'
-
-export function useBotConfig(botName: string | null) {
-  return useQuery({
-    queryKey: ['bots', 'config', botName],
-    queryFn: () => api.get<BotConfigSections>(`/bots/${encodeURIComponent(botName!)}/config`),
-    enabled: !!botName,
-    staleTime: 60_000,
-  })
-}
+import type { BotParamsView, TelegramUser, TelegramUserCreate } from '@/types'
 
 // ── Live parameters ──────────────────────────────────────────────────────────
 // What a running bot is actually configured with, and the one lever that may move
@@ -187,21 +188,6 @@ export function useSaveBotRuntime() {
   })
 }
 
-type BotCaps = { daily_goal_pct: number; daily_cap_pct: number; weekly_cap_pct: number }
-
-export function useSaveBotCaps() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ botName, caps }: { botName: string; caps: BotCaps }) =>
-      api.patch<{ status: string }>(`/bots/${encodeURIComponent(botName)}/caps`, caps),
-    onSuccess: (_data, { botName }) => {
-      toast.success(`${botName} caps saved`)
-      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
-    },
-    onError: (err, { botName }) => toast.error(`${botName} caps save failed: ${err}`),
-  })
-}
-
 // ── Telegram users ────────────────────────────────────────────────────────────
 
 export function useUsers() {
@@ -246,19 +232,5 @@ export function useUpdateUserRole() {
       qc.invalidateQueries({ queryKey: ['bots', 'users'] })
     },
     onError: (err) => toast.error(`Update role failed: ${err}`),
-  })
-}
-
-export function useSaveBotConfig() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: ({ botName, update }: { botName: string; update: BotConfigUpdate }) =>
-      api.patch<{ status: string }>(`/bots/${encodeURIComponent(botName)}/config`, update),
-    onSuccess: (_data, { botName, update }) => {
-      toast.success(update.deploy ? `${botName} deployed — bot restarting` : `${botName} config saved`)
-      qc.invalidateQueries({ queryKey: ['bots', 'config', botName] })
-      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
-    },
-    onError: (err, { botName }) => toast.error(`${botName} config save failed: ${err}`),
   })
 }

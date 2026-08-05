@@ -30,7 +30,9 @@ import base64
 import json
 import re
 import subprocess
+import threading
 import time as _time
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -38,7 +40,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotCapUpdate, BotConfigSections, BotConfigUpdate, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from models import BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
 from services import bot_params, lab_db
 from services.notify import send_telegram
 
@@ -46,42 +48,103 @@ router = APIRouter(prefix="/bots", tags=["bots"])
 
 VPS_HOST = cfg.SSH_ALIAS
 
-# Mirror algo.py's constants so behaviour matches the retired panel exactly.
+# ── The bot registry ──────────────────────────────────────────────────────────
+#
+# ONE record per live bot. Everything below it is DERIVED.
+#
+# 🔴 There were nine parallel dicts here until 2026-08-04, keyed three different ways (task
+# name, bot key, state-file section), and registering a bot meant editing all nine. Missing
+# one produced a confident wrong answer rather than an error, which is the shape that makes
+# this expensive:
+#
+#   - no `_TASK_ACCT_TYPE` entry ⇒ `.get(task, "demo")` rendered a **LIVE bot as demo**,
+#     defeating the live tinting, the "N of these are LIVE accounts" warning on the fleet
+#     dialog, and the demo/live filter all at once.
+#   - no `_SUPPRESS_KEYS` entry ⇒ "Stop all N bots" skipped that bot **and reported
+#     success**, because `_stop_procs` iterated the crash-alert map rather than the bots.
+#
+# So the registry is a dataclass with **no default for `account_type`**: forgetting it is a
+# TypeError at import, which is loud, and at the only moment when it costs nothing. The
+# rest default off the bot key, because that is genuinely how `algos/live/` names things —
+# but every one can be overridden for a bot that does not follow the convention.
+#
+# ⚠ `BOT_MPC_SOS_FADE` IS NOT A REAL SCHEDULED TASK. `task` is a task name because that is
+# how the retired panel was keyed, but the live bot has no `BOT_*` task of its own: it boots
+# through SYS_STARTUP → startup_coordinator.py, and the command center starts it through
+# that same coordinator over WMI. `_parse_tasks` therefore never returns a status for it,
+# which is harmless — the PROCESS LIST is authoritative (see `get_snapshot`).
+#
 # All first-attempt bots deleted 2026-06-22 (see algos/docs/BOT_DEPLOYMENT_INFRA.md);
 # the suite restarted from scratch 2026-07-31 (algos/CLAUDE.md → "CLEAN SLATE").
-#
-# ⚠ `BOT_MPC_SOS_FADE` IS NOT A REAL SCHEDULED TASK. Every key in these maps is a task
-# name because that is how the retired panel was keyed, but the live bot has no `BOT_*`
-# task of its own: it boots through SYS_STARTUP → startup_coordinator.py, and the command
-# center starts it through that same coordinator over WMI. `_parse_tasks` therefore never
-# returns a status for it, which is harmless — `get_snapshot` already treats the PROCESS
-# LIST as authoritative and only consults the task status as a secondary signal.
-_BOT_DISPLAY_ORDER = ["BOT_MPC_SOS_FADE"]
-_DISPLAY_NAMES = {
-    "BOT_MPC_SOS_FADE":   "MPC SOS Fade",
+
+_VPS_INSTANCES = r"C:\trading\algos\markets\fx\instances"
+
+
+@dataclass
+class BotReg:
+    """Every fact this router needs about one registered bot.
+
+    `key` is also the string matched against the VPS process commandline
+    (`runner.py --bot mpc_sos_fade_demo`) — the script name identifies the FLEET, only the
+    key identifies the bot, because every live bot IS `runner.py`.
+    """
+    task: str
+    key: str
+    display: str
+    account_type: str                 # "demo" | "live" — deliberately no default
+    instance_dir: str = ""            # ⇒ key
+    log_file: str = ""                # ⇒ <key>.log, which is what algos/live/runner.py writes
+    suppress_key: str = ""            # ⇒ key; the short key written to stop_suppress.json
+    config_section: str = "strategy_params"
+    state_section: str = ""           # ⇒ state_<key>; bots SHARING a bot_state.json share this
+    state_file: str = ""              # ⇒ <instances>\<instance_dir>\bot_state.json
+
+    def __post_init__(self):
+        if self.account_type not in ("demo", "live"):
+            raise ValueError(
+                f"{self.key}: account_type must be 'demo' or 'live', not {self.account_type!r}"
+            )
+        self.instance_dir = self.instance_dir or self.key
+        self.log_file     = self.log_file or f"{self.key}.log"
+        self.suppress_key = self.suppress_key or self.key
+        self.state_section = self.state_section or f"state_{self.key}"
+        self.state_file = self.state_file or \
+            rf"{_VPS_INSTANCES}\{self.instance_dir}\bot_state.json"
+
+    @property
+    def config_path(self) -> Path:
+        return (cfg.MONOREPO_ROOT / "algos" / "markets" / "fx" / "instances"
+                / self.instance_dir / "config.json")
+
+
+_BOTS: list[BotReg] = [
+    BotReg(task="BOT_MPC_SOS_FADE", key="mpc_sos_fade_demo",
+           display="MPC SOS Fade", account_type="demo"),
+]
+
+# ── Derived views. Never edit one of these — add a BotReg above. ──────────────
+_BOT_DISPLAY_ORDER = [b.task for b in _BOTS]
+_BY_TASK: dict[str, BotReg] = {b.task: b for b in _BOTS}
+_BY_KEY:  dict[str, BotReg] = {b.key: b for b in _BOTS}
+
+_SYS_DISPLAY_NAMES = {
     "SYS_TELEGRAM":       "Telegram",
     "SYS_REPORTER":       "Reporter",
     "SYS_MONITOR":        "Monitor",
     "SYS_PNLTRACKER":     "P&L Tracker",
 }
-# The bot_key is also the string matched against the VPS process commandline
-# (`runner.py --bot mpc_sos_fade_demo`) — see `_is_python_running`.
-_TASK_BOT_KEYS = {"BOT_MPC_SOS_FADE": "mpc_sos_fade_demo"}
-_TASK_ACCT_TYPE = {"BOT_MPC_SOS_FADE": "demo"}
-# task → (bot_key, instance dir, log filename). algos/live/runner.py names its log after
-# the bot key, in the instance dir.
-_LOG_MAP = {
-    "BOT_MPC_SOS_FADE": ("mpc_sos_fade_demo", "mpc_sos_fade_demo", "mpc_sos_fade_demo.log"),
-}
+_DISPLAY_NAMES = {**{b.task: b.display for b in _BOTS}, **_SYS_DISPLAY_NAMES}
+_TASK_BOT_KEYS = {b.task: b.key for b in _BOTS}
+_KEY_DISPLAY   = {b.key: b.display for b in _BOTS}
+
 _SCHEDULED_JOBS = [
     JobStatus(name="Monitor",     schedule="every 1 min",  status="UNKNOWN"),
     JobStatus(name="P&L Tracker", schedule="every 1 min",  status="UNKNOWN"),
     JobStatus(name="Reporter",    schedule="daily 4pm CT", status="UNKNOWN"),
 ]
 
-# Crash-alert suppress keys — must match telegram_bot.py / monitor.py
-# (bot_key → the short key written to stop_suppress.json)
-_SUPPRESS_KEYS: dict[str, str] = {"mpc_sos_fade_demo": "mpc_sos_fade_demo"}
+# Crash-alert suppress keys — must match telegram_bot.py / monitor.py.
+_SUPPRESS_KEYS: dict[str, str] = {b.key: b.suppress_key for b in _BOTS}
 
 # Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
 # EMPTY ON PURPOSE. These are pnl_tracker's daily/weekly ALERT levels, and that job is
@@ -89,9 +152,6 @@ _SUPPRESS_KEYS: dict[str, str] = {"mpc_sos_fade_demo": "mpc_sos_fade_demo"}
 # page that nothing on the VPS enforces. The live bot's real risk lever is
 # `strategy_params.exec_risk_pct` in its instance config — see the runtime panel below.
 _BOT_THRESHOLDS: dict[str, dict[str, float]] = {}
-
-# bot_key → display name for notifications
-_KEY_DISPLAY: dict[str, str] = {v: _DISPLAY_NAMES[k] for k, v in _TASK_BOT_KEYS.items()}
 
 # Thresholds — git-tracked file read by both command center and pnl_tracker (via bot_state.py).
 _THRESHOLDS_JSON_PATH = cfg.MONOREPO_ROOT / "algos" / "shared" / "thresholds.json"
@@ -106,33 +166,19 @@ def _load_thresholds_json() -> dict[str, dict[str, float]]:
     return {}
 
 
-def _save_thresholds_json(overrides: dict) -> None:
-    _THRESHOLDS_JSON_PATH.write_text(json.dumps(overrides, indent=2))
-
-
 def _get_thresholds(bot_key: str) -> dict[str, float]:
+    """READ-ONLY. `PATCH /{bot}/caps` wrote this file and was deleted 2026-08-04 — see the
+    note on `PATCH /{bot}/runtime` below. Edit `algos/shared/thresholds.json` by hand."""
     base = dict(_BOT_THRESHOLDS.get(bot_key, {}))
     base.update(_load_thresholds_json().get(bot_key, {}))
     return base
 
 
-# Maps (bot_key, cap_name) → [(section, field)] pairs to write into instance config.json.
-# These are the fields the strategy engines actually read for hard stops.
-# EMPTY for mpc_sos_fade_demo, and not an oversight: algos/live/ has no daily-cap or
-# weekly-cap field to write. Its only account-level lever is per-trade risk, and the
-# account-level allocator that would consume a daily budget is UNBUILT (root CLAUDE.md).
-# Writing caps into a config the bot never reads is how a dashboard starts lying.
-_CAP_CONFIG_FIELDS: dict[str, dict[str, list[tuple[str, str]]]] = {}
-
-
 # ── Per-bot config file mapping ───────────────────────────────────────────────
-# Maps bot_key → the instance config.json path and the strategy section name.
+# Derived from the registry — bot_key → the instance config.json path and the strategy
+# section name. Kept as a dict because several call sites read `["path"]` / `["section"]`.
 _BOT_INSTANCE_MAP: dict[str, dict] = {
-    "mpc_sos_fade_demo": {
-        "path": cfg.MONOREPO_ROOT / "algos" / "markets" / "fx" / "instances"
-                / "mpc_sos_fade_demo" / "config.json",
-        "section": "strategy_params",
-    },
+    b.key: {"path": b.config_path, "section": b.config_section} for b in _BOTS
 }
 
 
@@ -300,18 +346,17 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     return sections
 
 
-# (section, [bot keys in that bot_state.json]). One entry per instance dir — a single
-# bot_state.json can hold several bot keys, which is why the value is a list.
+# Derived from the registry. `(section, [bot keys in that bot_state.json])` — one entry per
+# FILE, and the value is a list because a single bot_state.json can hold several bot keys
+# (two bots sharing an instance dir share a `state_section`, and this groups them).
 _BOT_STATE_SECTIONS: list[tuple[str, list[str]]] = [
-    ("state_mpc_sos_fade", ["mpc_sos_fade_demo"]),
+    (section, [b.key for b in _BOTS if b.state_section == section])
+    for section in dict.fromkeys(b.state_section for b in _BOTS)
 ]
 
-# section → the VPS path `_fetch_vps_snapshot` types. Windows paths, so this stays a
-# literal string rather than anything derived from the Mac's filesystem.
-_BOT_STATE_PATHS: dict[str, str] = {
-    "state_mpc_sos_fade":
-        r"C:\trading\algos\markets\fx\instances\mpc_sos_fade_demo\bot_state.json",
-}
+# section → the VPS path `_fetch_vps_snapshot` types. Windows paths throughout — never
+# anything derived from this Mac's filesystem.
+_BOT_STATE_PATHS: dict[str, str] = {b.state_section: b.state_file for b in _BOTS}
 
 
 def _parse_bot_states(snap: dict[str, str]) -> dict[str, dict]:
@@ -443,6 +488,14 @@ def _write_users_vps(users: dict) -> None:
         )
 
 
+# Every users endpoint is a read-modify-write of the WHOLE file, so two of them overlapping
+# means the second one's read can predate the first one's write and silently undo it. FastAPI
+# runs sync endpoints in a threadpool, so they genuinely can overlap. One lock, held across
+# the read AND the write, is the whole fix — the operations are short and there is exactly
+# one file.
+_USERS_LOCK = threading.Lock()
+
+
 def _users_or_502() -> dict:
     """Every users endpoint reads through here, so a read failure can never reach a write.
 
@@ -474,31 +527,58 @@ def list_users():
 
 @router.post("/users", status_code=201)
 def add_user(body: TelegramUserCreate):
-    users = _users_or_502()
-    if body.chat_id in users:
-        raise HTTPException(status_code=409, detail="User already exists")
-    users[body.chat_id] = {"name": body.name, "role": body.role, "added": date.today().isoformat()}
-    _save_users_or_502(users)
+    with _USERS_LOCK:
+        users = _users_or_502()
+        if body.chat_id in users:
+            raise HTTPException(status_code=409, detail="User already exists")
+        users[body.chat_id] = {"name": body.name, "role": body.role,
+                               "added": date.today().isoformat()}
+        _save_users_or_502(users)
     return {"status": "ok"}
+
+
+def _refuse_last_admin(users: dict, after: dict) -> None:
+    """Refuse a change that would leave nobody with the `admin` role.
+
+    `admin` is the only role that carries `/stop`, `/restart`, `/emergency` and `/resume`
+    (`algos/notifications/telegram_bot.py` → `ROLE_COMMANDS`), so a users.json with no admin
+    means **nobody can stop a bot from Telegram**.
+
+    ⚠ The bot's `ADMIN_CHAT` fallback does NOT cover this. It only fires when users.json is
+    MISSING or unparseable — a file that exists and lists everyone as `readonly` is read as
+    written, so the primary admin loses the commands too. Checked rather than assumed.
+    """
+    if any(u.get("role") == "admin" for u in users.values()) and \
+            not any(u.get("role") == "admin" for u in after.values()):
+        raise HTTPException(
+            status_code=409,
+            detail="That would leave no admin. Nobody could stop a bot from Telegram — "
+                   "promote someone else first.",
+        )
 
 
 @router.delete("/users/{chat_id}")
 def remove_user(chat_id: str):
-    users = _users_or_502()
-    if chat_id not in users:
-        raise HTTPException(status_code=404, detail="User not found")
-    del users[chat_id]
-    _save_users_or_502(users)
+    with _USERS_LOCK:
+        users = _users_or_502()
+        if chat_id not in users:
+            raise HTTPException(status_code=404, detail="User not found")
+        after = {k: v for k, v in users.items() if k != chat_id}
+        _refuse_last_admin(users, after)
+        _save_users_or_502(after)
     return {"status": "ok"}
 
 
 @router.patch("/users/{chat_id}")
 def update_user_role(chat_id: str, body: TelegramUserRoleUpdate):
-    users = _users_or_502()
-    if chat_id not in users:
-        raise HTTPException(status_code=404, detail="User not found")
-    users[chat_id]["role"] = body.role
-    _save_users_or_502(users)
+    with _USERS_LOCK:
+        users = _users_or_502()
+        if chat_id not in users:
+            raise HTTPException(status_code=404, detail="User not found")
+        after = {k: dict(v) for k, v in users.items()}
+        after[chat_id]["role"] = body.role
+        _refuse_last_admin(users, after)
+        _save_users_or_502(after)
     return {"status": "ok"}
 
 
@@ -524,17 +604,21 @@ def get_snapshot():
     for task_name in _BOT_DISPLAY_ORDER:
         bot_key = _TASK_BOT_KEYS.get(task_name, "")
         state = bot_states.get(bot_key, {})
-        task_status = task_statuses.get(task_name, "")
 
-        # Process list is authoritative. If the process isn't in wmic output,
-        # the bot is STOPPED — regardless of task_status or bot_state.json.
-        # (bot_state.json is never updated after a hard kill, so it can show
-        #  "running" indefinitely even after the process is dead.)
-        running_in_procs = _is_python_running(snap, bot_key)
-        if task_status == "Running" or running_in_procs:
-            status = "RUNNING"
-        else:
-            status = "STOPPED"
+        # THE PROCESS LIST IS AUTHORITATIVE, and now the code says so too — it used to read
+        # `task_status == "Running" or running_in_procs`, i.e. the exact opposite of the
+        # comment sitting above it, which is the kind of disagreement nobody re-reads.
+        #
+        # Every other signal here can claim RUNNING for a dead bot. `bot_state.json` is
+        # never updated after a hard kill, so it says "running" indefinitely. And the
+        # scheduled task answers a different question altogether: a bot boots through
+        # SYS_STARTUP → startup_coordinator.py, which EXITS once it has spawned the bot, so
+        # the task is "Running" only while the launcher runs and "Ready" for the entire life
+        # of the bot it started. Reading that as the bot's status is backwards.
+        #
+        # `task_status` is still parsed and still shown for the SYS_* jobs below, where it
+        # IS the question being asked.
+        status = "RUNNING" if _is_python_running(snap, bot_key) else "STOPPED"
 
         total_pnl = state.get("total_pnl_pct")
         if total_pnl is not None:
@@ -553,7 +637,12 @@ def get_snapshot():
             # upstream: making the registries hold strings to satisfy a label would put a
             # display concern inside the account guard.
             account=str(state.get("account") or ""),
-            account_type=_TASK_ACCT_TYPE.get(task_name, "demo"),
+            # From the registry, which cannot omit it — `account_type` has no default on
+            # BotReg, so a bot registered without one is a TypeError at import. The old
+            # `.get(task, "demo")` defaulted in the dangerous direction: a LIVE bot
+            # rendered as demo, losing the amber tinting, the "N of these are LIVE
+            # accounts" warning on every fleet dialog, and its place in the demo/live filter.
+            account_type=_BY_TASK[task_name].account_type,
             balance=state.get("balance"),
             # Read with a THREE-way result on purpose: True, False, or "the bot never said".
             # `state.get("mt5_link")` on a bot that predates the field returns None, and
@@ -616,16 +705,9 @@ def get_snapshot():
 @router.get("/{bot_name}/log", response_class=PlainTextResponse)
 def get_bot_log(bot_name: str, lines: int = 500):
     """Read the last N lines of a bot's stdout log over SSH."""
-    # Find task name matching bot_name (display name)
-    task_name = next(
-        (t for t, dn in _DISPLAY_NAMES.items() if dn.lower() == bot_name.lower()),
-        None,
-    )
-    if not task_name or task_name not in _LOG_MAP:
-        raise HTTPException(status_code=404, detail=f"No log mapping for bot '{bot_name}'")
-
-    _, instance, log_file = _LOG_MAP[task_name]
-    log_path = f"C:\\trading\\algos\\markets\\fx\\instances\\{instance}\\{log_file}"
+    task_name, bot_key = _resolve_bot(bot_name)
+    reg = _BY_KEY[bot_key]
+    log_path = rf"{_VPS_INSTANCES}\{reg.instance_dir}\{reg.log_file}"
 
     try:
         raw = _ssh(f"type {log_path} 2>nul")
@@ -675,8 +757,14 @@ def _kill_bot(bot_key: str) -> str:
 
 
 def _stop_procs(clear_lock: bool = True) -> str:
-    """Stop every registered bot, and nothing else. Returns combined SSH output."""
-    outs = [_kill_bot(key) for key in _SUPPRESS_KEYS]
+    """Stop every registered bot, and nothing else. Returns combined SSH output.
+
+    Iterates the BOT REGISTRY. It used to iterate `_SUPPRESS_KEYS` — the crash-alert map —
+    which happened to hold the same keys and did not have to: a bot registered without a
+    suppress entry was skipped by "Stop all N bots" **and the button reported success**,
+    with the count on it coming from the registry the loop was not using.
+    """
+    outs = [_kill_bot(b.key) for b in _BOTS]
     if clear_lock:
         # Only meaningful once the bots are actually gone — a live bot re-creates it.
         outs.append(_ssh(f"del {_LOCK_PATH} 2>nul"))
@@ -705,8 +793,8 @@ def start_bots():
 def stop_bots():
     """Delete the MT5 lock file and kill all python.exe processes on the VPS."""
     try:
-        for bot_key in _SUPPRESS_KEYS:
-            _suppress_stop_alert(bot_key)
+        for _b in _BOTS:
+            _suppress_stop_alert(_b.key)
         out = _stop_procs()
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
@@ -720,8 +808,8 @@ def stop_bots():
 def restart_bots():
     """Stop all bots, wait 3 s, then run SYS_STARTUP."""
     try:
-        for bot_key in _SUPPRESS_KEYS:
-            _suppress_stop_alert(bot_key)
+        for _b in _BOTS:
+            _suppress_stop_alert(_b.key)
         stop_out = _stop_procs()
         _time.sleep(3)
         start_out = _start_task()
@@ -774,9 +862,24 @@ def _launch_bot(bot_key: str) -> str:
 # are built; it says nothing about what is deployed, and until 2026-08-03 the two were the
 # same files — which is exactly the confusion being removed.
 
-_VPS_REPO = r"C:\trading"
-_VPS_INSTANCES = r"C:\trading\algos\markets\fx\instances"
+_VPS_REPO = r"C:\trading"   # `_VPS_INSTANCES` is defined with the registry, which needs it
 _PROMOTE_PY = r"C:\trading\algos\tools\promote.py"
+
+
+def _bot_state_path(bot_key: str) -> str | None:
+    """The VPS `bot_state.json` holding this bot's entry, resolved from the SAME registry the
+    snapshot fetch uses.
+
+    `get_bot_version` used to name `state_mpc_sos_fade` outright, so every OTHER bot got a
+    blank `running_hash` — which reads as "the live process agrees with the deployment
+    record" and makes the *restart pending* warning permanently impossible to trigger. The
+    fleet strip on the Configure tab then reports a confident **0 restart pending** across a
+    fleet it cannot see, which is worse than showing nothing.
+    """
+    for section, keys in _BOT_STATE_SECTIONS:
+        if bot_key in keys:
+            return _BOT_STATE_PATHS.get(section)
+    return None
 
 
 def _deployed_json(bot_key: str) -> dict:
@@ -793,14 +896,27 @@ def get_bot_version(bot_name: str):
     _, bot_key = _resolve_bot(bot_name)
     rec = _deployed_json(bot_key)
 
-    # One round trip for the three git/consistency facts. `--show` re-hashes the snapshot on
-    # disk, which is the tamper check: the record can only be trusted if the files still
-    # match it.
-    raw = _ssh(
+    # ONE round trip for every fact on this card. `--show` re-hashes the snapshot on disk,
+    # which is the tamper check: the record can only be trusted if the files still match it.
+    #
+    # The bot's own `bot_state.json` rides along on the same connection. It used to come
+    # from a second `_fetch_vps_snapshot()` — a two-command fleet-wide fetch (every python
+    # process, every scheduled task, every bot's state file) issued to read ONE string.
+    # MEASURED before: /version 8.5s, of which the snapshot was ~5s; the Configure tab's
+    # fleet strip fires one of these per bot, so the waste multiplied by the fleet.
+    state_path = _bot_state_path(bot_key)
+    cmd = (
         f"cd {_VPS_REPO} & git rev-parse --short HEAD"
         f" & echo. & echo ===AHEAD=== & git rev-list --count {rec.get('promoted_commit') or 'HEAD'}..HEAD"
         f" & echo. & echo ===SHOW=== & {_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key} --show 2>nul"
     )
+    if state_path:
+        # `echo.` before the marker for the reason `_fetch_vps_snapshot` documents: `type`
+        # emits no trailing newline, so a marker after it arrives welded to the previous
+        # section and `_parse_sections` silently merges the two.
+        cmd += f" & echo. & echo ===STATE=== & type {state_path} 2>nul"
+
+    raw = _ssh(cmd)
     parts = _parse_sections(raw, "head")
     try:
         ahead = int(parts.get("ahead", "0").strip().splitlines()[-1])
@@ -812,9 +928,8 @@ def get_bot_version(bot_name: str):
     # misleading state this page can be in, so it is surfaced rather than reconciled away.
     running_hash = ""
     try:
-        snap = _fetch_vps_snapshot()
-        state = json.loads(snap.get("state_mpc_sos_fade", "{}") or "{}")
-        running_hash = (state.get(bot_key) or {}).get("source_hash", "")
+        state = json.loads(parts.get("state", "").strip() or "{}")
+        running_hash = (state.get(bot_key) or {}).get("source_hash", "") or ""
     except Exception:
         pass
 
@@ -826,7 +941,24 @@ def get_bot_version(bot_name: str):
     if deployed_params:
         try:
             current = _read_instance_config(bot_key).get("strategy_params", {})
-            drift = sorted(k for k, v in current.items() if deployed_params.get(k, v) != v)
+            # Compared over the UNION of both key sets, through a sentinel.
+            #
+            # The old form was `deployed_params.get(k, v) != v` over `current` alone, which
+            # is blind in both directions and blind hardest in the case that matters: a
+            # setting ADDED to config.json since the promote defaults to its own value and
+            # compares equal, so a knob the deployment never heard of reports no drift. A
+            # setting REMOVED from config.json was never looked at either, because only
+            # `current` was iterated.
+            #
+            # The sentinel rather than `.get(k)`: a param whose value is legitimately `None`
+            # must not read as absent. Same rule as `mt5_link` — missing and null are
+            # different answers.
+            missing = object()
+            keys = set(deployed_params) | set(current)
+            drift = sorted(
+                k for k in keys
+                if deployed_params.get(k, missing) != current.get(k, missing)
+            )
         except HTTPException:
             pass
 
@@ -848,14 +980,49 @@ def get_bot_version(bot_name: str):
     )
 
 
-def _run_promote(bot_key: str, *, dry_run: bool, pull: bool, allow_dirty: bool) -> str:
+_PROMOTE_OK   = "===PROMOTE_OK==="
+_PROMOTE_FAIL = "===PROMOTE_FAILED==="
+_PROMOTE_UNKNOWN = (
+    "\n⚠ promote.py did not report an exit status. Nothing here can say whether it "
+    "deployed — check the VPS before assuming either way."
+)
+
+
+def _run_promote(bot_key: str, *, dry_run: bool, pull: bool,
+                 allow_dirty: bool) -> tuple[bool | None, str]:
+    """Run promote.py on the VPS. Returns `(ok, output)`; `ok` is **None** when the run did
+    not report one, which is a third answer and never rounded to False silently.
+
+    🔴 The result used to be sniffed out of the PROSE — `"pinned" in out` for a promote,
+    `"dry run" in out` for a preview. `promote.py` has always returned a real exit code (0
+    on success, 1 on a dirty tree / a snapshot that does not import / a missing source
+    tree), and it was being thrown away in favour of a substring: rewording one `print`
+    silently flips the verdict, and a FAILURE whose message happens to contain the word
+    reads as a success. On the one action in this router that changes what a bot trades.
+    """
     steps = []
     if pull:
         steps.append(f"cd {_VPS_REPO} & git pull origin main")
     flags = " --dry-run" if dry_run else ""
     flags += " --allow-dirty" if allow_dirty else ""
     steps.append(f"{_PYTHON_EXE} {_PROMOTE_PY} --bot {bot_key}{flags}")
-    return _ssh(" & ".join(steps))
+    # `if errorlevel 1`, never `echo %errorlevel%`: cmd expands `%VAR%` at PARSE time, so on
+    # a single command line that prints the code from BEFORE promote.py ran — which is the
+    # trap that makes an exit-code check look like it works and always answer 0.
+    steps.append(f"if errorlevel 1 (echo {_PROMOTE_FAIL}) else (echo {_PROMOTE_OK})")
+
+    out = _ssh(" & ".join(steps))
+    if _PROMOTE_FAIL in out:
+        ok: bool | None = False
+    elif _PROMOTE_OK in out:
+        ok = True
+    else:
+        ok = None
+    clean = "\n".join(
+        ln for ln in out.splitlines()
+        if _PROMOTE_OK not in ln and _PROMOTE_FAIL not in ln
+    ).strip()
+    return ok, clean
 
 
 @router.post("/{bot_name}/promote/preview", response_model=BotPromoteResult)
@@ -869,12 +1036,15 @@ def preview_bot_promote(bot_name: str, req: BotPromoteRequest):
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        out = _run_promote(bot_key, dry_run=True, pull=req.pull, allow_dirty=req.allow_dirty)
+        ok, out = _run_promote(bot_key, dry_run=True, pull=req.pull,
+                               allow_dirty=req.allow_dirty)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    return BotPromoteResult(ok="dry run" in out, output=out)
+    if ok is None:
+        return BotPromoteResult(ok=False, output=out + _PROMOTE_UNKNOWN)
+    return BotPromoteResult(ok=ok, output=out)
 
 
 @router.post("/{bot_name}/promote", response_model=BotPromoteResult)
@@ -886,13 +1056,21 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        out = _run_promote(bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty)
+        reported, out = _run_promote(bot_key, dry_run=False, pull=req.pull,
+                                     allow_dirty=req.allow_dirty)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
 
-    ok = "pinned" in out
+    # An unreported result is NOT a success, and it is not a plain failure either — the
+    # promote may have deployed. It must not restart the bot on a maybe, and it must not
+    # send the "promoted" alert either, so it takes the false branch with the doubt spelled
+    # out in the output rather than resolved in silence.
+    if reported is None:
+        return BotPromoteResult(ok=False, output=out + _PROMOTE_UNKNOWN, restarted=False)
+
+    ok = reported
     restarted = False
     if ok and req.restart:
         # Kill it and let SYS_MONITOR bring it back — that path is exercised every time the
@@ -909,65 +1087,29 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
     return BotPromoteResult(ok=ok, output=out, restarted=restarted)
 
 
-@router.get("/{bot_name}/config", response_model=BotConfigSections)
-def get_bot_config(bot_name: str):
-    """Return the config sections for a bot from its instance config.json."""
-    _, bot_key = _resolve_bot(bot_name)
-    data    = _read_instance_config(bot_key)
-    section = _BOT_INSTANCE_MAP[bot_key]["section"]
-    return BotConfigSections(
-        risk       = data.get("risk", {}),
-        protection = data.get("protection", {}),
-        strategy   = data.get(section, {}),
-        regime     = data.get("regime", {}),
-        dead_zone  = data.get("dead_zone", {}),
-    )
-
-
-@router.patch("/{bot_name}/config")
-def save_bot_config(bot_name: str, update: BotConfigUpdate):
-    """Write config sections to instance config.json.
-    If deploy=True: git commit → push → VPS git pull → restart bot.
-    """
-    _, bot_key  = _resolve_bot(bot_name)
-    info        = _BOT_INSTANCE_MAP[bot_key]
-    section_key = info["section"]
-    data        = _read_instance_config(bot_key)
-
-    if update.risk       is not None: data.setdefault("risk", {}).update(update.risk)
-    if update.protection is not None: data.setdefault("protection", {}).update(update.protection)
-    if update.strategy   is not None: data.setdefault(section_key, {}).update(update.strategy)
-    if update.regime     is not None: data.setdefault("regime", {}).update(update.regime)
-    if update.dead_zone  is not None: data.setdefault("dead_zone", {}).update(update.dead_zone)
-
-    _write_instance_config(bot_key, data)
-
-    if update.deploy:
-        try:
-            _git_commit_push(
-                info["path"],
-                f"config: update {bot_name} from command center",
-            )
-        except subprocess.CalledProcessError as e:
-            raise HTTPException(status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}")
-
-        try:
-            _ssh("cd C:\\trading && git pull origin main")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
-
-        try:
-            _suppress_stop_alert(bot_key)
-            _kill_bot(bot_key)
-            _time.sleep(3)
-            _launch_bot(bot_key)
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"VPS restart failed: {e}")
-
-        display = _KEY_DISPLAY.get(bot_key, bot_key)
-        _notify_telegram(f"🔄 *{display}* config updated + restarting \\[command center\\]")
-
-    return {"status": "ok"}
+# ── Reading and changing a bot's settings ─────────────────────────────────────
+#
+# 🔴 DELETED 2026-08-04: `GET /{bot}/config`, `PATCH /{bot}/config`, `PATCH /{bot}/caps`
+# (recover with `git show 407d716^:command-center/backend/routers/bots.py`). All three had
+# NO consumer — their frontend hooks existed and nothing rendered them — and two of them
+# restarted a LIVE TRADING BOT to do it. That is a hazard sitting on the API with no page
+# in front of it to notice.
+#
+#   * `PATCH /config` wrote ARBITRARY sections into the instance config — including
+#     `strategy` — then committed, pushed, pulled and restarted the bot into them. It went
+#     straight around `bot_params.RUNTIME_EDITABLE`, the allowlist whose entire job is to
+#     say which lever may move under a running bot. A backdoor around a safety rule is
+#     worse than no rule, because the rule is what everybody reads.
+#   * `PATCH /caps` did the same restart to write `thresholds.json` for `SYS_PNLTRACKER`,
+#     a task that is DISABLED, plus a loop over `_CAP_CONFIG_FIELDS` — which is empty by
+#     design, because `algos/live/` has no daily-cap or weekly-cap field to write. Every
+#     restart it caused was for nothing.
+#   * `GET /config` is `GET /params` with fewer labels.
+#
+# What replaced them, and why each is the safer shape: `/params` reads (and never writes),
+# and `/runtime` writes ONLY the reloadable set and **does not restart** — the bot re-reads
+# its own config and applies the change while FLAT. Editing thresholds.json is now a hand
+# edit, which is the honest cost of a job nobody has switched on.
 
 
 @router.get("/{bot_name}/params", response_model=BotParamsView)
@@ -1047,59 +1189,6 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
                      f"Applies at the next bar the bot is flat.")
     return {"status": "ok", "changed": True, "deployed": True, "detail": changed,
             "output": out}
-
-
-@router.patch("/{bot_name}/caps")
-def save_bot_caps(bot_name: str, caps: BotCapUpdate):
-    """Update risk caps: write thresholds.json + instance config.json, git push, VPS pull, restart bot."""
-    _, bot_key = _resolve_bot(bot_name)
-
-    # 1. thresholds.json — pnl_tracker alert levels (picked up on next 1-min run, no restart needed)
-    thresholds = _load_thresholds_json()
-    thresholds[bot_key] = {
-        "daily_goal": caps.daily_goal_pct,
-        "daily_cap":  caps.daily_cap_pct,
-        "weekly_cap": caps.weekly_cap_pct,
-    }
-    _save_thresholds_json(thresholds)
-
-    # 2. instance config.json — strategy engine hard stops (take effect on restart)
-    instance_info = _BOT_INSTANCE_MAP[bot_key]
-    config_data   = _read_instance_config(bot_key)
-    field_map     = _CAP_CONFIG_FIELDS.get(bot_key, {})
-    cap_values    = {"daily_cap": caps.daily_cap_pct, "weekly_cap": caps.weekly_cap_pct, "daily_goal": caps.daily_goal_pct}
-    for cap_name, value in cap_values.items():
-        for section, field in field_map.get(cap_name, []):
-            config_data.setdefault(section, {})[field] = value
-    _write_instance_config(bot_key, config_data)
-
-    # 3. Git commit both files + push
-    try:
-        _git_commit_push(
-            [_THRESHOLDS_JSON_PATH, instance_info["path"]],
-            f"config: update {bot_name} risk caps from command center",
-        )
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}")
-
-    # 4. VPS git pull
-    try:
-        _ssh("cd C:\\trading && git pull origin main")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
-
-    # 5. Restart the bot so new config.json values take effect
-    try:
-        _suppress_stop_alert(bot_key)
-        _kill_bot(bot_key)
-        _time.sleep(3)
-        _launch_bot(bot_key)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"VPS restart failed: {e}")
-
-    display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(f"📊 *{display}* risk caps updated + restarting \\[command center\\]")
-    return {"status": "ok"}
 
 
 @router.post("/{bot_name}/start")

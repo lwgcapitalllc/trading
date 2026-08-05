@@ -280,27 +280,9 @@ class BotSnapshot(BaseModel):
     telegram: ProcessStatus
 
 
-class BotConfigSections(BaseModel):
-    risk: dict = {}
-    protection: dict = {}
-    strategy: dict = {}
-    regime: dict = {}
-    dead_zone: dict = {}
-
-
-class BotConfigUpdate(BaseModel):
-    risk: Optional[dict] = None
-    protection: Optional[dict] = None
-    strategy: Optional[dict] = None
-    regime: Optional[dict] = None
-    dead_zone: Optional[dict] = None
-    deploy: bool = False
-
-
-class BotCapUpdate(BaseModel):
-    daily_goal_pct: float
-    daily_cap_pct: float
-    weekly_cap_pct: float
+# `BotConfigSections` / `BotConfigUpdate` / `BotCapUpdate` were deleted 2026-08-04 with the
+# three unused endpoints that took them — see `routers/bots.py`, above `get_bot_params`.
+# `BotParamsView` (read) and `BotRuntimeUpdate` (write) are the maintained pair.
 
 
 class BotParamRow(BaseModel):
@@ -378,6 +360,14 @@ class BotRuntimeUpdate(BaseModel):
     deploy: bool = True     # commit + push + VPS pull; False writes locally only
 
 
+# The roles `algos/notifications/telegram_bot.py` keys `ROLE_COMMANDS` on. A value outside
+# this set is not a new role — it is a user with NO permissions, because `get_role` returns
+# the string and the command lookup then misses. `"Admin"` is the shape of that mistake.
+# The subsystems may not import each other, so this is a mirrored contract, like
+# `bot_params.RUNTIME_EDITABLE` mirrors `live_config.RUNTIME_RELOADABLE`.
+TELEGRAM_ROLES = ("admin", "readonly")
+
+
 class TelegramUser(BaseModel):
     chat_id: str
     name: str
@@ -390,9 +380,23 @@ class TelegramUserCreate(BaseModel):
     name: str
     role: str
 
+    @field_validator("role")
+    @classmethod
+    def _known_role(cls, v: str) -> str:
+        if v not in TELEGRAM_ROLES:
+            raise ValueError(f"role must be one of {TELEGRAM_ROLES}, not {v!r}")
+        return v
+
 
 class TelegramUserRoleUpdate(BaseModel):
     role: str
+
+    @field_validator("role")
+    @classmethod
+    def _known_role(cls, v: str) -> str:
+        if v not in TELEGRAM_ROLES:
+            raise ValueError(f"role must be one of {TELEGRAM_ROLES}, not {v!r}")
+        return v
 
 
 # ── Lab — strategies ──────────────────────────────────────────────────────────

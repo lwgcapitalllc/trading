@@ -21,16 +21,23 @@ function UserRow({
   onRemove,
   onRoleChange,
   isBusy,
+  isActing,
 }: {
   user: TelegramUser
   onRemove: () => void
   onRoleChange: (role: string) => void
+  /** A write is in flight somewhere — every row is locked, see the note in UsersTab. */
   isBusy: boolean
+  /** …and it is THIS row's. Only one row can say so, which is what makes the lock read as
+   *  "waiting for that one" rather than "the page broke". */
+  isActing: boolean
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   return (
-    <tr className="border-b border-border-subtle hover:bg-bg-hover/40 transition-colors duration-[80ms]">
+    <tr className={`border-b border-border-subtle transition-colors duration-[80ms] ${
+      isActing ? 'bg-accent-muted/30' : 'hover:bg-bg-hover/40'
+    }`}>
       <td className="px-6 py-[11px] font-medium text-small align-middle">{user.name}</td>
       <td className="px-6 py-[11px] font-mono text-[11px] text-text-secondary align-middle">{user.chat_id}</td>
       <td className="px-6 py-[11px] align-middle">
@@ -47,7 +54,9 @@ function UserRow({
       </td>
       <td className="px-6 py-[11px] text-small text-text-tertiary align-middle">{user.added}</td>
       <td className="px-6 py-[11px] align-middle">
-        {confirmRemove ? (
+        {isActing ? (
+          <span className="text-[11px] text-text-tertiary">Saving…</span>
+        ) : confirmRemove ? (
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-neg-text">Remove?</span>
             <button
@@ -100,7 +109,20 @@ export function UsersTab() {
     )
   }
 
+  // ── Why every row locks while one is saving ────────────────────────────────
+  // Each of these endpoints rewrites the WHOLE users.json, so two in flight at once means
+  // the second one's read can predate the first one's write and silently undo it. The
+  // backend holds a lock across its own read-modify-write (`routers/bots._USERS_LOCK`), so
+  // this is not the only thing standing between us and a lost update — but serialising here
+  // too means the page never shows a change that is about to be overwritten.
+  //
+  // What changed on 2026-08-04 is legibility, not the locking: the acting row now says
+  // `Saving…` and tints, so a table of greyed-out controls reads as "waiting for that one"
+  // instead of "everything broke".
   const anyMutating = addUser.isPending || removeUser.isPending || updateRole.isPending
+  const actingChatId =
+    (removeUser.isPending ? removeUser.variables : undefined) ??
+    (updateRole.isPending ? updateRole.variables?.chatId : undefined)
 
   return (
     <div>
@@ -149,6 +171,7 @@ export function UsersTab() {
                   key={u.chat_id}
                   user={u}
                   isBusy={anyMutating}
+                  isActing={actingChatId === u.chat_id}
                   onRemove={() => removeUser.mutate(u.chat_id)}
                   onRoleChange={role => updateRole.mutate({ chatId: u.chat_id, role })}
                 />
