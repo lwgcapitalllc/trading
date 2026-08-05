@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type { BotDeployedVersion, BotPromoteResult, BotSnapshot } from '@/types'
@@ -109,6 +109,29 @@ export function useBotVersion(botName: string | null) {
     queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(botName!)}/version`),
     enabled: !!botName,
     staleTime: 30_000,
+  })
+}
+
+/**
+ * The same read as `useBotVersion`, for every bot at once — the fleet strip's source.
+ *
+ * ⚠ It deliberately reuses `useBotVersion`'s query key and query function, so a bot's row in the
+ * fleet summary and its own Deployed version card are ONE cache entry. Two fetches of the same
+ * fact are two facts that can disagree, and this page's whole job is saying which version is
+ * deployed — a strip claiming "1 restart pending" over a card claiming nothing is worse than no
+ * strip at all.
+ *
+ * Each entry stays `undefined` while loading or on error; the caller must count that as UNKNOWN
+ * rather than healthy (`no data` and `cannot ask` are not the same value — the rule this repo
+ * learned from a bot that was blind for 50 minutes).
+ */
+export function useBotVersions(botNames: string[]) {
+  return useQueries({
+    queries: botNames.map(name => ({
+      queryKey: ['bots', 'version', name],
+      queryFn: () => api.get<BotDeployedVersion>(`/bots/${encodeURIComponent(name)}/version`),
+      staleTime: 30_000,
+    })),
   })
 }
 

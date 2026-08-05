@@ -334,7 +334,59 @@ the switch existing.
 ⚠ **The URL is a SECRET.** Whoever holds it can send your pings for you and hold the alert green
 forever, which is strictly worse than no switch, because you would believe in it.
 
-### G11 — The Bots page is CORRECT for many bots and unreadable with them — raised 2026-08-04
+### G11 — The Bots page is CORRECT for many bots and unreadable with them — **CLOSED 2026-08-04**
+
+**All three bullets below are closed.** Configure is a bot SELECTOR (a left rail) plus a detail panel
+for the one selected bot; a fleet-wide version strip sits above it; and Monitor's global Start / Stop
+/ Restart have left the visual language of the per-row buttons.
+
+**Monitor's half, and why it needed more than spacing.** The three fleet buttons and the ▷ ■ ↻ in
+every table row were rendered as peers, and they are not the same kind of thing — one restarts a bot,
+the other kills every python process on the VPS. The card is now danger-bordered, titled **Fleet
+controls** with an `ALL N BOTS` chip, and **every button carries the count it will hit** (`Stop all 4`),
+because a label that is a number cannot say one thing while the table says another. The row column
+header became **This bot** — the one place a row's scope can be stated once. Each fleet dialog now
+LISTS the bots by name with live accounts flagged (`AffectedBots`): the old copy described the
+mechanism ("kills all python.exe processes") and never the subjects, so the single fact that catches a
+misclick — *which accounts* — was the one thing not on screen.
+
+🔴 **A real defect fell out of that pass: the fleet buttons were GATED on the filtered list.**
+`anyRunning` and the empty check were computed over the demo/live-filtered bots, while
+`POST /bots/{start,stop,restart}` fires SYS_STARTUP / kills python on the VPS and has never heard of
+a filter. So the "Stop all bots first" guard on Start could be defeated by choosing a tab — with the
+**live** filter on and no live bot running, `anyRunning` read false while the demo bots were up — and
+"No bots in this filter" disabled controls that would have worked fine. Both now count over ALL bots,
+and when the filter is hiding a bot the card says so in words: *the demo filter is hiding 1 bot; these
+buttons still act on all 4.* ⚠ **The general shape is this repo's own: a control's GUARD must be
+derived from the same set the control acts on.** A view filter that reaches the guard but not the
+endpoint is two different populations wearing one number.
+
+**What the Configure fix actually buys, and it is a property rather than a layout preference: only the
+SELECTED bot's controls exist in the DOM.** Verified in a real browser against a mocked 4-bot fleet —
+`getByRole('button', {name: /promote/i})` counts **1** with four bots registered, where the flat stack
+would have rendered four. A Promote button for a bot you did not pick is not there to be hit, which is
+something no amount of spacing, ordering or confirmation copy can buy. Beside it: selection lives in
+`?bot=` so a refresh cannot silently move you to a different bot's promote button, the promote confirm
+and the risk-change dialog both NAME the bot (with a selector above them, the bot is a choice made a
+scroll ago and no longer on screen), and a `live` account is tinted amber in the rail and the header.
+
+⚠ **The fleet strip and the per-bot card derive from ONE function** (`versionFlags`), and share one
+TanStack cache entry per bot (`useBotVersions` reuses `useBotVersion`'s key). Two readings of "is this
+deployment claim false" is two answers that can disagree, and a strip saying *all clean* over a card
+warning *restart pending* would be worse than no strip. It costs no extra fetch — the flat stack was
+already reading every bot's version to render every card.
+
+⚠ **A version that could not be READ is counted as `unreadable`, never as clean.** Same rule as the
+`No MT5 link` chip: *no data* and *cannot ask* must not be the same value.
+
+⚠ **The detail header is deliberately NOT sticky and the RAIL is.** "Which bot am I editing" has to
+survive scrolling past a 53-row parameter accordion, and the rail is the selector, so its highlighted
+row cannot disagree with itself. A second sticky header was a second answer to one question — and it
+landed straight in the 22px trap `command-center/frontend/CLAUDE.md` records (`<main>` is a padded
+scroller, so `top-0` pins 22px LOW and the card headers below scroll up through the strip it leaves).
+It was visible in a screenshot before it was reasoned about.
+
+Original write-up follows.
 
 Aaron's question, and the answer is yes on the part that matters: `ConfigureTab` maps over
 `snapshot.bots` and renders a full section per bot — its own Deployed version card, its own promote
@@ -344,23 +396,25 @@ cannot reach another. Nothing here is single-bot by construction.
 **What does not scale is the READING of it, and it gets worse exactly when it matters most.** Both
 tabs are flat vertical stacks with no bot selector, no filter and no collapse:
 
-- **Configure** is roughly a full screen per bot (risk editor + Account + Deployed version + a 47-row
+- ✅ **Configure** is roughly a full screen per bot (risk editor + Account + Deployed version + a 47-row
   parameter accordion). Three bots is a scroll hunt; the promote button you want is somewhere in the
   middle of it, and the promote controls of the two bots you do NOT want to touch are identical and
-  adjacent. That is a misclick surface, not just a layout complaint.
-- **Monitor** already has a table, so it scales further, but the per-bot start/stop/restart buttons
+  adjacent. That is a misclick surface, not just a layout complaint. — **FIXED: rail + detail panel.**
+- ✅ **Monitor** already has a table, so it scales further, but the per-bot start/stop/restart buttons
   sit in rows that look alike, and the page-level Start / Stop / Restart act on ALL bots — a
   distinction that is easy to miss with one bot registered and expensive to miss with four.
-- **The version card is per bot with nothing comparing them.** The question that will actually be
+  — **FIXED: a danger-bordered `Fleet controls` card, counts on every button, `This bot` on the row
+  column, and the affected bots listed by name in the dialog.**
+- ✅ **The version card is per bot with nothing comparing them.** The question that will actually be
   asked once there are several — *which bots are behind the repo, which have a restart pending* — has
   no single place that answers it, even though `GET /bots/{name}/version` already returns everything
-  needed.
+  needed. — **FIXED: the fleet strip at the top of Configure.**
 
 **Fix before the second bot goes live, not after.** Sketch: a bot selector (or per-bot collapse,
 defaulting to collapsed past one) on Configure; a fleet-level version summary row; and the global
 Start/Stop/Restart visually separated from the per-bot ones. None of it is hard — it is layout over
 endpoints that already exist per bot — which is precisely why it should not be left until the day
-there is a live position on the line.
+there is a live position on the line. **All three landed 2026-08-04.**
 
 ⚠ **This pairs with G10 and neither is sufficient alone.** G10 stops two bots overdrawing one
 account; G11 stops a human doing the same thing by clicking the wrong row. Both are prerequisites for

@@ -162,7 +162,10 @@ function ConfirmModal({
   onConfirm, onCancel, isPending,
 }: {
   label: string
-  description: string
+  /** ReactNode, so a fleet action can LIST the bots it is about to hit. "Are you sure?"
+   *  trains you to click yes; the names of four accounts do not. Same rule the risk-change
+   *  dialog on Configure follows — the confirmation carries the facts, not the question. */
+  description: React.ReactNode
   confirmLabel: string
   confirmClass: string
   onConfirm: () => void
@@ -173,7 +176,7 @@ function ConfirmModal({
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6" onClick={onCancel}>
       <div className="bg-bg-surface border border-border-default rounded-lg w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
         <p className="text-[14px] font-semibold mb-[6px]">{label}</p>
-        <p className="text-[12px] text-text-tertiary mb-5">{description}</p>
+        <div className="text-[12px] text-text-tertiary mb-5">{description}</div>
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="px-4 py-[7px] text-small rounded-md border border-border-default bg-bg-surface text-text-secondary hover:bg-bg-hover transition-colors">
             Cancel
@@ -187,6 +190,38 @@ function ConfirmModal({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The bots a FLEET action is about to hit, by name.
+ *
+ * The three fleet dialogs used to describe the mechanism ("kills all python.exe processes")
+ * and never the subjects, so the one fact a reader needs to catch a misclick — *which
+ * accounts* — was the one thing not on screen. A live account is called out, because that is
+ * the row whose cost is different in kind rather than degree.
+ */
+function AffectedBots({ bots }: { bots: BotStatus[] }) {
+  if (bots.length === 0) return null
+  return (
+    <div className="mt-3 bg-bg-sunken border border-border-subtle rounded-md p-[10px] max-h-[160px] overflow-y-auto">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-[6px]">
+        Affects {bots.length} {bots.length === 1 ? 'bot' : 'bots'}
+      </p>
+      {bots.map(b => (
+        <div key={b.name} className="flex items-center gap-[6px] py-[2px]">
+          <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${
+            b.status === 'RUNNING' ? 'bg-pos' : 'bg-neg'
+          }`} />
+          <span className="text-[11px] text-text-secondary truncate">{b.name}</span>
+          {b.account_type === 'live' && (
+            <span className="ml-auto inline-flex text-[9px] font-semibold px-[5px] py-[1px] rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text flex-shrink-0">
+              live
+            </span>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
@@ -224,7 +259,14 @@ export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = (searchParams.get('tab') ?? 'monitor') as PageTab
-  const setTab = (t: PageTab) => setSearchParams({ tab: t }, { replace: true })
+  // Merge rather than replace — Configure keeps its selected bot in `?bot=`, and rebuilding
+  // the whole query string would drop it, so leaving the tab and coming back would land you
+  // on a different bot's promote button than the one you left.
+  const setTab = (t: PageTab) => setSearchParams(prev => {
+    const next = new URLSearchParams(prev)
+    next.set('tab', t)
+    return next
+  }, { replace: true })
   const [filter, setFilter]               = useState<AccountFilter>('all')
   const [expandedBot, setExpandedBot]     = useState<string | null>(null)
   const [logBot, setLogBot]               = useState<string | null>(null)
@@ -242,16 +284,24 @@ export function Bots() {
 
   // ── Derived values ────────────────────────────────────────────────────────────
 
-  const bots = (snapshot?.bots ?? []).filter(
-    b => filter === 'all' || b.account_type === filter
-  )
+  const allBots = snapshot?.bots ?? []
+  const bots = allBots.filter(b => filter === 'all' || b.account_type === filter)
 
-  const running      = snapshot?.bots.filter(b => b.status === 'RUNNING').length ?? 0
-  const total        = snapshot?.bots.length ?? 0
-  const totalBalance = snapshot?.bots.reduce((s, b) => s + (b.balance ?? 0), 0) ?? 0
+  const running      = allBots.filter(b => b.status === 'RUNNING').length
+  const total        = allBots.length
+  const totalBalance = allBots.reduce((s, b) => s + (b.balance ?? 0), 0)
   const allJobsOk    = snapshot?.scheduled_jobs.every(j => j.status === 'RUNNING') ?? false
-  const anyRunning   = bots.filter(b => b.status === 'RUNNING').length > 0
-  const noFilteredBots = bots.length === 0
+
+  // ⚠ These gate the FLEET buttons, so they are counted over ALL bots — never over the
+  // filtered list. The filter is a view of the table; `POST /bots/{start,stop,restart}`
+  // fires SYS_STARTUP / kills python on the VPS and has no idea a filter exists. Deriving
+  // the guard from the filtered set is how "Stop all bots first" gets defeated by choosing
+  // a tab: with the live filter on and no live bot running, `anyRunning` read false while
+  // the demo bots were up.
+  const anyRunning  = allBots.some(b => b.status === 'RUNNING')
+  const noBots      = allBots.length === 0
+  const liveBots    = allBots.filter(b => b.account_type === 'live')
+  const filterHides = allBots.length - bots.length
 
   const anyGlobalPending = startMut.isPending || stopMut.isPending || restartMut.isPending
   const anyPerBotPending = startOne.isPending || stopOne.isPending || restartOne.isPending
@@ -403,7 +453,10 @@ export function Bots() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  {['Bot', 'Status', 'Balance', 'Overall P&L', 'Account', 'Uptime', 'Actions', 'Logs'].map(h => (
+                  {/* "This bot" rather than "Actions": the fleet card below has buttons that
+                      look the same and mean something else entirely, and the column header is
+                      the only place the SCOPE of a row's buttons can be stated once. */}
+                  {['Bot', 'Status', 'Balance', 'Overall P&L', 'Account', 'Uptime', 'This bot', 'Logs'].map(h => (
                     <th
                       key={h}
                       className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-6 py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle"
@@ -638,53 +691,86 @@ export function Bots() {
               </div>
             </div>
 
-            <div className="bg-bg-surface border border-border-subtle rounded-lg p-4">
-              <div className="flex items-center mb-[14px]">
-                <span className="text-[13px] font-semibold">Control Actions</span>
+            {/* ── Fleet controls ───────────────────────────────────────────────
+                G11's third bullet: these buttons and the ▷ ■ ↻ in every table row were
+                rendered in the same visual language, and they are not the same kind of
+                thing — one restarts a bot, the other kills every python process on the
+                VPS. With one bot registered the distinction is academic; with four it is
+                the click that takes the book down when you meant one row.
+
+                So the card is DANGER-TINTED, says its scope in its own title, and every
+                button carries the COUNT it will hit. A label that is a number cannot say
+                one thing while the table says another — the same rule the news filter's
+                "Excluding N trades" follows. */}
+            <div className="bg-bg-surface border border-neg/30 rounded-lg p-4">
+              <div className="flex items-center mb-[4px]">
+                <span className="text-[13px] font-semibold">Fleet controls</span>
+                <span className="ml-[8px] inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] bg-neg-muted text-neg-text">
+                  all {total} {total === 1 ? 'bot' : 'bots'}
+                </span>
                 {anyGlobalPending && (
                   <span className="ml-auto text-[11px] text-accent animate-pulse">Executing…</span>
                 )}
               </div>
+              <p className="text-[11px] text-text-tertiary mb-[14px] leading-[1.5]">
+                These act on every registered bot at once. To control one bot, use the
+                buttons in its row above.
+              </p>
               <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={() => setConfirm('start')}
-                  disabled={anyBusy || anyRunning || noFilteredBots}
+                  disabled={anyBusy || anyRunning || noBots}
                   title={
-                    noFilteredBots ? 'No bots in this filter' :
-                    anyRunning     ? 'Stop all bots first — use ▷ on a row to start an individual bot' :
-                                     'Start all bots via SYS_STARTUP'
+                    noBots     ? 'No bots registered' :
+                    anyRunning ? 'Something is already running — use ▷ on a row to start an individual bot' :
+                                 'Start every bot via SYS_STARTUP'
                   }
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover hover:border-pos/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Play size={13} className="text-pos" />
-                  Start all
+                  Start all {total}
                 </button>
                 <button
                   onClick={() => setConfirm('stop')}
-                  disabled={anyBusy || noFilteredBots}
-                  title={noFilteredBots ? 'No bots in this filter' : 'Stop all bots'}
+                  disabled={anyBusy || noBots}
+                  title={noBots ? 'No bots registered' : `Stop all ${total} bots`}
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-neg/40 bg-neg-muted text-neg-text hover:bg-neg/10 hover:border-neg/70 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Square size={13} />
-                  Stop all
+                  Stop all {total}
                 </button>
                 <button
                   onClick={() => setConfirm('restart')}
-                  disabled={anyBusy || noFilteredBots}
-                  title={noFilteredBots ? 'No bots in this filter' : 'Restart all bots'}
+                  disabled={anyBusy || noBots}
+                  title={noBots ? 'No bots registered' : `Restart all ${total} bots`}
                   className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small border border-border-default bg-bg-surface text-text-primary hover:bg-bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <RotateCcw size={13} />
-                  Restart all
+                  Restart all {total}
                 </button>
               </div>
-              {noFilteredBots ? (
+
+              {noBots && (
                 <p className="text-[11px] text-warn-text mt-3">
-                  No accounts in this filter — switch to All or a filter with accounts to enable controls.
+                  No bots registered — nothing for these to act on.
                 </p>
-              ) : (
-                <p className="text-[11px] text-text-tertiary mt-3">
-                  Start / Stop apply to all bots. Use per-row buttons above to control individual bots.
+              )}
+
+              {/* The filter is a view of the TABLE and these endpoints have never heard of
+                  it. Saying so only when it can actually mislead — i.e. when the filter is
+                  hiding a bot these buttons would still hit. */}
+              {filterHides > 0 && (
+                <p className="text-[11px] text-warn-text mt-3 flex items-start gap-[6px]">
+                  <span aria-hidden>⚠</span>
+                  <span>
+                    The <strong>{filter}</strong> filter is hiding {filterHides}{' '}
+                    {filterHides === 1 ? 'bot' : 'bots'}. These buttons still act on all {total}.
+                  </span>
+                </p>
+              )}
+              {liveBots.length > 0 && (
+                <p className="text-[11px] text-warn-text mt-2">
+                  {liveBots.length} of these {liveBots.length === 1 ? 'is a LIVE account' : 'are LIVE accounts'}.
                 </p>
               )}
             </div>
@@ -704,8 +790,14 @@ export function Bots() {
       {/* ── Confirm modals ────────────────────────────────────────────────────── */}
       {confirm === 'start' && (
         <ConfirmModal
-          label="Start all bots?"
-          description="This will run the SYS_STARTUP scheduled task on the VPS, starting all configured bot instances."
+          label={`Start all ${total} bots?`}
+          description={
+            <>
+              <p>This runs the SYS_STARTUP scheduled task on the VPS, starting every configured
+                 bot instance. It skips any bot already running.</p>
+              <AffectedBots bots={allBots} />
+            </>
+          }
           confirmLabel="Start"
           confirmClass="bg-pos-muted text-pos-text border border-pos/40 hover:bg-pos/10"
           onConfirm={() => { startMut.mutate(undefined); setConfirm(null) }}
@@ -715,9 +807,15 @@ export function Bots() {
       )}
       {confirm === 'stop' && (
         <ConfirmModal
-          label="Stop all bots?"
-          description="This will delete the MT5 lock file and kill all python.exe processes on the VPS. Bots will not restart until SYS_STARTUP is triggered."
-          confirmLabel="Stop all"
+          label={`Stop all ${total} bots?`}
+          description={
+            <>
+              <p>This deletes the MT5 lock file and kills all python.exe processes on the VPS.
+                 Bots will not restart until SYS_STARTUP is triggered.</p>
+              <AffectedBots bots={allBots} />
+            </>
+          }
+          confirmLabel={`Stop all ${total}`}
           confirmClass="bg-warn-muted text-warn-text border border-warn/40 hover:bg-warn/10"
           onConfirm={() => { stopMut.mutate(undefined); setConfirm(null) }}
           onCancel={() => setConfirm(null)}
@@ -726,9 +824,15 @@ export function Bots() {
       )}
       {confirm === 'restart' && (
         <ConfirmModal
-          label="Restart all bots?"
-          description="This will stop all bots (kill python.exe + delete lock), wait 3 seconds, then fire SYS_STARTUP to bring them back up."
-          confirmLabel="Restart"
+          label={`Restart all ${total} bots?`}
+          description={
+            <>
+              <p>This stops all bots (kill python.exe + delete lock), waits 3 seconds, then fires
+                 SYS_STARTUP to bring them back up.</p>
+              <AffectedBots bots={allBots} />
+            </>
+          }
+          confirmLabel={`Restart all ${total}`}
           confirmClass="bg-accent-muted text-accent-text border border-accent/30 hover:bg-accent/10"
           onConfirm={() => { restartMut.mutate(undefined); setConfirm(null) }}
           onCancel={() => setConfirm(null)}

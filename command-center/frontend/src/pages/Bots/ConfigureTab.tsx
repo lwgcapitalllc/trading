@@ -1,10 +1,14 @@
 import { useState } from 'react'
-import { AlertTriangle, ChevronDown, Info, Lock, PackageCheck, Upload } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import {
+  AlertTriangle, ChevronDown, GitCommitHorizontal, Info, Lock,
+  PackageCheck, Snowflake, RotateCcw, SlidersHorizontal, Upload,
+} from 'lucide-react'
 import {
   useBotSnapshot, useBotParams, useSaveBotRuntime,
-  useBotVersion, usePreviewPromote, usePromoteBot,
+  useBotVersion, useBotVersions, usePreviewPromote, usePromoteBot,
 } from '@/hooks/useBots'
-import type { BotParamRow, BotParamsView, BotStatus } from '@/types'
+import type { BotDeployedVersion, BotParamRow, BotParamsView, BotStatus } from '@/types'
 
 /**
  * What each live bot is actually configured with — and the one lever allowed to move
@@ -18,6 +22,20 @@ import type { BotParamRow, BotParamsView, BotStatus } from '@/types'
  * never inferred here — `row.editable` is the only thing this file trusts. Strategy
  * parameters are shown in full and locked: changing one means the bot is no longer the
  * bot that was backtested, and the `strategy_source_hash` pin exists to keep that true.
+ *
+ * ── The layout is a MISCLICK guard, not a tidy-up (2026-08-04, closes G11) ─────────────
+ *
+ * This tab used to map over every registered bot and render a full screen each — risk
+ * editor, Account, Deployed version, a 47-row parameter accordion — in a flat stack with
+ * no selector. Nothing about it was single-bot by construction (every endpoint is keyed by
+ * bot name), and that is exactly what made it dangerous: with three bots registered, the
+ * Promote button you want sits between two identical ones you do not, a screen apart, on
+ * a page where the wrong click deploys new code onto a live account.
+ *
+ * So the rail is the feature. **Only the selected bot's controls exist in the DOM** — a
+ * Promote button for a bot you did not pick is not there to be hit, which is a property no
+ * amount of spacing or confirmation copy can buy. The confirm step names the bot for the
+ * same reason.
  */
 
 function fmt(v: unknown): string {
@@ -60,6 +78,211 @@ function riskUsd(pct: number, balance: number | null): string {
   return `$${(balance * pct / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 }
 
+// ── one reading of a deployment record ──────────────────────────────────────────
+//
+// The fleet strip, the rail's warning marker and the card's own warning blocks all derive
+// from THIS function and nothing else. Three places counting "is this bot's deployment
+// claim false" three ways is three answers that can disagree, and the whole point of the
+// strip is that it agrees with the card it sends you to.
+
+type VersionFlags = {
+  notFrozen: boolean
+  snapshotModified: boolean
+  restartPending: boolean
+  driftCount: number
+  behind: number
+  /** Anything that makes this bot's version claim FALSE. `behind` is not one — the repo
+   *  moving ahead of a deployment is the normal state of a bot nobody has promoted today. */
+  anyWarn: boolean
+}
+
+function versionFlags(v: BotDeployedVersion | undefined): VersionFlags | null {
+  if (!v) return null
+  const notFrozen = !v.frozen
+  const snapshotModified = v.frozen && !v.snapshot_ok
+  // The live process reports a 12-char prefix; compare like for like. A mismatch means a
+  // promote landed after the bot started, so the NEW code is on disk and the OLD code is
+  // still trading — the most misleading state this page can show.
+  const restartPending = !!(v.running_hash && v.hash && !v.hash.startsWith(v.running_hash))
+  const driftCount = v.params_drift.length
+  return {
+    notFrozen,
+    snapshotModified,
+    restartPending,
+    driftCount,
+    behind: v.commits_ahead,
+    anyWarn: notFrozen || snapshotModified || restartPending || driftCount > 0,
+  }
+}
+
+// ── the fleet strip ─────────────────────────────────────────────────────────────
+//
+// G11's third point: "which bots are behind the repo, which have a restart pending" had no
+// single home, even though the per-bot endpoint already returned all of it. It costs no
+// extra fetch — the flat stack was already reading every bot's version to render every
+// DeployCard, and these are the same cache entries.
+
+function FleetCount({ label, n, tone, icon: Icon, title }: {
+  label: string
+  n: number
+  tone: 'warn' | 'neutral'
+  icon: typeof AlertTriangle
+  title: string
+}) {
+  const hot = n > 0
+  const cls = !hot
+    ? 'border-border-subtle/60 text-text-tertiary'
+    : tone === 'warn'
+      ? 'border-warn/30 bg-warn-muted text-warn-text'
+      : 'border-border-default text-text-secondary'
+  return (
+    <span
+      title={title}
+      className={`inline-flex items-center gap-[5px] text-[10px] px-[8px] py-[4px] rounded-md border cursor-default ${cls}`}
+    >
+      <Icon size={10} className="shrink-0" />
+      <span className="font-mono tabular-nums font-semibold">{n}</span>
+      <span className="whitespace-nowrap">{label}</span>
+    </span>
+  )
+}
+
+function FleetStrip({ bots, flags, unreadable, loading }: {
+  bots: BotStatus[]
+  flags: (VersionFlags | null)[]
+  unreadable: number
+  loading: boolean
+}) {
+  const running = bots.filter(b => b.status === 'RUNNING').length
+  const live    = bots.filter(b => b.account_type === 'live').length
+  const known   = flags.filter((f): f is VersionFlags => f !== null)
+
+  const restartPending   = known.filter(f => f.restartPending).length
+  const notFrozen        = known.filter(f => f.notFrozen).length
+  const snapshotModified = known.filter(f => f.snapshotModified).length
+  const drifted          = known.filter(f => f.driftCount > 0).length
+  const behind           = known.filter(f => f.behind > 0).length
+
+  const clean = known.length > 0 && known.every(f => !f.anyWarn)
+
+  return (
+    <div className="bg-bg-surface border border-border-subtle rounded-lg px-4 py-[11px] mb-4
+                    flex items-center gap-x-[10px] gap-y-[8px] flex-wrap">
+      <div className="flex items-baseline gap-[6px] mr-[4px]">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">Fleet</span>
+        <span className="text-[11px] text-text-secondary font-mono tabular-nums">
+          {bots.length} {bots.length === 1 ? 'bot' : 'bots'}
+        </span>
+        <span className="text-[11px] text-text-tertiary">·</span>
+        <span className="text-[11px] text-text-tertiary font-mono tabular-nums">{running} running</span>
+        {live > 0 && (
+          <>
+            <span className="text-[11px] text-text-tertiary">·</span>
+            <span className="text-[11px] font-mono tabular-nums text-warn-text">{live} live</span>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center gap-[6px] flex-wrap ml-auto">
+        <FleetCount
+          label="restart pending" n={restartPending} tone="warn" icon={RotateCcw}
+          title="Promoted, but the running process still reports the OLD hash — the new version is on disk and the old one is trading."
+        />
+        <FleetCount
+          label="not frozen" n={notFrozen} tone="warn" icon={Snowflake}
+          title="Still importing from the repo working tree, so a git pull changes what it trades. Promote it."
+        />
+        <FleetCount
+          label="snapshot edited" n={snapshotModified} tone="warn" icon={AlertTriangle}
+          title="The deployed files no longer match their record — edited in place, bypassing promote."
+        />
+        <FleetCount
+          label="settings changed" n={drifted} tone="warn" icon={SlidersHorizontal}
+          title="config.json now states settings the deployment does not carry. They take effect at the next promote (risk % applies live)."
+        />
+        <FleetCount
+          label="behind repo" n={behind} tone="neutral" icon={GitCommitHorizontal}
+          title="The repo has moved past this deployment. Normal — a bot runs what it was promoted at, not what the repo says today."
+        />
+
+        {/* A version that could not be READ is not a healthy one. Counting an unreadable
+            record as clean is how a strip comes to say "all clear" about a bot it never
+            reached — the same "no data is not the same as cannot ask" rule the MT5 link
+            chip exists for. */}
+        {unreadable > 0 && (
+          <span
+            title="Their deployment record could not be read from the VPS — this is unknown, not clean."
+            className="inline-flex items-center gap-[5px] text-[10px] px-[8px] py-[4px] rounded-md
+                       border border-border-default text-text-tertiary cursor-default"
+          >
+            <span className="font-mono tabular-nums font-semibold">{unreadable}</span> unreadable
+          </span>
+        )}
+        {loading && <span className="text-[10px] text-text-tertiary">reading…</span>}
+        {!loading && unreadable === 0 && clean && (
+          <span className="text-[10px] text-pos-text ml-[2px]">all deployments clean</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── the rail ────────────────────────────────────────────────────────────────────
+
+function RailRow({ bot, flags, unread, selected, onSelect }: {
+  bot: BotStatus
+  flags: VersionFlags | null
+  unread: boolean
+  selected: boolean
+  onSelect: () => void
+}) {
+  const isRunning = bot.status === 'RUNNING'
+  const isLive    = bot.account_type === 'live'
+
+  return (
+    <button
+      onClick={onSelect}
+      aria-current={selected ? 'true' : undefined}
+      className={`w-full text-left px-[10px] py-[9px] rounded-md border transition-colors duration-[100ms] cursor-pointer ${
+        selected
+          ? 'bg-accent-muted border-accent/30'
+          : 'bg-transparent border-transparent hover:bg-bg-hover'
+      }`}
+    >
+      <div className="flex items-center gap-[7px]">
+        <span
+          title={isRunning ? 'Running' : bot.status === 'ERROR' ? 'Error' : 'Stopped'}
+          className={`w-[6px] h-[6px] rounded-full shrink-0 ${
+            isRunning ? 'bg-pos shadow-[0_0_6px_#00ff7f]' : 'bg-neg'
+          }`}
+        />
+        <span className={`text-[11px] truncate ${selected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}
+              title={bot.name}>
+          {bot.name}
+        </span>
+        {flags?.anyWarn && (
+          <AlertTriangle
+            size={10}
+            className="ml-auto shrink-0 text-warn-text"
+            aria-label="version needs attention"
+          />
+        )}
+        {unread && (
+          <span className="ml-auto shrink-0 text-[10px] text-text-tertiary" title="Deployment record unreadable">?</span>
+        )}
+      </div>
+      <div className="flex items-center gap-[5px] mt-[5px] pl-[13px]">
+        <span className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill uppercase tracking-[0.4px] ${
+          isLive ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'
+        }`}>
+          {bot.account_type}
+        </span>
+        <span className="text-[10px] font-mono text-text-tertiary truncate">{bot.account}</span>
+      </div>
+    </button>
+  )
+}
+
 // ── which version is deployed, and deploying a new one ──────────────────────────
 //
 // The card this replaced read `config.json` — the tracked file — and so described what
@@ -91,11 +314,7 @@ function DeployCard({ botName }: { botName: string }) {
   if (isLoading) return <Card title="Deployed version"><Row label="">loading…</Row></Card>
   if (!v) return <Card title="Deployed version"><Row label="">unavailable</Row></Card>
 
-  // The live process reports a 12-char prefix; compare like for like. A mismatch means a
-  // promote landed after the bot started, so the NEW code is on disk and the OLD code is
-  // still trading — the most misleading state this page can show, so it is called out.
-  const running = v.running_hash && v.hash && !v.hash.startsWith(v.running_hash)
-  const behind = v.commits_ahead > 0
+  const f = versionFlags(v)!
 
   return (
     <Card
@@ -119,31 +338,31 @@ function DeployCard({ botName }: { botName: string }) {
       <Row label="Deployed on">{fmt(v.promoted_at)}</Row>
       <Row label="Files">{v.files ? `${v.files} .py` : '—'}</Row>
       <Row label="Repo now">
-        {fmt(v.repo_commit)}{behind ? ` · ${v.commits_ahead} ahead` : ' · same'}
+        {fmt(v.repo_commit)}{f.behind > 0 ? ` · ${f.behind} ahead` : ' · same'}
       </Row>
 
-      {!v.frozen && (
+      {f.notFrozen && (
         <Warn>
           <strong>Not frozen.</strong> This bot still imports from the repo working tree, so a
           pull changes what it trades and can stop it starting. Promote it.
         </Warn>
       )}
-      {v.frozen && !v.snapshot_ok && (
+      {f.snapshotModified && (
         <Warn>
           <strong>Snapshot modified.</strong> The deployed files no longer match their record —
           someone edited them in place, bypassing promote. Re-promote to re-pin.
         </Warn>
       )}
-      {running && (
+      {f.restartPending && (
         <Warn>
           <strong>Restart pending.</strong> The running process reports{' '}
           <span className="font-mono">{v.running_hash}</span>, not the deployed hash. The new
           version is on disk but the old one is still trading.
         </Warn>
       )}
-      {v.params_drift.length > 0 && (
+      {f.driftCount > 0 && (
         <Warn>
-          <strong>{v.params_drift.length} setting(s) changed since deploy:</strong>{' '}
+          <strong>{f.driftCount} setting(s) changed since deploy:</strong>{' '}
           <span className="font-mono">{v.params_drift.join(', ')}</span>. They take effect at
           the next promote, except risk % which applies live.
         </Warn>
@@ -157,7 +376,10 @@ function DeployCard({ botName }: { botName: string }) {
           <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
                           whitespace-pre-wrap break-all max-h-[220px] overflow-y-auto
                           bg-bg-base/60 rounded p-[8px]">{output}</pre>
-          <div className="flex items-center gap-[8px] mt-[8px]">
+          <div className="flex items-center gap-[8px] mt-[8px] flex-wrap">
+            {/* The bot is NAMED on the button, not just above it. This is the one control on
+                the page that changes what a live account trades, and the reader arrived here
+                by clicking a rail row — the name is the thing being confirmed. */}
             <button
               onClick={() => promote.mutate({ botName, restart: true }, {
                 onSuccess: r => setOutput(r.output) })}
@@ -166,7 +388,7 @@ function DeployCard({ botName }: { botName: string }) {
                          rounded bg-gold-text/15 text-gold-bright hover:bg-gold-text/25
                          disabled:opacity-40"
             >
-              <PackageCheck size={11} /> Deploy &amp; restart
+              <PackageCheck size={11} /> Deploy &amp; restart <span className="font-mono">{botName}</span>
             </button>
             <button
               onClick={() => setOutput(null)}
@@ -265,6 +487,7 @@ function RuntimeEditor({ botName, row, balance }: {
 
       {confirming && (
         <ConfirmRuntime
+          botName={botName}
           label={row.label}
           from={current}
           to={next}
@@ -285,9 +508,13 @@ function RuntimeEditor({ botName, row, balance }: {
  * "Are you sure?" trains you to click yes. A dialog that shows `10% → 5%` and
  * `$200 → $100 per trade` is one you actually read, which is the only thing that makes a
  * confirmation worth having.
+ *
+ * ⚠ It also carries the BOT NAME (2026-08-04). With a selector above it, the bot being
+ * changed is a choice the reader made a scroll ago and can no longer see — and this dialog
+ * is the last point at which a wrong row is still free to fix.
  */
-function ConfirmRuntime({ label, from, to, unit, balance, pending, onCancel, onConfirm }: {
-  label: string; from: number; to: number; unit: string; balance: number | null
+function ConfirmRuntime({ botName, label, from, to, unit, balance, pending, onCancel, onConfirm }: {
+  botName: string; label: string; from: number; to: number; unit: string; balance: number | null
   pending: boolean; onCancel: () => void; onConfirm: () => void
 }) {
   const bigger = to > from
@@ -297,7 +524,9 @@ function ConfirmRuntime({ label, from, to, unit, balance, pending, onCancel, onC
         className="bg-bg-surface border border-border-default rounded-lg p-5 w-[440px]"
         onClick={e => e.stopPropagation()}
       >
-        <p className="text-[13px] font-semibold mb-1">Change {label} on the live bot</p>
+        <p className="text-[13px] font-semibold mb-1">
+          Change {label} on <span className="font-mono">{botName}</span>
+        </p>
         <p className="text-[11px] text-text-tertiary mb-4">
           This commits the instance config, pushes it, and the VPS pulls it.
         </p>
@@ -458,27 +687,97 @@ function BotPanel({ bot }: { bot: BotStatus }) {
 
 export function ConfigureTab() {
   const { data: snapshot } = useBotSnapshot()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const bots = snapshot?.bots ?? []
+  const names = bots.map(b => b.name)
+
+  // One fetch per bot, sharing DeployCard's cache entries — see `useBotVersions`.
+  const versionQueries = useBotVersions(names)
+  const flags     = versionQueries.map(q => versionFlags(q.data))
+  const unreadable = versionQueries.filter(q => !q.isPending && !q.data).length
+  const loading    = versionQueries.some(q => q.isPending)
+
+  // Selection lives in the URL, like every other tab state in this app — so a link to a
+  // specific bot's config is a real link, and a refresh does not silently move you to
+  // another bot's promote button.
+  const requested = searchParams.get('bot')
+  const selected = bots.find(b => b.name === requested) ?? bots[0] ?? null
+
+  function selectBot(name: string) {
+    const next = new URLSearchParams(searchParams)
+    next.set('bot', name)
+    setSearchParams(next, { replace: true })
+  }
 
   if (!snapshot) return null
-  if (snapshot.bots.length === 0) {
+  if (bots.length === 0) {
     return <p className="text-[11px] text-text-tertiary">No bots registered.</p>
   }
 
   return (
-    <div className="space-y-6">
-      {snapshot.bots.map(bot => (
-        <div key={bot.name}>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[13px] font-semibold">{bot.name}</span>
-            <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
-              bot.status === 'RUNNING' ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
-            }`}>
-              {bot.status === 'RUNNING' ? 'Running' : 'Stopped'}
-            </span>
+    <div>
+      <FleetStrip bots={bots} flags={flags} unreadable={unreadable} loading={loading} />
+
+      <div className="flex items-start gap-4">
+
+        {/* ── Rail ──────────────────────────────────────────────────────────── */}
+        <div className="w-[212px] shrink-0 sticky top-0">
+          <div className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text px-[10px] pt-[6px] pb-[8px]">
+              Bots
+            </p>
+            <div className="flex flex-col gap-[2px]">
+              {bots.map((b, i) => (
+                <RailRow
+                  key={b.name}
+                  bot={b}
+                  flags={flags[i]}
+                  unread={!versionQueries[i]?.isPending && !versionQueries[i]?.data}
+                  selected={selected?.name === b.name}
+                  onSelect={() => selectBot(b.name)}
+                />
+              ))}
+            </div>
           </div>
-          <BotPanel bot={bot} />
+          <p className="text-[10px] text-text-tertiary leading-[1.5] mt-[8px] px-[4px]">
+            One bot at a time. Only the selected bot's Promote and Deploy controls exist on
+            this page.
+          </p>
         </div>
-      ))}
+
+        {/* ── Detail ────────────────────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0">
+          {selected && (
+            <>
+              {/* Deliberately NOT sticky, and the rail is. The parameter accordion runs well
+                  past a screen, so "which bot am I editing" has to survive scrolling — but the
+                  RAIL is what answers it, because the rail is the selector and its highlighted
+                  row cannot disagree with itself. A second sticky header is a second answer to
+                  one question, and it also lands in the 22px trap `frontend/CLAUDE.md` records:
+                  `<main>` is a padded scroller, so `top-0` pins 22px LOW and the card headers
+                  below scroll up through the transparent strip it leaves. */}
+              <div className="pb-[10px] flex items-center gap-2 flex-wrap">
+                <span className="text-[14px] font-semibold">{selected.name}</span>
+                <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
+                  selected.status === 'RUNNING' ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
+                }`}>
+                  {selected.status === 'RUNNING' ? 'Running' : selected.status === 'ERROR' ? 'Error' : 'Stopped'}
+                </span>
+                <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${
+                  selected.account_type === 'live'
+                    ? 'bg-warn-muted text-warn-text'
+                    : 'bg-bg-surface-2 text-text-secondary'
+                }`}>
+                  {selected.account_type}
+                </span>
+                <span className="text-[11px] font-mono text-text-tertiary">{selected.account}</span>
+              </div>
+              <BotPanel key={selected.name} bot={selected} />
+            </>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
