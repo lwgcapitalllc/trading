@@ -172,3 +172,55 @@ def test_retry_leaves_another_jobs_progress_alone(client, seeded_run):
     ):
         assert client.post(f"/backtests/runs/{seeded_run}/retry").status_code == 202
     cleared.assert_not_called()
+
+
+# ── Slim detail (`?timeline=false`) ────────────────────────────────────────────
+#
+# `regime_timeline` is the single biggest slice of a run detail (measured: 96 KB of 137 KB on a
+# 165-trade run) and it is the SAME calendar for every run over one window. The tuning workbench
+# overlays N runs and bands off exactly one copy, so it asks for the rest without it.
+
+
+def _seed_timeline(monkeypatch, tmp_path, run_id):
+    """Give `run_id` a regime_timeline.json under a temp results dir."""
+    import json
+    from routers import backtests as bt
+
+    run_dir = tmp_path / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "regime_timeline.json").write_text(json.dumps([
+        {"date": "2024-01-02", "regime": "TRENDING"},
+        {"date": "2024-01-03", "regime": "RANGING"},
+    ]))
+    monkeypatch.setattr(bt, "LAB_RESULTS_DIR", tmp_path)
+
+
+def test_detail_ships_the_regime_timeline_by_default(client, seeded_run, monkeypatch, tmp_path):
+    """The default must not change shape — every existing caller reads this field."""
+    _seed_timeline(monkeypatch, tmp_path, seeded_run)
+    data = client.get(f"/backtests/runs/{seeded_run}").json()
+    assert [d["regime"] for d in data["regime_timeline"]] == ["TRENDING", "RANGING"]
+
+
+def test_timeline_false_drops_it(client, seeded_run, monkeypatch, tmp_path):
+    _seed_timeline(monkeypatch, tmp_path, seeded_run)
+    data = client.get(f"/backtests/runs/{seeded_run}?timeline=false").json()
+    assert data["regime_timeline"] == []
+
+
+def test_timeline_true_is_the_same_as_omitting_it(client, seeded_run, monkeypatch, tmp_path):
+    _seed_timeline(monkeypatch, tmp_path, seeded_run)
+    assert (client.get(f"/backtests/runs/{seeded_run}?timeline=true").json()
+            == client.get(f"/backtests/runs/{seeded_run}").json())
+
+
+def test_slimming_drops_nothing_but_the_timeline(client, seeded_run, monkeypatch, tmp_path):
+    """The point of the flag is a smaller payload, not a different run. Every other field — KPIs,
+    curve, params, costs, sizing — has to survive it, or a caller reading a slimmed response would
+    quietly get a different answer from one reading the full one."""
+    _seed_timeline(monkeypatch, tmp_path, seeded_run)
+    full = client.get(f"/backtests/runs/{seeded_run}").json()
+    slim = client.get(f"/backtests/runs/{seeded_run}?timeline=false").json()
+    assert set(full) == set(slim)
+    assert {k: v for k, v in full.items() if k != "regime_timeline"} == \
+           {k: v for k, v in slim.items() if k != "regime_timeline"}

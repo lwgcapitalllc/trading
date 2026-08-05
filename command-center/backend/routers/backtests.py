@@ -108,7 +108,7 @@ def _row_to_summary(row: dict) -> BacktestSummary:
     )
 
 
-def _row_to_detail(row: dict) -> BacktestDetail:
+def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetail:
     # Per-ruleset sized results (sized runs only) — each firm's own KPIs, sized daily P&L
     # and sized timeline, keyed by ruleset id. Empty on unit-size runs (file absent).
     ruleset_sizing = _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "ruleset_sizing.json")) or {}
@@ -166,7 +166,17 @@ def _row_to_detail(row: dict) -> BacktestDetail:
 
     # Full-calendar regime labels — every trading day in the window, written at run completion.
     # Absent on runs that finished before it existed; the charts degrade to daily_pnl's tags.
-    regime_timeline = _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "regime_timeline.json")) or []
+    #
+    # ⚠ `include_timeline=False` returns `[]`, which is INDISTINGUISHABLE from a run that has no
+    # timeline — so it is only safe for a caller that already holds the timeline it needs from
+    # somewhere else and is asking for this run's other fields. It is the single biggest slice of
+    # this payload (measured: 96 KB of 137 KB on a 165-trade run) and it is identical for every run
+    # over the same window, so the tuning workbench fetches it once and slims the rest. Do NOT
+    # default it to False, and do NOT cache a slimmed response under the same key as a full one.
+    regime_timeline = (
+        _load_json(str(LAB_RESULTS_DIR / row["run_id"] / "regime_timeline.json")) or []
+        if include_timeline else []
+    )
 
     return BacktestDetail(
         run_id=row["run_id"],
@@ -296,11 +306,14 @@ def list_backtest_runs(
 
 
 @router.get("/runs/{run_id}")
-def get_backtest_run(run_id: str) -> BacktestDetail:
+def get_backtest_run(run_id: str, timeline: bool = True) -> BacktestDetail:
+    """`timeline=false` drops `regime_timeline` from the response — see `_row_to_detail`. The
+    default is True so no existing caller changes shape; only a caller that already has the
+    timeline may ask for it to be left out."""
     row = lab_db.get_run(run_id)
     if not row:
         raise HTTPException(404, "Run not found")
-    return _row_to_detail(row)
+    return _row_to_detail(row, include_timeline=timeline)
 
 
 @router.get("/runs/{run_id}/news", response_model=RunNewsReport)

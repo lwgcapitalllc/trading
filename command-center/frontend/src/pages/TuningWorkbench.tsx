@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceArea, ReferenceLine,
 } from 'recharts'
-import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, Camera, Check } from 'lucide-react'
+import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, ChevronRight, Maximize2, Minimize2, Camera, Check, Square } from 'lucide-react'
 import { copyChartAsPng } from '@/lib/chartImage'
 import { balTick, balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, tradeTicks, type XMode } from '@/lib/chartAxis'
 import { XModeToggle } from '@/components/XModeToggle'
 import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
-import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
+import { WorthinessBadge } from '@/components/WorthinessBadge'
+import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useStopBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
 import { ParamEditor, ParamCoach, type ParamValue } from '@/components/ParamEditor'
 import { useStickyBanner } from '@/components/StickyHeader'
 import { api } from '@/api/client'
@@ -23,6 +24,21 @@ import type { BacktestDetail, BacktestSummary, DailyPnlPoint, ParamSchemaEntry }
 function isFoundational(schema: ParamSchemaEntry | undefined): boolean {
   return schema?.category === 'foundational'
 }
+
+/** Display names for the cost layers a python run can charge — the SAME map BacktestDetail and the
+ *  Run modal use, so the three name the same thing the same way. */
+const COST_LAYER_LABEL: Record<string, string> = {
+  spread: 'spread',
+  swap: 'overnight swap',
+  commission: 'commission',
+  slippage: 'slippage',
+  bid_ask_fills: 'bid/ask fills',
+}
+
+/** The ★ is a claim that one setting beat the others. A profit factor off a handful of trades is
+ *  not a measurement, so a run below this cannot win it — stated in the table caption, because a
+ *  threshold nobody can see is indistinguishable from a bug when the obvious winner has no star. */
+const MIN_STAR_TRADES = 10
 
 // ── Money / number formatters ─────────────────────────────────────────────────
 
@@ -38,6 +54,15 @@ function moneyAbs(n: number | null | undefined): string {
 function pct(n: number | null | undefined): string {
   return n == null ? '—' : `${(n * 100).toFixed(1)}%`
 }
+
+/** The worst drawdown as a % of the peak it fell FROM — the only drawdown figure comparable
+ *  between two runs whose accounts grew to different sizes. `max_drawdown_pct` is stored 0-100 and
+ *  a NEGATIVE value is the backfill's "measured, no answer" sentinel, so it is never rendered. */
+function ddPctOf(r: BacktestSummary | null | undefined): number | null {
+  const v = r?.max_drawdown_pct
+  return v != null && v >= 0 ? v : null
+}
+
 // ── Regime bands (shared timeline from the baseline's daily pnl) ────────────────
 
 interface Band { x1: number; x2: number; regime: string }
@@ -93,11 +118,13 @@ function tradeDot(p: DotProps, id: string, startBal: number, r: number) {
 
 // ── Delta cell ──────────────────────────────────────────────────────────────────
 
-function Delta({ value, good }: { value: number | null; good: boolean | null }) {
+/** `good = null` means the direction carries no verdict — more trades is neither better nor worse,
+ *  it is a different sample, and colouring it green would say otherwise. */
+function Delta({ value, good, digits = 2, suffix = '' }: { value: number | null; good: boolean | null; digits?: number; suffix?: string }) {
   if (value == null) return null
   const cls = good == null ? 'text-text-tertiary' : good ? 'text-pos-text' : 'text-neg-text'
   const sign = value > 0 ? '+' : ''
-  return <span className={`text-[10px] font-mono ${cls}`}>{sign}{value.toFixed(2)}</span>
+  return <span className={`text-[10px] font-mono ${cls}`}>{sign}{value.toFixed(digits)}{suffix}</span>
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -112,8 +139,26 @@ export function TuningWorkbench() {
   const { data: runningJob } = useRunningVpsJob()
   const { data: progress } = useLabProgress()
   const trigger = useTriggerBacktest()
+  const stopRun = useStopBacktest()
 
-  const [edits, setEdits] = useState<Record<string, ParamValue>>({})
+  // Edits survive leaving the page and coming back (clicking a leaderboard row to inspect it is the
+  // common case). sessionStorage rather than a navigation-guard dialog: nothing is lost, so there
+  // is nothing to warn about. Keyed per baseline run, cleared the moment the edits are spent.
+  const editsKey = `tune_edits_${runId ?? ''}`
+  const [edits, setEdits] = useState<Record<string, ParamValue>>(() => {
+    try {
+      const raw = sessionStorage.getItem(`tune_edits_${runId ?? ''}`)
+      const parsed = raw ? JSON.parse(raw) : null
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    } catch { return {} }
+  })
+  useEffect(() => {
+    try {
+      if (Object.keys(edits).length) sessionStorage.setItem(editsKey, JSON.stringify(edits))
+      else sessionStorage.removeItem(editsKey)
+    } catch { /* quota / private mode */ }
+  }, [edits, editsKey])
+
   const [coachParam, setCoachParam] = useState<string | null>(null)
   const [showRegime, setShowRegime] = useState(true)
   // Same stored preference the run page's equity chart uses, so the two never disagree.
@@ -121,12 +166,28 @@ export function TuningWorkbench() {
   const toggleXMode = (v: XMode) => { setXMode(v); setXModePref(v) }
   const [chartFs, setChartFs] = useState(false)
   const fsChartRef = useRef<HTMLDivElement>(null)
+  const fsPlotRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
     if (!chartFs) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setChartFs(false) }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
+  }, [chartFs])
+  // The fullscreen chart's height is MEASURED off its own box and re-measured on every resize —
+  // same pattern as BacktestDetail's fullscreen panel. It used to be `window.innerHeight - 120`
+  // read once at render time, so resizing the window (or opening devtools) left the chart at the
+  // old height until some unrelated state change happened to re-render the page.
+  const [fsPlotH, setFsPlotH] = useState(0)
+  useEffect(() => {
+    if (!chartFs) return
+    const el = fsPlotRef.current
+    if (!el) return
+    const update = () => setFsPlotH(el.clientHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
   }, [chartFs])
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem('tune_params_panel') === 'collapsed' } catch { return false }
@@ -155,11 +216,36 @@ export function TuningWorkbench() {
     return Object.entries(baseline.params).filter(([k]) => isFoundational(schemaByName.get(k)))
   }, [baseline, schemaByName])
 
-  // Iterations = runs derived from this baseline.
-  const iterations = useMemo(
-    () => (allRuns ?? []).filter(r => r.source_run_id === runId).sort((a, b) => b.created_at.localeCompare(a.created_at)),
-    [allRuns, runId],
-  )
+  // Iterations = every run DESCENDED from this baseline, not just its direct children — tuning an
+  // iteration makes a grandchild, and dropping it here made the run vanish from the only page that
+  // compares it. Walked breadth-first with a seen-set, so a cycle in the data cannot hang the page.
+  //
+  // ⚠ `source_run_id` is not exclusive to tuning: a sweep or an optimization launched from a run
+  // stamps it too, and those children would otherwise land in this leaderboard as tweaks. They are
+  // excluded by their own ids. (Stress-test children never reach the client — `list_runs` filters
+  // them server-side.)
+  const iterations = useMemo(() => {
+    if (!runId) return [] as BacktestSummary[]
+    const byParent = new Map<string, BacktestSummary[]>()
+    for (const r of allRuns ?? []) {
+      if (!r.source_run_id || r.sweep_id || r.optimization_id) continue
+      const list = byParent.get(r.source_run_id)
+      if (list) list.push(r)
+      else byParent.set(r.source_run_id, [r])
+    }
+    const out: BacktestSummary[] = []
+    const seen = new Set<string>([runId])
+    const queue: string[] = [runId]
+    while (queue.length) {
+      for (const child of byParent.get(queue.shift()!) ?? []) {
+        if (seen.has(child.run_id)) continue
+        seen.add(child.run_id)
+        out.push(child)
+        queue.push(child.run_id)
+      }
+    }
+    return out
+  }, [allRuns, runId])
 
   // All runs to show in the leaderboard / overlay: baseline first, then iterations.
   const baselineSummary: BacktestSummary | null = useMemo(() => {
@@ -167,17 +253,29 @@ export function TuningWorkbench() {
     return allRuns?.find(r => r.run_id === baseline.run_id) ?? null
   }, [allRuns, baseline])
 
+  // Ranked by profit factor, because that is what the caption above the table says. It used to be
+  // sorted newest-first with the baseline pinned on top, so the caption described an order the code
+  // did not produce. Rows with no PF yet (running, failed) sink to the bottom, newest first — they
+  // have nothing to rank on and burying them under a fabricated score would be worse.
   const leaderboard = useMemo(() => {
     const rows: BacktestSummary[] = []
     if (baselineSummary) rows.push(baselineSummary)
     rows.push(...iterations)
-    return rows
+    const rank = (r: BacktestSummary) => (r.status === 'complete' && r.profit_factor != null ? r.profit_factor : null)
+    return rows.sort((a, b) => {
+      const ra = rank(a), rb = rank(b)
+      if (ra == null && rb == null) return b.created_at.localeCompare(a.created_at)
+      if (ra == null) return 1
+      if (rb == null) return -1
+      return rb - ra
+    })
   }, [baselineSummary, iterations])
 
   const bestPf = useMemo(() => {
-    const complete = leaderboard.filter(r => r.status === 'complete' && r.profit_factor != null)
-    if (!complete.length) return null
-    return complete.reduce((a, b) => (b.profit_factor ?? -Infinity) > (a.profit_factor ?? -Infinity) ? b : a).run_id
+    const eligible = leaderboard.filter(r =>
+      r.status === 'complete' && r.profit_factor != null && (r.trade_count ?? 0) >= MIN_STAR_TRADES)
+    if (!eligible.length) return null
+    return eligible.reduce((a, b) => (b.profit_factor as number) > (a.profit_factor as number) ? b : a).run_id
   }, [leaderboard])
 
   // Live single-run progress for the iteration currently running (lab_progress.json).
@@ -189,32 +287,76 @@ export function TuningWorkbench() {
     () => leaderboard.filter(r => r.status === 'complete').map(r => r.run_id),
     [leaderboard],
   )
+  // `regime_timeline` is 96 KB of a 137 KB run detail (measured on a 165-trade run) and it is the
+  // SAME calendar for every run in this window — the chart bands off exactly one copy. So the
+  // baseline is fetched whole and the iterations are fetched without it.
+  //
+  // ⚠ Two guards, both load-bearing. It is only slimmed when the BASELINE actually carries a
+  // timeline: a run completed before the backend emitted one falls back to the iterations' tags,
+  // and slimming would leave the chart with no bands at all. And a slimmed response is cached under
+  // its OWN key, never `['lab','run',id]` — that key belongs to the run page, which renders the
+  // timeline, and handing it a stripped copy would blank the bands over there instead.
+  const baseHasTimeline = (baseline?.regime_timeline?.length ?? 0) > 0
   const detailQueries = useQueries({
-    queries: completeIds.map(id => ({
-      queryKey: ['lab', 'run', id],
-      queryFn: () => api.get<BacktestDetail>(`/backtests/runs/${id}`),
-      staleTime: 60_000,
-    })),
+    queries: (baseline ? completeIds : []).map(id => {
+      const slim = baseHasTimeline && id !== baseline?.run_id
+      return {
+        queryKey: slim ? ['lab', 'run', id, 'slim'] : ['lab', 'run', id],
+        queryFn: () => api.get<BacktestDetail>(`/backtests/runs/${id}${slim ? '?timeline=false' : ''}`),
+        staleTime: 60_000,
+      }
+    }),
   })
   const details = useMemo(
     () => detailQueries.map(q => q.data).filter((d): d is BacktestDetail => !!d),
     [detailQueries],
   )
+  const detailsLoading = detailQueries.some(q => q.isLoading)
 
   // Assign each run a stable color. The baseline line itself is drawn green-above /
   // red-below the starting balance (like the equity chart), so its legend/table swatch is
   // its overall result colour; iterations cycle the palette so they stay distinguishable.
+  //
+  // ⚠ The palette is handed out in CREATION order, not table order. Table order moves — a finishing
+  // iteration re-sorts the leaderboard — and colouring off it meant every line on the chart swapped
+  // colour underneath the reader whenever a run completed. Creation order never changes for a run
+  // that already exists, so a colour, once given, is that run's for good.
   const colorFor = useMemo(() => {
     const m = new Map<string, string>()
-    let i = 0
-    for (const r of leaderboard) {
-      if (r.run_id === baseline?.run_id) m.set(r.run_id, (r.net_pnl ?? 0) >= 0 ? C.pos : C.neg)
-      else m.set(r.run_id, LINE_PALETTE[i++ % LINE_PALETTE.length])
+    if (baseline) m.set(baseline.run_id, (baselineSummary?.net_pnl ?? 0) >= 0 ? C.pos : C.neg)
+    const byAge = [...iterations].sort((a, b) => a.created_at.localeCompare(b.created_at))
+    byAge.forEach((r, i) => m.set(r.run_id, LINE_PALETTE[i % LINE_PALETTE.length]))
+    return m
+  }, [iterations, baseline, baselineSummary])
+
+  // What each iteration actually CHANGED — computed once here rather than per table row, because
+  // the chart legend, the tooltip and the regime table all name runs by it too.
+  const changesById = useMemo(() => {
+    const m = new Map<string, [string, unknown][]>()
+    if (!baseline) return m
+    for (const r of iterations) {
+      m.set(r.run_id, Object.entries(r.params || {}).filter(([k, v]) =>
+        !isFoundational(schemaByName.get(k)) && String(v) !== String(baseline.params[k])))
     }
     return m
-  }, [leaderboard, baseline])
+  }, [iterations, baseline, schemaByName])
 
-  const labelFor = (id: string) => (id === baseline?.run_id ? 'Baseline' : `Tweak ${id.slice(0, 6)}`)
+  // Short form, for the table's Run cell — the Changes column beside it already spells out
+  // old→new, so repeating it there would just make the row twice as wide.
+  const shortLabel = useCallback(
+    (id: string) => (id === baseline?.run_id ? 'Baseline' : `Tweak ${id.slice(0, 6)}`),
+    [baseline],
+  )
+  // Descriptive form, for everywhere a run is named with nothing else beside it: the chart legend,
+  // the tooltip, the regime table's headers, the running banner. `Tweak 15f0122a` tells a reader
+  // nothing about which line is which; `exec_tp1_pct=30` is the whole point of the comparison.
+  const labelFor = useCallback((id: string) => {
+    if (id === baseline?.run_id) return 'Baseline'
+    const ch = changesById.get(id)
+    if (!ch?.length) return `Tweak ${id.slice(0, 6)}`
+    const head = ch.slice(0, 2).map(([k, v]) => `${k}=${v}`).join(' · ')
+    return ch.length > 2 ? `${head} +${ch.length - 2}` : head
+  }, [baseline, changesById])
 
   // Overlay dataset — ACCOUNT BALANCE per run, so this chart reads exactly like the equity
   // curve on BacktestDetail: same starting balance on the axis, same break-even reference,
@@ -314,9 +456,16 @@ export function TuningWorkbench() {
       bands[0].x1 = Math.min(bands[0].x1, sortedTs[0])
       bands[bands.length - 1].x2 = Math.max(bands[bands.length - 1].x2, sortedTs[sortedTs.length - 1])
     }
+    // Which regimes are actually PAINTED — the legend names those and no others, so it can never
+    // advertise a colour that isn't on the chart. Known labels keep the canonical order.
+    const painted = new Set(bands.map(b => b.regime))
+    const bandRegimes = [
+      ...REGIME_ORDER.filter(r => painted.has(r)),
+      ...[...painted].filter(r => !REGIME_ORDER.includes(r)),
+    ]
 
     return {
-      data, bands, startBal, split,
+      data, bands, bandRegimes, startBal, split,
       yDomain: [yMin, yMax] as [number, number],
       yTicks,
       byDate,
@@ -327,6 +476,18 @@ export function TuningWorkbench() {
   }, [details, baseline, xMode])
 
   const overlayData = chart?.data ?? []
+
+  // The baseline's dot renderers, memoised. Recharts re-renders every dot when this prop is a new
+  // function, and it was rebuilt on each render — so a keystroke in the param editor repainted
+  // every trade marker on a 165-point curve.
+  const baseDots = useMemo(() => {
+    const id = baseline?.run_id ?? ''
+    const startBal = chart?.startBal ?? 0
+    return {
+      dot: (p: DotProps) => tradeDot(p, id, startBal, 3),
+      activeDot: (p: DotProps) => tradeDot(p, id, startBal, 4.5),
+    }
+  }, [baseline?.run_id, chart?.startBal])
 
   // Per-regime net pnl per run.
   const regimeMatrix = useMemo(() => {
@@ -344,14 +505,33 @@ export function TuningWorkbench() {
   const rulesetIds = baseline.evaluations.map(e => e.ruleset_id)
 
   const baseParams = baseline.params as Record<string, unknown>
-  const dirtyKeys = Object.keys(edits).filter(k => String(edits[k]) !== String(baseParams[k]))
+  // Params this baseline or the current schema actually knows about. Everything downstream — the
+  // changed-count on the button, the dot on the collapsed panel, the request itself — is filtered
+  // through this ONE set, so the button can never promise a change the request then drops. (It only
+  // ever bites on a stored edit for a param that has since disappeared; the editor cannot produce
+  // one, and a request carrying an input the runner does not declare is worse than a dropped edit —
+  // MT5 treats a set file with an unknown input as mismatched and silently runs something else.)
+  const knownParams = new Set([...Object.keys(baseParams), ...schemaByName.keys()])
+  const dirtyKeys = Object.keys(edits).filter(k => knownParams.has(k) && String(edits[k]) !== String(baseParams[k]))
   const isDirty = dirtyKeys.length > 0
 
   const onChangeParam = (name: string, value: ParamValue) => setEdits(prev => ({ ...prev, [name]: value }))
   const resetParams = () => setEdits({})
 
+  // What this iteration will be charged and sized on — READ OFF THE BASELINE, and stated here
+  // because it is a claim about what the run will do. See `runIteration`.
+  const carriedLayers = baseline.cost_layers ?? []
+  const costSummary = carriedLayers.length
+    ? `${carriedLayers.map(l => COST_LAYER_LABEL[l] ?? l).join(', ')}${baseline.broker_profile ? ` · ${baseline.broker_profile}` : ''}`
+    : 'no costs charged'
+  const sizingSummary = baseline.sizing_mode === 'manual' && baseline.manual_risk_pct != null
+    ? `manual ${baseline.manual_risk_pct}%`
+    : baseline.sizing_mode
+
   const runIteration = () => {
-    const params: Record<string, unknown> = { ...baseline.params, ...edits }
+    const params: Record<string, unknown> = { ...baseline.params }
+    for (const [k, v] of Object.entries(edits)) if (knownParams.has(k)) params[k] = v
+
     trigger.mutate({
       strategy_id:         baseline.strategy_id,
       instrument:          baseline.instrument,
@@ -362,6 +542,19 @@ export function TuningWorkbench() {
       end_date:            baseline.end_date,
       commission_per_side: baseline.commission_per_side,
       slippage_ticks:      baseline.slippage_ticks,
+      // The whole page is a comparison, so the iteration has to be measured on the baseline's own
+      // physics. Without these it ran on a FREE book and default sizing while sitting in a table
+      // beside a charged, differently-sized baseline — two numbers produced under different rules,
+      // presented as a difference caused by the param. Retry has always carried them; this was the
+      // one run-launching path that did not.
+      //
+      // ⚠ `cost_layers: null` on the baseline means "made before layered costs existed", which is
+      // not a contract a NEW run can be created under — `[]` is its honest equivalent and charges
+      // exactly the same nothing. Do NOT send `null` here; the API models it as a plain list.
+      cost_layers:         carriedLayers,
+      broker_profile:      baseline.broker_profile ?? undefined,
+      sizing_mode:         baseline.sizing_mode,
+      manual_risk_pct:     baseline.manual_risk_pct ?? null,
       evaluate_rulesets:   rulesetIds,
       source_run_id:       baseline.run_id,
     }, {
@@ -369,8 +562,11 @@ export function TuningWorkbench() {
     })
   }
 
-  const baseMetric = (k: 'net_pnl' | 'profit_factor' | 'max_drawdown') => baselineSummary?.[k] ?? null
+  const baseMetric = (k: 'net_pnl' | 'profit_factor' | 'max_drawdown' | 'sharpe' | 'win_rate' | 'trade_count') =>
+    baselineSummary?.[k] ?? null
 
+  // `copyChartAsPng` already toasts on every failure path (no chart, render error, encode error),
+  // so there is nothing to add here — only the "copied" tick, which is this page's own state.
   const copyChart = async () => {
     if (await copyChartAsPng(fsChartRef.current)) {
       setCopied(true)
@@ -434,8 +630,8 @@ export function TuningWorkbench() {
           baseValue={chart.startBal}
           // One dot per actual trade (not per forward-filled row), coloured by which side of the
           // starting balance it landed — exactly as on the equity chart.
-          dot={(p: DotProps) => tradeDot(p, baseline.run_id, chart.startBal, 3)}
-          activeDot={(p: DotProps) => tradeDot(p, baseline.run_id, chart.startBal, 4.5)}
+          dot={baseDots.dot}
+          activeDot={baseDots.activeDot}
         />
         {completeIds.filter(id => id !== baseline.run_id).map(id => (
           <Line
@@ -445,6 +641,32 @@ export function TuningWorkbench() {
         ))}
       </ComposedChart>
     </ResponsiveContainer>
+  )
+
+  // Which line is which, and what the background colours mean. Shared by the inline and fullscreen
+  // charts so the fullscreen copy (which is what gets pasted into a chat) carries them too.
+  const renderLegend = () => (
+    <div className="mt-2 px-2 space-y-1">
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {completeIds.map(id => (
+          <span key={id} className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
+            <span className="w-3 h-[2px]" style={{ background: colorFor.get(id) }} />
+            {labelFor(id)}
+          </span>
+        ))}
+      </div>
+      {showRegime && !!chart?.bandRegimes.length && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {chart.bandRegimes.map(rg => (
+            <span key={rg} className="flex items-center gap-1 text-[10px] text-text-tertiary">
+              <span className="w-2.5 h-2.5 rounded-sm"
+                style={{ background: REGIME_COLORS[rg] ?? REGIME_COLORS.UNKNOWN, opacity: 0.45 }} />
+              {REGIME_LABEL[rg] ?? rg}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   )
 
   return (
@@ -522,7 +744,10 @@ export function TuningWorkbench() {
                     {dirtyKeys.length > 0 && <span className="text-accent normal-case tracking-normal font-medium">· {dirtyKeys.length} changed</span>}
                   </span>
                   <div className="flex items-center gap-3">
-                    <button onClick={resetParams} disabled={!isDirty}
+                    {/* Enabled whenever an edit is being HELD, not only when one differs from the
+                        baseline — a value typed and typed back is still an edit sitting there, and
+                        greying the only way to clear it made Reset look broken. */}
+                    <button onClick={resetParams} disabled={Object.keys(edits).length === 0}
                       className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                       <RotateCcw size={11} /> Reset
                     </button>
@@ -533,6 +758,16 @@ export function TuningWorkbench() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-1.5 py-2">
+                  {/* The form below is built from the LAST SCAN's schema. If the source or meta has
+                      moved since, it can be missing a param, or offering one that no longer exists. */}
+                  {strategy?.needs_scan && (
+                    <div className="mx-2.5 mb-2.5 flex items-start gap-2 px-2.5 py-2 rounded-md bg-warn-muted/40 border border-warn-text/20">
+                      <AlertTriangle size={12} className="text-warn-text flex-shrink-0 mt-[1px]" />
+                      <p className="text-[11px] text-warn-text leading-snug">
+                        This strategy has changed since its last scan — these parameters may be out of date. Re-scan it on the Strategies page before trusting an iteration.
+                      </p>
+                    </div>
+                  )}
                   <ParamEditor
                     schema={strategy?.param_schema ?? []}
                     mode="tune"
@@ -569,6 +804,11 @@ export function TuningWorkbench() {
                       <p className="text-[11px] text-warn-text leading-snug">{RUNNER_LABEL[runnerScope(baseline.runner)]} is busy — wait for the current job to finish.</p>
                     </div>
                   )}
+                  {/* What the iteration inherits. On screen because it is a claim about the run that
+                      is about to fire, and this page spent its life not making it. */}
+                  <p className="text-[10px] text-text-tertiary leading-snug mb-2">
+                    Same window and costs as the baseline: <span className="text-text-secondary">{costSummary}</span> · sizing <span className="text-text-secondary">{sizingSummary}</span>
+                  </p>
                   <button
                     onClick={runIteration}
                     disabled={!isDirty || jobBlocked || trigger.isPending}
@@ -590,14 +830,14 @@ export function TuningWorkbench() {
           <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
             <div className="px-[15px] py-[10px] border-b border-border-subtle flex items-baseline justify-between gap-3">
               <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">Iterations ({leaderboard.length})</span>
-              <span className="text-[11px] text-text-tertiary">Ranked by profit factor · <Star size={9} className="inline text-gold-text" fill="currentColor" /> best · Δ vs baseline</span>
+              <span className="text-[11px] text-text-tertiary">Ranked by profit factor · <Star size={9} className="inline text-gold-text" fill="currentColor" /> best over {MIN_STAR_TRADES} trades · Δ vs baseline</span>
             </div>
 
             {/* Live progress for the running iteration — watch it here, no need to leave */}
             {runningIter && (
-              <button
+              <div
                 onClick={() => navigate(`/backtests/runs/${runningIter.run_id}`)}
-                className="w-full text-left px-[15px] py-[9px] border-b border-border-subtle bg-accent/5 hover:bg-accent/10 transition-colors"
+                className="w-full text-left px-[15px] py-[9px] border-b border-border-subtle bg-accent/5 hover:bg-accent/10 transition-colors cursor-pointer"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-[12px] text-accent min-w-0">
@@ -607,14 +847,24 @@ export function TuningWorkbench() {
                       {liveJobId === runningIter.run_id && progress ? ` — ${progress.pct}% · ${progress.message}` : '…'}
                     </span>
                   </div>
-                  <span className="text-[11px] text-text-tertiary flex-shrink-0">View log →</span>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <button
+                      onClick={e => { e.stopPropagation(); stopRun.mutate(runningIter.run_id) }}
+                      disabled={stopRun.isPending}
+                      title="Cancel this iteration"
+                      className="flex items-center gap-1 text-[11px] text-text-tertiary hover:text-neg-text transition-colors disabled:opacity-40"
+                    >
+                      <Square size={10} fill="currentColor" /> Stop
+                    </button>
+                    <span className="text-[11px] text-text-tertiary">View log →</span>
+                  </div>
                 </div>
                 {liveJobId === runningIter.run_id && progress && (
                   <div className="mt-1.5 w-full bg-bg-sunken rounded-full h-[4px] overflow-hidden">
                     <div className="h-full bg-accent transition-all duration-700" style={{ width: `${progress.pct}%` }} />
                   </div>
                 )}
-              </button>
+              </div>
             )}
 
             <div className="overflow-x-auto">
@@ -624,8 +874,9 @@ export function TuningWorkbench() {
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium w-6" />
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Run</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Net P&L</th>
-                    <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
+                    <th className="text-left px-3 py-2 text-text-tertiary font-medium" title="Worst peak-to-trough fall as a % of the peak it fell from, with the dollars beneath it">Max DD</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">PF</th>
+                    <th className="text-left px-3 py-2 text-text-tertiary font-medium">Sharpe</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Win%</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
                     <th className="text-left px-3 py-2 text-text-tertiary font-medium">Changes</th>
@@ -635,13 +886,20 @@ export function TuningWorkbench() {
                   {leaderboard.map(r => {
                     const isBaseline = r.run_id === baseline.run_id
                     const isBest = r.run_id === bestPf
-                    const changes = Object.entries(r.params || {}).filter(([k, v]) => {
-                      if (isBaseline || isFoundational(schemaByName.get(k))) return false
-                      return String(v) !== String(baseline.params[k])
-                    })
-                    const pnlDelta = !isBaseline && r.net_pnl != null && baseMetric('net_pnl') != null ? r.net_pnl - (baseMetric('net_pnl') as number) : null
-                    const pfDelta  = !isBaseline && r.profit_factor != null && baseMetric('profit_factor') != null ? r.profit_factor - (baseMetric('profit_factor') as number) : null
-                    const ddDelta  = !isBaseline && r.max_drawdown != null && baseMetric('max_drawdown') != null ? r.max_drawdown - (baseMetric('max_drawdown') as number) : null
+                    const changes = isBaseline ? [] : (changesById.get(r.run_id) ?? [])
+                    const delta = (v: number | null | undefined, base: number | null) =>
+                      !isBaseline && v != null && base != null ? v - base : null
+                    const pnlDelta = delta(r.net_pnl, baseMetric('net_pnl'))
+                    const pfDelta = delta(r.profit_factor, baseMetric('profit_factor'))
+                    const shDelta = delta(r.sharpe, baseMetric('sharpe'))
+                    const wrDelta = delta(r.win_rate, baseMetric('win_rate'))
+                    const tcDelta = delta(r.trade_count, baseMetric('trade_count'))
+                    // Percentage points when both runs measured a peak-relative drawdown, dollars
+                    // otherwise. The two are different episodes of the run and are never mixed.
+                    const myDdPct = ddPctOf(r)
+                    const baseDdPct = ddPctOf(baselineSummary)
+                    const ddPctDelta = delta(myDdPct, baseDdPct)
+                    const ddUsdDelta = ddPctDelta == null ? delta(r.max_drawdown, baseMetric('max_drawdown')) : null
                     return (
                       <tr
                         key={r.run_id}
@@ -654,7 +912,8 @@ export function TuningWorkbench() {
                         <td className="px-3 py-[9px] font-medium whitespace-nowrap">
                           <span className="flex items-center gap-1.5">
                             {isBest && <Star size={11} className="text-gold-text" fill="currentColor" />}
-                            {isBaseline ? 'Baseline' : labelFor(r.run_id)}
+                            {shortLabel(r.run_id)}
+                            <WorthinessBadge worthiness={r.worthiness} />
                             {r.status === 'running' && (
                               <span className="text-[10px] text-accent">· running{liveJobId === r.run_id && progress ? ` ${progress.pct}%` : ''}</span>
                             )}
@@ -663,18 +922,51 @@ export function TuningWorkbench() {
                         </td>
                         <td className="px-3 py-[9px] font-mono tabular-nums">
                           <span className={(r.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}>{money(r.net_pnl)}</span>
-                          {pnlDelta != null && <span className="ml-1.5"><Delta value={pnlDelta} good={pnlDelta >= 0} /></span>}
+                          {pnlDelta != null && <span className="ml-1.5"><Delta value={pnlDelta} good={pnlDelta >= 0} digits={0} /></span>}
                         </td>
+                        {/* Percent leads because it is the figure comparable across runs whose
+                            accounts grew to different sizes; the dollars sit under it because that
+                            is the unit a prop-firm limit is written in. */}
                         <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
-                          {moneyAbs(r.max_drawdown)}
-                          {ddDelta != null && Math.abs(ddDelta) >= 1 && <span className="ml-1.5"><Delta value={ddDelta} good={ddDelta <= 0} /></span>}
+                          {myDdPct == null && r.max_drawdown == null ? '—' : (
+                            <>
+                              <div>
+                                {myDdPct != null ? `${myDdPct.toFixed(1)}%` : moneyAbs(r.max_drawdown)}
+                                {ddPctDelta != null && Math.abs(ddPctDelta) >= 0.1 && (
+                                  <span className="ml-1.5"><Delta value={ddPctDelta} good={ddPctDelta <= 0} digits={1} suffix="pp" /></span>
+                                )}
+                                {ddUsdDelta != null && Math.abs(ddUsdDelta) >= 1 && (
+                                  <span className="ml-1.5"><Delta value={ddUsdDelta} good={ddUsdDelta <= 0} digits={0} /></span>
+                                )}
+                              </div>
+                              {myDdPct != null && r.max_drawdown != null && (
+                                <div className="text-[10px] text-text-tertiary leading-tight">{moneyAbs(r.max_drawdown)}</div>
+                              )}
+                            </>
+                          )}
                         </td>
                         <td className="px-3 py-[9px] font-mono tabular-nums">
                           {r.profit_factor?.toFixed(2) ?? '—'}
                           {pfDelta != null && <span className="ml-1.5"><Delta value={pfDelta} good={pfDelta >= 0} /></span>}
                         </td>
-                        <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">{pct(r.win_rate)}</td>
-                        <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">{r.trade_count ?? '—'}</td>
+                        <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
+                          {r.sharpe?.toFixed(2) ?? '—'}
+                          {shDelta != null && <span className="ml-1.5"><Delta value={shDelta} good={shDelta >= 0} /></span>}
+                        </td>
+                        <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
+                          {pct(r.win_rate)}
+                          {wrDelta != null && Math.abs(wrDelta) >= 0.001 && (
+                            <span className="ml-1.5"><Delta value={wrDelta * 100} good={wrDelta >= 0} digits={1} suffix="pp" /></span>
+                          )}
+                        </td>
+                        {/* No colour on the trade-count delta: fewer trades is not worse, it is a
+                            different sample — and it is the thing to read before trusting a ★. */}
+                        <td className="px-3 py-[9px] font-mono tabular-nums text-text-secondary">
+                          {r.trade_count ?? '—'}
+                          {tcDelta != null && tcDelta !== 0 && (
+                            <span className="ml-1.5"><Delta value={tcDelta} good={null} digits={0} /></span>
+                          )}
+                        </td>
                         <td className="px-3 py-[9px] text-[11px] font-mono align-top">
                           {isBaseline ? <span className="text-text-tertiary">—</span>
                             : changes.length === 0 ? <span className="text-text-tertiary">none</span> : (
@@ -714,19 +1006,22 @@ export function TuningWorkbench() {
             </div>
             <div className="px-[10px] py-[12px]">
               {overlayData.length === 0 ? (
-                <p className="text-[12px] text-text-tertiary text-center py-12">No completed runs to chart yet. Tweak a param and run an iteration.</p>
+                // "Nothing to chart" and "still fetching the curves" are different answers, and the
+                // second one arrives on every visit — saying the first is how a loading page reads
+                // as an empty one.
+                <p className="text-[12px] text-text-tertiary text-center py-12">
+                  {completeIds.length > 0 && detailsLoading
+                    ? 'Loading run curves…'
+                    : 'No completed runs to chart yet. Tweak a param and run an iteration.'}
+                </p>
+              ) : chartFs ? (
+                // The fullscreen copy is the one on screen; keeping this one mounted behind it means
+                // two live charts recomputing on every hover.
+                <div style={{ height: 440 }} />
               ) : (
                 <>
                   {renderOverlay(440)}
-                  {/* Legend */}
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 px-2">
-                    {completeIds.map(id => (
-                      <span key={id} className="flex items-center gap-1.5 text-[11px] text-text-tertiary">
-                        <span className="w-3 h-[2px]" style={{ background: colorFor.get(id) }} />
-                        {labelFor(id)}
-                      </span>
-                    ))}
-                  </div>
+                  {renderLegend()}
                 </>
               )}
             </div>
@@ -801,8 +1096,14 @@ export function TuningWorkbench() {
               </button>
             </div>
           </div>
-          <div ref={fsChartRef} className="flex-1 min-h-0 px-5 py-4">
-            {renderOverlay(Math.max(300, window.innerHeight - 120))}
+          {/* Height comes from the flex box, not from a `window.innerHeight` read at render time —
+              that number was captured once and never updated, so resizing the window (or opening
+              devtools) left the chart at the old height until something else re-rendered. */}
+          <div ref={fsChartRef} className="flex-1 min-h-0 px-5 py-4 flex flex-col">
+            <div ref={fsPlotRef} className="flex-1 min-h-0">
+              {renderOverlay(fsPlotH > 0 ? Math.max(300, fsPlotH) : Math.max(300, window.innerHeight - 160))}
+            </div>
+            {renderLegend()}
           </div>
         </div>
       )}
