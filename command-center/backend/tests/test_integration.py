@@ -258,9 +258,22 @@ def test_agent_kill_causes_failed_timeout():
             break
         time.sleep(3)
 
-    # Kill the VPS agent process
+    # Kill the NT8 AGENT — and only it.
+    #
+    # 🔴 This was `taskkill /f /im python.exe` until 2026-08-05, which kills EVERY python
+    # process on that box: the NT8 agent, the MT5 agent, the Telegram bot and the LIVE
+    # TRADING BOT. There was no live bot when this test was written; there has been one
+    # since 2026-07-31, and the blanket kill is what left it dead for three days in July.
+    # A test that costs a live position to run is a test nobody can run.
+    #
+    # Both halves of the match are load-bearing, exactly as `routers/bots.py::_kill_bot`
+    # documents: `name='python.exe'` excludes the cmd.exe/wmic.exe hosting this very
+    # command (whose own commandline contains the pattern), and the script name is what
+    # picks THIS agent out of the fleet.
     subprocess.run(
-        ["ssh", "forexvps", "taskkill /f /im python.exe"],
+        ["ssh", "forexvps",
+         "wmic process where \"name='python.exe' and commandline like "
+         "'%nt8_agent.py%'\" call terminate"],
         timeout=15, check=False,
     )
 
