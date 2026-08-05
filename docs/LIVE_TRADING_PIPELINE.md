@@ -183,6 +183,33 @@ brings its own symbol name, spread, swap, tick size, minimum stop distance and *
 offset**. None of that is fatal; all of it must be declared per instance and measured once, not
 assumed.
 
+**2026-08-05 — the MEASUREMENT is now instrumented, and arming the bot is what it was for.** The
+2026-08-04 shadow diff already showed the two feeds differ by a systematic 4-5 cents (Vantage above
+PU Prime on every one of 148 bars), and the jitter audit showed that ±$0.05 per bar churns ~6% of
+the trade list. So the gap is real and the only thing that can close it is PU Prime's own fills.
+
+🔴 **It could not have been closed as the code stood.** `mt5_ops.get_deal_result` returns MT5's
+`d.profit` — the **price move only** — read off the **closing deal alone**. Swap was dropped and
+commission, which brokers normally book on the **entry** deal, was never fetched. The first live
+trade would have written a `pnl_usd` that disagreed with the account balance under a name that
+gives a reader no reason to check it. Fixed with `mt5_ops.get_deal_breakdown()`, which sums every
+deal of the position and reports `gross_usd` / `swap_usd` / `commission_usd` / `net_usd`
+**separately**; `live/ledger.py::trade_closed` writes all of them plus the fill-vs-intended entry
+price. `pnl_usd` and the R are now NET.
+
+⚠ **The parts are kept rather than only the total, and that IS the measurement** — a netted number
+cannot be taken apart afterwards; gross + swap + commission can always be re-netted.
+⚠ **Swap keeps MT5's own sign.** Gold's short swap is a CREDIT; a field that cannot be positive
+cannot measure a broker that pays you (the command center made exactly this mistake on 2026-08-03
+and overstated fees by 25%).
+⚠ **`None` = could not ask, `0.0` = charged nothing.** `deals: 0` is what an unreachable terminal
+returns, and writing its zeros down would fabricate a measurement.
+
+**Still assumed until trades accumulate:** the symbol's **minimum stop distance** and **tick size**
+are read from the terminal at order time but have never been recorded against a refusal, and the
+**spread** is only observable through fill-vs-intended on a resting limit, which needs fills. This
+item stays OPEN; what changed is that the data is now being collected instead of discarded.
+
 ### G6 — The minimum-stop-distance guard is a live hazard and does not exist in Python — **CLOSED 2026-07-30**
 
 This is the only item on this list that can lose real money quickly.
@@ -743,9 +770,28 @@ setups the Python took while the comparator reported green), the decode in `comp
 them. Default `"Off"` ⇒ byte-identical to the previous build ⇒ no historical result moves. 11 new
 tests; 111 green.
 
-**Outstanding:** ship at `"% of price"` 0.10 (Run 7's measured best) **after** a fresh TradingView
-export re-runs `compare_strategy.py` to exit 0 with the filter ON. Unit tests prove our two halves
-agree; only an export proves we agree with TradingView.
+**PARTLY CLOSED 2026-08-05 — the export arrived, the gate is green, and it proves LESS than it
+looks.** Aaron exported `VANTAGE_XAUUSD, 15m` (21,897 bars) with the guard enabled, and
+`compare_strategy.py` is **exit 0 at warmups 100 / 500 / 2000**. So the port is not broken by
+switching the guard on — which was a real risk and is now retired.
+
+🔴 **But the guard never FIRED in that window, so its arithmetic is still unproven against Pine.**
+Two independent checks say so. The export's own config columns read `cfg_min_stop = 2` and
+`cfg_min_stop_val = 0.1` — and **mode 2 is `"Fixed $"`, not `"% of price"`** (`_MIN_STOP =
+{0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}`), i.e. a **10-cent** minimum stop on a
+$4,000 instrument, which every real stop clears trivially. And **block code 7 ("Stop too tight")
+appears zero times** in 21,897 bars; the codes present are 3, 4, 30 and 40. The tightest stop on any
+filled entry was **$6.76 (0.1625% of price)** — 67× the floor that was actually in force.
+
+**This is the repo's own standing lesson pointed at its own gate: a green parity run says the two
+implementations AGREE, never that either is RIGHT — and it cannot say even that about a branch
+neither one entered.**
+
+**Outstanding, and now a specific ask rather than a general one:** re-export with a floor that
+actually bites, so code 7 is raised on several bars and the comparator has something to diff. From
+the measured distribution, `"% of price"` **0.30** or `"Fixed $"` **20** would refuse roughly the
+six tightest setups in the window. Ship at `"% of price"` 0.10 (Run 7's measured best) once that
+export is green.
 
 ### Step 2 — Secrets out of git (G7) — **DONE 2026-07-30**
 
@@ -865,7 +911,39 @@ git-ignored local folder whenever the app starts. Both idempotent.
    Re-run it after any live session, and after any entry-logic change.
 3. **Feed parity.** `compare_feeds.py` against the live terminal — clock offset must read a flat 0h.
 4. **Arm at reduced risk.** Not `exec_risk_pct = 10`. See the open question below.
+   ⚠ **Superseded 2026-08-05: armed at 10%, Aaron's explicit call, on a DEMO account.** Recorded in
+   the open-questions table below with the −54.9% drawdown it measured.
 5. **One bot only.** B-LEG waits for the allocator and the overlap audit (G10).
+
+🟢 **ARMED 2026-08-05 — `--live` is in `startup_coordinator.py`'s `STARTUP_SEQUENCE` argv.**
+
+**Step 1 was completed and then deliberately cut short, and the reason matters more than the
+timing.** The bot ran three days in dry run — **274 bars across 2026-07-31, 08-04 and 08-05** — and
+in that entire record `long_armed` and `short_armed` are false on **every single bar**, the stage
+never rose above **1**, no stop or target was ever set, and **not one order was suppressed**. The
+dry run blocked nothing because nothing arrived. That is not a fault: A+ takes **~161 trades over
+6.5 years**, about **two a month**, so three empty days is the expected result and a fourth week
+would most likely have been the same. **A waiting period only buys confidence if the thing being
+waited for can happen in it.**
+
+⚠ **The flag belongs in `STARTUP_SEQUENCE`, and only there, because that tuple is the single source
+for all three start paths** — `SYS_STARTUP` at boot, the `SYS_MONITOR` watchdog restarting a dead
+bot, and the command center's Start/Restart buttons (which use the coordinator's `--bot` single
+mode). Arming one caller instead would mean **a watchdog restart silently returning a live bot to
+dry run**: the ledger would keep filling, the Bots page would keep saying RUNNING, and nothing would
+report that orders had stopped. That is the "two paths, one drifts" defect this repo keeps meeting,
+in the one place where the quiet direction is the dangerous one.
+
+⚠ **Consequence: live is now this bot's DEFAULT on this box.** Every automatic recovery brings it
+back armed. **Disarming means deleting the flag and restarting — not stopping the process,** which
+the watchdog will simply undo within ~60s.
+
+⚠ **What is still true and unproven:** the strategy's parity with Pine is green, but the
+**minimum-stop guard has never fired in any validated export** (see Step 1), and the guard is what
+stands between a collapsed stop distance and a position sized off it. The broker's own
+`SYMBOL_TRADE_STOPS_LEVEL` (20 points) is an independent backstop and is enforced by the terminal,
+not by us — which is the only reason arming ahead of that export is defensible, and it is defensible
+**because the account is a demo**.
 
 ---
 

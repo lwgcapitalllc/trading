@@ -126,10 +126,33 @@ class Ledger:
 
     def trade_closed(self, *, ticket: int, direction: str, symbol: str, price: float,
                      pnl_usd: float, r_multiple: Optional[float], reason: str,
-                     lots: float = 0.0, held_bars: Optional[int] = None) -> None:
+                     lots: float = 0.0, held_bars: Optional[int] = None,
+                     gross_usd: Optional[float] = None, swap_usd: Optional[float] = None,
+                     commission_usd: Optional[float] = None,
+                     entry_price: Optional[float] = None,
+                     intended_price: Optional[float] = None) -> None:
+        """Record a closed trade, with its COSTS kept apart from its price move.
+
+        `pnl_usd` is NET — gross + swap + commission — because that is what the balance did.
+        The parts ride alongside it rather than replacing it: a netted figure cannot be taken
+        apart later, and G5 (PU Prime's spread, swap and commission are assumed, never
+        measured) is answered by accumulating these per trade. Every cost field is
+        `Optional` and `None` means the broker could not be ASKED, never that the cost was
+        zero — the same rule `mt5_link` follows.
+
+        `entry_price`/`intended_price` are repeated here from the OPEN record on purpose.
+        Entry slippage is a per-trade fact and the two halves of a trade are separate lines in
+        a JSONL file; joining them by ticket to answer "what did the fill cost us" works, but
+        it fails silently for any trade whose open record predates a log rotation, and a cost
+        study that quietly drops its oldest trades is worse than one that cannot run.
+        """
         self._write("trade", {
             "event": "closed", "ticket": ticket, "dir": direction, "symbol": symbol,
             "lots": lots, "price": price, "pnl_usd": pnl_usd,
+            "gross_usd": gross_usd, "swap_usd": swap_usd, "commission_usd": commission_usd,
+            "entry_price": entry_price, "intended_price": intended_price,
+            "entry_slippage": ((entry_price - intended_price)
+                               if entry_price and intended_price else None),
             "r": r_multiple, "reason": reason, "held_bars": held_bars,
         })
 

@@ -34,15 +34,36 @@ from bot_state import set_started, set_status
 # `--config <file>`; algos/live/runner.py takes `--bot <key>` and resolves its own
 # instance dir, so the launcher can no longer assume one flag shape.
 #
-# ⚠ NO `--live` HERE, and that is the point. The runner defaults to dry run and requires
-# `--live` to be typed, so a bot that boots with the VPS can never arm itself. Arming is a
-# deliberate act — see algos/live/ and docs/LIVE_TRADING_PIPELINE.md step 9.
+# 🔴 `--live` IS HERE, AS OF 2026-08-05, AND IT IS THE ONLY PLACE IT NEEDS TO BE.
+#
+# This line used to read "NO `--live` HERE, and that is the point" — the runner defaults to dry
+# run and requires `--live` to be typed, so a bot that booted with the VPS could never arm
+# itself. That guard did its job: the bot ran three days and 274 bars without an order. Aaron
+# armed it deliberately on 2026-08-05, on the $2,000 PU Prime DEMO account, for the reason the
+# dry run could not serve — the strategy takes ~2 trades a MONTH, so watching it decide nothing
+# for weeks teaches nothing, and the broker facts this repo still has to measure (fill vs
+# intended price, real spread, swap, commission) only exist once a real order goes to a real
+# broker. See docs/LIVE_TRADING_PIPELINE.md step 9 and G5.
+#
+# ⚠ THIS ARGV IS THE SINGLE SOURCE FOR ALL THREE START PATHS, and that is why the flag belongs
+# here rather than in one caller. SYS_STARTUP at boot, the SYS_MONITOR watchdog restarting a
+# dead bot, and the command center's Start/Restart buttons ALL launch through this module —
+# boot and the watchdog through the full sequence below, the buttons through `--bot` single
+# mode — and both read this same tuple. Arming any one caller instead would mean a watchdog
+# restart silently returning a live bot to dry run, which is the "two paths, one drifts" defect
+# this repo keeps meeting; a bot that is live until something restarts it is worse than one
+# that is honestly dry, because the ledger would keep filling and nothing would say the orders
+# had stopped.
+#
+# ⚠ It follows that arming is now the DEFAULT for this bot on this box: every automatic
+# recovery brings it back live. Disarming means deleting the flag here and restarting — not
+# stopping the bot, which the watchdog will simply undo.
 STARTUP_SEQUENCE = [
     (
         "mpc_sos_fade_demo",
         "MPC SOS Fade",
         str(ALGOS / "live" / "runner.py"),
-        ["--bot", "mpc_sos_fade_demo"],
+        ["--bot", "mpc_sos_fade_demo", "--live"],
         str(ALGOS / "markets/fx/instances/mpc_sos_fade_demo/mpc_sos_fade_demo.log"),
         "Connected | #",
         180,

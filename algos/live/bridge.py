@@ -205,7 +205,26 @@ class OrderBridge:
             return
         if any(p.ticket == self._pos_ticket for p in positions):
             return
-        price, pnl = self._mt5.get_deal_result(self._pos_ticket)
+        # NET of swap and commission, with the parts kept separate — see
+        # `mt5_ops.get_deal_breakdown`. The R below is therefore the R the ACCOUNT got, not the
+        # R the price move implies, which is the only version worth alerting on: a scratch that
+        # is +0.02R gross and −0.06R after an overnight swap is a loss, and reporting the gross
+        # would make the live record disagree with the balance for no stated reason.
+        #
+        # `get_deal_breakdown` is optional on the handle on purpose. This bridge is driven by
+        # test doubles and by an older `mt5_ops` on any box that has not pulled, and a missing
+        # method must degrade to the previous behaviour rather than crash out of an EXIT path —
+        # losing the exit record is far worse than losing the cost breakdown.
+        costs = None
+        if hasattr(self._mt5, "get_deal_breakdown"):
+            b = self._mt5.get_deal_breakdown(self._pos_ticket)
+            # `deals: 0` is "not found", not "free" — fall back rather than book zero costs.
+            if b and b.get("deals"):
+                costs = b
+        if costs is not None:
+            price, pnl = costs["close_price"], costs["net_usd"]
+        else:
+            price, pnl = self._mt5.get_deal_result(self._pos_ticket)
         r = (pnl / self._pos_risk_usd) if self._pos_risk_usd else None
         reason = getattr(dec, "exit_reason", "") or self._infer_exit_reason(price)
         held = None
@@ -216,7 +235,14 @@ class OrderBridge:
                        f"P&L ${pnl:,.2f}" + (f" ({r:+.2f}R)" if r is not None else ""))
         self._ledger.trade_closed(
             ticket=self._pos_ticket, direction=side, symbol=self._mt5.symbol, price=price,
-            pnl_usd=pnl, r_multiple=r, reason=reason, lots=self._pos_lots, held_bars=held)
+            pnl_usd=pnl, r_multiple=r, reason=reason, lots=self._pos_lots, held_bars=held,
+            # The measurement this bot was armed to take. `entry_price`/`intended_price` give
+            # entry slippage, gross-vs-net gives the real cost of the hold, and both are needed
+            # per trade because a single netted figure cannot be taken apart afterwards.
+            gross_usd=costs["gross_usd"] if costs else None,
+            swap_usd=costs["swap_usd"] if costs else None,
+            commission_usd=costs["commission_usd"] if costs else None,
+            entry_price=self._pos_entry, intended_price=self._pos_intended)
         self._notify(alerts.format_exit(
             strategy=self._strategy_name, symbol=self._mt5.symbol, exit_price=price,
             pnl_usd=pnl, r_multiple=r, digits=self._digits(),

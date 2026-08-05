@@ -162,7 +162,11 @@ def repo(tmp_path, monkeypatch):
     subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "main"], check=True)
 
     monkeypatch.setattr(ledger_sync, "REPO_ROOT", work)
-    monkeypatch.setattr(ledger_sync, "LOCAL_INSTANCES", work / "algos" / "inst")
+    # `LOCAL_ARCHIVE`, not the bot's own instance dir — the sync writes to a SEPARATE tree
+    # (`algos/ledger_archive/`) because committing into the live path made `git pull` on the
+    # VPS abort on its own untracked files. Renamed 2026-08-05; this line still said
+    # LOCAL_INSTANCES and every test in the file errored at setup.
+    monkeypatch.setattr(ledger_sync, "LOCAL_ARCHIVE", work / "algos" / "ledger_archive")
     return work
 
 
@@ -258,7 +262,7 @@ def test_a_fetched_path_always_lands_inside_the_repo(repo, monkeypatch):
     monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
         a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n", stderr=""))
     for rel in ledger_sync.closed_days("host"):
-        target = (ledger_sync.LOCAL_INSTANCES / rel).resolve()
+        target = (ledger_sync.LOCAL_ARCHIVE / rel).resolve()
         assert target.is_relative_to(repo.resolve())
 
 

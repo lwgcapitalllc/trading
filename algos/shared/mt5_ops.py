@@ -640,13 +640,24 @@ class BotMT5:
 
     def get_deal_result(self, ticket: int) -> tuple[float, float]:
         """
-        Fetch (close_price, pnl_usd) from MT5 deal history for a closed position.
+        Fetch (close_price, GROSS pnl_usd) from MT5 deal history for a closed position.
 
         Uses a 7-day lookback window so deals from over the weekend are found.
         Returns (0.0, 0.0) if no closing deal is found.
 
         Explicitly re-filters by position_id == ticket to guard against MT5
         returning deals from a different position during connection instability.
+
+        ⚠ `d.profit` is the PRICE MOVE ONLY. MT5 carries swap and commission in sibling
+        fields on the same deals, and commission is usually booked on the ENTRY deal this
+        function does not even look at — so what comes back here is what the trade would have
+        made at a frictionless broker. On gold that is not a rounding error: an overnight hold
+        pays or earns real swap, and the whole reason this repo is running a live demo bot is
+        to measure those costs rather than assume them. Use `get_deal_breakdown` when the
+        number is going into a record somebody will later read as "what this trade made".
+
+        Kept as-is on purpose — five other callers unpack this 2-tuple, and widening it to
+        smuggle costs into `pnl` would silently redefine every one of them.
         """
         to    = datetime.utcnow()
         from_ = to - timedelta(days=7)
@@ -657,6 +668,58 @@ class BotMT5:
                 d = closing[-1]
                 return float(d.price), float(d.profit)
         return 0.0, 0.0
+
+    def get_deal_breakdown(self, ticket: int) -> dict:
+        """
+        Fetch a closed position's FULL money result, costs separated from the price move.
+
+        Returns a dict with `close_price`, `gross_usd` (price move), `swap_usd`,
+        `commission_usd`, `net_usd` (the three summed — what the balance actually moved by),
+        and `deals` (how many deals were summed). All zeros if the position is not found.
+
+        **Why this exists rather than a wider `get_deal_result`.** G5 in the live pipeline is
+        "PU Prime's broker facts are assumed, never measured" — every spread, swap and
+        commission figure in this repo was measured on VANTAGE, and the bot trades PU Prime.
+        A live trade is the only instrument that can settle it, and it can only settle it if
+        the costs are recorded SEPARATELY. A single net number cannot be decomposed later;
+        gross + swap + commission can always be re-netted.
+
+        ⚠ It sums EVERY deal of the position, not just the closing one. Commission is
+        typically charged on the entry deal, swap accrues onto the position and lands on the
+        exit — reading the closing deal alone loses the entry-side commission entirely, which
+        is exactly the half a "we charge no commission" broker claim would hide.
+
+        ⚠ Swap is reported with MT5's OWN SIGN and is deliberately not abs()'d. Gold's short
+        swap is a CREDIT at most brokers, and the command center booked exactly that credit as
+        a charge on 2026-08-03 by taking `-abs(cost)` — 39 of 161 backtest trades were net
+        credits and the page overstated fees by 25%. A cost field that cannot be positive
+        cannot measure a broker that pays you.
+
+        ⚠ Zeros mean NOT FOUND, not free. `deals: 0` is the tell, and a reader must check it —
+        this repo's standing rule is that "no data" and "cannot ask" must never be the same
+        value, and a dict of zeros is what an unreachable terminal returns too.
+        """
+        empty = {"close_price": 0.0, "gross_usd": 0.0, "swap_usd": 0.0,
+                 "commission_usd": 0.0, "net_usd": 0.0, "deals": 0}
+        to    = datetime.utcnow()
+        from_ = to - timedelta(days=7)
+        deals = mt5.history_deals_get(from_, to, position=ticket)
+        if not deals:
+            return empty
+
+        mine = [d for d in deals if d.position_id == ticket]
+        if not mine:
+            return empty
+
+        gross = sum(float(getattr(d, "profit", 0.0) or 0.0) for d in mine)
+        swap = sum(float(getattr(d, "swap", 0.0) or 0.0) for d in mine)
+        comm = sum(float(getattr(d, "commission", 0.0) or 0.0) for d in mine)
+        closing = [d for d in mine if d.entry == 1]
+        price = float(closing[-1].price) if closing else 0.0
+
+        return {"close_price": price, "gross_usd": gross, "swap_usd": swap,
+                "commission_usd": comm, "net_usd": gross + swap + comm,
+                "deals": len(mine)}
 
     def close_position(self, ticket: int, direction: str,
                        reason: str = "") -> tuple[bool, float, float]:
