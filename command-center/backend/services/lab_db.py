@@ -6,11 +6,14 @@ Single entry point for all lab DB access. No other module touches lab.db.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Optional
+
+log = logging.getLogger("lab_db")
 
 _HERE = Path(__file__).parent.parent
 DB_PATH = _HERE / "data" / "lab.db"
@@ -440,6 +443,20 @@ def init_db() -> None:
             "ALTER TABLE stress_tests ADD COLUMN pct5_max_dd_pct REAL",
             "ALTER TABLE stress_tests ADD COLUMN pct1_max_dd_pct REAL",
             "ALTER TABLE stress_tests ADD COLUMN dd_basis TEXT",
+            # What the sensitivity phase could NOT measure — shifts refused by a bound, shifts that
+            # landed back on the baseline, child backtests that failed, and params behind a switch
+            # this run has off. A phase that quietly declines 30 of 60 shifts and reports only the
+            # survivors describes coverage that never happened.
+            "ALTER TABLE stress_tests ADD COLUMN sensitivity_coverage TEXT",
+            # Which phases were ASKED for, and which of them failed. `walk_forward_summary IS NULL`
+            # cannot tell "never requested" from "ran and crashed", and grading read both as
+            # not-run — so a walk-forward that died could still be handed an A.
+            "ALTER TABLE stress_tests ADD COLUMN phases_requested TEXT",
+            "ALTER TABLE stress_tests ADD COLUMN phase_failures TEXT",
+            # Which build of the scoring engine produced the stored grade. NULL = a row written
+            # before this column, i.e. before the 2026-07-30 accuracy pass, whose grade and
+            # degradation numbers the current code would not produce. See _restamp_stress_tests.
+            "ALTER TABLE stress_tests ADD COLUMN grade_engine INTEGER",
             "ALTER TABLE optimizations ADD COLUMN regime_filter TEXT",
             # Pass 1 — foundational config columns
             "ALTER TABLE rulesets ADD COLUMN risk_per_trade_pct REAL",
@@ -750,6 +767,12 @@ def init_db() -> None:
     _migrate_strategy_renames()
     _migrate_personal_demo_rename()
     _migrate_optimizations_nullable_ruleset()
+
+    # Re-score stress tests written by an older grading engine. Its own connection, after the
+    # schema work above, because it reads the child runs and the rulesets it re-grades against.
+    n = _restamp_stress_tests()
+    if n:
+        log.info("Re-scored %d stress test(s) with grading engine v%d", n, GRADE_ENGINE)
 
 
 def _migrate_optimizations_nullable_ruleset() -> None:
@@ -2723,19 +2746,34 @@ def list_optimization_runs(optimization_id: str) -> list[dict]:
 
 # ── Stress Tests ──────────────────────────────────────────────────────────────
 
+# Every JSON-encoded column on `stress_tests`, decoded on the way out. Stated ONCE — a reader that
+# decodes four of five columns hands the fifth to the API as a raw string, which Pydantic then
+# rejects or (worse) coerces.
+_STRESS_JSON_FIELDS = [
+    "walk_forward_summary", "sensitivity_summary", "grade_reasons",
+    "sensitivity_coverage", "phases_requested", "phase_failures",
+]
+
+
 def insert_stress_test(data: dict) -> None:
     with _connect() as conn:
         conn.execute("""
             INSERT INTO stress_tests
                 (stress_test_id, run_id, ruleset_id, status, created_at,
-                 num_simulations, num_bootstrap, walk_forward_windows)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 num_simulations, num_bootstrap, walk_forward_windows, phases_requested)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["stress_test_id"], data["run_id"], data.get("ruleset_id"),
             data["status"], data["created_at"],
             data.get("num_simulations", 10_000),
             data.get("num_bootstrap", 1_000),
             data.get("walk_forward_windows", 5),
+            # Written HERE, at creation, because that is the only point that cannot be missed.
+            # Recorded at the END it is absent for the whole run — so a page showing a live test
+            # has to GUESS which phases are coming, and a task that dies mid-flight leaves no
+            # record of what was asked for at all. The frontend comment claiming it was "written
+            # before anything can fail" was a label describing code that did not exist yet.
+            json.dumps(data["phases_requested"]) if data.get("phases_requested") else None,
         ))
 
 
@@ -2746,10 +2784,27 @@ def get_stress_test(stress_test_id: str) -> Optional[dict]:
         ).fetchone()
     if not row:
         return None
-    return _parse_json_fields(dict(row), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"])
+    return _parse_json_fields(dict(row), _STRESS_JSON_FIELDS)
 
 
 def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None) -> list[dict]:
+    """The LIST view — deliberately without the two big JSON blobs.
+
+    `SELECT st.*` shipped every test's full `walk_forward_summary` and `sensitivity_summary` (a
+    sensitivity grid is one object per param per shift, ~60 of them) to render a grade, a status
+    and three numbers. The detail endpoint serves them where they are actually drawn. Same lesson
+    as the sidebar pulling the whole runs list to light three dots.
+
+    ⚠ The columns are named explicitly rather than excluded, so a NEW column is opt-in: adding one
+    to the table cannot silently start shipping a megabyte to a list nobody reads it on.
+
+    ⚠ **The cost is stated rather than hidden: on THIS endpoint `walk_forward_summary` and
+    `sensitivity_summary` serialise as `null`, which is indistinguishable from "the phase produced
+    nothing".** That is the repo's own *no data vs cannot ask* trap, and it is the reason the runs
+    list was deliberately NOT trimmed of `params` — there a consumer really reads it. Here nothing
+    does, and the ambiguity is bounded by `phases_requested` / `phase_failures`, which ARE shipped
+    and answer *was it asked for* and *did it fail* without the blob. **A caller that needs a
+    summary must fetch the detail; do not teach a list consumer to read a null here as an answer.**"""
     clauses, params = [], []
     if run_id:
         clauses.append("st.run_id = ?"); params.append(run_id)
@@ -2758,7 +2813,17 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     with _connect() as conn:
         rows = conn.execute(f"""
-            SELECT st.*, r.strategy_id, r.instrument,
+            SELECT st.stress_test_id, st.run_id, st.ruleset_id, st.status, st.created_at,
+                   st.completed_at, st.mc_completed_at, st.wf_completed_at,
+                   st.num_simulations, st.num_bootstrap,
+                   st.median_final_pnl, st.pct5_final_pnl, st.pct1_final_pnl,
+                   st.median_max_dd, st.pct5_max_dd, st.pct1_max_dd,
+                   st.median_max_dd_pct, st.pct5_max_dd_pct, st.pct1_max_dd_pct, st.dd_basis,
+                   st.prob_breach, st.prob_pass_eval,
+                   st.walk_forward_windows, st.walk_forward_degradation,
+                   st.sensitivity_max_degradation, st.grade, st.grade_reasons,
+                   st.phases_requested, st.phase_failures, st.error_message,
+                   r.strategy_id, r.instrument,
                    COALESCE(s.name, r.strategy_id) AS strategy_name
             FROM stress_tests st
             JOIN backtest_runs r ON r.run_id = st.run_id
@@ -2766,7 +2831,7 @@ def list_stress_tests(run_id: Optional[str] = None, grade: Optional[str] = None)
             {where}
             ORDER BY st.created_at DESC
         """, params).fetchall()
-    return [_parse_json_fields(dict(r), ["walk_forward_summary", "sensitivity_summary", "grade_reasons"]) for r in rows]
+    return [_parse_json_fields(dict(r), _STRESS_JSON_FIELDS) for r in rows]
 
 
 _GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
@@ -2851,12 +2916,23 @@ def update_stress_test_status(stress_test_id: str, status: str, error_message: O
             )
 
 
-def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
+def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict,
+                          next_status: str = "complete") -> None:
+    """Store the Monte Carlo result and move the row to `next_status`.
+
+    ⚠ **`next_status` is not cosmetic.** This used to hardcode `status='complete'` and stamp
+    `completed_at`, even when walk-forward and sensitivity were still to come. Three consequences,
+    all real: the row read `complete` for the seconds before the next phase set `running_wf`; the
+    market lock (`status LIKE 'running%'`) RELEASED in that gap, so a second test could start on
+    top of this one; and a crash inside it left a permanently "complete" test with no walk-forward,
+    no sensitivity and no grade — invisible to `reset_stale_stress_tests`, which only looks for
+    `running%`. `completed_at` is stamped only when the row is genuinely finished."""
     now = int(time.time())
+    done = next_status == "complete" or next_status.startswith("failed")
     with _connect() as conn:
         conn.execute("""
             UPDATE stress_tests SET
-                status='complete', completed_at=?, mc_completed_at=?,
+                status=?, completed_at=?, mc_completed_at=?,
                 median_final_pnl=?, pct5_final_pnl=?, pct1_final_pnl=?,
                 median_max_dd=?, pct5_max_dd=?, pct1_max_dd=?,
                 median_max_dd_pct=?, pct5_max_dd_pct=?, pct1_max_dd_pct=?, dd_basis=?,
@@ -2864,7 +2940,7 @@ def update_stress_test_mc(stress_test_id: str, mc: dict, paths: dict) -> None:
                 equity_paths_path=?, distribution_path=?
             WHERE stress_test_id=?
         """, (
-            now, now,
+            next_status, (now if done else None), now,
             mc.get("median_final_pnl"), mc.get("pct5_final_pnl"), mc.get("pct1_final_pnl"),
             mc.get("median_max_dd"), mc.get("pct5_max_dd"), mc.get("pct1_max_dd"),
             mc.get("median_max_dd_pct"), mc.get("pct5_max_dd_pct"), mc.get("pct1_max_dd_pct"),
@@ -2885,13 +2961,34 @@ def update_stress_test_walk_forward(stress_test_id: str, summary: list, degradat
 
 
 def update_stress_test_sensitivity(stress_test_id: str, summary: dict,
-                                   max_degradation: Optional[float]) -> None:
+                                   max_degradation: Optional[float],
+                                   coverage: Optional[dict] = None) -> None:
     """`max_degradation` is None when sensitivity ran but nothing could be measured (no params, or
-    an unusable baseline profit factor). Grading treats None as not-run — never as a clean 0.0."""
+    an unusable baseline profit factor). Grading treats None as not-run — never as a clean 0.0.
+
+    `coverage` records what the phase could NOT measure. It is optional because the grid-injection
+    path (`_apply_grid_sensitivity_if_available`) runs no backtests and therefore skips nothing;
+    a NULL there means "this did not perturb anything", not "nothing was skipped"."""
     with _connect() as conn:
         conn.execute(
-            "UPDATE stress_tests SET sensitivity_summary=?, sensitivity_max_degradation=? WHERE stress_test_id=?",
-            (json.dumps(summary), max_degradation, stress_test_id),
+            "UPDATE stress_tests SET sensitivity_summary=?, sensitivity_max_degradation=?, "
+            "sensitivity_coverage=? WHERE stress_test_id=?",
+            (json.dumps(summary), max_degradation,
+             json.dumps(coverage) if coverage is not None else None, stress_test_id),
+        )
+
+
+def update_stress_test_phases(stress_test_id: str, requested: list[str],
+                              failures: dict[str, str]) -> None:
+    """Which phases were asked for, and which of them failed and why.
+
+    ⚠ This is the ONLY thing that separates "walk-forward was not requested" from "walk-forward ran
+    and crashed". `walk_forward_summary IS NULL` means both, and grading read it as not-run —
+    neither credit nor penalty — so a phase that failed cost the test nothing and left no mark."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE stress_tests SET phases_requested=?, phase_failures=? WHERE stress_test_id=?",
+            (json.dumps(requested), json.dumps(failures), stress_test_id),
         )
 
 
@@ -2902,9 +2999,23 @@ def update_stress_test_grade(stress_test_id: str, grade: Optional[str], reasons:
     now = int(time.time())
     with _connect() as conn:
         conn.execute(
-            "UPDATE stress_tests SET status='complete', completed_at=?, grade=?, grade_reasons=? WHERE stress_test_id=?",
-            (now, grade, json.dumps(reasons), stress_test_id),
+            "UPDATE stress_tests SET status='complete', completed_at=?, grade=?, grade_reasons=?, "
+            "grade_engine=? WHERE stress_test_id=?",
+            (now, grade, json.dumps(reasons), GRADE_ENGINE, stress_test_id),
         )
+
+
+def stress_market_for_runner(runner: Optional[str]) -> str:
+    """Which market lock a runner's stress test takes.
+
+    🔴 This used to be an inline `"forex" if runner == "mt5" else "futures"`, which files a PYTHON
+    run under **futures** — while the frontend's `lib/runner.ts::runnerMarket` calls MT5 and Python
+    both **forex**, because only NinjaTrader trades futures contracts. So the two sides disagreed
+    about which lock a python stress test holds: a running python test set `futures`, the run page
+    read `forex`, the button stayed enabled, and the POST answered 409. Two readings of one claim,
+    which is this repo's most-repeated defect. It is stated ONCE now, here, and mirrors that
+    function exactly — change one and change the other in the same commit."""
+    return "futures" if (runner or "ninjatrader") == "ninjatrader" else "forex"
 
 
 def running_stress_test_markets() -> dict:
@@ -2920,14 +3031,237 @@ def running_stress_test_markets() -> dict:
     result: dict = {"futures": False, "forex": False, "run_ids": []}
     for row in rows:
         result["run_ids"].append(row["run_id"])
-        if row["runner"] == "mt5":
-            result["forex"] = True
-        else:
-            result["futures"] = True
+        result[stress_market_for_runner(row["runner"])] = True
     return result
 
 
-def delete_stress_test(stress_test_id: str) -> bool:
+# Bumped whenever a scoring change means a STORED grade is no longer what the current code would
+# produce. `_restamp_stress_tests` re-derives every row below this number.
+GRADE_ENGINE = 3
+
+
+def _restamp_stress_tests() -> int:
+    """Re-derive stored stress-test scores with the current engine. Idempotent, runs from init_db.
+
+    🔴 The 2026-07-30 accuracy pass changed four things about what a stress test MEANS — the
+    walk-forward trade floor, the profit-factor sensitivity metric, the percent drawdown basis, and
+    `None` as a first-class grade — and NOTHING re-scored the rows already in the table. Other
+    metrics in this app carry exactly this migration (`_restamp_profit_concentration`, the
+    `unconstrained` verdict rewrite); stress tests did not, so the lab's only stress test still
+    displayed every number the pass exists to remove:
+
+        grade D on `unconstrained`  — D was the CEILING before a no-limit ruleset could return None
+        prob_pass_eval 0.0          — the "nothing was measured" value, rendered as "never passes"
+        wf degradation 38.6%        — averaged over windows whose OOS halves closed 6-12 trades
+        sens 0.8581                 — a net-P&L delta, thresholded as if it were a profit factor
+
+    **It re-derives from the CHILD RUNS, which are still on disk, rather than reinterpreting the
+    stored summary.** The old walk-forward summary has no `is_trades`/`oos_trades` at all, so the
+    trade floor would exclude every window for want of evidence that actually exists two tables
+    away; and the old sensitivity summary is P&L-shaped, so its score is not the quantity the
+    thresholds are written in. Both are rebuilt from what the children really recorded. A test
+    whose children have since been deleted keeps its summary and is re-graded on what remains —
+    the grade is then honest about having less evidence, which is the correct outcome.
+    """
+    from services.grading import compute_grade
+
+    with _connect() as conn:
+        # NULL = written before the marker existed; a lower number = written by an older engine.
+        # Both must re-derive, or bumping GRADE_ENGINE would only ever fix rows that predate the
+        # marker and silently leave every row in between on whatever engine wrote it.
+        rows = conn.execute(
+            "SELECT * FROM stress_tests WHERE (grade_engine IS NULL OR grade_engine < ?) "
+            "AND status = 'complete'", (GRADE_ENGINE,)
+        ).fetchall()
+        if not rows:
+            return 0
+
+        restamped = 0
+        for row in rows:
+            st = _parse_json_fields(dict(row), _STRESS_JSON_FIELDS)
+            children = {
+                r["walk_forward_window_id"]: dict(r)
+                for r in conn.execute(
+                    "SELECT walk_forward_window_id, trade_count, profit_factor "
+                    "FROM backtest_runs WHERE stress_test_id = ?", (st["stress_test_id"],)
+                ).fetchall()
+                if r["walk_forward_window_id"]
+            }
+            source = conn.execute(
+                "SELECT profit_factor FROM backtest_runs WHERE run_id = ?", (st["run_id"],)
+            ).fetchone()
+            base_pf = source["profit_factor"] if source else None
+
+            wf_summary, wf_deg = _rebuild_wf(st.get("walk_forward_summary"), children)
+            sens_summary, sens_deg = _rebuild_sens(st.get("sensitivity_summary"), children, base_pf)
+
+            ruleset = None
+            if st.get("ruleset_id"):
+                rs = conn.execute(
+                    "SELECT * FROM rulesets WHERE id = ?", (st["ruleset_id"],)
+                ).fetchone()
+                ruleset = dict(rs) if rs else None
+
+            # A ruleset that states no drawdown limit has NOTHING to breach and nothing to pass, so
+            # both probabilities are None — not 0.0. Legacy rows stored 0.0 (the pre-2026-07-30
+            # default), which the page renders as "0% Prob. Pass", i.e. "this strategy never
+            # passes" about a measurement that was never taken. Derivable from the ruleset alone,
+            # so it is corrected here rather than needing the Monte Carlo re-run.
+            probs_measurable = _stress_limit_exists(ruleset, st)
+            prob_breach = st.get("prob_breach") if probs_measurable else None
+            prob_pass = st.get("prob_pass_eval") if probs_measurable else None
+
+            st_for_grade = {**st,
+                            "prob_breach": prob_breach,
+                            "walk_forward_degradation": wf_deg,
+                            "sensitivity_max_degradation": sens_deg}
+            grade, reasons = (None, ["Not graded — this test was not evaluated against a ruleset"])
+            if ruleset:
+                grade, reasons = compute_grade(st_for_grade, wf_summary, sens_summary, ruleset)
+
+            conn.execute(
+                "UPDATE stress_tests SET walk_forward_summary=?, walk_forward_degradation=?, "
+                "sensitivity_summary=?, sensitivity_max_degradation=?, prob_breach=?, "
+                "prob_pass_eval=?, grade=?, grade_reasons=?, grade_engine=? WHERE stress_test_id=?",
+                (json.dumps(wf_summary) if wf_summary is not None else None, wf_deg,
+                 json.dumps(sens_summary) if sens_summary is not None else None, sens_deg,
+                 prob_breach, prob_pass,
+                 grade, json.dumps(reasons), GRADE_ENGINE, st["stress_test_id"]),
+            )
+            restamped += 1
+    return restamped
+
+
+def _stress_limit_exists(ruleset: Optional[dict], st: dict) -> bool:
+    """Is there a drawdown limit for this test's probabilities to be MEASURED against?
+
+    Read on the basis the test itself used, so it agrees with grading: percent once the run
+    compounds, dollars otherwise."""
+    from services.metrics import effective_dd_limit_pct, effective_dd_limit_usd
+    if not ruleset:
+        return False
+    if st.get("dd_basis") == "percent" and st.get("pct1_max_dd_pct") is not None:
+        return effective_dd_limit_pct(ruleset) is not None
+    return effective_dd_limit_usd(ruleset) > 0
+
+
+def _rebuild_wf(summary, children: dict):
+    """Re-derive the walk-forward summary + degradation, filling per-window trade counts from the
+    child runs. Returns (summary, degradation) — both None when there was no walk-forward."""
+    from services.stress_tester import (
+        _WF_IS_SHARPE_FLOOR, _WF_MIN_TRADES_PER_WINDOW, _clamp_wf_degradation,
+    )
+    if not summary:
+        return (None, None)
+    out = []
+    for w in summary:
+        w = dict(w)
+        for side in ("is", "oos"):
+            child = children.get(f"wf_{w.get('window')}_{side}")
+            if child and w.get(f"{side}_trades") is None:
+                w[f"{side}_trades"] = child.get("trade_count")
+        out.append(w)
+
+    thin = {w["window"] for w in out
+            if (w.get("is_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW
+            or (w.get("oos_trades") or 0) < _WF_MIN_TRADES_PER_WINDOW}
+    degs = [
+        _clamp_wf_degradation(1.0 - (w.get("oos_sharpe") or 0) / w["is_sharpe"])
+        for w in out
+        if w.get("is_sharpe") and w["is_sharpe"] >= _WF_IS_SHARPE_FLOOR
+        and w["window"] not in thin
+    ]
+    return (out, (sum(degs) / len(degs)) if degs else None)
+
+
+def _rebuild_sens(summary, children: dict, base_pf) -> tuple:
+    """Re-derive sensitivity on PROFIT FACTOR from the child runs' own stored profit factors.
+
+    A legacy row's shifts carry `pnl_delta_pct` and no `degradation`, so its stored
+    `sensitivity_max_degradation` is a net-P&L fraction being thresholded as a profit-factor one.
+    The children recorded their real profit factors, so the correct number is recoverable rather
+    than merely discardable — and where a child is gone, the shift reports `degradation: None`,
+    which grading already treats as not-measured."""
+    import math
+    if not summary:
+        return (None, None)
+    usable_base = base_pf is not None and math.isfinite(base_pf) and base_pf > 0
+    out: dict = {}
+    worst = None
+    for pname, shifts in summary.items():
+        rebuilt = {}
+        for label, info in shifts.items():
+            info = dict(info)
+            child = children.get(f"sens_{pname}_{label}")
+            # The child run first, then whatever a previous re-stamp already recovered onto the
+            # record. Without the fallback a SECOND pass over a test whose children have since
+            # been deleted would throw away the profit factor the first pass rescued — a migration
+            # that loses information on its own re-run is not idempotent.
+            child_pf = (child or {}).get("profit_factor")
+            if child_pf is None:
+                child_pf = info.get("profit_factor")
+            deg = None
+            if usable_base and child_pf is not None and math.isfinite(child_pf):
+                deg = round(abs(child_pf - base_pf) / base_pf, 4)
+                info["pf_delta_pct"] = round((child_pf - base_pf) / base_pf * 100.0, 2)
+                info["profit_factor"] = child_pf
+            info["degradation"] = deg
+            # The legacy P&L figure is REMOVED, not kept alongside. Left in place the chart prefers
+            # it (`pnl_delta_pct != null` wins) and would go on drawing the very number this
+            # re-stamp exists to stop scoring.
+            info.pop("pnl_delta_pct", None)
+            if deg is not None:
+                worst = deg if worst is None else max(worst, deg)
+            rebuilt[label] = info
+        out[pname] = rebuilt
+    return (out, worst)
+
+
+def cancel_stress_test(stress_test_id: str) -> Optional[list[str]]:
+    """Mark a running stress test cancelled. Returns the run_ids of its still-running children
+    (so the caller can tell the runner to stop them), or None when there was nothing to cancel.
+
+    ⚠ Writing the row is only HALF of a cancel, and the optimizer learned this the expensive way:
+    its `POST /cancel` set the status and nothing else, so the sweep kept every core, the job lock
+    read the row and reported the platform FREE, and the finished job overwrote its own cancelled
+    status with `complete`. The same three traps apply here — hence the child run_ids come back for
+    a real `runner_dispatch.cancel_job`, the children are marked here in the same transaction, and
+    the orchestrator re-reads this status between phases so it abandons instead of grading."""
+    now = int(time.time())
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT status FROM stress_tests WHERE stress_test_id=?", (stress_test_id,)
+        ).fetchone()
+        if not row:
+            return None
+        if not str(row["status"]).startswith("running"):
+            return None
+        children = [
+            r["run_id"] for r in conn.execute(
+                "SELECT run_id FROM backtest_runs WHERE stress_test_id=? AND status='running'",
+                (stress_test_id,),
+            ).fetchall()
+        ]
+        conn.execute(
+            "UPDATE backtest_runs SET status='failed_cancelled', error_message='Stress test cancelled' "
+            "WHERE stress_test_id=? AND status='running'", (stress_test_id,),
+        )
+        conn.execute(
+            "UPDATE stress_tests SET status='failed_cancelled', completed_at=?, "
+            "error_message='Cancelled' WHERE stress_test_id=?", (now, stress_test_id),
+        )
+    return children
+
+
+def delete_stress_test(stress_test_id: str) -> Optional[list[str]]:
+    """Delete the test and its child runs. Returns the deleted CHILD run_ids so the caller can
+    remove their report directories, or None when the test did not exist.
+
+    ⚠ It returns the ids rather than a bool for one reason: this used to return `True` and the
+    router did nothing else, so every walk-forward and sensitivity child left its
+    `reports/lab/<run_id>/` behind along with the test's own `equity_paths.json`. `DELETE
+    /backtests/runs/{id}` has rmtree'd its dirs since the day it was written; this route did not,
+    and `reports/lab` had grown to 191 directories against 84 live runs."""
     with _connect() as conn:
         # cascade: delete stress-test child runs
         child_ids = [
@@ -2940,7 +3274,7 @@ def delete_stress_test(stress_test_id: str) -> bool:
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", child_ids)
             conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({ph})", child_ids)
         cur = conn.execute("DELETE FROM stress_tests WHERE stress_test_id=?", (stress_test_id,))
-    return cur.rowcount > 0
+    return child_ids if cur.rowcount > 0 else None
 
 
 # ── OHLC Cache ────────────────────────────────────────────────────────────────
@@ -3016,13 +3350,23 @@ def upsert_intraday_ohlc_rows(rows: list[dict]) -> None:
 
 
 def insert_run_stress_test_child(data: dict) -> None:
+    """A walk-forward or sensitivity child run.
+
+    ⚠ It persists `cost_layers` / `broker_profile` / `sizing_mode` / `manual_risk_pct` because a
+    child that does not RECORD what it was measured on cannot be checked afterwards — and until
+    2026-08-05 these were neither sent to the runner nor written here, so every child of a charged
+    run was measured on a free book with nothing on the row able to say so. `cost_layers` is stored
+    as raw JSON TEXT and **NULL stays NULL** (a pre-layer contract), never `[]`.
+    """
+    layers = data.get("cost_layers")
     with _connect() as conn:
         conn.execute("""
             INSERT INTO backtest_runs
                 (run_id, strategy_id, instrument, params, bar_type, bar_value,
                  start_date, end_date, commission_per_side, slippage_ticks,
-                 status, created_at, started_at, stress_test_id, walk_forward_window_id, runner)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 status, created_at, started_at, stress_test_id, walk_forward_window_id, runner,
+                 cost_layers, broker_profile, sizing_mode, manual_risk_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["run_id"], data["strategy_id"], data["instrument"],
             json.dumps(data["params"]), data["bar_type"], data["bar_value"],
@@ -3031,4 +3375,8 @@ def insert_run_stress_test_child(data: dict) -> None:
             data["status"], data["created_at"], data.get("started_at", data["created_at"]),
             data["stress_test_id"], data.get("walk_forward_window_id"),
             data.get("runner", "ninjatrader"),
+            None if layers is None else json.dumps(layers),
+            data.get("broker_profile"),
+            data.get("sizing_mode") or "consistent",
+            data.get("manual_risk_pct"),
         ))

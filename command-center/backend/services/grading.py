@@ -26,6 +26,9 @@ def compute_grade(
     walk_forward: Optional[list],
     sensitivity: Optional[dict],
     ruleset: dict,
+    *,
+    wf_failed: bool = False,
+    sens_failed: bool = False,
 ) -> tuple[Optional[str], list[str]]:
     """
     Returns (grade, reasons) where grade is 'A'|'B'|'C'|'D'|'F', or None when the run cannot
@@ -35,6 +38,14 @@ def compute_grade(
     When walk_forward/sensitivity are None (MC-only trigger), grade is computed
     on Monte Carlo alone — partial grade, marked with '_mc' suffix internally
     but still shown as A-F. Walk-forward and sensitivity tighten the grade when available.
+
+    🔴 `wf_failed` / `sens_failed` mean the phase RAN AND FAILED — a crashed walk-forward, an
+    unreachable VPS, every child backtest erroring. Until 2026-08-05 that was indistinguishable
+    from "not requested": both left the summary NULL, so a failed walk-forward was read as not-run,
+    which is explicitly UNPENALISED, and the test could be handed an **A** carrying the reason
+    "walk-forward not run — grade may improve with full analysis". It had run, and it had failed.
+    A failed phase is treated exactly as an unassessable one — no credit, no penalty, and no A,
+    because an A is the only grade that claims out-of-sample evidence.
     """
     reasons: list[str] = []
     median_final_pnl = _num(st.get("median_final_pnl"), 0.0)
@@ -89,7 +100,7 @@ def compute_grade(
     # when the in-sample metric is ≤ 0). Treat it like not-run: don't read the absent number as
     # "solid" and don't penalise on it either. The metric depends on the WF path: the serial path
     # degrades on Sharpe, the native (optimization-derived) path on profit factor.
-    wf_not_assessable = walk_forward is not None and wf_degradation is None
+    wf_not_assessable = (walk_forward is not None and wf_degradation is None) or wf_failed
     # If walk-forward wasn't run (or couldn't be assessed), don't penalise on it
     wf_not_run = walk_forward is None or wf_not_assessable
 
@@ -102,13 +113,24 @@ def compute_grade(
     # factor). Same rule as the walk-forward above: treat it as not-run — neither credit nor
     # penalty. Without this an unassessable sensitivity silently BLOCKED A and B, punishing a
     # strategy for a measurement that never happened.
-    sens_not_assessable = sensitivity is not None and sens_degradation is None
+    sens_not_assessable = (sensitivity is not None and sens_degradation is None) or sens_failed
     sens_not_run = sensitivity is None or sens_not_assessable
 
-    if sens_not_assessable:
+    # "Not run" must mean NOT RUN. A phase that was requested and failed, or ran and could not be
+    # assessed, already has its own reason above — appending "not run — grade may improve with full
+    # analysis" beside it puts two contradictory explanations in one list.
+    genuinely_not_run = (walk_forward is None and not wf_failed) or (sensitivity is None and not sens_failed)
+
+    if sens_failed:
+        reasons.append("Parameter sensitivity was requested and FAILED — it is not evidence "
+                       "either way, and the grade does not include it")
+    elif sens_not_assessable:
         reasons.append("Parameter sensitivity ran but produced no measurable result")
 
-    if wf_not_assessable:
+    if wf_failed:
+        reasons.append("Walk-forward was requested and FAILED — it is not evidence either way, "
+                       "and the grade does not include it")
+    elif wf_not_assessable:
         # Name the metric the path actually used: native WF rows carry per-window profit factor
         # (is_pf), the serial path carries Sharpe. Detect by the summary shape so the reason
         # doesn't claim "Sharpe" on a PF-based native run.
@@ -182,7 +204,7 @@ def compute_grade(
             reasons.append(f"Walk-forward IS→OOS degradation only {wf_degradation*100:.0f}%")
         if not sens_not_run:
             reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
-        if walk_forward is None or sens_not_run:
+        if genuinely_not_run:
             reasons.append("Walk-forward / sensitivity not run — grade may improve with full analysis")
         return ("A", reasons)
 
@@ -196,7 +218,7 @@ def compute_grade(
             reasons.append(f"Walk-forward degradation {wf_degradation*100:.0f}%")
         if not sens_not_run:
             reasons.append(f"Parameter sensitivity worst case {sens_degradation*100:.0f}% drop")
-        if walk_forward is None or sens_not_run:
+        if genuinely_not_run:
             reasons.append("Walk-forward / sensitivity not run — grade may improve with full analysis")
         return ("B", reasons)
 

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Trash2, ArrowLeft, RefreshCw, Check } from 'lucide-react'
-import { useStressTest, useDeleteStressTest } from '@/hooks/useStressTests'
+import { Trash2, ArrowLeft, RefreshCw, Check, AlertTriangle, Square } from 'lucide-react'
+import { useStressTest, useDeleteStressTest, useCancelStressTest } from '@/hooks/useStressTests'
 import { useRulesets, useBacktestRun } from '@/hooks/useLab'
 import MonteCarloFan from '@/components/MonteCarloFan'
 import DrawdownDistribution from '@/components/DrawdownDistribution'
@@ -115,6 +115,7 @@ export default function StressTestDetail() {
   const { data: rulesets } = useRulesets()
   const { data: run } = useBacktestRun(st?.run_id ?? null)
   const deleteTest = useDeleteStressTest()
+  const cancelTest = useCancelStressTest()
 
   const isRunning = st ? !st.status.startsWith('failed') && st.status !== 'complete' : false
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -132,8 +133,16 @@ export default function StressTestDetail() {
 
   const ruleset = rulesets?.find(r => r.id === st.ruleset_id)
 
-  const hasWF   = st.walk_forward_summary != null || st.status === 'running_wf'
-  const hasSens = hasWF || st.sensitivity_summary  != null || st.status === 'running_sens'
+  // Which phases this test actually involves. `phases_requested` is authoritative when present —
+  // it is written before anything can fail, so a phase that crashed still shows in the pipeline
+  // instead of vanishing. Older rows fall back to inferring it from the results.
+  // ⚠ `hasSens` used to be `hasWF || …`, so a walk-forward-only test drew a Sensitivity step that
+  // could never complete.
+  const requested = st.phases_requested
+  const hasWF   = requested ? requested.includes('walk_forward')
+    : (st.walk_forward_summary != null || st.status === 'running_wf')
+  const hasSens = requested ? requested.includes('sensitivity')
+    : (st.sensitivity_summary != null || st.status === 'running_sens')
   function fmtDuration(startSec: number | null, endSec: number | null): string | null {
     if (!startSec) return null
     const secs = (endSec ?? nowSec) - startSec
@@ -200,8 +209,40 @@ export default function StressTestDetail() {
       ? (ruleset.max_drawdown_from_peak_pct && ruleset.account_size
           ? ruleset.account_size * ruleset.max_drawdown_from_peak_pct / 100 : null)
       : (ruleset.max_loss_eod || null)
-  const ddOverLimit  = ddLimit != null && st.pct5_max_dd != null && st.pct5_max_dd > ddLimit
-  const dd1OverLimit = ddLimit != null && st.pct1_max_dd != null && st.pct1_max_dd > ddLimit
+
+  // ── The BASIS the grade read, and therefore the basis this page must show ────────────────────
+  // 🔴 The backend switches to a PERCENT drawdown as soon as a run compounds — a fixed dollar
+  // limit stops being comparable to an account that has grown away from the size it was written
+  // for — records which basis it used in `dd_basis`, and grades on that. This page read NEITHER
+  // `dd_basis` nor the percent columns: it printed dollars against a dollar limit and coloured
+  // them over/under while the letter beside them had been decided on percentages. On a compounding
+  // run the two can disagree outright, so a red "over limit" could sit next to an A.
+  //
+  // `effective_dd_limit_pct` mirrored: personal/demo state the percent, prop rows derive it (a
+  // $5,000 trailing max loss on a $50,000 account is 10%).
+  const onPercent = st.dd_basis === 'percent' && st.pct1_max_dd_pct != null
+  const ddLimitPct: number | null = !ruleset ? null
+    : isPersonal
+      ? (ruleset.max_drawdown_from_peak_pct ?? null)
+      : (ddLimit && ruleset.account_size ? ddLimit / ruleset.account_size * 100 : null)
+
+  /** A drawdown value + limit in whichever unit the grade actually used. */
+  const dd = (dollars: number | null | undefined, pct: number | null | undefined) => {
+    const value = onPercent ? pct : dollars
+    const limit = onPercent ? ddLimitPct : ddLimit
+    return {
+      value,
+      limit,
+      text: value == null ? '—' : onPercent ? `${value.toFixed(1)}%` : fmt$(value),
+      limitText: limit == null ? null : onPercent ? `limit ${limit.toFixed(0)}%` : `limit ${fmt$(limit)}`,
+      over: limit != null && value != null && value > limit,
+    }
+  }
+  const dd5 = dd(st.pct5_max_dd, st.pct5_max_dd_pct)
+  const dd1 = dd(st.pct1_max_dd, st.pct1_max_dd_pct)
+  const basisNote = onPercent
+    ? 'Measured as a PERCENT of the running peak, because this run compounds — a fixed dollar limit is not comparable to an account that has grown away from the size it was written for. This is the basis the grade read.'
+    : 'Measured in DOLLARS, because this run holds position size constant. This is the basis the grade read.'
 
   // Local midnight, not UTC — a bare 'YYYY-MM-DD' otherwise renders a day early west of
   // Greenwich. Same fix in BacktestDetail/SweepDetail/OptimizationDetail/StackDetail.
@@ -233,27 +274,60 @@ export default function StressTestDetail() {
     const vals = wfWindows.map(pick).filter((v): v is number => v != null)
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null
   }
-  const wfAvgIS = wfAvg(w => w.is_sharpe)
-  const wfAvgOOS = wfAvg(w => w.oos_sharpe)
+  // The NATIVE (optimizer-derived) walk-forward has no trade-level data, so it degrades on PROFIT
+  // FACTOR and leaves every Sharpe null. Reading `is_sharpe` regardless gave that path a KPI row of
+  // dashes over a chart of zero bars. Detect the path from the summary's own shape, as grading does.
+  const wfIsPf = wfWindows.length > 0 && wfWindows.every(w => w.is_sharpe == null) &&
+    wfWindows.some(w => w.is_pf != null)
+  const wfAvgIS = wfIsPf ? wfAvg(w => w.is_pf) : wfAvg(w => w.is_sharpe)
+  const wfAvgOOS = wfIsPf ? wfAvg(w => w.oos_pf) : wfAvg(w => w.oos_sharpe)
+  // Mirrors stress_tester._WF_MIN_TRADES_PER_WINDOW. A window under it on EITHER side is excluded
+  // from the degradation, which is why this page has to show the counts at all.
+  const WF_MIN_TRADES_PER_WINDOW = 20
+  const wfThinCount = wfWindows.filter(w =>
+    (w.is_trades != null && w.is_trades < WF_MIN_TRADES_PER_WINDOW) ||
+    (w.oos_trades != null && w.oos_trades < WF_MIN_TRADES_PER_WINDOW)).length
+  const wfOosTrades = wfWindows.map(w => w.oos_trades).filter((v): v is number => v != null)
+  const wfOosTradeText = wfOosTrades.length
+    ? (Math.min(...wfOosTrades) === Math.max(...wfOosTrades)
+        ? String(wfOosTrades[0])
+        : `${Math.min(...wfOosTrades)}–${Math.max(...wfOosTrades)}`)
+    : '—'
 
-  // Flatten the sensitivity grid into signed % changes to find the most fragile shift and the median.
-  const sensShifts: { label: string; pct: number }[] = []
+  // Flatten the sensitivity grid into SIGNED % changes.
+  // 🔴 `degradation` is an absolute magnitude (|new − base| / base), and this used to render it as
+  // `-degradation * 100` — inventing a direction. A parameter shift that IMPROVED profit factor
+  // was therefore drawn and labelled as a loss, "Median Change" was negative by construction, and
+  // the "Worst-Case Change" card (positive) and "Most Fragile Param" card (negative) printed the
+  // same quantity with opposite signs side by side. The backend now measures `pf_delta_pct`, which
+  // keeps the sign; `magnitude` stays the thing that is ranked, since a shift is evidence whichever
+  // way it moved.
+  const sensShifts: { label: string; signed: number | null; magnitude: number }[] = []
   if (st.sensitivity_summary) {
     for (const [param, shifts] of Object.entries(st.sensitivity_summary)) {
       for (const [shift, info] of Object.entries(shifts)) {
-        const pct = info.pnl_delta_pct != null ? info.pnl_delta_pct
-          : info.degradation != null ? -info.degradation * 100 : null
-        if (pct != null) sensShifts.push({ label: `${param} ${shift}`, pct })
+        // Preference order: the measured signed change, then a legacy record's own signed P&L
+        // delta, then the magnitude with NO sign asserted.
+        const signed = info.pf_delta_pct ?? info.pnl_delta_pct ?? null
+        const magnitude = info.degradation != null ? info.degradation * 100
+          : signed != null ? Math.abs(signed) : null
+        if (magnitude != null) sensShifts.push({ label: `${param} ${shift}`, signed, magnitude })
       }
     }
   }
-  const sensWorst = sensShifts.length ? sensShifts.reduce((a, b) => (b.pct < a.pct ? b : a)) : null
+  // Ranked on MAGNITUDE — the biggest mover is the biggest fragility whichever way it went.
+  const sensWorst = sensShifts.length
+    ? sensShifts.reduce((a, b) => (b.magnitude > a.magnitude ? b : a)) : null
   const sensMedian = sensShifts.length
-    ? [...sensShifts.map(s => s.pct)].sort((a, b) => a - b)[Math.floor(sensShifts.length / 2)]
+    ? [...sensShifts.map(s => s.magnitude)].sort((a, b) => a - b)[Math.floor(sensShifts.length / 2)]
     : null
   const sensParamCount = st.sensitivity_summary ? Object.keys(st.sensitivity_summary).length : 0
-  const fmtPct = (n: number | null) => n == null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(0)}%`
-  const fmtSharpe = (n: number | null) => n == null ? '—' : n.toFixed(2)
+  const sensShiftLabels = [...new Set(
+    Object.values(st.sensitivity_summary ?? {}).flatMap(s => Object.keys(s))
+  )]
+  const fmtSigned = (n: number | null | undefined) =>
+    n == null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(0)}%`
+  const fmtSharpe = (n: number | null | undefined) => n == null ? '—' : n.toFixed(2)
 
   // Headline verdict per analysis for the grade-card summary tiles.
   const mcVerdict = gradeWord(st.prob_breach, 0.05, 0.20)
@@ -294,21 +368,32 @@ export default function StressTestDetail() {
               tooltip="The middle outcome across all 10,000 simulations — half ended better, half worse. Positive = profitable in a typical scenario." />
             <MetricCard label="Worst 5% PnL" value={fmt$(st.pct5_final_pnl)} valueCls={pct5Cls}
               tooltip="The 5th percentile final P&L — only 5% of simulations did worse. Shows the tail risk of a bad but realistic trade sequence." />
-            <MetricCard label="Worst 5% Drawdown" value={fmt$(st.pct5_max_dd)}
-              sub={ddLimit != null ? `limit ${fmt$(ddLimit)}` : undefined} subCls={ddOverLimit ? 'text-neg-text' : 'text-pos-text'}
-              tooltip="The 5th-percentile maximum drawdown — only 5% of simulations hit a larger drawdown. If this exceeds the ruleset limit, you'd breach in bad-luck scenarios." />
-            <MetricCard label="Worst 1% Drawdown" value={fmt$(st.pct1_max_dd)}
-              sub={ddLimit != null ? `limit ${fmt$(ddLimit)}` : undefined} subCls={dd1OverLimit ? 'text-neg-text' : 'text-pos-text'}
-              tooltip="The 1st-percentile maximum drawdown — the extreme tail. Only 1% of simulations were worse." />
+            <MetricCard label="Worst 5% Drawdown" value={dd5.text}
+              sub={dd5.limitText ?? undefined} subCls={dd5.over ? 'text-neg-text' : 'text-pos-text'}
+              tooltip={`The 5th-percentile maximum drawdown — only 5% of simulations hit a larger one. If this exceeds the ruleset limit, you'd breach in bad-luck scenarios. ${basisNote}`} />
+            <MetricCard label="Worst 1% Drawdown" value={dd1.text}
+              sub={dd1.limitText ?? undefined} subCls={dd1.over ? 'text-neg-text' : 'text-pos-text'}
+              tooltip={`The 1st-percentile maximum drawdown — the extreme tail. Only 1% of simulations were worse. ${basisNote}`} />
           </>}
-          {st.prob_breach != null && <>
+          {/* Null is NOT zero. `prob_pass_eval` is null when there was nothing to pass — no
+              drawdown limit on the ruleset, or no profit target — and `?? 0` rendered that as
+              "0%", i.e. "this strategy never passes" about a measurement never taken. The backend
+              made both fields nullable for exactly this reason. */}
+          {st.prob_breach != null && (
             <ProbCard label="Prob. Breach" prob={st.prob_breach} variant="breach"
-              tooltip="Across all 10,000 simulations, how often the strategy breaches the drawdown limit. Lower = safer." />
-            <ProbCard label={isPersonal ? 'Prob. Stay Safe' : 'Prob. Pass'} prob={st.prob_pass_eval ?? 0} variant="pass"
+              tooltip={`Across every simulation, how often the strategy breaches the drawdown limit. Lower = safer. ${basisNote}`} />
+          )}
+          {st.prob_pass_eval != null && (
+            <ProbCard label={isPersonal ? 'Prob. Stay Safe' : 'Prob. Pass'} prob={st.prob_pass_eval} variant="pass"
               tooltip={isPersonal
-                ? 'How often the strategy stays under the drawdown limit across all 10,000 simulations.'
-                : 'How often the strategy passes the eval (hits target without breaching) across all 10,000 simulations.'} />
-          </>}
+                ? 'How often the strategy stays under the drawdown limit across every simulation.'
+                : 'How often the strategy passes the eval (hits target without breaching) across every simulation.'} />
+          )}
+          {mcStats && st.prob_breach == null && (
+            <MetricCard label="Prob. Breach" value="n/a" valueCls="text-text-tertiary"
+              sub="no limit to breach" small
+              tooltip="This ruleset states no drawdown limit, so there is nothing for a simulation to breach. That is a third answer — not 0% and not 100% — and the grade is withheld for the same reason." />
+          )}
         </div>
       )
     }
@@ -316,31 +401,37 @@ export default function StressTestDetail() {
       return (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[10px] mb-4">
           <MetricCard label="IS→OOS Degradation" value={wfVerdict ? `${wfVerdict.pct}%` : 'n/a'} valueCls={wfVerdict?.cls ?? ''}
-            sub={wfVerdict?.word ?? 'IS Sharpe ≤ 0'} subCls={wfVerdict?.cls ?? 'text-text-tertiary'}
-            tooltip="How much Sharpe drops from in-sample (tuned) to out-of-sample (unseen) across windows. Higher = more overfit. Only meaningful when in-sample Sharpe is positive." />
-          <MetricCard label="Avg In-Sample Sharpe" value={fmtSharpe(wfAvgIS)} sub="tuned on"
-            tooltip="Average Sharpe across each window's in-sample (first 70%) segment — the part the strategy was effectively fit to." />
-          <MetricCard label="Avg Out-of-Sample" value={fmtSharpe(wfAvgOOS)} sub="unseen"
-            tooltip="Average Sharpe across each window's out-of-sample (last 30%) segment — the honest, unseen-data result." />
-          <MetricCard label="Windows Tested" value={String(wfWindows.length)} sub="70 / 30 split"
-            tooltip="Number of walk-forward windows the period was split into; each trained on its first 70% and tested on the unseen last 30%." />
+            sub={wfVerdict?.word ?? 'not assessable'} subCls={wfVerdict?.cls ?? 'text-text-tertiary'}
+            tooltip="How much the metric drops from each window's first 70% to its unseen last 30%. NOTE: the SAME fixed parameters are run on both halves — nothing is re-tuned between them — so this measures whether the edge HELD UP in the later period. It does not detect overfitting, which would need the optimizer re-run on each in-sample half. 'Not assessable' means no window had both a real in-sample edge and enough trades on each side." />
+          {/* Trade counts are the whole verdict on a low-frequency strategy — a window with fewer
+              than 20 on either side is excluded, and here that is usually every window. The field
+              existed in the engine and was dropped by the API model, so this could never be shown. */}
+          <MetricCard label="Out-of-Sample Trades" value={wfOosTradeText} valueCls={wfThinCount > 0 ? 'text-warn-text' : ''}
+            sub={wfThinCount > 0 ? `${wfThinCount} of ${wfWindows.length} windows too thin` : 'all windows have enough'}
+            subCls={wfThinCount > 0 ? 'text-warn-text' : 'text-pos-text'} small
+            tooltip={`Trades closed by each window's unseen last 30%. Below ${WF_MIN_TRADES_PER_WINDOW} on either side, one trade's luck moves the Sharpe more than the strategy does, so that window is excluded rather than averaged in. Fix it with FEWER, longer windows — not by loosening the test.`} />
+          <MetricCard label="Avg In-Sample" value={fmtSharpe(wfAvgIS)} sub={wfIsPf ? 'profit factor' : 'Sharpe'}
+            tooltip="Average across each window's in-sample (first 70%) segment. The optimizer-derived native path has no trade-level data, so it reports PROFIT FACTOR and no Sharpe at all — the label says which you are looking at." />
+          <MetricCard label="Avg Out-of-Sample" value={fmtSharpe(wfAvgOOS)} sub={wfIsPf ? 'profit factor' : 'Sharpe'}
+            tooltip="Average across each window's out-of-sample (last 30%) segment — the honest, unseen-data result." />
         </div>
       )
     }
     if (key === 'sens') {
       return (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-[10px] mb-4">
-          <MetricCard label="Worst-Case Change" value={sensVerdict ? `${sensVerdict.pct}%` : 'n/a'} valueCls={sensVerdict?.cls ?? ''}
-            sub={sensVerdict?.word ?? '—'} subCls={sensVerdict?.cls ?? 'text-text-tertiary'}
-            tooltip="The largest performance drop seen when any single parameter is nudged. Bigger = the edge hinges on one exact value." />
-          <MetricCard label="Most Fragile Param" value={sensWorst?.label ?? '—'} small valueCls="text-warn-text"
-            sub={sensWorst ? `${fmtPct(sensWorst.pct)} vs baseline` : undefined}
-            tooltip="The parameter shift that hurt performance the most — the strategy's biggest single point of fragility." />
-          <MetricCard label="Params Tested" value={String(sensParamCount)} sub="±10% each"
-            tooltip="How many strategy parameters were perturbed and re-run to probe stability." />
-          <MetricCard label="Median Change" value={fmtPct(sensMedian)} valueCls={sensMedian != null && sensMedian < 0 ? 'text-neg-text' : ''}
+          <MetricCard label="Biggest Move" value={sensVerdict ? `${sensVerdict.pct}%` : 'n/a'} valueCls={sensVerdict?.cls ?? ''}
+            sub={sensVerdict?.word ?? 'not measured'} subCls={sensVerdict?.cls ?? 'text-text-tertiary'}
+            tooltip="The largest change in profit factor produced by nudging any single parameter, as a magnitude. Bigger = the edge hinges on one exact value. A shift that IMPROVES the result counts just as much — it is equally evidence that the result moves." />
+          <MetricCard label="Most Sensitive Param" value={sensWorst?.label ?? '—'} small valueCls="text-warn-text"
+            sub={sensWorst ? `${fmtSigned(sensWorst.signed) } vs baseline${sensWorst.signed == null ? '' : ''}` : undefined}
+            tooltip="The parameter shift that moved profit factor the most. The percentage is SIGNED — negative is a drop, positive an improvement — because a magnitude drawn as a loss is a direction nobody measured." />
+          <MetricCard label="Params Tested" value={String(sensParamCount)}
+            sub={sensShiftLabels.length ? sensShiftLabels.join(' / ') : undefined}
+            tooltip="How many strategy parameters were actually perturbed and re-run. Params behind a switch this run has OFF are excluded — no shift of them could change the result — as are shifts that fall outside a parameter's own bounds or land back on the baseline." />
+          <MetricCard label="Median Move" value={sensMedian == null ? '—' : `${sensMedian.toFixed(0)}%`}
             sub="across shifts"
-            tooltip="The middle performance change across all parameter shifts. Near zero = broadly robust; strongly negative = generally fragile." />
+            tooltip="The middle magnitude across all parameter shifts. Near zero = broadly robust; large = the result moves wherever you push it." />
         </div>
       )
     }
@@ -363,11 +454,11 @@ export default function StressTestDetail() {
             <div className="space-y-2">
               <SectionHeader
                 label="Equity Path Fan"
-                tooltip="100 of the simulated runs drawn as cumulative-P&L curves (starting at $0). Green = luckier orderings, cyan = median, red = unluckier. Dashed lines mark the drawdown limit and profit target."
+                tooltip="100 of the simulated runs drawn as cumulative-P&L curves (starting at $0). Green = luckier orderings, cyan = median, red = unluckier. A profit target is drawn when the ruleset states one. There is deliberately NO drawdown-limit line: a drawdown is peak-to-trough, not a level of cumulative P&L, so a line below zero would let a fan that breaches repeatedly look safe. The histogram below measures the drawdown itself."
               />
               <MonteCarloFan
                 paths={st.equity_paths!}
-                ruleset={{ max_loss_eod: ddLimit ?? undefined, profit_target: ruleset?.profit_target }}
+                ruleset={{ profit_target: ruleset?.profit_target }}
                 tradeCount={st.equity_paths![0]?.length ?? 0}
                 height={fanH}
               />
@@ -377,10 +468,16 @@ export default function StressTestDetail() {
             <div className="space-y-2">
               <SectionHeader
                 label="Max Drawdown Distribution"
-                right={ddLimit != null ? 'Red = over limit' : undefined}
-                tooltip="How many of the 10,000 simulations ended with each size of worst drawdown. Bars further right = deeper drawdowns. Red bars exceeded the limit — you want the pile sitting LEFT of the limit line."
+                right={dd1.limit != null ? 'Red = over limit' : undefined}
+                tooltip={`How many simulations ended with each size of worst drawdown. Bars further right = deeper drawdowns. Red bars exceeded the limit — you want the pile sitting LEFT of the limit line. ${basisNote}`}
               />
-              <DrawdownDistribution distribution={st.distribution!.max_dd} maxLoss={ddLimit} height={distH} />
+              {/* Drawn in the unit the GRADE read. The percent histogram exists only on a
+                  compounding run, which is exactly when the dollar one is the wrong picture. */}
+              <DrawdownDistribution
+                distribution={(onPercent && st.distribution!.max_dd_pct) || st.distribution!.max_dd}
+                maxLoss={onPercent && st.distribution!.max_dd_pct ? ddLimitPct : ddLimit}
+                unit={onPercent && st.distribution!.max_dd_pct ? 'percent' : 'dollars'}
+                height={distH} />
             </div>
           )}
         </div>
@@ -402,17 +499,34 @@ export default function StressTestDetail() {
   const gradeCard = (
     <div className="rounded-lg border border-border-subtle bg-bg-surface overflow-hidden h-full">
       <div className="flex h-full">
-        {st.grade && (
-          <div className={`flex-shrink-0 w-16 flex items-center justify-center ${gradeCls}`}>
-            <span className="text-[36px] font-black leading-none">{st.grade}</span>
-          </div>
-        )}
+        {st.grade
+          ? <div className={`flex-shrink-0 w-16 flex items-center justify-center ${gradeCls}`}>
+              <span className="text-[36px] font-black leading-none">{st.grade}</span>
+            </div>
+          /* A test that finished WITHOUT a letter is a first-class outcome (the ruleset states no
+             drawdown limit, and every grade is a statement about drawdown vs a limit). It used to
+             render as a card with no letter and no explanation, which reads as a broken page. */
+          : st.status === 'complete' && (
+            <div className="flex-shrink-0 w-16 flex flex-col items-center justify-center bg-bg-sunken text-text-tertiary">
+              <span className="text-[20px] font-black leading-none">—</span>
+              <span className="text-[9px] uppercase tracking-[0.4px] mt-1">not graded</span>
+            </div>
+          )}
         <div className="flex-1 min-w-0 px-4 py-3 flex flex-col gap-2">
           <h1 className="text-h1 font-semibold leading-tight">{st.strategy_name || 'Stress Test'}</h1>
           <div className="flex flex-wrap gap-1.5 items-center">
             {ruleset && (
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold bg-gold-muted text-gold-text">
                 {ruleset.name}
+              </span>
+            )}
+            {/* Which unit every drawdown on this page is in, and therefore which unit the letter
+                was decided in. Without it a reader cannot tell whether "62.1" is dollars or
+                percent, and the two lead to opposite conclusions. */}
+            {mcStats && (
+              <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-sunken border border-border-subtle text-text-secondary"
+                title={basisNote}>
+                drawdown in {onPercent ? '%' : '$'}
               </span>
             )}
             {isRunning && <RefreshCw size={13} className="text-accent animate-spin" />}
@@ -430,21 +544,70 @@ export default function StressTestDetail() {
     </div>
   )
 
+  // ── Why this grade ────────────────────────────────────────────────────────────
+  // 🔴 `grade_reasons` was computed, stored, shipped over the wire — and rendered NOWHERE. So
+  // every sentence the engine writes to explain itself was thrown away: "Not graded — this ruleset
+  // has no drawdown limit", "Capped at B — an A needs walk-forward evidence and this run produced
+  // none", "the windows closed too few trades each. Re-run with fewer walk-forward windows". The
+  // last one names the fix, which makes it the most useful text the whole feature produces.
+  const phaseFailures = Object.entries(st.phase_failures ?? {})
+  const reasonsCard = (st.grade_reasons?.length || phaseFailures.length || st.results_error) ? (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-3 space-y-2">
+      <SectionHeader label={st.grade ? `Why ${st.grade}` : 'Why this test is not graded'}
+        tooltip="The engine's own reasoning, in the same unit the grade was decided in. Where a result could not be measured it says so rather than substituting a number." />
+      {phaseFailures.map(([phase, why]) => (
+        <div key={phase} className="flex gap-2 items-start text-[12px] text-neg-text">
+          <AlertTriangle size={12} className="mt-[3px] flex-shrink-0" />
+          <span><span className="font-semibold capitalize">{phase.replace('_', '-')}</span> failed: {why}</span>
+        </div>
+      ))}
+      {st.results_error && (
+        <div className="flex gap-2 items-start text-[12px] text-warn-text">
+          <AlertTriangle size={12} className="mt-[3px] flex-shrink-0" />
+          <span>{st.results_error}</span>
+        </div>
+      )}
+      <ul className="space-y-1">
+        {(st.grade_reasons ?? []).map((r, i) => (
+          <li key={i} className="flex gap-2 items-start text-[12px] text-text-secondary">
+            <span className="text-text-tertiary mt-[1px]">·</span>
+            <span>{r}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ) : null
+
   const pipeline = isRunning ? (
     <div className="rounded-lg border border-accent/20 bg-accent/5 px-5 py-4 space-y-4">
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-[0.6px] text-text-secondary">Running</span>
-        <span className="text-[11px] font-mono text-text-tertiary">Total elapsed: <span className="text-accent">{totalElapsed}</span></span>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-mono text-text-tertiary">Total elapsed: <span className="text-accent">{totalElapsed}</span></span>
+          {/* Walk-forward plus sensitivity is 60+ real backtests holding the platform lock. There
+              was no way to stop one short of restarting the backend — the same gap the optimizer
+              closed on 2026-08-04. */}
+          <button
+            onClick={() => cancelTest.mutate(st.stress_test_id)}
+            disabled={cancelTest.isPending}
+            className="flex items-center gap-1.5 px-[10px] py-[4px] rounded-md text-[12px] font-medium bg-neg-muted text-neg-text border border-neg-text/20 hover:bg-neg-text/20 transition-colors disabled:opacity-50"
+          >
+            <Square size={10} />
+            {cancelTest.isPending ? 'Stopping…' : 'Stop'}
+          </button>
+        </div>
       </div>
       <div className="flex items-start">
+        {/* A Fragment returned from map() needs the key ON the fragment — keys on its children do
+            not satisfy React and it warns on every render. */}
         {pipelineSteps.map((step, i) => (
-          <>
+          <Fragment key={step.key}>
             {i > 0 && (
-              <div key={`line-${step.key}`}
+              <div
                 className={`flex-1 h-px mt-3 mx-2 ${pipelineSteps[i - 1].done ? 'bg-accent/40' : 'bg-border-subtle'}`}
               />
             )}
-            <div key={step.key} className="flex flex-col items-center gap-[6px] w-[88px] flex-shrink-0">
+            <div className="flex flex-col items-center gap-[6px] w-[88px] flex-shrink-0">
               <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${
                 step.active ? 'border-accent bg-accent/10' :
                 step.done   ? 'border-pos bg-pos-muted'    :
@@ -469,7 +632,7 @@ export default function StressTestDetail() {
                 )}
               </div>
             </div>
-          </>
+          </Fragment>
         ))}
       </div>
     </div>
@@ -558,6 +721,9 @@ export default function StressTestDetail() {
 
       {/* Pipeline progress (running only) — full width below the context row */}
       {pipeline}
+
+      {/* Why this grade — the engine's own reasoning, previously computed and never shown */}
+      {reasonsCard}
 
       {/* ══ Analysis workspace — one tabbed panel; each tab = its KPIs above its chart ══ */}
       {chartTabs.length > 0 && (

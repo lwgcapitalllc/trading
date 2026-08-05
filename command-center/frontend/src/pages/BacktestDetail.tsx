@@ -1,5 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { toast } from 'sonner'
 import {
   ArrowLeft, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle,
   CheckCircle, XCircle, Minus, Info, Square, RefreshCw, RotateCcw, Activity, Play,
@@ -2955,34 +2956,109 @@ function SizedTimelineTable({ run }: { run: Run }) {
 
 // ── Run Stress Test Modal ─────────────────────────────────────────────────────
 
+/** Mirrors `stress_tester._WF_MIN_TRADES_PER_WINDOW`. A walk-forward window with fewer trades than
+ *  this on EITHER side is excluded from the degradation as not-assessable. */
+const WF_MIN_TRADES_PER_WINDOW = 20
+
 function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () => void; navigate: (path: string) => void }) {
   const runTest = useRunStressTest()
+  const { data: rulesets } = useRulesets()
 
-  const primaryEval = run.evaluations?.[0]
-  const rulesetId   = primaryEval?.ruleset_id ?? undefined
+  // 🔴 The STRICTEST ruleset, not `evaluations[0]`. The auto-trigger has always picked the tightest
+  // drawdown limit (excluding personal/demo, whose `max_loss_eod = 0` is a sentinel and would win a
+  // "smallest" comparison outright), and the manual path took whichever evaluation happened to sort
+  // first — so the same run could be graded against two different rulesets depending on how the
+  // test was started. Selectable, so the choice is visible rather than merely consistent.
+  const evals = run.evaluations ?? []
+  const limitOf = (rulesetId: string): number => {
+    const rs = rulesets?.find(r => r.id === rulesetId)
+    if (!rs) return Infinity
+    if (rs.ruleset_type === 'personal' || rs.ruleset_type === 'demo') {
+      return (rs.max_drawdown_from_peak_pct && rs.account_size)
+        ? rs.account_size * rs.max_drawdown_from_peak_pct / 100 : Infinity
+    }
+    return rs.max_loss_eod || Infinity
+  }
+  const strictest = useMemo(() => {
+    if (!evals.length) return undefined
+    const prop = evals.filter(e => {
+      const rs = rulesets?.find(r => r.id === e.ruleset_id)
+      return rs && rs.ruleset_type !== 'personal' && rs.ruleset_type !== 'demo'
+    })
+    const pool = prop.length ? prop : evals
+    return [...pool].sort((a, b) => limitOf(a.ruleset_id) - limitOf(b.ruleset_id))[0]
+  }, [evals, rulesets])
 
-  const isNativeWF = !!run.optimization_id && run.runner !== 'mt5'
-  const estMin     = isNativeWF ? 45 : 80
+  const [rulesetId, setRulesetId] = useState<string | undefined>(strictest?.ruleset_id)
+  useEffect(() => { setRulesetId(strictest?.ruleset_id) }, [strictest?.ruleset_id])
+
+  const [windows, setWindows] = useState(5)
+  const trades = run.trade_count ?? 0
+  // Arithmetic, knowable before a single backtest runs: each window's unseen half is 30% of 1/N of
+  // the run, and below the floor the whole phase can only answer "not assessable" — which then caps
+  // the grade at B. `walk_forward_windows` had no control at all and was hardcoded to 5, which on
+  // this repo's 126-165 trade strategies guaranteed that outcome every time.
+  const oosPerWindow = windows > 0 ? (trades / windows) * 0.3 : 0
+  const wfThin = oosPerWindow < WF_MIN_TRADES_PER_WINDOW
+  const maxUsableWindows = Math.floor((trades * 0.3) / WF_MIN_TRADES_PER_WINDOW)
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-bg-surface border border-border-default rounded-xl p-6 w-full max-w-md space-y-4 max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-base font-semibold text-text-primary">Run Stress Test</h2>
 
-        {primaryEval ? (
-          <div className="space-y-1">
-            <p className="text-xs text-text-secondary">Evaluating against</p>
-            <span className="inline-block text-xs font-mono font-semibold px-2 py-0.5 rounded bg-warn-muted border border-warn-text/20 text-warn-text">
-              {primaryEval.ruleset_name}
-            </span>
+        {evals.length ? (
+          <div className="space-y-1.5">
+            <p className="text-xs text-text-secondary">
+              Grade against
+              <span className="text-text-tertiary"> — every grade is a statement about drawdown vs this ruleset's limit</span>
+            </p>
+            <select
+              value={rulesetId ?? ''}
+              onChange={e => setRulesetId(e.target.value || undefined)}
+              className="w-full bg-bg-sunken border border-border-subtle rounded px-2 py-1.5 text-xs text-text-primary"
+            >
+              {evals.map(ev => (
+                <option key={ev.ruleset_id} value={ev.ruleset_id}>
+                  {ev.ruleset_name}{ev.ruleset_id === strictest?.ruleset_id ? ' — strictest' : ''}
+                </option>
+              ))}
+            </select>
           </div>
         ) : (
-          <p className="text-xs text-text-tertiary">No ruleset — Monte Carlo only.</p>
+          <p className="text-xs text-text-tertiary">No ruleset — Monte Carlo only, and no letter grade.</p>
         )}
 
+        <div className="space-y-1.5">
+          <label className="text-xs text-text-secondary flex items-center justify-between">
+            <span>Walk-forward windows</span>
+            <span className="font-mono text-text-tertiary">
+              ≈{oosPerWindow.toFixed(0)} unseen trades each
+            </span>
+          </label>
+          <input
+            type="range" min={2} max={10} step={1} value={windows}
+            onChange={e => setWindows(Number(e.target.value))}
+            className="w-full accent-accent"
+          />
+          <div className="flex justify-between text-[10px] text-text-tertiary font-mono">
+            <span>2</span><span className="text-text-primary">{windows} windows</span><span>10</span>
+          </div>
+          {wfThin && (
+            <p className="text-[11px] text-warn-text leading-snug">
+              Under {WF_MIN_TRADES_PER_WINDOW} unseen trades a window is excluded as not-assessable,
+              so the walk-forward will return no number and the grade will be capped at B.
+              {maxUsableWindows >= 2
+                ? ` Use ${maxUsableWindows} window${maxUsableWindows === 1 ? '' : 's'} or fewer.`
+                : ` ${trades} trades is not enough for any window to be assessable — run it for the Monte Carlo and sensitivity.`}
+            </p>
+          )}
+        </div>
+
         <p className="text-xs text-text-secondary">
-          Runs Monte Carlo, walk-forward, and sensitivity analysis.
-          Estimated ~{estMin} min. Platform must be idle.
+          Runs Monte Carlo, walk-forward and sensitivity. The exact time estimate comes back from
+          the server when it starts, since it depends on how many parameters this strategy actually
+          has and which runner it uses. The platform must be idle.
         </p>
 
         <div className="flex gap-2 pt-2">
@@ -2995,8 +3071,18 @@ function RunStressTestModal({ run, onClose, navigate }: { run: Run; onClose: () 
                 include_sensitivity: true,
                 num_simulations: 10_000,
                 num_bootstrap: 1_000,
-                walk_forward_windows: 5,
-              }, { onSuccess: (data) => { onClose(); navigate(`/stress-tests/${data.stress_test_id}`) } })
+                walk_forward_windows: windows,
+              }, { onSuccess: (data) => {
+                // The server's OWN estimate, not a number invented here. The old modal hardcoded
+                // "~45 / ~80 min" while the response already carried an estimate computed from the
+                // real param count and runner — for a python run the truth is minutes.
+                if (data.estimated_duration_min) {
+                  toast.info(`Estimated ~${data.estimated_duration_min} min · ${data.notes.join(' · ')}`,
+                             { duration: 10_000 })
+                }
+                onClose()
+                navigate(`/stress-tests/${data.stress_test_id}`)
+              } })
             }}
             disabled={runTest.isPending}
             className="flex-1 py-1.5 text-sm bg-accent text-bg-base rounded font-medium hover:opacity-90 disabled:opacity-50"

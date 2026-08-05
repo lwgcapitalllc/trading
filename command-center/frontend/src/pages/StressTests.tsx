@@ -109,6 +109,7 @@ export function StressTests() {
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Strategy</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Instrument</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Status</th>
+                <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Worst 1% DD</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Breach</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Prob Pass</th>
                 <th className="pb-2 pt-3 pr-4 text-text-tertiary font-medium">Created</th>
@@ -132,7 +133,13 @@ export function StressTests() {
                   <td className="py-2 pr-4">
                     {t.grade
                       ? <RobustnessGradeBadge grade={t.grade} />
-                      : <span className="text-text-tertiary text-xs">—</span>
+                      /* A COMPLETED test with no letter is a real outcome — the ruleset states no
+                         drawdown limit, and every grade is a statement about drawdown vs a limit.
+                         An em-dash made that look identical to a test still running. */
+                      : t.status === 'complete'
+                        ? <span className="text-text-tertiary text-[11px] px-1.5 py-[1px] rounded bg-bg-sunken border border-border-subtle"
+                            title="Completed, but not gradeable — this ruleset states no drawdown limit">not graded</span>
+                        : <span className="text-text-tertiary text-xs">—</span>
                     }
                   </td>
                   <td className="py-2 pr-4 text-text-primary">{t.strategy_name ?? t.strategy_id}</td>
@@ -158,11 +165,27 @@ export function StressTests() {
                       )
                     })()}
                   </td>
+                  {/* The tail in the unit the GRADE read. This list showed the two probabilities
+                      and no drawdown at all, so the one number a stress test exists to produce was
+                      only visible one click in — and a dollar drawdown listed beside a compounded
+                      profit reads an order of magnitude too small, the defect the Runs list fixed
+                      on 2026-08-01. */}
                   <td className="py-2 pr-4 font-mono text-text-secondary">
-                    {t.prob_breach != null ? `${(t.prob_breach * 100).toFixed(1)}%` : '—'}
+                    {t.dd_basis === 'percent' && t.pct1_max_dd_pct != null
+                      ? <span title="Percent of the running peak — this run compounds, so a fixed dollar limit is not comparable to it">{t.pct1_max_dd_pct.toFixed(1)}%</span>
+                      : t.pct1_max_dd != null
+                        ? <span title="Dollars — this run holds position size constant">${Math.round(t.pct1_max_dd).toLocaleString('en-US')}</span>
+                        : '—'}
+                  </td>
+                  {/* null ≠ 0. A ruleset stating no drawdown limit has nothing to breach and
+                      nothing to pass, which is a third answer. */}
+                  <td className="py-2 pr-4 font-mono text-text-secondary">
+                    {t.prob_breach != null ? `${(t.prob_breach * 100).toFixed(1)}%`
+                      : <span className="text-text-tertiary" title="No drawdown limit on this ruleset — there is nothing to breach">n/a</span>}
                   </td>
                   <td className="py-2 pr-4 font-mono text-text-secondary">
-                    {t.prob_pass_eval != null ? `${(t.prob_pass_eval * 100).toFixed(1)}%` : '—'}
+                    {t.prob_pass_eval != null ? `${(t.prob_pass_eval * 100).toFixed(1)}%`
+                      : <span className="text-text-tertiary" title="No drawdown limit or no profit target on this ruleset — there is nothing to pass">n/a</span>}
                   </td>
                   <td className="py-2 pr-4 text-text-tertiary text-xs">
                     {new Date(t.created_at * 1000).toLocaleDateString()}

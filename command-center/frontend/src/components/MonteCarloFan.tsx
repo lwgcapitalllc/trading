@@ -3,7 +3,8 @@ import { C } from '@/themes/chart'
 
 interface Props {
   paths: number[][]
-  ruleset?: { max_loss_eod?: number; profit_target?: number } | null
+  /** Only `profit_target` is drawable here — see the note on the removed drawdown line below. */
+  ruleset?: { profit_target?: number } | null
   tradeCount: number
   height?: number
 }
@@ -63,9 +64,14 @@ export default function MonteCarloFan({ paths, ruleset, tradeCount, height = 276
             itemStyle={{ color: '#e5e7eb' }}
             formatter={(v: number, name: string) => [`$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`, labelByKey[name] ?? name]}
           />
-          {ruleset?.max_loss_eod && (
-            <ReferenceLine y={-ruleset.max_loss_eod} stroke={C.neg} strokeDasharray="4 2" label={{ value: 'Limit', fill: C.neg, fontSize: 10 }} />
-          )}
+          {/* 🔴 There is NO drawdown-limit line here, deliberately. One used to be drawn at
+              `y = -max_loss_eod` — a horizontal level on a CUMULATIVE-P&L axis — and a drawdown
+              limit is not that quantity. A drawdown is peak-to-trough, so a path can breach the
+              limit many times over without ever crossing a line below zero: a fan sitting entirely
+              above it reads "no simulation breaches" while `prob_breach` beside it says otherwise.
+              The breach question is answered honestly by the Prob. Breach card and by the drawdown
+              histogram, which measures the right thing. A profit TARGET is a genuine level of
+              cumulative P&L, so that line stays. */}
           {ruleset?.profit_target != null && ruleset.profit_target > 0 && (
             <ReferenceLine y={ruleset.profit_target} stroke={C.pos} strokeDasharray="4 2" label={{ value: 'Target', fill: C.pos, fontSize: 10 }} />
           )}

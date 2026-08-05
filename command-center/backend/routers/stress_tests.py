@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -15,12 +16,15 @@ from fastapi import APIRouter, HTTPException
 
 from models import StressTest, StressTestCreate, StressTestDetail
 from services import lab_db
+from services.backtest_runner import LAB_RESULTS_DIR
 from services.stress_tester import (
     run_stress_test_task,
     _estimate_wf_duration_min,
     _estimate_sens_duration_min,
+    phases_requested,
     sensitivity_param_count,
     sensitivity_shift_count,
+    walk_forward_feasibility,
     MIN_TRADES_FOR_STRESS,
 )
 
@@ -48,27 +52,36 @@ def get_stress_test(stress_test_id: str):
     if not st:
         raise HTTPException(404, "Stress test not found")
 
-    # Load heavy files from disk
+    # Load heavy files from disk. A file that is PRESENT and unreadable is a different fact from a
+    # file that was never written, and both used to arrive as `None` — so a corrupt result rendered
+    # as a test that simply had no chart. `results_error` names it.
     equity_paths = None
     distribution = None
+    errors: list[str] = []
 
-    if st.get("equity_paths_path"):
-        p = Path(st["equity_paths_path"])
-        if p.exists():
-            try:
-                equity_paths = json.loads(p.read_text())
-            except Exception:
-                pass
+    def _load(path_key: str, label: str):
+        raw = st.get(path_key)
+        if not raw:
+            return None
+        p = Path(raw)
+        if not p.exists():
+            errors.append(f"{label} file is missing from disk")
+            return None
+        try:
+            return json.loads(p.read_text())
+        except Exception as exc:
+            errors.append(f"{label} file could not be read ({type(exc).__name__})")
+            return None
 
-    if st.get("distribution_path"):
-        p = Path(st["distribution_path"])
-        if p.exists():
-            try:
-                distribution = json.loads(p.read_text())
-            except Exception:
-                pass
+    equity_paths = _load("equity_paths_path", "Simulated equity paths")
+    distribution = _load("distribution_path", "Drawdown distribution")
 
-    return {**st, "equity_paths": equity_paths, "distribution": distribution}
+    return {
+        **st,
+        "equity_paths": equity_paths,
+        "distribution": distribution,
+        "results_error": "; ".join(errors) or None,
+    }
 
 
 @router.post("/run", status_code=202)
@@ -103,7 +116,10 @@ async def trigger_stress_test(body: StressTestCreate):
 
     strategy = lab_db.get_strategy(run.get("strategy_id", ""))
     runner   = (strategy or {}).get("runner", "ninjatrader")
-    market   = "forex" if runner == "mt5" else "futures"
+    # ONE definition of which market a runner belongs to (lab_db.stress_market_for_runner), mirrored
+    # by the frontend's `runnerMarket`. Inline, a python run was filed under futures here and read
+    # as forex on the page, so its own button never knew it was blocked.
+    market   = lab_db.stress_market_for_runner(runner)
     locks    = lab_db.running_stress_test_markets()
     if locks[market]:
         raise HTTPException(409, f"A {market} stress test is already running")
@@ -121,39 +137,97 @@ async def trigger_stress_test(body: StressTestCreate):
         "num_simulations": body.num_simulations,
         "num_bootstrap": body.num_bootstrap,
         "walk_forward_windows": body.walk_forward_windows,
+        "phases_requested": phases_requested(body.include_walk_forward,
+                                             body.include_sensitivity),
     })
 
-    asyncio.create_task(
+    task = asyncio.create_task(
         run_stress_test_task(st_id, body.include_walk_forward, body.include_sensitivity)
     )
+    # Hold a strong reference. `asyncio.create_task` alone does NOT keep one — the loop only holds
+    # the task while a callback of its is scheduled, so a long-awaiting background task is
+    # collectable and can vanish mid-flight, leaving the row `running` for ever.
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
-    # Build time estimate message for the UI
+    # Build time estimate + warnings for the UI
     est_min = 0
     notes = []
+    warnings: list[str] = []
     if body.include_walk_forward:
-        wf_min = _estimate_wf_duration_min(body.walk_forward_windows)
+        wf_min = _estimate_wf_duration_min(body.walk_forward_windows, runner)
         est_min += wf_min
         notes.append(f"Walk-forward: ~{wf_min} min ({body.walk_forward_windows * 2} backtests)")
+        # A walk-forward whose windows cannot each hold enough trades is arithmetic, not luck —
+        # it is knowable BEFORE 10 backtests run, and it caps the grade at B when it lands. Saying
+        # so up front is the difference between an unassessable result and a wasted hour.
+        feasible, why = walk_forward_feasibility(trade_count, body.walk_forward_windows)
+        if not feasible:
+            warnings.append(why)
     if body.include_sensitivity:
-        strategy = lab_db.get_strategy(run.get("strategy_id", ""))
-        # Count only the params sensitivity actually perturbs (numeric, non-foundational) and
-        # use the runner's real shift count (MT5 = 2, NT8 = 4) — both via the shared helpers,
-        # so the estimate can't drift from the run loop.
+        # Count only the params sensitivity actually perturbs (numeric, non-foundational, and
+        # REACHABLE — not behind a switch this run has off) and use the runner's real shift count
+        # (MT5 = 2, NT8/python = 4) — both via the shared helpers, so the estimate can't drift
+        # from the run loop.
         n_params = sensitivity_param_count(strategy, run.get("params") or {})
         n_backtests = n_params * sensitivity_shift_count(runner)
         sens_min = _estimate_sens_duration_min(n_params, runner)
         est_min += sens_min
-        notes.append(f"Sensitivity: ~{sens_min} min ({n_backtests} backtests)")
+        notes.append(f"Sensitivity: at most ~{sens_min} min ({n_backtests} backtests before "
+                     f"no-op shifts are skipped)")
 
     return {
         "stress_test_id": st_id,
         "status": "running",
         "estimated_duration_min": est_min if est_min else None,
         "notes": notes,
+        "warnings": warnings,
     }
+
+
+# Strong references to fire-and-forget background tasks. See the note at the create_task above.
+_BACKGROUND_TASKS: set = set()
+
+
+@router.post("/{stress_test_id}/cancel")
+async def cancel_stress_test(stress_test_id: str) -> dict:
+    """Stop a running stress test and its in-flight child backtest.
+
+    ⚠ It reports **`job_stopped`** separately from the cancellation, the same distinction the
+    optimizer's cancel makes: the row is cancelled either way, but "the runner acknowledged the
+    stop" and "we could not reach the runner to tell it" are different facts, and only the first
+    means the platform is actually free again."""
+    st = lab_db.get_stress_test(stress_test_id)
+    if not st:
+        raise HTTPException(404, "Stress test not found")
+
+    children = lab_db.cancel_stress_test(stress_test_id)
+    if children is None:
+        raise HTTPException(409, f"Stress test is '{st['status']}' — only a running test can be cancelled")
+
+    run = lab_db.get_run(st["run_id"]) or {}
+    strategy = lab_db.get_strategy(run.get("strategy_id", "")) or {}
+    runner = strategy.get("runner", "ninjatrader")
+
+    from services import runner_dispatch
+    job_stopped = True
+    for child_id in children:
+        try:
+            await asyncio.to_thread(runner_dispatch.cancel_job, child_id, runner)
+        except Exception:
+            job_stopped = False
+    return {"stress_test_id": stress_test_id, "status": "failed_cancelled",
+            "children_cancelled": len(children), "job_stopped": job_stopped}
 
 
 @router.delete("/{stress_test_id}", status_code=204)
 def delete_stress_test(stress_test_id: str):
-    if not lab_db.delete_stress_test(stress_test_id):
+    child_ids = lab_db.delete_stress_test(stress_test_id)
+    if child_ids is None:
         raise HTTPException(404, "Stress test not found")
+    # The test's own results dir (equity_paths.json + distribution.json) AND every child run's dir.
+    # Deleting the rows and leaving the files is how `reports/lab` grew to 191 directories against
+    # 84 live runs.
+    for d in [LAB_RESULTS_DIR / stress_test_id] + [LAB_RESULTS_DIR / rid for rid in child_ids]:
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)

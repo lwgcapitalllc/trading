@@ -34,11 +34,17 @@ export function useRunStressTest() {
   return useMutation({
     mutationFn: (body: StressTestCreate) =>
       api.post<StressTestTriggerResponse>('/stress-tests/run', body),
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success('Stress test started')
+      // The server knows things the form cannot — chiefly that this many windows over this many
+      // trades can only ever return "not assessable". Saying so at the moment work starts is the
+      // difference between a wasted hour and a different choice.
+      for (const w of data.warnings ?? []) toast.warning(w, { duration: 12_000 })
       qc.invalidateQueries({ queryKey: ['stress-tests'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: () => toast.error('Failed to start stress test'),
+    // `api.request` already toasts the server's own message (ApiError carries `detail`), so a
+    // second generic toast here would restate it on top of the useful one.
   })
 }
 
@@ -55,6 +61,24 @@ export function useStrategyBestGrades() {
     queryKey: ['stress-tests', 'strategy-grades'],
     queryFn: () => api.get<Record<string, { grade: string; stress_test_id: string }>>('/stress-tests/strategy-grades'),
     refetchInterval: 30_000,
+  })
+}
+
+export function useCancelStressTest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (stressTestId: string) =>
+      api.post<{ children_cancelled: number; job_stopped: boolean }>(`/stress-tests/${stressTestId}/cancel`, {}),
+    onSuccess: (data) => {
+      // `job_stopped: false` means the row is cancelled but the runner could not be told, so the
+      // platform may still be busy. Two different facts; only one of them means you can start
+      // something else — the same distinction the optimizer's cancel reports.
+      if (data.job_stopped) toast.success('Stress test cancelled')
+      else toast.error('Cancelled, but the runner could not be reached — the platform may still be busy')
+      qc.invalidateQueries({ queryKey: ['stress-tests'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
+    },
+    onError: () => toast.error('Cancel failed'),
   })
 }
 

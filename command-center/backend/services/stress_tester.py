@@ -27,6 +27,12 @@ from services.metrics import (
 
 log = logging.getLogger("stress_tester")
 
+# Strong references to fire-and-forget background tasks. `asyncio.create_task` does NOT keep one:
+# the loop holds a task only while one of its callbacks is scheduled, so a task sitting in a long
+# `await` is collectable and can vanish mid-flight — leaving a row `running` for ever with nothing
+# in the log. Documented CPython behaviour, not a theory.
+_BACKGROUND_TASKS: set = set()
+
 _RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
 _POLL_INTERVAL = 5
 _STALL_KILL_SEC = 600
@@ -55,6 +61,55 @@ _WF_MIN_TRADES_PER_WINDOW = 20
 def _clamp_wf_degradation(deg: float) -> float:
     lo, hi = _WF_DEG_CLAMP
     return max(lo, min(hi, deg))
+
+
+# ── What a child run is MEASURED on ───────────────────────────────────────────
+
+def _json_list(raw) -> Optional[list]:
+    """A stored JSON list, or None when the column was never written.
+
+    `lab_db.get_run` does not decode `cost_layers`, so it arrives as raw JSON TEXT. Reading it
+    without this returns a STRING, and a string handed to the runner as `cost_layers` iterates
+    its characters — every real layer name fails to match while 's', 'p', 'r'… all appear
+    charged. Same trap `routers/backtests._json_list` exists for.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, list):
+        return raw
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
+def child_measurement_fields(source_run: dict) -> dict:
+    """Everything that decides what a run is MEASURED on, read off the baseline row.
+
+    🔴 Walk-forward and sensitivity children carried only `commission_per_side` and
+    `slippage_ticks` until 2026-08-05 — no `cost_layers`, no `broker_profile`, no `sizing_mode`.
+    `python_runner._cost_profile` reads all three off the job spec, so stress-testing a run that
+    charged spread and swap produced children measured on a FREE BOOK, and then:
+
+      • sensitivity scored `|child_pf - baseline_pf| / baseline_pf` — a charged baseline against
+        free children, so the cost gap was reported as the parameter's fragility;
+      • walk-forward compared a charged whole-period Sharpe against free window Sharpes.
+
+    This is the identical defect the tuning workbench carried until the day before, and the rule
+    it left behind: a page (or a phase) whose whole job is COMPARING must carry forward everything
+    that decides what a run is measured on, or the difference column becomes the thing that lies.
+
+    ⚠ `cost_layers` NULL stays NULL. A child of a pre-layer run must retry on the pre-layer
+    contract, exactly as `POST /runs/{id}/retry` does — `[]` would be a NEW claim ("charge
+    nothing") about a row that never made one.
+    """
+    return {
+        "cost_layers":    _json_list(source_run.get("cost_layers")),
+        "broker_profile": source_run.get("broker_profile"),
+        "sizing_mode":    source_run.get("sizing_mode") or "consistent",
+        "manual_risk_pct": source_run.get("manual_risk_pct"),
+    }
 
 
 # ── Which series is safe to shuffle ────────────────────────────────────────────
@@ -193,12 +248,14 @@ def run_monte_carlo(
     # not given, so it reports None and is graded in dollars, exactly as before. `dd_basis` names
     # which of the two the grade should read.
     dd_basis = "percent" if model == "returns" else "dollars"
+
+    def _dd_pct(equity: np.ndarray) -> np.ndarray:
+        balance = equity + start_bal
+        peaks = np.maximum.accumulate(balance, axis=1)
+        return np.max((peaks - balance) / peaks, axis=1) * 100.0
+
     all_dds_pct: Optional[np.ndarray] = None
     if model == "returns" and start_bal > 0:
-        def _dd_pct(equity: np.ndarray) -> np.ndarray:
-            balance = equity + start_bal
-            peaks = np.maximum.accumulate(balance, axis=1)
-            return np.max((peaks - balance) / peaks, axis=1) * 100.0
         all_dds_pct = np.concatenate([_dd_pct(equity_rs), _dd_pct(equity_bs)])
 
     # Final-PnL percentiles come from the BOOTSTRAP pool only: it resamples WITH replacement, so it
@@ -241,16 +298,29 @@ def run_monte_carlo(
         # and the letter contradict each other. On a compounding run the percent basis also gives
         # a no-limit ruleset something real to be tested against — total ruin — instead of nothing.
         limit_pct = effective_dd_limit_pct(ruleset)
-        if dd_basis == "percent" and all_dds_pct is not None and limit_pct is not None:
+        on_percent = dd_basis == "percent" and all_dds_pct is not None and limit_pct is not None
+        if on_percent:
             prob_breach = float(np.mean(all_dds_pct > limit_pct))
         elif max_loss > 0 and dd_basis == "dollars":
             prob_breach = float(np.mean(all_dds > max_loss))
-        if rtype == "prop_eval" and profit_target > 0 and max_loss > 0:
+        if rtype == "prop_eval" and profit_target > 0 and (on_percent or max_loss > 0):
             # Pass = hit target AND never breach drawdown, per path. Use the BOOTSTRAP pool only:
             # reshuffle final PnLs are all the net total (order-invariant), so pairing all_pnls
             # with the target collapses the PnL test to a single value and skews the probability.
             # Bootstrap resamples vary both PnL and drawdown, so the pass rate is real.
-            prob_pass_eval = float(np.mean((final_pnl_bs >= profit_target) & (max_dd_bs <= max_loss)))
+            #
+            # 🔴 The drawdown half is tested on the SAME BASIS as `prob_breach`. It was hardcoded
+            # to the dollar comparison, so on a compounding run the two headline probabilities on
+            # one card came off two different measurements: `prob_breach` said 4% against a percent
+            # limit while `prob_pass_eval` said 0% because the dollar drawdowns of a grown account
+            # blew through a limit written for its opening size. That is the exact contradiction
+            # `dd_basis` exists to prevent, surviving in the one place it was not applied.
+            if on_percent:
+                dd_bs_pct = _dd_pct(equity_bs)
+                within = dd_bs_pct <= limit_pct
+            else:
+                within = max_dd_bs <= max_loss
+            prob_pass_eval = float(np.mean((final_pnl_bs >= profit_target) & within))
         elif rtype in ("prop_funded", "demo", "personal") and prob_breach is not None:
             # personal/demo have no profit-target requirement (profit_target = 0 sentinel) — per
             # spec they behave identically. "Pass" = never breached the drawdown rule. Without
@@ -270,6 +340,12 @@ def run_monte_carlo(
         "max_dd": {"counts": dd_hist.tolist(), "edges": dd_edges.tolist()},
         "final_pnl": {"counts": pnl_hist.tolist(), "edges": pnl_edges.tolist()},
     }
+    # The SAME drawdowns as a percent, so the chart can be drawn on the basis the grade read. The
+    # histogram was dollars-only, so on a compounding run the one picture of the drawdown
+    # distribution — with a dollar limit line over it — was in the unit the letter had ignored.
+    if all_dds_pct is not None:
+        pct_hist, pct_edges = np.histogram(all_dds_pct, bins=50)
+        distribution["max_dd_pct"] = {"counts": pct_hist.tolist(), "edges": pct_edges.tolist()}
 
     return {
         "median_final_pnl": round(median_final_pnl, 2),
@@ -299,6 +375,12 @@ def run_monte_carlo(
 # ── Walk-forward helpers ───────────────────────────────────────────────────────
 
 def _split_windows(start_date: str, end_date: str, n_windows: int) -> list[dict]:
+    """Split the run's period into N windows, each 70% in-sample / 30% out-of-sample.
+
+    ⚠ The two halves do NOT share a day. `is_end` used to equal `oos_start`, so the split date was
+    backtested on BOTH sides — a day the "unseen" half had already seen. One day out of hundreds is
+    immaterial to the numbers and is still a bar on the wrong side of the only line this phase draws.
+    """
     start = date.fromisoformat(start_date)
     end   = date.fromisoformat(end_date)
     total_days = (end - start).days
@@ -314,7 +396,7 @@ def _split_windows(start_date: str, end_date: str, n_windows: int) -> list[dict]
             "window": i + 1,
             "is_start": w_start.isoformat(),
             "is_end":   split.isoformat(),
-            "oos_start": split.isoformat(),
+            "oos_start": (split + timedelta(days=1)).isoformat(),
             "oos_end":  w_end.isoformat(),
         })
     return windows
@@ -343,16 +425,70 @@ def _is_foundational(p: dict) -> bool:
     return p.get("category") == "foundational" or (p.get("name") or "").startswith("f_")
 
 
-def sensitivity_param_count(strategy: Optional[dict], base_params: dict) -> int:
-    """Number of params sensitivity will actually perturb — numeric, in base_params, non-foundational.
-    Single source of truth for both the run loop and the UI time estimate."""
+def param_is_reachable(p: dict, base_params: dict) -> bool:
+    """False when the param's own `show_if` gate is OFF in this run's params.
+
+    A setting behind a switch the run has turned off CANNOT move the result — shifting it books a
+    guaranteed 0% change, which reads as "tested, rock solid" for a parameter the strategy never
+    read. That is the same false-reassurance shape as the no-op shifts below, arriving from the
+    schema rather than from arithmetic, and it is the one the value-equality dedupe cannot catch
+    (the value really does change; only the outcome cannot).
+
+    Mirrors `ParamEditor.visible` exactly, including the stringified comparison and the "any of
+    these" array form, so the lab perturbs precisely the set the lab would let you edit.
+    """
+    cond = p.get("show_if")
+    if not cond:
+        return True
+    for key, want in cond.items():
+        actual = str(base_params.get(key))
+        if isinstance(want, list):
+            if not any(str(x) == actual for x in want):
+                return False
+        elif actual != str(want):
+            return False
+    return True
+
+
+def perturbable_params(strategy: Optional[dict], base_params: dict) -> list[dict]:
+    """The params sensitivity will actually perturb — numeric, present, non-foundational, reachable.
+    Single source of truth for the run loop AND the UI time estimate, so the two cannot drift."""
     schema = (strategy or {}).get("param_schema") or []
-    return len([
+    return [
         p for p in schema
         if p.get("type") in ("int", "float", "double")
         and p.get("name") in base_params
         and not _is_foundational(p)
-    ])
+        and param_is_reachable(p, base_params)
+    ]
+
+
+def sensitivity_param_count(strategy: Optional[dict], base_params: dict) -> int:
+    return len(perturbable_params(strategy, base_params))
+
+
+def shifted_value(param: dict, baseline_val, factor: float):
+    """`(value, refusal)` — the shifted value, or None plus a plain-English refusal.
+
+    ⚠ **The schema's `min`/`max` are respected, and an out-of-range shift is REFUSED rather than
+    clamped.** `exec_sl_custom` is a fib ratio bounded (0, 1.0] sitting at 0.886, so its +25% shift
+    is 1.1075 — which the strategy's own `__post_init__` raises on, failing the child run and
+    losing the shift with nothing on screen to say why. Clamping to the bound instead would run a
+    backtest at +12.8% under a label reading `+25%`, i.e. a magnitude that is not the one stated —
+    this repo's signature defect. Refusing is the honest option, and the refusal is reported.
+    """
+    try:
+        new_val = baseline_val * factor
+    except TypeError:
+        return (None, "value is not numeric")
+    if param.get("type") == "int":
+        new_val = int(round(new_val))
+    lo, hi = param.get("min"), param.get("max")
+    if lo is not None and new_val < lo:
+        return (None, f"below the parameter's minimum of {lo}")
+    if hi is not None and new_val > hi:
+        return (None, f"above the parameter's maximum of {hi}")
+    return (new_val, None)
 
 
 def sensitivity_shift_count(runner: str) -> int:
@@ -360,15 +496,77 @@ def sensitivity_shift_count(runner: str) -> int:
     return 2 if runner == "mt5" else 4
 
 
-def _estimate_wf_duration_min(n_windows: int) -> int:
-    return n_windows * 2 * 5  # 2 runs per window × ~5 min each
+def _mins_per_job(runner: str) -> float:
+    """Minutes per child backtest, by runner. Python replays locally off a warm cache — a job is
+    seconds, not minutes — so quoting it the NT8 figure told the user to expect ~30x the real wait.
+    Stated once and used by BOTH phase estimates; the walk-forward estimate was hardcoded to the
+    NT8 number regardless of runner."""
+    return 0.2 if runner == "python" else 1.5 if runner == "mt5" else 5.0
+
+
+def _estimate_wf_duration_min(n_windows: int, runner: str = "ninjatrader") -> int:
+    return max(1, int(n_windows * 2 * _mins_per_job(runner)))  # 2 backtests per window
 
 
 def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader") -> int:
-    # Python replays locally off a warm cache — a job is seconds, not minutes. Quoting it the
-    # NT8 estimate told the user to expect ~30x the real wait.
-    mins_per_job = 0.2 if runner == "python" else 1.5 if runner == "mt5" else 5
-    return max(1, int(n_params * sensitivity_shift_count(runner) * mins_per_job))
+    return max(1, int(n_params * sensitivity_shift_count(runner) * _mins_per_job(runner)))
+
+
+def phases_requested(include_walk_forward: bool, include_sensitivity: bool) -> list[str]:
+    """What was ASKED for — the ONE definition, used at creation and again at the end.
+
+    ⚠ Written when the row is INSERTED, not when the task finishes. It is the only thing that
+    separates "walk-forward was never requested" from "walk-forward ran and produced nothing":
+    `walk_forward_summary IS NULL` means both, and grading reads a NULL as not-run, i.e. neither
+    credit nor penalty. Recorded at the end it is missing for the entire run — so the page has to
+    guess which phases are coming while a test is live, and a task killed mid-flight (a backend
+    restart is enough) leaves no record of what was asked for at all."""
+    phases = ["monte_carlo"]
+    if include_walk_forward:
+        phases.append("walk_forward")
+    if include_sensitivity:
+        phases.append("sensitivity")
+    return phases
+
+
+def walk_forward_feasibility(trade_count: int, n_windows: int) -> tuple[bool, str]:
+    """Can this many trades support this many windows? `(ok, why-not)`.
+
+    Pure arithmetic, and it is knowable BEFORE ten backtests run: each window's out-of-sample half
+    is 30% of 1/N of the run, and a window whose either side closes fewer than
+    `_WF_MIN_TRADES_PER_WINDOW` trades is excluded as not-assessable. When EVERY window will be
+    thin, the whole phase can only return "not assessable" — which then caps the grade at B.
+
+    Measured on the lab's own numbers: at 5 windows the out-of-sample halves of a 126-trade run
+    closed 6, 6, 6, 12 and 8 trades, every one under the floor. Clearing it at 5 windows needs
+    roughly 5 x 20 / 0.3 ≈ 333 trades, and the strategies here run 126-165 — so the shipped default
+    guaranteed an unassessable walk-forward, every time, with nothing on screen saying so.
+    """
+    if n_windows < 1:
+        return (False, "Walk-forward needs at least one window")
+    oos_per_window = trade_count / n_windows * 0.3
+    if oos_per_window >= _WF_MIN_TRADES_PER_WINDOW:
+        return (True, "")
+    max_windows = int(trade_count * 0.3 // _WF_MIN_TRADES_PER_WINDOW)
+    fix = (f"Use {max_windows} window(s) or fewer" if max_windows >= 1
+           else f"This run needs about {int(_WF_MIN_TRADES_PER_WINDOW / 0.3)} trades for even one "
+                f"window to be assessable")
+    return (False, (
+        f"{n_windows} windows over {trade_count} trades leaves about "
+        f"{oos_per_window:.0f} out-of-sample trades each, under the {_WF_MIN_TRADES_PER_WINDOW} "
+        f"needed for a Sharpe to mean anything — the walk-forward will report 'not assessable' "
+        f"and cap the grade at B. {fix}."
+    ))
+
+
+def is_cancelled(stress_test_id: str) -> bool:
+    """Has the row been cancelled out from under this task?
+
+    Checked between children, so a cancel stops the REMAINING work rather than only relabelling the
+    row. The optimizer's cancel shipped without this and kept every core busy after 'cancelling',
+    then overwrote its own cancelled status with `complete` when the work finished."""
+    st = lab_db.get_stress_test(stress_test_id)
+    return bool(st and str(st.get("status", "")).startswith("failed"))
 
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────
@@ -550,11 +748,24 @@ async def _run_native_walk_forward(
     return True
 
 
-async def run_walk_forward_task(stress_test_id: str) -> bool:
+async def run_walk_forward_task(stress_test_id: str) -> tuple[bool, Optional[str]]:
     """
     Run walk-forward windows. Uses NT8 native WF mode when the source run comes from
     a native optimization (one data load, all windows); falls back to N orchestrated
     backtests for standalone single runs.
+
+    Returns `(ok, error)`. **`ok=False` means the phase RAN AND FAILED, which is not the same fact
+    as "walk-forward was not requested"** — grading must be able to tell them apart, so the caller
+    passes the distinction through rather than letting a NULL summary stand for both. Until
+    2026-08-05 this returned a bare bool that the caller discarded: a walk-forward that crashed
+    left `walk_forward_summary` NULL, grading read that as *not run*, and the test could be handed
+    an **A** with the caveat "walk-forward not run — grade may improve with full analysis". It had
+    run; it had failed; and the letter said the opposite of what happened.
+
+    ⚠ It sets NO terminal status of its own. It used to stamp `failed_wf_split` / `failed_no_run`,
+    which the sensitivity phase and then grading immediately overwrote — so the row ended
+    `complete` while still carrying the failure's `error_message` in the red box. The orchestrator
+    owns the row's status; this function reports.
 
     WHAT THIS MEASURES, precisely: the SAME fixed parameters are run on each window's in-sample and
     out-of-sample halves — nothing is re-tuned between them. So a large IS→OOS drop means the edge
@@ -564,23 +775,26 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
     """
     st = lab_db.get_stress_test(stress_test_id)
     if not st:
-        return False
+        return (False, "Stress test row disappeared")
 
     source_run = lab_db.get_run(st["run_id"])
     if not source_run:
-        lab_db.update_stress_test_status(stress_test_id, "failed_no_run")
-        return False
+        return (False, "Source run not found")
 
     strategy = lab_db.get_strategy(source_run["strategy_id"])
     if not strategy:
-        lab_db.update_stress_test_status(stress_test_id, "failed_no_strategy")
-        return False
+        return (False, "Strategy not found")
 
     runner = strategy.get("runner", "ninjatrader")
 
     # Native WF path: used when source run has optimization_id (winner from native opt).
+    # ⚠ It FALLS THROUGH to the serial path when it fails — the docstring promised that fallback
+    # since the day it was written and the code returned the failure instead, so a native WF that
+    # could not be submitted ended the whole phase rather than being re-run window by window.
     if source_run.get("optimization_id") and runner == "ninjatrader":
-        return await _run_native_walk_forward(stress_test_id, st, source_run, strategy)
+        if await _run_native_walk_forward(stress_test_id, st, source_run, strategy):
+            return (True, None)
+        log.info("Native WF unavailable for %s — running the windows serially", stress_test_id)
 
     try:
         windows = _split_windows(
@@ -588,11 +802,17 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
             st.get("walk_forward_windows", 5),
         )
     except ValueError as exc:
-        lab_db.update_stress_test_status(stress_test_id, "failed_wf_split", str(exc))
-        return False
+        return (False, str(exc))
+
+    # The baseline's own physics — costs, broker, sizing. Every window is measured on them or the
+    # IS→OOS comparison is between two different books. See child_measurement_fields.
+    measured_on = child_measurement_fields(source_run)
 
     summary = []
+    failed_periods: list[str] = []
     for w in windows:
+        if is_cancelled(stress_test_id):
+            return (False, "cancelled")
         window_data = {"window": w["window"], "is_pnl": None, "oos_pnl": None, "is_sharpe": None,
                        "oos_sharpe": None, "is_trades": None, "oos_trades": None}
 
@@ -600,6 +820,8 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
             ("is",  w["is_start"],  w["is_end"]),
             ("oos", w["oos_start"], w["oos_end"]),
         ]:
+            if is_cancelled(stress_test_id):
+                return (False, "cancelled")
             child_id = uuid.uuid4().hex[:16]
             wf_tag = f"wf_{w['window']}_{period_type}"
             lab_db.insert_run_stress_test_child({
@@ -618,6 +840,7 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
                 "stress_test_id": stress_test_id,
                 "walk_forward_window_id": wf_tag,
                 "runner": runner,
+                **measured_on,
             })
 
             job_spec = {
@@ -631,31 +854,40 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
                 "end_date": p_end,
                 "commission_per_side": source_run["commission_per_side"],
                 "slippage_ticks": source_run["slippage_ticks"],
+                **measured_on,
             }
             ok = await _run_child_backtest(child_id, job_spec, runner)
             if not ok:
-                continue  # skip this period if it failed
+                # A period that never produced a result is RECORDED, not silently dropped. Its
+                # window keeps None on that side, which excludes it from the average — and the
+                # count is what lets the caller say "3 of 10 periods failed" instead of reporting
+                # a degradation off whatever survived.
+                failed_periods.append(wf_tag)
+                continue
 
             child = lab_db.get_run(child_id)
             if not child:
+                failed_periods.append(wf_tag)
                 continue
 
+            # No curve on disk = the Sharpe could not be COMPUTED, which is not the claim
+            # "the Sharpe was zero". It used to write 0.0, which excludes the window from the
+            # average either way (0.0 fails the IS floor) but then draws a real zero bar on the
+            # chart for a period nothing was measured on.
             eq_path = child.get("equity_curve_path")
+            sharpe: Optional[float] = None
             if eq_path and Path(eq_path).exists():
                 eq_data = json.loads(Path(eq_path).read_text())
-                sharpe = _compute_sharpe(eq_data)
-                pnl = child.get("net_pnl") or 0.0
-            else:
-                sharpe = 0.0
-                pnl = child.get("net_pnl") or 0.0
+                sharpe = round(_compute_sharpe(eq_data), 4)
+            pnl = child.get("net_pnl") or 0.0
 
             if period_type == "is":
                 window_data["is_pnl"] = round(pnl, 2)
-                window_data["is_sharpe"] = round(sharpe, 4)
+                window_data["is_sharpe"] = sharpe
                 window_data["is_trades"] = child.get("trade_count") or 0
             else:
                 window_data["oos_pnl"] = round(pnl, 2)
-                window_data["oos_sharpe"] = round(sharpe, 4)
+                window_data["oos_sharpe"] = sharpe
                 window_data["oos_trades"] = child.get("trade_count") or 0
 
         summary.append(window_data)
@@ -700,13 +932,29 @@ async def run_walk_forward_task(stress_test_id: str) -> bool:
                  ", ".join(str(w) for w in thin))
 
     lab_db.update_stress_test_walk_forward(stress_test_id, summary, avg_deg)
-    return True
+
+    # Every period failing is a FAILED phase, not a clean summary of nothing. Reported as an error
+    # so the row can say so; a partial failure keeps the summary (the windows that ran are real)
+    # and is named in the log.
+    if failed_periods and len(failed_periods) >= 2 * len(windows):
+        return (False, f"every walk-forward backtest failed ({len(failed_periods)} of "
+                       f"{2 * len(windows)} periods)")
+    if failed_periods:
+        log.warning("Walk-forward %s: %d of %d period backtests failed (%s)",
+                    stress_test_id, len(failed_periods), 2 * len(windows),
+                    ", ".join(failed_periods))
+    return (True, None)
 
 
 # ── Sensitivity runner ─────────────────────────────────────────────────────────
 
-async def run_sensitivity_task(stress_test_id: str) -> bool:
+async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]]:
     """Run ±10%/±25% param perturbations sequentially through NT8. Updates DB when done.
+
+    Returns `(ok, error)` for the same reason walk-forward does: **ran-and-failed and never-ran are
+    different facts and must not share a value.** A phase that produced nothing used to leave
+    `sensitivity_summary` NULL, which grading reads as *not run* — neither credit nor penalty —
+    so a crashed sensitivity phase cost the test nothing and said nothing.
 
     THE METRIC IS PROFIT FACTOR, not net P&L (changed 2026-07-30). Two reasons, and the second is
     the load-bearing one:
@@ -728,15 +976,15 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     """
     st = lab_db.get_stress_test(stress_test_id)
     if not st:
-        return False
+        return (False, "Stress test row disappeared")
 
     source_run = lab_db.get_run(st["run_id"])
     if not source_run:
-        return False
+        return (False, "Source run not found")
 
     strategy = lab_db.get_strategy(source_run["strategy_id"])
     if not strategy:
-        return False
+        return (False, "Strategy not found")
 
     runner = strategy.get("runner", "ninjatrader")
     base_params: dict = source_run.get("params") or {}
@@ -745,19 +993,26 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
     if not base_params or not param_schema:
         # None, not 0.0 — nothing was measured, and 0.0 would report "no parameter moved the
         # result", the most reassuring answer available, on a strategy with no parameters to move.
+        # This is a SUCCESSFUL run of the phase: it asked the question and the honest answer is
+        # "there is nothing here to perturb", which grading already treats as not-assessable.
         lab_db.update_stress_test_sensitivity(stress_test_id, {}, None)
-        return True
+        return (True, None)
 
-    # Only perturb numeric STRATEGY-LOGIC params — the same set the optimizer tunes.
-    # Foundational params (injected config: account size, risk %, commission, etc.) are not
-    # tunable; many sit at the -1 sentinel, so perturbing them is wasteful and meaningless.
-    # _is_foundational (module level) excludes by category, with the 'f_' prefix as a fallback.
-    numeric_params = [
-        p for p in param_schema
+    # Only perturb numeric STRATEGY-LOGIC params — the same set the optimizer tunes — and only
+    # those the run can actually REACH (see param_is_reachable). Foundational params (injected
+    # config: account size, risk %, commission) are not tunable and many sit at the -1 sentinel.
+    numeric_params = perturbable_params(strategy, base_params)
+    unreachable = [
+        p["name"] for p in param_schema
         if p.get("type") in ("int", "float", "double")
         and p.get("name") in base_params
         and not _is_foundational(p)
+        and not param_is_reachable(p, base_params)
     ]
+    if unreachable:
+        log.info("Sensitivity %s: %d param(s) skipped — their own show_if gate is off in this run, "
+                 "so no shift of them can change the result: %s",
+                 stress_test_id, len(unreachable), ", ".join(unreachable))
 
     # Baseline metrics. Profit factor is the scored one (see the docstring); net P&L is kept
     # alongside it purely so a shift's dollar effect is still visible on the record.
@@ -778,10 +1033,16 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
         SHIFTS = [("+10%", 1.10), ("-10%", 0.90)]
     else:
         SHIFTS = [("+10%", 1.10), ("-10%", 0.90), ("+25%", 1.25), ("-25%", 0.75)]
+    # The baseline's own physics. `degradation` divides a CHILD's profit factor by the BASELINE's,
+    # so a child measured on a different cost model reports the cost gap as the parameter's
+    # fragility. See child_measurement_fields.
+    measured_on = child_measurement_fields(source_run)
+
     sensitivity: dict = {}
     max_degradation: Optional[float] = None
 
     skipped: list[str] = []
+    failed_shifts: list[str] = []
 
     for param in numeric_params:
         pname = param["name"]
@@ -792,10 +1053,12 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
         seen_vals: set = set()
 
         for shift_label, factor in SHIFTS:
-            new_val = baseline_val * factor
-            # Respect int type
-            if param.get("type") == "int":
-                new_val = int(round(new_val))
+            if is_cancelled(stress_test_id):
+                return (False, "cancelled")
+            new_val, refusal = shifted_value(param, baseline_val, factor)
+            if refusal is not None:
+                skipped.append(f"{pname} {shift_label} ({refusal})")
+                continue
 
             # A perturbation that lands back on the baseline TESTS NOTHING — it re-runs the
             # identical backtest and books a 0% delta, which reads as "rock solid" when the truth
@@ -831,6 +1094,7 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
                 "stress_test_id": stress_test_id,
                 "walk_forward_window_id": sens_tag,
                 "runner": runner,
+                **measured_on,
             })
 
             job_spec = {
@@ -844,25 +1108,37 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
                 "end_date": source_run["end_date"],
                 "commission_per_side": source_run["commission_per_side"],
                 "slippage_ticks": source_run["slippage_ticks"],
+                **measured_on,
             }
             ok = await _run_child_backtest(child_id, job_spec, runner)
             child = lab_db.get_run(child_id) if ok else None
             child_pnl = child.get("net_pnl") or 0.0 if child else 0.0
             child_pf = child.get("profit_factor") if child else None
             pnl_delta = child_pnl - baseline_pnl
+            if not ok:
+                failed_shifts.append(f"{pname} {shift_label}")
 
             # `degradation` is the SCORED field and the same key the grid path writes, so the chart
             # renders and labels both paths identically. None = this shift could not be measured
             # (the child failed, or a profit factor was missing/infinite) — never 0.0, which would
             # claim the parameter was tested and did nothing.
+            #
+            # `pf_delta_pct` is the SAME measurement with its SIGN kept. The score has to be a
+            # magnitude — a shift that moves the result is evidence either way, and grading needs
+            # one number to threshold — but a chart drawing a magnitude has to invent a direction,
+            # and the page drew every one of them as a LOSS. A shift that IMPROVED profit factor
+            # was rendered as a long red bar. Direction is data; it belongs here, not in a renderer.
             degradation = None
+            pf_delta_pct = None
             if pf_usable and child_pf is not None and np.isfinite(child_pf):
+                pf_delta_pct = (child_pf - baseline_pf) / baseline_pf * 100.0
                 degradation = abs(child_pf - baseline_pf) / baseline_pf
 
             param_result[shift_label] = {
                 "run_id": child_id,
                 "new_value": new_val,
                 "degradation": None if degradation is None else round(degradation, 4),
+                "pf_delta_pct": None if pf_delta_pct is None else round(pf_delta_pct, 2),
                 "profit_factor": child_pf,
                 # Dollar effect, kept for reference only. NOT read by grading or the chart — the
                 # chart switches to the profit-factor bar as soon as `pnl_delta_pct` is absent.
@@ -879,14 +1155,32 @@ async def run_sensitivity_task(stress_test_id: str) -> bool:
             sensitivity[pname] = param_result
 
     if skipped:
-        log.info("Sensitivity %s: skipped %d no-op perturbation(s) (value unchanged from baseline): %s",
+        log.info("Sensitivity %s: skipped %d perturbation(s) that could test nothing: %s",
                  stress_test_id, len(skipped), ", ".join(skipped))
 
+    # What was NOT measured travels with what was. A page reporting "12 params tested" over a phase
+    # that quietly refused 30 shifts is describing coverage that never happened — the same reason
+    # the optimizer logs what its caps dropped.
+    coverage = {
+        "params_perturbed":   len(sensitivity),
+        "shifts_run":         sum(len(v) for v in sensitivity.values()),
+        "shifts_skipped":     skipped,
+        "shifts_failed":      failed_shifts,
+        "params_unreachable": unreachable,
+    }
     lab_db.update_stress_test_sensitivity(
         stress_test_id, sensitivity,
         None if max_degradation is None else round(max_degradation, 4),
+        coverage,
     )
-    return True
+
+    # Every shift that ran having failed is a FAILED phase. Some failing is reported, not fatal.
+    if failed_shifts and not sensitivity:
+        return (False, f"every sensitivity backtest failed ({len(failed_shifts)} shifts)")
+    if failed_shifts:
+        log.warning("Sensitivity %s: %d shift backtest(s) failed (%s)",
+                    stress_test_id, len(failed_shifts), ", ".join(failed_shifts))
+    return (True, None)
 
 
 # ── Grid sensitivity injection (Step 3A) ──────────────────────────────────────
@@ -937,8 +1231,15 @@ def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: Op
     lines.append(f"Grade: *{grade}*" if grade else "Grade: _not graded_")
     if prob_pass is not None:
         lines.append(f"Pass probability: {round(prob_pass * 100, 1)}%")
-    if p1_dd is not None:
+    # Quote the drawdown in the unit the GRADE read. This always printed dollars, so on a
+    # compounding run the message quoted a figure the letter beside it had not looked at.
+    if st.get("dd_basis") == "percent" and st.get("pct1_max_dd_pct") is not None:
+        lines.append(f"Worst-1% drawdown: {st['pct1_max_dd_pct']:.1f}%")
+    elif p1_dd is not None:
         lines.append(f"Worst-1% drawdown: ${p1_dd:,.0f}")
+    failures = st.get("phase_failures") or {}
+    if failures:
+        lines.append("⚠ Phase failed: " + ", ".join(failures))
     if reasons:
         lines.append("Reasons: " + "; ".join(reasons[:3]))
 
@@ -1007,35 +1308,50 @@ async def run_stress_test_task(
         paths_file.write_text(json.dumps(mc.pop("sampled_paths"), default=str))
         dist_file.write_text(json.dumps(mc.pop("distribution"), default=str))
 
+        # ⚠ The row moves to the NEXT phase, never straight to `complete`. Marking it complete
+        # here released the market lock mid-test and made a crash between phases invisible to
+        # `reset_stale_stress_tests` — see lab_db.update_stress_test_mc.
+        after_mc = "running_wf" if include_walk_forward else (
+            "running_sens" if include_sensitivity else "complete")
         lab_db.update_stress_test_mc(stress_test_id, mc, {
             "equity_paths_path": str(paths_file),
             "distribution_path": str(dist_file),
-        })
+        }, next_status=after_mc)
+
+        # Already written at creation (see `phases_requested`); recomputed here only so the
+        # end-of-run write carries both fields together.
+        requested = phases_requested(include_walk_forward, include_sensitivity)
+        phase_failures: dict[str, str] = {}
 
         # ── Step 3A: inject grid sensitivity if available (no NT8 backtests) ──
         grid_sens_applied = False
         if not include_sensitivity:
             grid_sens_applied = await _apply_grid_sensitivity_if_available(st, stress_test_id)
 
-        if not include_walk_forward and not include_sensitivity:
-            # MC-only (or MC + grid sensitivity): compute grade
-            st_updated = lab_db.get_stress_test(stress_test_id)
-            if st_updated and ruleset:
-                sens_summary = st_updated.get("sensitivity_summary") if grid_sens_applied else None
-                grade, reasons = compute_grade(st_updated, None, sens_summary, ruleset)
-                lab_db.update_stress_test_grade(stress_test_id, grade, reasons)
-                _fire_grade_notification(stress_test_id, run, st_updated, grade, reasons)
-            return
-
         # ── Walk-forward ──
-        if include_walk_forward:
+        if include_walk_forward and not is_cancelled(stress_test_id):
             lab_db.update_stress_test_status(stress_test_id, "running_wf")
-            await run_walk_forward_task(stress_test_id)
+            ok, err = await run_walk_forward_task(stress_test_id)
+            if not ok:
+                phase_failures["walk_forward"] = err or "walk-forward failed"
+                log.warning("Stress test %s: walk-forward failed — %s", stress_test_id, err)
 
-        # ── Sensitivity (NT8 perturbation backtests) ──
-        if include_sensitivity and not grid_sens_applied:
+        # ── Sensitivity (perturbation backtests) ──
+        if include_sensitivity and not grid_sens_applied and not is_cancelled(stress_test_id):
             lab_db.update_stress_test_status(stress_test_id, "running_sens")
-            await run_sensitivity_task(stress_test_id)
+            ok, err = await run_sensitivity_task(stress_test_id)
+            if not ok:
+                phase_failures["sensitivity"] = err or "sensitivity failed"
+                log.warning("Stress test %s: sensitivity failed — %s", stress_test_id, err)
+
+        lab_db.update_stress_test_phases(stress_test_id, requested, phase_failures)
+
+        # A cancelled test is NOT graded. Grading it would overwrite `failed_cancelled` with
+        # `complete` and hand out a letter off half a test — which is exactly what the optimizer's
+        # cancel did before 2026-08-04 (the finished job overwrote its own cancelled status).
+        if is_cancelled(stress_test_id):
+            log.info("Stress test %s was cancelled — not grading", stress_test_id)
+            return
 
         # ── Grade ──
         st_updated = lab_db.get_stress_test(stress_test_id)
@@ -1046,14 +1362,23 @@ async def run_stress_test_task(
                 st_updated.get("walk_forward_summary") if include_walk_forward else None,
                 st_updated.get("sensitivity_summary") if has_sens else None,
                 ruleset,
+                wf_failed="walk_forward" in phase_failures,
+                sens_failed="sensitivity" in phase_failures,
             )
             lab_db.update_stress_test_grade(stress_test_id, grade, reasons)
             _fire_grade_notification(stress_test_id, run, st_updated, grade, reasons)
         else:
-            lab_db.update_stress_test_status(stress_test_id, "complete")
+            # No ruleset means no letter is possible, which is not a failure — but a phase that
+            # died still has to be visible, so it goes in the row's own error field rather than
+            # being lost with the reasons a grade would have carried.
+            lab_db.update_stress_test_status(
+                stress_test_id, "complete",
+                "; ".join(f"{k}: {v}" for k, v in phase_failures.items()) or None,
+            )
 
     except Exception as exc:
         lab_db.update_stress_test_status(stress_test_id, "failed_error", str(exc))
+        log.exception("Stress test %s failed", stress_test_id)
 
 
 # ── Auto-trigger (called by backtest_runner and optimization_runner) ───────────
@@ -1089,5 +1414,9 @@ async def trigger_auto_stress_test(run_id: str, ruleset_ids: list[str]) -> None:
         "status": "running",
         "created_at": int(time.time()),
     })
-    # Fire and forget (no walk-forward for auto-triggers — MC only)
-    asyncio.create_task(run_stress_test_task(st_id, False, False))
+    # Fire and forget (no walk-forward for auto-triggers — MC only). The reference is HELD:
+    # `asyncio.create_task` alone does not keep one, so a long-awaiting task is collectable and can
+    # disappear mid-flight, leaving the row `running` for ever.
+    task = asyncio.create_task(run_stress_test_task(st_id, False, False))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
