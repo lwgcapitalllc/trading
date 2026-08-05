@@ -557,9 +557,23 @@ Found by stopping the live bot to deploy and being unable to bring it back — n
 ⚠ **`schtasks /run` reported SUCCESS for the run that started nothing**, exactly as this file
 already warns. The check that caught it was `wmic` — probe the thing you are claiming, every time.
 
+🔴 **And the commit-msg hook silently broke the unattended backup for the SECOND time in one day.**
+Its exemption had been widened that morning to `*/ledger/decisions-*.jsonl` after the sync was
+found refusing with a day outstanding. The split added two new shapes — `health-*.jsonl` and the
+dated `.log` — and **the sync broke again on its first run**, because an exemption enumerates the
+shapes that existed when somebody wrote it. ⚠ **A rule that fires on a robot's commit has no human
+to read its message: it does not nag, it silently stops the job**, and a backup that quietly stops
+happening looks exactly like a backup with nothing to do. Both shapes are exempt now, and the real
+fix is that **the hook is driven FOR REAL against the exact paths `ledger_sync.py` writes**
+(`tests/test_commit_hook_ledger_exemption.py`, 6 tests, 3 watched red) — a fourth artefact added to
+the sync fails in the suite instead of at midnight. ⚠ **The exemptions stay narrow PATHS, never
+`*.jsonl` / `*.log`**, and a test pins that: a future file holding a contract under either
+extension must still demand its doc, the way `*.meta.json` explicitly does.
+
 **The standing lesson: a rename is a contract change, and the readers of a filename are invisible
 from the file that writes it.** Nothing imports `<bot>.log`; two separate pieces of the launcher
-simply knew the name. Tests: `tests/test_startup_coordinator.py` (10, **7 watched red**).
+simply knew the name, and the hook knew a third. Tests: `tests/test_startup_coordinator.py` (10,
+**7 watched red**).
 
 ### Registering a bot — the five registries, and the crash if you miss one
 

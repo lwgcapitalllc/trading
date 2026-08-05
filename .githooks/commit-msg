@@ -64,13 +64,24 @@ is_exempt() {
     *.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf|*.webp)    return 0 ;;
     *.csv|*.parquet|*.db|*.sqlite|*.sqlite3|*.pkl)  return 0 ;;
     .claude/settings.local.json)                    return 0 ;;  # per-machine
-    # A live bot's decision record. It is RECORDED broker data — the same character as the
-    # .csv above — and `algos/tools/ledger_sync.py` commits it unattended, so without this
-    # the backup of the one artefact that must survive the VPS could never be committed at
-    # all (measured 2026-08-05: the sync refused with a day outstanding). Deliberately a
-    # PATH, not `*.jsonl`: the extension is generic and a future .jsonl holding a contract
-    # would be waved through, while `*/ledger/decisions-*.jsonl` can only ever be this.
+    # A live bot's daily record — three per-day files, all RECORDED data of the same character
+    # as the .csv above, all committed UNATTENDED by `algos/tools/ledger_sync.py` every 12
+    # hours. Without these the backup of the one artefact that must survive the VPS cannot be
+    # committed at all.
+    #
+    # 🔴 This has now bitten TWICE, and the second time is the instructive one. 2026-08-05
+    # morning: the sync refused with a day outstanding, and `decisions-` was exempted. The same
+    # afternoon the record was split into two streams and the text log went per-day — **and the
+    # sync broke again on the first run**, because an exemption enumerates the shapes that
+    # existed when it was written. ⚠ **A rule that fires on a robot's commit has no human to
+    # read its message: it does not nag, it silently stops the job.** Any new per-day artefact
+    # the sync commits has to be added HERE, in the same change.
+    #
+    # Deliberately PATHS, not `*.jsonl` / `*.log`: those extensions are generic and a future
+    # file holding a contract would be waved through, while these shapes can only ever be this.
     */ledger/decisions-*.jsonl)                     return 0 ;;
+    */ledger/health-*.jsonl)                        return 0 ;;
+    */ledger_archive/*/*-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].log) return 0 ;;
   esac
   return 1
 }
