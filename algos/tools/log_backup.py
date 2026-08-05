@@ -36,11 +36,19 @@ re-derive, and so "closed" has exactly one definition.
 **Two rules that outlive any of the above.**
 
 *Only days STRICTLY BEFORE today count as closed.* Today's file is still being appended to by
-a running bot. Copying it captures a torn half-day that later reads exactly like a whole one.
+a running bot, so a copy of it can end in a torn line. ⚠ **Since 2026-08-05 that no longer
+means today is unbackupable** — the sync runs every 12 hours at Aaron's request, which
+necessarily commits an open day. `--list-open` reports today separately from `--list-closed`,
+and the Mac side truncates a torn final line rather than committing half a record. The
+distinction is kept because the two are different promises: a closed day is final, an open one
+is the best copy so far and will be committed again.
 
 *Logs are COPIED, never rotated.* The bot holds its log open, and renaming a file Windows has
 open fails with a sharing violation — a rotation scheme would pass on the Mac, break on the
-VPS, and take the day's logs with it.
+VPS, and take the day's logs with it. ⚠ The bot now writes one text log PER DAY
+(`<bot>-YYYY-MM-DD.log`, `algos/live/runner.DailyFileHandler`), which rolls by choosing a
+filename rather than by renaming, so that rule is intact and a day's text log has become a
+final artefact that can be committed like the JSONL streams.
 """
 
 from __future__ import annotations
@@ -58,38 +66,83 @@ ALGOS_ROOT = Path(__file__).resolve().parent.parent
 INSTANCES  = ALGOS_ROOT / "markets" / "fx" / "instances"
 ARCHIVE    = ALGOS_ROOT / "log_archive"
 
+if str(ALGOS_ROOT / "live") not in sys.path:
+    sys.path.insert(0, str(ALGOS_ROOT / "live"))
+
+# IMPORTED, not restated. The writer owns the filename shape; a copy of the pattern here would
+# drift the day somebody adds a third stream, and the drift's symptom is a whole stream that is
+# silently never committed — which looks exactly like a stream that was never written.
+from ledger import STREAM_RE                                          # noqa: E402
+
 KEEP_DAYS = 90
 
-# The ONLY ledger filename shape recognised anywhere in this pipeline. Anything else found in
-# a ledger directory is somebody's scratch, and a backup job is the wrong place to guess.
+# Kept as its own name because `tools/ledger_sync.py` imports it. It matches the DECISION
+# stream only, which is what the pre-2026-08-05 pipeline knew about.
 LEDGER_RE = re.compile(r"^decisions-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 ZIP_RE    = re.compile(r"^logs-(\d{4})-(\d{2})-(\d{2})\.zip$")
+# One text log per day, written by `algos/live/runner.DailyFileHandler`. It sits in the
+# INSTANCE dir rather than in `ledger/`, because it is prose about the process and the ledger
+# dir holds the structured record.
+TEXTLOG_RE = re.compile(r"^(.+)-(\d{4})-(\d{2})-(\d{2})\.log$")
+
+
+def _dated(path: Path) -> tuple[date, bool] | None:
+    """(date, is_ledger_stream) for a file this pipeline backs up, else None."""
+    m = STREAM_RE.match(path.name)
+    if m:
+        return date(int(m[2]), int(m[3]), int(m[4])), True
+    m = TEXTLOG_RE.match(path.name)
+    if m:
+        return date(int(m[2]), int(m[3]), int(m[4])), False
+    return None
+
+
+def _record_files(instances: Path) -> tuple[list[Path], list[Path]]:
+    """Every dated record file this pipeline owns, and everything it did not recognise.
+
+    Two locations, on purpose: `<bot>/ledger/*.jsonl` is the structured record and
+    `<bot>/*.log` is the prose. Both are per-day and both are committed.
+    """
+    found, skipped = [], []
+    for inst in sorted(p for p in instances.glob("*") if p.is_dir()):
+        for path in sorted(list(inst.glob("*.log")) + list((inst / "ledger").glob("*"))):
+            if not path.is_file():
+                continue
+            (found if _dated(path) else skipped).append(path)
+    return found, skipped
 
 
 def ledger_files(instances: Path, today: date) -> tuple[list[Path], list[Path]]:
-    """Return (closed ledger files, files skipped for not matching the shape).
+    """Return (closed record files, files skipped for not matching a known shape).
 
     "Closed" means dated strictly before `today`: no bot can append to it again, so copying
     it can never race a write. This is the single definition of closed — the Mac side asks
     for it over `--list-closed` rather than reimplementing the date comparison.
     """
-    closed, skipped = [], []
-    for ledger_dir in sorted(instances.glob("*/ledger")):
-        for path in sorted(ledger_dir.iterdir()):
-            if not path.is_file():
-                continue
-            m = LEDGER_RE.match(path.name)
-            if not m:
-                skipped.append(path)
-                continue
-            if date(int(m[1]), int(m[2]), int(m[3])) < today:
-                closed.append(path)
-    return closed, skipped
+    found, skipped = _record_files(instances)
+    return [p for p in found if _dated(p)[0] < today], skipped
+
+
+def open_files(instances: Path, today: date) -> list[Path]:
+    """Today's files — still being appended to, and committed anyway.
+
+    ⚠ **These are a BEST COPY, not a final one**, and the difference is why they are reported
+    apart from the closed days rather than merged into one list. A copy taken mid-append can end
+    in a half-written line, and the same day will be fetched again on the next run with more in
+    it. Calling both "closed" would let a torn half-day later read exactly like a whole one,
+    which is the failure the closed/open split has always existed to prevent.
+    """
+    found, _ = _record_files(instances)
+    return [p for p in found if _dated(p)[0] == today]
 
 
 def archive_logs(instances: Path, archive: Path, today: date,
                  dry_run: bool = False) -> Path | None:
-    """Snapshot every instance `.log` into one dated zip. Copies, never rotates."""
+    """Snapshot every instance `.log` into one dated zip. Copies, never rotates.
+
+    This stays even though the text logs are now committed by `ledger_sync.py`: the zip is the
+    VPS's own local safety net for the window between syncs, and it costs nothing.
+    """
     logs = sorted(p for p in instances.glob("*/*.log") if p.is_file())
     if not logs:
         return None
@@ -129,16 +182,18 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Zip and prune VPS bot logs.")
     ap.add_argument("--dry-run", action="store_true", help="report, change nothing")
     ap.add_argument("--list-closed", action="store_true",
-                    help="print closed ledger paths (relative to the instances dir) and exit")
+                    help="print closed record paths (relative to the instances dir) and exit")
+    ap.add_argument("--list-open", action="store_true",
+                    help="print TODAY's record paths — still being written — and exit")
     ap.add_argument("--keep-days", type=int, default=KEEP_DAYS)
     args = ap.parse_args(argv)
 
     today = datetime.now(timezone.utc).date()
     closed, skipped = ledger_files(INSTANCES, today)
 
-    if args.list_closed:
+    if args.list_closed or args.list_open:
         # Machine-readable and nothing else: ledger_sync.py parses this over ssh.
-        for path in closed:
+        for path in (closed if args.list_closed else open_files(INSTANCES, today)):
             print(str(path.relative_to(INSTANCES)).replace("\\", "/"))
         return 0
 
@@ -151,7 +206,8 @@ def main(argv=None) -> int:
 
     dropped = prune(ARCHIVE, today, args.keep_days, args.dry_run)
     print(f"  pruned: {len(dropped)} archive(s) older than {args.keep_days} days")
-    print(f"  ledger: {len(closed)} closed day(s) on disk, awaiting `ledger_sync.py` on the Mac")
+    print(f"  closed: {len(closed)} file(s) on disk, awaiting `ledger_sync.py` on the Mac")
+    print(f"  open:   {len(open_files(INSTANCES, today))} file(s) for today, synced as-is")
     return 0
 
 

@@ -77,6 +77,109 @@ def test_a_stray_file_is_skipped_and_named(tmp_path):
     assert [p.name for p in skipped] == ["notes.txt"]
 
 
+def test_the_health_stream_is_collected_too(tmp_path):
+    """🔴 The regression the 2026-08-05 split could most easily have shipped: the health file is
+    a SECOND filename shape, and a backup that only knew the first would have gone on reporting
+    success while never once committing the record of starts, stops and crashes. Nothing would
+    look wrong — a stream that is never fetched is indistinguishable from one never written."""
+    d = tmp_path / "bot" / "ledger"
+    d.mkdir(parents=True)
+    (d / "decisions-2026-08-14.jsonl").write_text("{}\n")
+    (d / "health-2026-08-14.jsonl").write_text("{}\n")
+    closed, skipped = log_backup.ledger_files(tmp_path, TODAY)
+
+    assert sorted(p.name for p in closed) == ["decisions-2026-08-14.jsonl",
+                                              "health-2026-08-14.jsonl"]
+    assert skipped == []
+
+
+def test_the_dated_text_log_is_collected_too(tmp_path):
+    """The prose log carries the tracebacks, and it lives in the instance dir rather than in
+    `ledger/`. It became per-day so that it could be committed at all."""
+    inst = tmp_path / "bot"
+    (inst / "ledger").mkdir(parents=True)
+    (inst / "bot-2026-08-14.log").write_text("hello\n")
+    closed, _ = log_backup.ledger_files(tmp_path, TODAY)
+
+    assert [p.name for p in closed] == ["bot-2026-08-14.log"]
+
+
+def test_todays_files_are_reported_as_OPEN_not_as_closed(tmp_path):
+    """⚠ The distinction survives the move to a 12-hourly sync rather than being dropped by it.
+    Today's file is committed now, but it is a BEST COPY that will be committed again — calling
+    it closed is what lets a torn half-day later read exactly like a whole one."""
+    d = tmp_path / "bot" / "ledger"
+    d.mkdir(parents=True)
+    (d / "decisions-2026-08-15.jsonl").write_text("{}\n")
+    (d / "decisions-2026-08-14.jsonl").write_text("{}\n")
+
+    closed, _ = log_backup.ledger_files(tmp_path, TODAY)
+    assert [p.name for p in closed] == ["decisions-2026-08-14.jsonl"]
+    assert [p.name for p in log_backup.open_files(tmp_path, TODAY)] == \
+        ["decisions-2026-08-15.jsonl"]
+
+
+def test_the_backup_reads_the_writers_own_filename_pattern():
+    """Two regexes would drift, and the drift's symptom is a whole stream that is silently never
+    committed. `log_backup` imports `STREAM_RE` from the module that WRITES the files."""
+    from ledger import STREAM_RE
+
+    assert log_backup.STREAM_RE is STREAM_RE
+
+
+# ── a file copied while it was being written (the Mac side) ────────────────────
+def test_a_torn_last_line_is_dropped_before_it_is_committed(tmp_path):
+    """Fetching today's file races the bot appending to it, so the copy can end mid-record.
+    Half a record cannot be parsed, and committing one means every later reader has to defend
+    against it."""
+    p = tmp_path / "decisions-2026-08-15.jsonl"
+    p.write_text('{"kind":"bar","i":1}\n{"kind":"bar","i":2}\n{"kind":"ba')
+    ledger_sync._whole_lines(p)
+
+    assert p.read_text() == '{"kind":"bar","i":1}\n{"kind":"bar","i":2}\n'
+
+
+def test_a_complete_last_line_without_a_newline_is_kept(tmp_path):
+    """⚠ The check is "does it parse", NOT "does it end in a newline". A write can be flushed
+    complete a moment before its newline lands, and truncating on the newline would throw away a
+    good record on every single sync — quietly, and most often the newest one."""
+    p = tmp_path / "decisions-2026-08-15.jsonl"
+    p.write_text('{"kind":"bar","i":1}\n{"kind":"bar","i":2}')
+    ledger_sync._whole_lines(p)
+
+    assert p.read_text() == '{"kind":"bar","i":1}\n{"kind":"bar","i":2}\n'
+
+
+def test_a_text_log_is_never_truncated(tmp_path):
+    """Prose is not records. Half a sentence still says what was happening, and the last line of
+    a log being written is exactly the line somebody is reading it for."""
+    p = tmp_path / "bot-2026-08-15.log"
+    p.write_text("starting up\nWarmed 5000 ba")
+    ledger_sync._whole_lines(p)
+
+    assert p.read_text() == "starting up\nWarmed 5000 ba"
+
+
+def test_the_sync_accepts_both_stream_names_and_the_text_log(monkeypatch):
+    """The path anchor was WIDENED to two shapes, not loosened. Traversal must still be
+    impossible — a filename-only check passes `../../../health-2026-08-14.jsonl`, which is a
+    perfectly valid name landing outside the repo."""
+    monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
+        a, 0, stdout="bot/ledger/decisions-2026-08-15.jsonl\n"
+                     "bot/ledger/health-2026-08-15.jsonl\n"
+                     "bot/bot-2026-08-15.log\n"
+                     "../../../../tmp/health-2026-08-15.jsonl\n"
+                     "bot/ledger/../../../etc/health-2026-08-15.jsonl\n"
+                     "bot/../../etc/bot-2026-08-15.log\n"
+                     "/etc/health-2026-08-15.jsonl\n", stderr=""))
+
+    assert ledger_sync.remote_files("host", "open") == [
+        "bot/ledger/decisions-2026-08-15.jsonl",
+        "bot/ledger/health-2026-08-15.jsonl",
+        "bot/bot-2026-08-15.log",
+    ]
+
+
 # ── the raw logs (the VPS side) ─────────────────────────────────────────────────
 def test_logs_are_copied_into_a_dated_zip(tmp_path):
     inst = tmp_path / "inst"
@@ -181,7 +284,7 @@ def test_a_ledger_file_reaches_origin(repo):
 
     out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
                          capture_output=True, text=True)
-    assert "decision record" in out.stdout
+    assert "bot record" in out.stdout
 
 
 def test_a_secret_sitting_in_the_tree_is_not_swept_in(repo):
@@ -236,12 +339,12 @@ def test_no_push_commits_locally_and_says_it_did_not_push(repo):
 
     out = subprocess.run(["git", "-C", str(repo), "log", "--oneline", "origin/main"],
                          capture_output=True, text=True)
-    assert "decision record" not in out.stdout
+    assert "bot record" not in out.stdout
 
 
 # ── the two halves agree ────────────────────────────────────────────────────────
 def test_the_sync_only_accepts_ledger_shaped_paths(repo, monkeypatch):
-    """`closed_days` validates what the VPS reports rather than trusting it.
+    """`remote_files` validates what the VPS reports rather than trusting it.
 
     Each reported line becomes a local WRITE TARGET, and the remote is a different machine
     running whatever it last pulled. The traversal case is the one that matters: a filename-
@@ -254,14 +357,14 @@ def test_the_sync_only_accepts_ledger_shaped_paths(repo, monkeypatch):
                      "bot/ledger/../../../etc/decisions-2026-08-14.jsonl\n"
                      "bot/ledger/notes.txt\n"
                      "/etc/decisions-2026-08-14.jsonl\n", stderr=""))
-    assert ledger_sync.closed_days("host") == ["bot/ledger/decisions-2026-08-14.jsonl"]
+    assert ledger_sync.remote_files("host", "closed") == ["bot/ledger/decisions-2026-08-14.jsonl"]
 
 
 def test_a_fetched_path_always_lands_inside_the_repo(repo, monkeypatch):
     """The property the shape check buys, stated directly against the write target."""
     monkeypatch.setattr(ledger_sync, "_run", lambda *a: subprocess.CompletedProcess(
         a, 0, stdout="bot/ledger/decisions-2026-08-14.jsonl\n", stderr=""))
-    for rel in ledger_sync.closed_days("host"):
+    for rel in ledger_sync.remote_files("host", "closed"):
         target = (ledger_sync.LOCAL_ARCHIVE / rel).resolve()
         assert target.is_relative_to(repo.resolve())
 

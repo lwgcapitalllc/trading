@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,9 +43,16 @@ def test_records_append_in_order(tmp_path):
 
 
 def test_the_file_is_named_by_day(tmp_path):
-    """Rotation is by day so the backup job commits a file that can never be appended to again
-    — a commit racing a write is how a log ends up with a half line in it."""
-    Ledger(tmp_path, "botA").event("x")
+    """Rotation is by day so a closed file can never be appended to again — a commit racing a
+    write is how a log ends up with a half line in it.
+
+    Both streams rotate on the same boundary (see `test_ledger_streams.py`); this pins that the
+    naming is per-day at all, from the side that reads the files back.
+    """
+    led = Ledger(tmp_path, "botA")
+    led.event("x")                                       # health
+    led.bar(SimpleNamespace(), SimpleNamespace(time_ms=1), SimpleNamespace())   # decisions
+    assert len(list(tmp_path.glob("health-????-??-??.jsonl"))) == 1
     assert len(list(tmp_path.glob("decisions-????-??-??.jsonl"))) == 1
 
 

@@ -1,10 +1,30 @@
-"""ledger_sync.py — the Mac half: fetch the bot's decision record and commit it.
+"""ledger_sync.py — the Mac half: fetch the bot's record off the VPS and commit it.
 
 Run it from the repo root, on the machine that has git credentials:
 
     python algos/tools/ledger_sync.py             # fetch, commit, push
     python algos/tools/ledger_sync.py --dry-run   # say what it would do
     python algos/tools/ledger_sync.py --no-push   # commit locally only
+    python algos/tools/ledger_sync.py --closed-only   # skip today's open files
+
+**It runs itself, twice a day.** `scripts/install_ledger_sync.sh` installs a launchd agent at
+00:05 and 12:05 local (`com.lwg.ledger-sync`), which is Aaron's requirement from 2026-08-05 —
+*"once a day is wrong, I think it should be at least twice a day."* launchd runs a missed
+calendar job when the Mac next wakes, so a closed laptop delays the backup rather than skipping
+it. ⚠ **It still only runs when this Mac is on**, and that is the honest limit of a design where
+the box holding the data is not allowed to hold a git token (see below).
+
+**Three kinds of file are fetched**, all per-day, all committed the same way:
+
+  * `<bot>/ledger/decisions-YYYY-MM-DD.jsonl` — why it traded, or did not
+  * `<bot>/ledger/health-YYYY-MM-DD.jsonl`    — starts, stops, crashes, link outages, pulses
+  * `<bot>/<bot>-YYYY-MM-DD.log`              — the prose log, where the tracebacks are
+
+**Today's files are fetched too, and they are still being written.** A copy taken mid-append can
+end in a half-written line, so `_whole_lines` truncates a trailing partial JSON line before the
+file is committed. The same day is fetched again on the next run with more in it, and git simply
+sees a longer file. ⚠ The truncation applies to the JSONL streams only — a text log's last line
+is prose, and losing a partial sentence to be tidy would be worse than committing it.
 
 **Why the pull direction.** The VPS cannot push. Its scheduled task runs as SYSTEM, SYSTEM has
 its own credential store, and Git Credential Manager there has no cached token and no
@@ -32,6 +52,7 @@ stay current. The archive mirrors the VPS layout so the two differ only by the r
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -42,16 +63,23 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from log_backup import LEDGER_RE  # noqa: E402  — one definition of a ledger filename
+from log_backup import LEDGER_RE  # noqa: E402,F401  — one definition of a ledger filename
 
-# The full shape a reported path must have: <bot>/ledger/decisions-YYYY-MM-DD.jsonl.
+# The full shape a reported path must have. Two forms, because the record lives in two places:
+#
+#   <bot>/ledger/decisions-YYYY-MM-DD.jsonl
+#   <bot>/ledger/health-YYYY-MM-DD.jsonl
+#   <bot>/<bot>-YYYY-MM-DD.log
 #
 # Checking only the FILENAME is not enough. `--list-closed` output is read from another
 # machine running whatever it last pulled, and this script turns each line into a local write
 # target — so `../../../../decisions-2026-08-14.jsonl` has a perfectly valid filename and
 # lands outside the repo entirely. Anchoring the whole path is the cheap way to make that
-# impossible rather than unlikely.
-REMOTE_PATH_RE = re.compile(r"^[A-Za-z0-9._-]+/ledger/decisions-\d{4}-\d{2}-\d{2}\.jsonl$")
+# impossible rather than unlikely, and it is why widening this to a second shape widened the
+# ANCHOR too rather than loosening it.
+REMOTE_PATH_RE = re.compile(
+    r"^[A-Za-z0-9._-]+/(?:ledger/(?:decisions|health)-\d{4}-\d{2}-\d{2}\.jsonl"
+    r"|[A-Za-z0-9._-]+-\d{4}-\d{2}-\d{2}\.log)$")
 
 REPO_ROOT = _HERE.parent.parent
 # 🔴 The archive is a SEPARATE tree from the bot's own instance directory, and that is not
@@ -77,22 +105,50 @@ def _run(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True)
 
 
-def closed_days(host: str) -> list[str]:
-    """Ask the VPS which ledger days are closed.
+def remote_files(host: str, which: str) -> list[str]:
+    """Ask the VPS which record files exist. `which` is "closed" or "open".
 
     Asking rather than re-deriving keeps "closed" defined in exactly one place. If the two
     sides ever disagreed, the way it would show up is a half-written day committed as a whole
     one — which is unreadable later and looks fine at the time.
     """
-    out = _run("ssh", host, f'{REMOTE_PYTHON} {REMOTE_SCRIPT} --list-closed')
+    out = _run("ssh", host, f'{REMOTE_PYTHON} {REMOTE_SCRIPT} --list-{which}')
     if out.returncode != 0:
-        raise RuntimeError(f"could not list closed days on {host}: {out.stderr.strip()}")
+        raise RuntimeError(f"could not list {which} files on {host}: {out.stderr.strip()}")
     return [line.strip() for line in out.stdout.splitlines()
             if REMOTE_PATH_RE.match(line.strip())]
 
 
+def _whole_lines(path: Path) -> None:
+    """Drop a trailing PARTIAL JSON line from a file copied while it was being appended to.
+
+    ⚠ **Only for the `.jsonl` streams.** Half a record is not a record — it cannot be parsed,
+    and committing it means every later reader has to defend against it. A text log is prose and
+    keeps whatever it has, because half a sentence still says what was happening.
+
+    The check is "does the last line parse", not "does it end in a newline": a write can be
+    flushed complete without its newline landing yet, and truncating that would throw away a
+    good record every single sync.
+    """
+    if path.suffix != ".jsonl" or not path.exists():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    if not lines:
+        return
+    try:
+        json.loads(lines[-1])
+    except ValueError:
+        path.write_text("".join(f"{ln}\n" for ln in lines[:-1]), encoding="utf-8")
+        return
+    # Complete last record, but possibly with no newline behind it. Normalise so the next
+    # sync's copy appends cleanly rather than producing one joined line in the diff.
+    if not text.endswith("\n"):
+        path.write_text(text + "\n", encoding="utf-8")
+
+
 def fetch(host: str, rel_paths: list[str], dry_run: bool = False) -> list[Path]:
-    """Copy each closed ledger file down into the local repo. Returns the local paths."""
+    """Copy each record file down into the local repo. Returns the local paths."""
     got = []
     for rel in rel_paths:
         local = LOCAL_ARCHIVE / rel
@@ -104,6 +160,7 @@ def fetch(host: str, rel_paths: list[str], dry_run: bool = False) -> list[Path]:
         if out.returncode != 0:
             print(f"  ! fetch failed for {rel}: {out.stderr.strip()}")
             continue
+        _whole_lines(local)
         got.append(local)
     return got
 
@@ -129,9 +186,9 @@ def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
         print("  git add failed")
         return False
 
-    days = sorted({p.stem.replace("decisions-", "") for p in paths})
-    span = days[0] if len(days) == 1 else f"{days[0]}..{days[-1]}"
-    msg = (f"chore(ledger): decision record {span}\n\n"
+    days = sorted({m[0] for p in paths for m in [re.findall(r"\d{4}-\d{2}-\d{2}", p.name)] if m})
+    span = (days[0] if len(days) == 1 else f"{days[0]}..{days[-1]}") if days else "?"
+    msg = (f"chore(ledger): bot record {span}\n\n"
            f"Fetched from the VPS by algos/tools/ledger_sync.py. {len(rel)} file(s).")
     c = _run("git", "-C", str(REPO_ROOT), "commit", "-m", msg, "--", *rel)
     if c.returncode != 0 and "nothing to commit" not in c.stdout:
@@ -148,23 +205,29 @@ def commit(paths: list[Path], push: bool, dry_run: bool = False) -> bool:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Fetch bot ledgers from the VPS and commit them.")
+    ap = argparse.ArgumentParser(description="Fetch bot records from the VPS and commit them.")
     ap.add_argument("--host", default=DEFAULT_HOST)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--no-push", action="store_true")
+    ap.add_argument("--closed-only", action="store_true",
+                    help="skip today's still-open files (the pre-2026-08-05 behaviour)")
     args = ap.parse_args(argv)
 
     today = datetime.now(timezone.utc).date()
     print(f"ledger_sync {today} from {args.host} {'(dry run)' if args.dry_run else ''}".rstrip())
 
     try:
-        rel = closed_days(args.host)
+        rel = remote_files(args.host, "closed")
+        # Today's files are the whole point of running this twice a day: without them the
+        # record still leaves the VPS exactly once, just at a different hour.
+        if not args.closed_only:
+            rel += remote_files(args.host, "open")
     except RuntimeError as e:
         print(f"  ! {e}")
         return 1
 
     if not rel:
-        print("  nothing closed yet — today's file is still being written")
+        print("  nothing on the VPS to fetch")
         return 0
 
     local = fetch(args.host, rel, args.dry_run)
@@ -180,11 +243,11 @@ def main(argv=None) -> int:
     # copy you have not made.
     todo = pending(local)
     if not todo:
-        print(f"  up to date ({len(rel)} closed day(s), all already committed)")
+        print(f"  up to date ({len(rel)} file(s) on the VPS, all already committed)")
         return 0
 
     ok = commit(todo, push=not args.no_push, dry_run=args.dry_run)
-    print(f"  {len(todo)} day(s) {'pushed' if ok else 'NOT pushed'}")
+    print(f"  {len(todo)} file(s) {'pushed' if ok else 'NOT pushed'}")
     return 0 if ok else 1
 
 

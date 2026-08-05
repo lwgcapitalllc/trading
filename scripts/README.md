@@ -9,6 +9,14 @@ the whole VPS.
 | `bootstrap_vps.ps1` | MT5 / algos side — clone, deps, MT5 check, secrets, Task Scheduler, start | elevated PowerShell |
 | `bootstrap_ninjatrader.ps1` | Futures side — NT8 + .NET check, user-folder restore, deploy `.cs`, nt8_agent deps + task, health | PowerShell as `trader` (elevated for task creation) |
 | `install_hooks.sh` | This clone's git hooks — points `core.hooksPath` at the tracked `.githooks/` | any shell, on a dev machine |
+| `install_ledger_sync.sh` | 12-hourly backup of the live bot's daily record (launchd, 00:05 + 12:05) | any shell, **on the Mac only** |
+
+`install_ledger_sync.sh` is Mac-only by necessity, not by preference: the VPS holds the data but
+cannot push, because its tasks run as SYSTEM and SYSTEM's Git Credential Manager makes `git push`
+BLOCK rather than fail. Fixing that means a GitHub write token on a box already holding a live MT5
+password. ⚠ **So the backup only runs while the Mac is on** — launchd fires a missed calendar job
+on the next wake, so a closed laptop delays it rather than skipping it. Check with
+`scripts/install_ledger_sync.sh --status`. Detail in `algos/CLAUDE.md` → *The daily record*.
 
 `install_hooks.sh` exists because `core.hooksPath` is per-clone local config that `git clone`
 does not carry, so a fresh clone commits with no checks and looks exactly like one that has

@@ -50,6 +50,7 @@ recovery re-warms through the same path a `gap_bars` overrun takes rather than r
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import signal
 import sys
@@ -80,9 +81,63 @@ _stop_requested = False
 _LINK_RETRY_SECONDS = 30
 
 
+# How often the health stream gets a `pulse` record. 15 minutes is one M15 bar, so a quiet
+# session still leaves a regular mark and a stall is visible as a gap of known size rather than
+# as an absence somebody has to interpret.
+_PULSE_SECONDS = 15 * 60
+
+
 def _handle_signal(signum, frame):
     global _stop_requested
     _stop_requested = True
+
+
+class DailyFileHandler(logging.Handler):
+    """A file handler that writes to `<bot>-YYYY-MM-DD.log`, chosen per record.
+
+    **It never renames or moves a file**, which is the whole reason it exists rather than
+    `TimedRotatingFileHandler`: the roll happens by opening a different name, so a file the bot
+    (or a zip job, or an editor) is holding open is never touched. Renaming an open file on
+    Windows raises a sharing violation — `tools/log_backup.py` carries the same rule for the
+    same reason, stated there as *"logs are COPIED, never rotated"*.
+
+    The date comes from UTC to match the ledger streams, so one day's text log and one day's
+    JSONL cover exactly the same window and can be read side by side.
+    """
+
+    def __init__(self, directory, bot_key: str) -> None:
+        super().__init__()
+        self.dir = Path(directory)
+        self.bot_key = bot_key
+        self._day = ""
+        self._stream = None
+
+    def _target(self, day: str) -> Path:
+        return self.dir / f"{self.bot_key}-{day}.log"
+
+    def emit(self, record) -> None:
+        try:
+            day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if day != self._day or self._stream is None:
+                if self._stream is not None:
+                    self._stream.close()
+                self.dir.mkdir(parents=True, exist_ok=True)
+                self._stream = self._target(day).open("a", encoding="utf-8", errors="replace")
+                self._day = day
+            self._stream.write(self.format(record) + "\n")
+            self._stream.flush()
+        except Exception:
+            # A logger that can take the bot down is worse than a missing line — the same rule
+            # `Ledger._write` follows. `handleError` respects `logging.raiseExceptions`.
+            self.handleError(record)
+
+    def close(self) -> None:
+        try:
+            if self._stream is not None:
+                self._stream.close()
+        finally:
+            self._stream = None
+            super().close()
 
 
 class LiveRunner:
@@ -97,6 +152,13 @@ class LiveRunner:
         self.feed = None
         self.bridge = None
         self.source_hash = ""
+        # Set before anything can fail, because `run()`'s exit record reads it on EVERY path —
+        # including the ones that never reach the loop.
+        self._started_at = time.time()
+        # 0.0, not `now`: the first poll should pulse immediately rather than leave the health
+        # stream silent for the first quarter hour of a run, which is exactly the window a
+        # start-up problem shows up in.
+        self._last_pulse_at = 0.0
         # Link-outage bookkeeping. `_link_lost_at` is None whenever the link is believed good,
         # so it doubles as the "have I already alerted" flag — an outage must be announced once,
         # not every ten seconds for an hour.
@@ -111,7 +173,7 @@ class LiveRunner:
 
     # ── setup ────────────────────────────────────────────────────────────────
     def _make_logger(self):
-        """This bot's own logger: a UTF-8 file in its instance dir, plus stdout.
+        """This bot's own logger: a UTF-8 file **per UTC day** in its instance dir, plus stdout.
 
         **Both streams are forced to UTF-8, and that is a correctness fix.** A Windows console
         is cp1252 and cannot encode the arrows and dashes these messages are written with. When
@@ -121,6 +183,18 @@ class LiveRunner:
         this trade not work", so a character it cannot encode has to degrade to a replacement
         glyph, never take the whole line with it.
 
+        **One file per day, and it rolls without renaming anything.** `DailyFileHandler` picks
+        its path from the UTC date at write time and reopens when that changes, so a bot running
+        across midnight lands in the new day's file on its own. The stock
+        `TimedRotatingFileHandler` renames the live file at the roll, and renaming a file
+        Windows holds open fails with a sharing violation — the same trap
+        `tools/log_backup.py` records, which is why that job COPIES logs rather than rotating
+        them. Choosing the name instead of moving the file sidesteps it entirely.
+
+        Daily files are what make the text log backup-able at all: a single ever-growing
+        `<bot>.log` has no point at which a copy is final, so it could never be committed as a
+        day's record, only re-zipped whole every night.
+
         It deliberately does NOT use `bots/bot_utils.setup_logging`. That helper keys off
         `_instance_dir` and `_config_path`, which this package has no reason to invent — the
         call here passed neither, so it raised and fell through to the fallback on every single
@@ -128,8 +202,6 @@ class LiveRunner:
         ROOT handlers for the whole process. Logging is a dozen lines; a shared helper you have
         to lie to is not sharing.
         """
-        import logging
-
         for stream in (sys.stdout, sys.stderr):
             try:
                 stream.reconfigure(encoding="utf-8", errors="replace")
@@ -142,8 +214,7 @@ class LiveRunner:
             return log
         log.setLevel(logging.INFO)
         fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-        for h in (logging.FileHandler(self.cfg.instance_dir / f"{self.cfg.bot_key}.log",
-                                      encoding="utf-8"),
+        for h in (DailyFileHandler(self.cfg.instance_dir, self.cfg.bot_key),
                   logging.StreamHandler(sys.stdout)):
             h.setFormatter(fmt)
             log.addHandler(h)
@@ -437,8 +508,49 @@ class LiveRunner:
 
     # ── the loop ─────────────────────────────────────────────────────────────
     def run(self) -> int:
+        """Start, run, and record HOW IT ENDED — on every path this process chooses.
+
+        🔴 **The exit record is what makes a silent death detectable, and it only works if it
+        is exhaustive.** Until 2026-08-05 only the clean Ctrl-C path wrote `shutdown`: a failed
+        connect (3), a halted bridge (4) and ten consecutive loop errors (6) all returned with
+        nothing said, so "the last run wrote no shutdown" meant *killed, crashed, OR one of
+        three ordinary refusals* — which is no signal at all. Now every deliberate return
+        writes one with its reason and exit code, so the invariant is exact:
+
+            **no `shutdown` record ⇒ the process was killed or the box died.**
+
+        That is the ONLY way a `taskkill /f` or a power cut can leave a trace, because the trace
+        has to be written by something still alive — the next startup, reading back.
+        """
+        code = 0
+        reason = "clean"
+        try:
+            code, reason = self._run()
+            return code
+        except BaseException as e:                       # noqa: BLE001 — re-raised below
+            # KeyboardInterrupt and SystemExit are BaseExceptions and are how this process most
+            # often ends by hand. They are an ENDING, not a crash to be swallowed, so the record
+            # is written and the exception continues on its way.
+            code, reason = 1, f"{type(e).__name__}: {e}"
+            raise
+        finally:
+            self._record_exit(code, reason)
+
+    def _record_exit(self, code: int, reason: str) -> None:
+        """Write the run's closing line. Best-effort by design — a logging failure must not be
+        able to change the exit code of a trading process."""
+        try:
+            self.ledger.event("shutdown", exit_code=code, reason=reason,
+                              uptime_seconds=round(time.time() - self._started_at))
+        except Exception as e:                           # pragma: no cover - defensive
+            self.log.warning(f"Could not write the shutdown record: {e}")
+
+    def _run(self) -> tuple[int, str]:
         if self.already_running():
-            return 0        # not a failure — the bot IS running, just not as this process
+            # Not a failure — the bot IS running, just not as this process. It is still an
+            # exit worth recording: a start that declined to start is exactly the event
+            # somebody is looking for when they ask why a restart "did nothing".
+            return 0, "another copy of this bot is already running"
         commit = current_commit(self.cfg.repo_root)
         try:
             self._bind_code()
@@ -450,7 +562,7 @@ class LiveRunner:
             self.ledger.event("version_mismatch", detail=str(e))
             self._notify(f"⛔️ *{self.cfg.display_name}* refused to start — the deployed code is "
                          f"not the version it was promoted to run.")
-            return 2
+            return 2, "version pin mismatch"
         if not self.cfg.strategy_source_hash:
             self.log.warning(
                 f"UNPINNED: this bot has no strategy_source_hash, so nothing checks what it is "
@@ -468,14 +580,26 @@ class LiveRunner:
             f"| hash {self.source_hash[:12]} | commit {commit or '?'} "
             f"| {'frozen' if self.cfg.is_frozen else 'REPO'} "
             f"| {'DRY RUN' if self.dry_run else 'LIVE'}")
+        # 🔴 How the PREVIOUS run ended, recorded on this run's first line. `None` means
+        # nothing on record (first ever start, or an unreadable file) and is NOT the same as
+        # clean — an unreadable health file must never produce the reassuring answer.
+        prev_clean = self.ledger.previous_run_was_clean()
+        if prev_clean is False:
+            last = self.ledger.last_run_status() or {}
+            self.log.warning(
+                f"The previous run of this bot ended WITHOUT a shutdown record — its last "
+                f"lifecycle line was {last.get('event')!r} at {last.get('ts')}. It was killed, "
+                f"it crashed, or the box went down. Nothing else records that.")
+
         self.ledger.event("startup", version=self.cfg.strategy_version, hash=self.source_hash,
                           commit=commit, dry_run=self.dry_run, symbol=self.cfg.symbol,
                           timeframe=self.cfg.timeframe, account=self.cfg.account,
-                          mt5_path=self.cfg.mt5_path)
+                          mt5_path=self.cfg.mt5_path,
+                          previous_run_clean=prev_clean, pid=os.getpid())
 
         if not self.connect():
             self.log.error("Could not connect to MT5 — see the attempts above.")
-            return 3
+            return 3, "could not connect to MT5"
 
         try:
             self.strategy, scfg = self._build_strategy()
@@ -484,14 +608,14 @@ class LiveRunner:
                                       notify=self._notify, dry_run=self.dry_run)
             self.bridge.adopt_broker_state()
             if self.bridge.state is BridgeState.HALTED:
-                return 4
+                return 4, "bridge halted while adopting the broker's state"
             self.warm()
             self.bridge.begin_live()
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")
             self.ledger.event("startup_failed", error=str(e))
             self._notify(f"⛔️ *{self.cfg.display_name}* failed to start: {e}")
-            return 5
+            return 5, f"startup failed: {e}"
 
         self._notify(
             f"🟢 *{self.cfg.display_name}* online\n"
@@ -501,7 +625,7 @@ class LiveRunner:
 
         return self._loop()
 
-    def _loop(self) -> int:
+    def _loop(self) -> tuple[int, str]:
         import bot_state
         self.log.info(f"Watching for closed {self.cfg.timeframe} bars "
                       f"(poll {self.cfg.poll_seconds}s). Ctrl-C to stop.")
@@ -586,7 +710,7 @@ class LiveRunner:
                                 self._notify(
                                     f"⛔️ *{self.cfg.display_name}* stopping — 10 bars in a row "
                                     f"failed to process. A re-warm is not fixing it. Last: {e}")
-                                return 6
+                                return 6, f"10 consecutive bar errors, last: {e}"
                             break
 
                     self._maybe_reload_runtime()
@@ -596,6 +720,7 @@ class LiveRunner:
                 # as the wrong failure — but the state file has to say which of the two it is,
                 # or a blank balance is again the only symptom of a bot that cannot see.
                 self._heartbeat(bot_state, link_up=link_up, balance=balance)
+                self._maybe_pulse(link_up=link_up, balance=balance)
                 consecutive_errors = 0
             except Exception as e:
                 consecutive_errors += 1
@@ -604,17 +729,46 @@ class LiveRunner:
                 if consecutive_errors >= 10:
                     self._notify(f"⛔️ *{self.cfg.display_name}* stopping — 10 consecutive loop "
                                  f"errors. Last: {e}")
-                    return 6
+                    return 6, f"10 consecutive loop errors, last: {e}"
             time.sleep(self.cfg.poll_seconds)
 
         self.log.info("Stop requested — shutting down.")
-        self.ledger.event("shutdown")
         self._notify(f"⏹ *{self.cfg.display_name}* stopped")
         try:
             self.mt5.disconnect()
         except Exception:
             pass
-        return 0
+        # `run()`'s `finally` writes the shutdown record for every path, this one included —
+        # writing it here too would put two closing lines on the one clean exit and make the
+        # count of runs disagree with the count of stops.
+        return 0, "stop requested"
+
+    def _maybe_pulse(self, *, link_up: bool | None, balance: float | None) -> None:
+        """Write a `pulse` to the health stream on a fixed cadence.
+
+        ⚠ **The cadence is the feature.** Every other record here is written because something
+        happened, so a quiet weekend and a wedged process produce identical files. A pulse every
+        `_PULSE_SECONDS` means the health stream has a known rhythm, and a missing beat is a
+        measurable fact — which is what the 50-minute blind outage on 2026-08-04 had no way to
+        leave behind. It carries the same values the heartbeat writes to `bot_state.json`,
+        because that file is overwritten in place: it can say the bot is blind NOW and can never
+        say for how long, or that it happened at all once it recovers.
+        """
+        now = time.time()
+        if now - self._last_pulse_at < _PULSE_SECONDS:
+            return
+        self._last_pulse_at = now
+        self.ledger.pulse(
+            link=bool(link_up), balance=balance,
+            bridge_state=self.bridge.state.value if self.bridge else None,
+            position=bool(getattr(self.bridge, "_pos_ticket", 0)) if self.bridge else None,
+            last_bar=str(self.feed.last_bar_time) if self.feed and self.feed.last_bar_time
+            else None,
+            bars_seen=self._bar_index,
+            gap_bars=self.feed.gap_bars() if self.feed else None,
+            uptime_seconds=round(now - self._started_at),
+            dry_run=self.dry_run,
+        )
 
     def _on_bar(self, row) -> None:
         """One closed bar: engines → strategy → broker → log. This ordering is the whole

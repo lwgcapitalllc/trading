@@ -72,7 +72,11 @@ def test_a_line_the_console_cannot_encode_is_still_written(tmp_path, monkeypatch
     for h in r.log.handlers:
         h.flush()
 
-    written = (cfg.instance_dir / f"{cfg.bot_key}.log").read_text(encoding="utf-8")
+    # One text log per UTC day (`DailyFileHandler`) — the name is not fixed, so read whichever
+    # one this run landed in rather than restating today's date here.
+    logs = sorted(cfg.instance_dir.glob(f"{cfg.bot_key}-????-??-??.log"))
+    assert len(logs) == 1, f"expected one dated log, found {[p.name for p in logs]}"
+    written = logs[0].read_text(encoding="utf-8")
     assert "Warmed 5000 bars" in written
     assert "holding a position" in written      # the END of the line survived, not just the start
 

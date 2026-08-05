@@ -72,7 +72,7 @@ comparable to a backtest result.
 | `runner.py` | The loop — connect, verify the version pin, warm the engines, **probe the terminal link**, poll for a CLOSED bar, step, reconcile, heartbeat. `--dry-run` is the default; `--live` must be typed. The link probe is first on every pass and is `account_info()`, never a bar read — see the 2026-08-04 entry above. |
 | `bridge.py` | Strategy intent ⇄ MT5 orders. Places/moves/cancels the resting limit, ratchets the stop, reports fills, and **HALTS when the emulator and the broker disagree** rather than continuing on a fiction. |
 | `feed.py` | MT5 rates → the canonical replay frame. Never hands over the forming bar; reports how far behind it is so a gap re-warms instead of resuming. |
-| `ledger.py` | Append-only JSONL: one record per bar, per blocked/missed setup, per trade open/close. This is what makes "why did this not work" answerable later. |
+| `ledger.py` | Append-only JSONL in **two streams that never overlap** — `decisions-*.jsonl` (bar, blocked, missed, trade, order events) answers *why did it trade or not*; `health-*.jsonl` (starts, stops, crashes, link outages, re-warms, config changes, `pulse`) answers *is the process alive*. See `## The daily record` below. |
 | `live_config.py` | One bot's instance config — which terminal, which account, which symbol, which version. Named `live_config` because bare `config` shadows the backend's. |
 | `version.py` | The content pin. Re-hashes the strategy package at startup and refuses to run code that was never promoted. |
 
@@ -417,10 +417,10 @@ honestly and sends nothing rather than failing every five minutes). Check with
 
 **`SYS_LOGBACKUP` is ON as of 2026-07-31.** Daily 00:30 UTC (the VPS clock is UTC), runs
 `tools/log_backup.py`: zips the instance `.log` files into `algos/log_archive/`, prunes past 90
-days, reports closed ledger days. **It does no git** — see the SYSTEM-cannot-push note above. The
-ledger reaches the repo when `algos/tools/ledger_sync.py` is run **on the Mac**, which means the
-decision record is on one disk until someone runs it. Logs are COPIED, never rotated: the bot holds
-its log open and renaming an open file on Windows fails.
+days, reports closed AND open record files. **It does no git** — see the SYSTEM-cannot-push note
+above. The record reaches the repo via `algos/tools/ledger_sync.py` on the Mac, which since
+2026-08-05 runs **itself, every 12 hours** under launchd — see `### The daily record` below. Logs
+are COPIED, never rotated: the bot holds its log open and renaming an open file on Windows fails.
 
 **`SYS_PNLTRACKER` and `SYS_REPORTER` no longer exist — deleted 2026-08-05, tasks and scripts
 both.** They had sat here as "deliberately disabled, waiting for a bot registry", which is what
@@ -454,6 +454,83 @@ so, because a missing alarm is silent by construction. Both are in the list now.
 **The standing lesson: a job that is "disabled until later" and a job that does nothing are
 indistinguishable from the outside, and the label protects the second one.** Before switching any
 disabled task on, read what it would do with today's registries — not what its name says it does.
+
+### The daily record — two streams, and what makes a silent death visible
+
+**Built 2026-08-05 to Aaron's spec:** every day must carry (a) enough about the bot's *health* that
+a bug or a silent death is readable from the logs, and (b) everything about *trades* — taken,
+skipped, blocked, and why — with **nothing overlapping between the two**. Both go to GitHub twice
+a day.
+
+**Three files per bot per UTC day**, all rotating on the same boundary so they read side by side:
+
+| file | question it answers | contents |
+|---|---|---|
+| `<inst>/ledger/decisions-YYYY-MM-DD.jsonl` | why did it trade, or not | `bar` (one per closed bar: stages, arms, edges, vetoes, stop, TP ladder), `blocked`, `missed`, `trade` open/close, and the broker-facing order events (`order_placed`, `order_refused`, `order_too_small`, `stop_moved`, `dry_run_action`, `warmup_position_skipped`) |
+| `<inst>/ledger/health-YYYY-MM-DD.jsonl` | is the process alive and behaving | `startup` / `shutdown` / `startup_failed` / `version_mismatch`, `warmed`, `rewarm`, `mt5_link_lost` / `_restored`, `bar_error`, `loop_error`, `config_applied` / `_refused`, `halted`, `went_live`, and a `pulse` every 15 min |
+| `<inst>/<bot>-YYYY-MM-DD.log` | the prose, with the tracebacks | the human log; per-day since this pass, via `runner.DailyFileHandler` |
+
+**The dividing line is the SUBJECT, not the severity.** A record about a setup or an order is a
+decision; a record about the process that runs them is health. That is why `order_refused` (the
+broker declined a real order) is a decision and `halted` (the bridge stopped placing anything) is
+health — one answers *why no trade on that setup*, the other *why no trading at all*.
+
+⚠ **Routing is ONE dict (`ledger._DECISION_EVENTS`) and it is TEST-ENFORCED.**
+`tests/test_ledger_streams.py` greps every `ledger.event("...")` call in `algos/live/` and fails if
+the name is not classified, in **both** directions — an unrouted event would fall into health and
+read as a process fault, and a rule for an event nobody writes any more is documentation of
+behaviour that does not exist. Same shape as the news calendar's matches-nothing guard.
+
+🔴 **The two mechanisms that make a silent death visible, because every failure worth catching here
+produces NO OUTPUT.** A killed process writes nothing. A wedged loop writes nothing. A quiet Sunday
+writes nothing too — which is why "the file is short today" was never a signal.
+
+1. **Every exit the process CHOOSES writes a `shutdown` record**, with its reason and exit code,
+   from `run()`'s `finally`. That is what makes the converse informative:
+   **no `shutdown` record ⇒ it was killed or the box died.** ⚠ Until this pass only the clean
+   Ctrl-C path wrote one — a failed connect (3), a halted bridge (4) and ten consecutive loop
+   errors (6) all returned in silence, so the absence meant *killed, crashed, OR one of three
+   ordinary refusals*, i.e. no signal at all. The startup of the NEXT run reads it back
+   (`previous_run_clean`) and logs a warning, because **the trace of a hard kill has to be written
+   by something still alive.** `None` there means UNKNOWN — a first-ever start or an unreadable
+   file — and is deliberately not `True`, the same three-state rule as `mt5_link`.
+2. **A `pulse` every 15 minutes** carrying link, balance, bridge state, position, last bar, bars
+   seen, gap and uptime. ⚠ **The cadence IS the feature**: it is the one record whose *absence* is
+   the signal, so a stall becomes a gap of known size instead of an absence somebody has to
+   interpret. It is not the same thing as `bot_state.json`'s heartbeat — that file is overwritten
+   in place, so it can say the bot is blind NOW and can never say for how long, or that it happened
+   at all once it recovers. That is exactly what the 50-minute outage on 2026-08-04 left behind.
+
+**Backup runs every 12 hours, on the Mac.** `scripts/install_ledger_sync.sh` installs a launchd
+agent (`com.lwg.ledger-sync`) at **00:05 and 12:05 local**, running `tools/ledger_sync.py`: it asks
+the VPS for its closed and open files (`log_backup.py --list-closed` / `--list-open`), scp's them
+into `algos/ledger_archive/`, and commits. ⚠ **Today's files are fetched too and are still being
+written**, so `_whole_lines` drops a trailing partial JSON line before committing — the check is
+*does the last line parse*, never *does it end in a newline*, because a record can be flushed
+complete a moment before its newline lands and truncating on the newline would silently discard the
+newest record on every sync. Text logs are never truncated: prose is not records.
+
+⚠ **`closed` and `open` stay separate concepts even though both are now committed.** A closed day
+is final; an open one is the best copy so far and will be fetched again. Merging them is what lets
+a torn half-day later read exactly like a whole one.
+
+⚠ **The VPS still does not push, and must not be made to.** Its tasks run as SYSTEM, whose Git
+Credential Manager has no token and no interactive session, so `git push` BLOCKS rather than
+failing (measured 2026-07-31). Fixing that means a GitHub write token on a box already holding a
+live MT5 password. **The honest cost of the Mac-side design: the backup runs only when this Mac is
+on.** launchd fires a missed calendar job on the next wake, so a closed laptop delays rather than
+skips — but a Mac off for three days is three days of record on one disk.
+
+⚠ **The text log rolls by choosing a NAME, never by renaming** (`runner.DailyFileHandler`).
+`TimedRotatingFileHandler` renames the live file, and renaming a file Windows holds open fails with
+a sharing violation — the same trap `log_backup.py` records as *"logs are COPIED, never rotated"*.
+
+⚠ **`log_backup.py` imports `STREAM_RE` from `live/ledger.py` rather than restating it.** Two copies
+of the filename pattern drift, and the drift's symptom is a whole stream that is silently never
+committed — which looks exactly like a stream that was never written.
+
+Tests: `tests/test_ledger_streams.py` (12), `tests/test_live_health_stream.py` (13, **12 watched
+red against HEAD** before the fix), `tests/test_log_backup.py` (26).
 
 ### Registering a bot — the five registries, and the crash if you miss one
 
