@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+#
+# Runs after every `git pull` / `git merge` that this clone actually completes.
+#
+# Two jobs:
+#   1. Re-assert the hook install. Cheap, silent when nothing changed, and it
+#      catches the case where somebody unset core.hooksPath or a new hook file
+#      arrived in the pull without the executable bit.
+#   2. SAY SO when the pull changed the commit rules themselves, because a rule
+#      that changes under you without a word is how a refusal reads as a bug.
+#
+# ⚠ This cannot help a FRESH CLONE — no hook of ours is active until
+# core.hooksPath is set, and git will not run repo code on clone. The clone case
+# is covered at the other entry points (./go, conftest.py, the Claude Code
+# SessionStart hook), all of which call the same installer.
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+[ -x "$ROOT/scripts/install_hooks.sh" ] && "$ROOT/scripts/install_hooks.sh" --quiet
+
+# ORIG_HEAD is where this clone was before the pull.
+RULES="$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null | grep -E '^(\.githooks/|scripts/install_hooks\.sh$)' || true)"
+if [ -n "$RULES" ]; then
+  echo ""
+  echo "  This pull changed the commit rules. They are live in this clone already:"
+  printf '%s\n' "$RULES" | sed 's/^/      /'
+  echo ""
+  echo "  What they do: a commit is refused when it changes code and leaves the"
+  echo "  owning CLAUDE.md untouched. Root CLAUDE.md -> ## Committing"
+  echo ""
+fi
+
+exit 0

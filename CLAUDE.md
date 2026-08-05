@@ -170,11 +170,39 @@ fix(chart): correct a comment typo
 DOCS: none - comment only, no behaviour change
 ```
 
+### Getting it switched on — four tripwires, because nothing runs on clone
+
 ⚠ **The hook lives in `.githooks/` and is switched on by `core.hooksPath`, which is per-clone
-LOCAL config that `git clone` does not carry.** `./go` sets it on every run, or run
-`./scripts/install_hooks.sh` once. A clone that has run neither is not protected, and it will
-look identical to one that is — so if you have just cloned, run one of them before your first
-commit.
+LOCAL config that `git clone` does not carry.** A fresh clone is unprotected and looks
+IDENTICAL to a protected one — measured, not assumed: a clone of this repo committed a code
+change with no doc and no complaint.
+
+**Git will not execute repo code on clone or fetch**, and that is a security property, not an
+oversight — so no hook of ours can fire first. The answer is to check at every entry point
+somebody plausibly uses first. All four call the one installer, `scripts/install_hooks.sh`,
+which is **silent when nothing needs doing** and speaks up only when it just installed:
+
+| Tripwire | Fires when | Catches |
+|---|---|---|
+| `.githooks/post-merge` | every `git pull` / merge | drift, an unset config, a hook arriving without its executable bit |
+| `.claude/settings.json` → `SessionStart` | every Claude Code session in this repo | **a fresh clone** — neither of us works here without Claude |
+| `conftest.py` | any `pytest` run | a fresh clone, before the suite runs |
+| `./go` | every launch of the command center | a fresh clone |
+
+`post-merge` also **says so when the pull changed the rules themselves** (`.githooks/` or the
+installer), because a rule that changes under you without a word makes the next refusal read
+as a bug.
+
+⚠ **`post-merge` cannot cover the clone case and must not be read as if it does** — it is the
+one tripwire that requires the hooks to already be installed. The clone is covered by the
+other three, and they are three rather than one because each only fires if you happen to do
+that thing first.
+
+⚠ **The pytest notice is suppressed by `pytest -q`** (which hides the header). The install
+still happens; only the message is hidden. Run plain `pytest` to see it.
+
+⚠ **A hook that is not executable is skipped by git in silence** — same "looks installed, does
+nothing" shape one level down. The installer chmods every hook every run.
 
 ## Branches
 

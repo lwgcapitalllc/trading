@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "d=\"$(git rev-parse --show-toplevel 2>/dev/null)\"; [ -n \"$d\" ] && [ -x \"$d/scripts/install_hooks.sh\" ] && \"$d/scripts/install_hooks.sh\" --quiet || true",
+            "timeout": 15,
+            "statusMessage": "Checking git hooks"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(cd:*)",

@@ -57,14 +57,14 @@ fi
 
 # ── 3. Git hooks ──────────────────────────────────────────────────────────────
 # .git/hooks is not tracked, so a hook written on one machine does not exist on
-# the other — which is the failure the hook itself is about. Point git at the
-# tracked .githooks/ folder instead, on every machine, every run.
-if [ "$(git -C "$ROOT" config core.hooksPath)" = ".githooks" ]; then
+# the other — which is the failure the hook itself is about. The installer points
+# git at the tracked .githooks/ folder; it is the single place that logic lives,
+# and it also runs from the post-merge hook, conftest.py and Claude Code.
+HOOKS_OUT="$("$ROOT/scripts/install_hooks.sh" --quiet 2>&1 || true)"
+if [ -z "$HOOKS_OUT" ]; then
   ok "git hooks installed (.githooks)"
 else
-  git -C "$ROOT" config core.hooksPath .githooks
-  chmod +x "$ROOT"/.githooks/* 2>/dev/null || true
-  ok "git hooks installed - commits now require the matching CLAUDE.md"
+  printf '%s\n' "$HOOKS_OUT"
 fi
 
 # ── 4. Directories the app writes into ────────────────────────────────────────
