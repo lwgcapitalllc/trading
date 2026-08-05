@@ -25,6 +25,31 @@ export const IMPACT_LABEL: Record<Impact, string> = {
 export const fmtTime = (ms: number) =>
   new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+/** Local midnight on the Monday of the week `offset` weeks from today.
+ *
+ * ⚠ ONE definition, used by the Calendar page AND the Overview preview, because the pair
+ * `(weekStart, weekEnd)` IS the calendar query's cache key: the two pages agreeing to the
+ * millisecond is what makes them share a single 33 KB fetch instead of issuing two. A second
+ * private copy would look identical and split the cache the day either one drifted. */
+export function localWeekStart(offset = 0): number {
+  const d = new Date()
+  const mondayIdx = (d.getDay() + 6) % 7 // 0 = Monday
+  d.setHours(0, 0, 0, 0)
+  d.setDate(d.getDate() - mondayIdx + offset * 7)
+  return d.getTime()
+}
+
+/** Local midnight on the Monday AFTER the week starting at `fromMs`.
+ *
+ * ⚠ Date arithmetic, never `fromMs + 7 * 86_400_000`: a week containing a DST changeover is
+ * 7 days ± an hour, so the constant lands at 23:00 or 01:00 and the window loses or borrows
+ * an hour of events twice a year. */
+export function localWeekEnd(fromMs: number): number {
+  const d = new Date(fromMs)
+  d.setDate(d.getDate() + 7)
+  return d.getTime()
+}
+
 export function fmtCountdown(deltaMs: number): string {
   const s = Math.max(0, Math.floor(deltaMs / 1000))
   const h = Math.floor(s / 3600)

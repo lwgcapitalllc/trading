@@ -4,7 +4,10 @@ interface StatCardProps {
   label: string
   value: ReactNode
   sub?: ReactNode
-  subVariant?: 'pos' | 'neg' | 'neutral'
+  /** `warn` is for a state that is neither healthy nor failed — a bot that is running but
+   *  blind, a balance the fleet could not fully report. Painting either of those `neg` claims
+   *  a failure, and `neutral` hides it. */
+  subVariant?: 'pos' | 'neg' | 'neutral' | 'warn'
   onClick?: () => void
   disabled?: boolean
 }
@@ -13,6 +16,7 @@ export function StatCard({ label, value, sub, subVariant = 'neutral', onClick, d
   const subColor = {
     pos: 'text-pos-text',
     neg: 'text-neg-text',
+    warn: 'text-warn-text',
     neutral: 'text-text-tertiary',
   }[subVariant]
 

@@ -1,25 +1,31 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bot, Radar, FlaskConical, BookOpen, ClipboardList, BarChart2, Sliders, Activity, CalendarDays, ChevronRight, Loader2 } from 'lucide-react'
+import { Bot, Radar, FlaskConical, BookOpen, ClipboardList, BarChart2, Sliders, Activity, CalendarDays, ChevronRight, Loader2, Unplug, AlertCircle } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useBotSnapshot } from '@/hooks/useBots'
 import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import { useBacktestRuns, useStrategies, useOptimizations, useRulesets } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
-import { useCalendar } from '@/hooks/useCalendar'
+import { useCalendar, useServerClock } from '@/hooks/useCalendar'
 import { FEATURES } from '@/lib/features'
-import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown } from '@/lib/calendar'
+import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown, localWeekStart, localWeekEnd } from '@/lib/calendar'
 import { StatCard } from '@/components/StatCard'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import RobustnessGradeBadge from '@/components/RobustnessGradeBadge'
-import type { BotStatus } from '@/types'
+import type { BotStatus, BacktestSummary } from '@/types'
 
-const DAY_MS = 86_400_000
+/** A "best result" needs a sample size behind it or profit factor ranks luck.
+ *
+ * Two trades at PF 8.0 outrank two hundred at PF 2.0, and PF has no opinion about which is the
+ * better strategy. Same floor, and the same reasoning, as the optimizer modal's `min_trades`
+ * default — a run under it still exists and is still one click away in Runs; it just cannot be
+ * held up here as the best thing the lab has produced. */
+const MIN_TRADES_FOR_BEST = 30
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function relativeTime(dt: string | Date): string {
-  const diff = Date.now() - new Date(dt).getTime()
+function relativeTime(dt: string | Date, nowMs: number): string {
+  const diff = nowMs - new Date(dt).getTime()
   const mins = Math.floor(diff / 60_000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
@@ -33,6 +39,14 @@ function fmt$(n: number): string {
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+/** Profit factor is `gross win / gross loss`, so a run with no losing trade divides by zero.
+ *  JSON cannot carry Infinity, so it arrives as null or a huge float depending on the writer —
+ *  either way `toFixed` on it is a number nobody can read. */
+function fmtPf(pf: number | null | undefined): string {
+  if (pf == null || !Number.isFinite(pf)) return '∞'
+  return pf.toFixed(2)
+}
+
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
 function StatusPill({ status }: { status: string }) {
@@ -43,6 +57,26 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
       {label}
+    </span>
+  )
+}
+
+/** Running, but not talking to its terminal — the same chip the Bots page draws, for the same
+ *  reason, and it has to be on BOTH pages: the incident it exists for (MetaTrader auto-updated
+ *  under the live bot on 2026-08-04 and it sat blind for 50 minutes) presented as a healthy
+ *  RUNNING row, and this page is the one a reader checks first.
+ *
+ *  ⚠ It sits BESIDE the Running pill, never instead of it — the process being ALIVE and being
+ *  BLIND are both true and are different facts. ⚠ `=== false`, never falsy: `null` means the
+ *  bot has not stamped a link state, which is not the claim "disconnected". */
+function NoLinkChip() {
+  return (
+    <span
+      title="The bot is running but its MT5 terminal is not answering, so it is receiving no bars. It retries every 30s; if this persists, restart the bot."
+      className="inline-flex items-center gap-[3px] text-[9px] font-semibold px-[5px] py-[1px]
+                 rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text cursor-default"
+    >
+      <Unplug size={8} /> No link
     </span>
   )
 }
@@ -69,16 +103,30 @@ function BotRow({ bot }: { bot: BotStatus }) {
           locked
         </span>
       )}
+      {bot.mt5_link === false && <NoLinkChip />}
       <StatusPill status={bot.status} />
     </div>
   )
 }
 
 function JobPill({ job }: { job: { name: string; status: string } }) {
-  const running = job.status === 'RUNNING'
-  const dotCls  = running ? 'bg-pos shadow-[0_0_5px_#00ff7f]' : 'bg-gold shadow-[0_0_5px_#d9a441]'
-  const textCls = running ? 'text-pos-text' : 'text-gold-text'
-  const tip     = running ? 'Running' : 'Scheduled — waiting for next trigger'
+  const running  = job.status === 'RUNNING'
+  // Switched off on purpose gets NO glow and no gold. A "waiting for next trigger" pill on a task
+  // that will never fire says the job is covered when it isn't — and two of the three jobs on the
+  // box are disabled today. Mirrors `JobDot` on the Bots page, deliberately word for word.
+  const disabled = job.status === 'DISABLED'
+  const dotCls =
+    running  ? 'bg-pos shadow-[0_0_5px_#00ff7f]' :
+    disabled ? 'bg-text-tertiary/40' :
+               'bg-gold shadow-[0_0_5px_#d9a441]'
+  const textCls =
+    running  ? 'text-pos-text' :
+    disabled ? 'text-text-tertiary' :
+               'text-gold-text'
+  const tip =
+    running  ? 'Running' :
+    disabled ? 'Disabled — will not run until re-enabled on the VPS' :
+               'Scheduled — waiting for next trigger'
   return (
     <span title={tip} className={`inline-flex items-center gap-[4px] mr-[10px] text-[11px] cursor-default ${textCls}`}>
       <span className={`inline-block w-[5px] h-[5px] rounded-full flex-shrink-0 ${dotCls}`} />
@@ -175,58 +223,100 @@ export function Overview() {
   const personalRulesets = rulesets?.filter(r => r.ruleset_type === 'personal' || r.ruleset_type === 'demo').length ?? 0
   const propRulesets = (rulesets?.length ?? 0) - personalRulesets
 
-  // Standalone runs only (exclude optimization children)
-  const standaloneRuns = backtestRuns?.filter(r => !r.optimization_id) ?? []
-  const totalStandaloneRuns = standaloneRuns.length
-  const latestBacktest = standaloneRuns[0] ?? null
+  // Standalone runs only (exclude optimization children). Memoized because the page re-renders
+  // once a second to keep the calendar countdown honest, and these walk every run in the lab.
+  const {
+    totalStandaloneRuns, latestBacktest, bestRun, tier1Count, runningBacktests,
+  } = useMemo(() => {
+    const standalone = backtestRuns?.filter(r => !r.optimization_id) ?? []
+    // Ranked on profit factor, but only among runs with a real sample behind them — see
+    // MIN_TRADES_FOR_BEST. `!Number.isFinite` keeps a no-losing-trade run (PF ∞) eligible.
+    const ranked = standalone
+      .filter(r => r.status === 'complete'
+        && r.profit_factor != null
+        && (r.trade_count ?? 0) >= MIN_TRADES_FOR_BEST)
+      .sort((a, b) => {
+        const pf = (r: BacktestSummary) => (Number.isFinite(r.profit_factor!) ? r.profit_factor! : Infinity)
+        return pf(b) - pf(a)
+      })
+    return {
+      totalStandaloneRuns: standalone.length,
+      latestBacktest: standalone[0] ?? null,
+      bestRun: ranked[0] ?? null,
+      tier1Count: standalone.filter(r => r.worthiness?.tier === 'TIER_1_STRESS_TEST').length,
+      runningBacktests: standalone.filter(r => r.status === 'running').length,
+    }
+  }, [backtestRuns])
 
   const totalOptimizations = optimizations?.length ?? 0
   const runningOpt = optimizations?.find(o => o.status === 'running') ?? null
 
-  // Best result across all complete standalone runs
-  const bestRun = standaloneRuns
-    .filter(r => r.status === 'complete' && r.profit_factor != null)
-    .sort((a, b) => (b.profit_factor ?? 0) - (a.profit_factor ?? 0))[0] ?? null
+  const { robustCount, bestGrade, runningStressTest } = useMemo(() => {
+    const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
+    const completed = stressTests?.filter(s => s.grade != null) ?? []
+    return {
+      robustCount: completed.filter(s => s.grade === 'A' || s.grade === 'B').length,
+      bestGrade: (completed.length > 0
+        ? completed.reduce((best, s) =>
+            GRADE_ORDER.indexOf(s.grade!) < GRADE_ORDER.indexOf(best) ? s.grade! : best,
+            'F' as 'A' | 'B' | 'C' | 'D' | 'F')
+        : null) as 'A' | 'B' | 'C' | 'D' | 'F' | null,
+      runningStressTest: stressTests?.some(s => s.status.startsWith('running')) ?? false,
+    }
+  }, [stressTests])
 
-  const tier1Count = standaloneRuns.filter(r => r.worthiness?.tier === 'TIER_1_STRESS_TEST').length
-
-  const GRADE_ORDER = ['A', 'B', 'C', 'D', 'F']
-  const completedTests = stressTests?.filter(s => s.grade != null) ?? []
-  const robustCount = completedTests.filter(s => s.grade === 'A' || s.grade === 'B').length
-  const bestGrade: 'A' | 'B' | 'C' | 'D' | 'F' | null = completedTests.length > 0
-    ? completedTests.reduce((best, s) =>
-        GRADE_ORDER.indexOf(s.grade!) < GRADE_ORDER.indexOf(best) ? s.grade! : best,
-        'F' as 'A' | 'B' | 'C' | 'D' | 'F')
-    : null
-  const runningStressTest = stressTests?.some(s => s.status === 'running' || s.status === 'running_wf' || s.status === 'running_sens') ?? false
-
-  const runningBots  = snapshot?.bots.filter(b => b.status === 'RUNNING').length ?? 0
-  const totalBots    = snapshot?.bots.length ?? 0
-  const totalBalance = snapshot?.bots.reduce((s, b) => s + (b.balance ?? 0), 0) ?? 0
-  const accountType  = snapshot?.bots[0]?.account_type ?? 'demo'
+  const bots         = snapshot?.bots ?? []
+  const runningBots  = bots.filter(b => b.status === 'RUNNING').length
+  const totalBots    = bots.length
+  // A bot whose process is alive but whose terminal is not answering. It is RUNNING and it is
+  // trading nothing, so a stat card calling the fleet healthy is wrong — see `NoLinkChip`.
+  const blindBots    = bots.filter(b => b.mt5_link === false).length
+  // ⚠ Sum only what was actually REPORTED, and say how many were not. `?? 0` folds "this bot
+  // could not tell me" into the total as a real zero, which understates the fleet with nothing
+  // on screen to show for it — the same "no data ≠ cannot ask" rule the link chip exists for.
+  const reportedBal  = bots.filter(b => b.balance != null)
+  const totalBalance = reportedBal.reduce((s, b) => s + (b.balance ?? 0), 0)
+  const unreported   = totalBots - reportedBal.length
+  const liveBots     = bots.filter(b => b.account_type === 'live').length
+  const accountLabel = totalBots === 0 ? ''
+    : liveBots === 0        ? 'demo account'
+    : liveBots === totalBots ? 'live account'
+    : `${liveBots} live · ${totalBots - liveBots} demo`
+  // TanStack keeps the last good snapshot through a failed refetch, so an error and real rows
+  // render together. Say WHEN the rows were true rather than leaving them looking live.
+  const snapshotStale = botsError && !!snapshot
 
   const pipelineRunning = progress?.status === 'running'
 
-  // Economic calendar — a preview of what's still to come this week (whole week fetched, filtered here)
-  const calWindow = useMemo(() => {
-    const d = new Date()
-    const mondayIdx = (d.getDay() + 6) % 7
-    d.setHours(0, 0, 0, 0)
-    d.setDate(d.getDate() - mondayIdx)
-    const from = d.getTime()
-    return { from, to: from + 7 * DAY_MS }
-  }, [])
-  const { data: calendar } = useCalendar(calWindow.from, calWindow.to)
-  const calNow = calendar?.server_now_ms ?? Date.now()
+  // Economic calendar — a preview of what's still to come this week (whole week fetched, filtered
+  // here). ⚠ The window is recomputed EVERY RENDER, not memoized on `[]`: this dashboard is left
+  // open for days, and a window frozen at mount stops being "this week" the moment the clock
+  // passes Monday midnight — after which the card reads "no more events this week" for ever
+  // while the Calendar page, which recomputes, is right.
+  const calFrom = localWeekStart(0)
+  const calTo   = localWeekEnd(calFrom)
+  // 5 min, not the page's 45s: this preview shows a title, a time and an impact dot, none of
+  // which change once an event is published. It re-pulls the whole 33 KB week either way.
+  const { data: calendar, isError: calError } = useCalendar(calFrom, calTo, 300_000)
+  // Ticks every second off the SERVER's clock, which is also what advances `calFrom` past
+  // midnight. Reading `server_now_ms` straight from the response freezes "now" between polls,
+  // so the countdown sits still and a fired event stays listed as upcoming.
+  const calNow = useServerClock(calendar?.server_now_ms)
   const upcoming = (calendar?.events ?? []).filter(e => e.timestamp_ms > calNow)
   const nextHigh = upcoming.find(e => e.impact === 'HIGH') ?? null
   const upcomingList = upcoming.filter(e => e !== nextHigh).slice(0, 6)
+  // The Calendar page keeps the selected day in the URL (0 = Monday), so a click can land on
+  // the day the event is on instead of dumping the reader on the current week.
+  const dayIndexOf = (ts: number) => {
+    const d = new Date(ts)
+    d.setHours(0, 0, 0, 0)
+    return Math.round((d.getTime() - calFrom) / 86_400_000)
+  }
+  const goToEvent = (ts: number) => navigate(`/calendar?day=${dayIndexOf(ts)}`)
 
   return (
     <div>
-      <div className="flex items-end gap-3 mb-[18px]">
-        <h1 className="text-h1 font-semibold">Overview</h1>
-      </div>
+      <h1 className="text-h1 font-semibold mb-[18px]">Overview</h1>
 
       {/* ── Stat Row ──────────────────────────────────────────────────────────── */}
       {/* Column count follows what is actually rendered — two cards in a 4-column
@@ -237,31 +327,42 @@ export function Overview() {
           label="Bots Running"
           value={botsLoading ? '—' : `${runningBots} / ${totalBots}`}
           sub={
-            botsLoading ? 'connecting…' :
-            botsError   ? 'VPS unreachable' :
-            snapshot    ? (
-              runningBots === totalBots ? 'all bots live' :
-              runningBots === 0         ? 'all stopped' :
-                                          `${totalBots - runningBots} stopped`
-            ) : 'no data'
+            botsLoading   ? 'connecting…' :
+            snapshotStale ? `VPS unreachable — as of ${fmtTime(new Date(snapshot!.fetched_at).getTime())}` :
+            botsError     ? 'VPS unreachable' :
+            !snapshot     ? 'no data' :
+            // ⚠ Order matters. A blind bot is RUNNING, so any healthy-sounding line below would
+            // win the tie and the fleet would read green while it traded nothing.
+            blindBots > 0   ? `${blindBots} running with no MT5 link` :
+            totalBots === 0 ? 'none registered' :   // `runningBots === totalBots` is TRUE at 0/0
+            runningBots === totalBots ? 'all bots live' :
+            runningBots === 0         ? 'all stopped' :
+                                        `${totalBots - runningBots} stopped`
           }
           subVariant={
             botsLoading || botsError || !snapshot ? 'neutral' :
-            runningBots === totalBots             ? 'pos' :
-            runningBots === 0                     ? 'neg' :
-                                                    'neutral'
+            blindBots > 0             ? 'warn' :
+            totalBots === 0           ? 'neutral' :
+            runningBots === totalBots ? 'pos' :
+            runningBots === 0         ? 'neg' :
+                                        'neutral'
           }
           onClick={() => navigate('/bots')}
         />
 
         <StatCard
           label="Balance"
-          value={botsLoading ? '—' : totalBalance > 0 ? fmt$(totalBalance) : '—'}
+          value={botsLoading ? '—' : reportedBal.length > 0 ? fmt$(totalBalance) : '—'}
           sub={
-            botsLoading ? '' :
-            botsError   ? 'unavailable' :
-                          `${accountType} account`
+            botsLoading   ? '' :
+            botsError     ? 'unavailable' :
+            totalBots === 0 ? 'no bots registered' :
+            // A missing balance is not a zero balance. Name the gap rather than quietly summing
+            // the bots that answered and presenting it as the fleet total.
+            unreported > 0 ? `${unreported} of ${totalBots} not reporting` :
+                             accountLabel
           }
+          subVariant={!botsLoading && !botsError && unreported > 0 && totalBots > 0 ? 'warn' : 'neutral'}
           onClick={() => navigate('/bots')}
         />
 
@@ -269,7 +370,7 @@ export function Overview() {
           <>
             <StatCard
               label="Last Scan"
-              value={latestRun ? relativeTime(latestRun.generated_at) : '—'}
+              value={latestRun ? relativeTime(latestRun.generated_at, calNow) : '—'}
               sub={latestRun ? `run ${latestRun.run_id.slice(0, 8)}…` : 'no runs yet'}
               onClick={() => navigate('/smart-money')}
             />
@@ -316,15 +417,31 @@ export function Overview() {
           <div className="px-[15px] py-[10px]">
             {botsLoading && <BotsCardSkeleton />}
 
+            {/* A failed refetch leaves the LAST GOOD snapshot on screen — so this says how old
+                these rows are instead of letting them read as live. With no snapshot at all it
+                is the plain failure. */}
             {botsError && !botsLoading && (
-              <p className="text-[12px] text-neg-text py-3">
-                VPS connection failed — check SSH access.
-              </p>
+              snapshotStale ? (
+                <p className="flex items-center gap-[6px] text-[11px] text-warn-text mb-[6px] px-[8px] py-[5px] rounded-md bg-warn-muted border border-warn-text/20">
+                  <AlertCircle size={11} className="flex-shrink-0" />
+                  VPS unreachable — showing the snapshot from {fmtTime(new Date(snapshot!.fetched_at).getTime())}
+                </p>
+              ) : (
+                <p className="text-[12px] text-neg-text py-3">
+                  VPS connection failed — check SSH access.
+                </p>
+              )
             )}
 
             {snapshot && (
               <>
-                {snapshot.bots.map(bot => <BotRow key={bot.name} bot={bot} />)}
+                {/* Keyed by `key`, never `name`: a name is a label chosen for a human and two
+                    bots may share one. */}
+                {snapshot.bots.map(bot => <BotRow key={bot.key} bot={bot} />)}
+
+                {snapshot.bots.length === 0 && (
+                  <p className="text-[12px] text-text-tertiary py-2">No bots registered.</p>
+                )}
 
                 <div className="mt-[10px] pt-[9px] border-t border-border-subtle/40">
                   <p className="text-[11px] text-text-tertiary leading-none mb-[5px] uppercase tracking-[0.5px]">
@@ -381,7 +498,7 @@ export function Overview() {
               <div className="space-y-[10px]">
                 <div className="flex items-baseline justify-between">
                   <span className="text-[12px] text-text-tertiary">Last run</span>
-                  <span className="text-[13px] text-text-primary">{relativeTime(latestRun.generated_at)}</span>
+                  <span className="text-[13px] text-text-primary">{relativeTime(latestRun.generated_at, calNow)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] text-text-tertiary">Candidates found</span>
@@ -435,6 +552,18 @@ export function Overview() {
 
           <div className="px-[15px] py-[10px]">
 
+            {/* Running backtest banner. Optimizations and stress tests each had one; a plain
+                backtest — the most common job on the box — announced itself nowhere, because
+                its status pill only rendered in the branch where no best run exists. */}
+            {runningBacktests > 0 && (
+              <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-[12px] text-accent mb-[8px]">
+                <Loader2 size={12} className="animate-spin flex-shrink-0" />
+                <span>
+                  {runningBacktests === 1 ? 'Backtest running…' : `${runningBacktests} backtests running…`}
+                </span>
+              </div>
+            )}
+
             {/* Running stress test banner */}
             {runningStressTest && (
               <div className="flex items-center gap-[8px] px-[10px] py-[7px] rounded-md bg-warn-muted border border-warn-text/20 text-[12px] text-warn-text mb-[8px]">
@@ -466,9 +595,10 @@ export function Overview() {
             </NavStatRow>
 
             <NavStatRow icon={<BarChart2 size={13} />} label="Runs" onClick={() => navigate('/backtests?tab=runs')}>
+              {runningBacktests > 0 && <span className="w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />}
               {bestRun ? (
                 <span className="text-[11px] font-mono text-text-tertiary">
-                  {totalStandaloneRuns} · best PF {bestRun.profit_factor?.toFixed(2)}
+                  {totalStandaloneRuns} · best PF {fmtPf(bestRun.profit_factor)}
                 </span>
               ) : latestBacktest ? (
                 <BacktestStatusPill status={latestBacktest.status} />
@@ -503,7 +633,10 @@ export function Overview() {
                   >
                     <span className="text-[12px] text-text-tertiary group-hover:text-text-primary transition-colors">Best result</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-mono font-semibold text-text-primary">PF {bestRun.profit_factor?.toFixed(2)}</span>
+                      {/* The sample is stated beside the ratio, because profit factor on its own
+                          says nothing about how much history is behind it. */}
+                      <span className="text-[11px] font-mono text-text-tertiary">{bestRun.trade_count} trades</span>
+                      <span className="text-[12px] font-mono font-semibold text-text-primary">PF {fmtPf(bestRun.profit_factor)}</span>
                       <WorthinessBadge worthiness={bestRun.worthiness} size="sm" />
                       <ChevronRight size={12} className="text-text-tertiary/60 group-hover:text-text-secondary transition-colors" />
                     </div>
@@ -538,7 +671,7 @@ export function Overview() {
         <div className="px-[15px] py-[12px]">
           {nextHigh && (
             <button
-              onClick={() => navigate('/calendar')}
+              onClick={() => goToEvent(nextHigh.timestamp_ms)}
               className="w-full flex items-center gap-[8px] mb-[10px] px-[10px] py-[7px] rounded-md bg-accent-muted border border-accent/20 text-left hover:bg-accent/10 transition-colors"
             >
               <span className="text-[10px] font-semibold uppercase tracking-[0.5px] text-accent flex-shrink-0">Next high-impact</span>
@@ -548,17 +681,33 @@ export function Overview() {
             </button>
           )}
 
-          {!calendar ? (
+          {/* A failed fetch must not render as "Loading…" for ever — the feed is a third party
+              and it does go down. `calError` is checked FIRST because a stale week can still be
+              on screen (placeholderData), which would otherwise hide the failure entirely. */}
+          {calError ? (
+            <p className="flex items-center justify-center gap-[6px] text-[12px] text-neg-text py-2">
+              <AlertCircle size={12} className="flex-shrink-0" />
+              Calendar unavailable — the feed did not answer.
+            </p>
+          ) : !calendar ? (
             <p className="text-[12px] text-text-tertiary py-2 text-center">Loading…</p>
-          ) : upcoming.length === 0 ? (
-            <p className="text-[12px] text-text-tertiary py-2 text-center">No more events this week</p>
+          ) : upcomingList.length === 0 ? (
+            // Not `upcoming.length` — with the only remaining event promoted into the callout
+            // above, that test passes and renders an empty grid: a blank strip under the banner.
+            <p className="text-[12px] text-text-tertiary py-2 text-center">
+              {upcoming.length === 0 ? 'No more events this week' : 'Nothing else this week'}
+            </p>
           ) : (
-            <div className="grid grid-cols-2 gap-x-6 gap-y-[2px]">
+            // The bleed for the rows' hover fill lives on the CONTAINER, not on each row. A grid
+            // ITEM cannot carry a negative margin without escaping its own track — the rows had
+            // `-mx-[6px]` and the grid overflowed by exactly 6px at every width, hover fill
+            // included, since a track is sized before the margin is applied.
+            <div className="grid grid-cols-2 gap-x-6 gap-y-[2px] -mx-[6px]">
               {upcomingList.map(e => (
                 <button
                   key={e.timestamp_ms + e.currency + e.title}
-                  onClick={() => navigate('/calendar')}
-                  className="flex items-center gap-[8px] py-[5px] px-[6px] -mx-[6px] rounded-md hover:bg-bg-hover transition-colors text-left group"
+                  onClick={() => goToEvent(e.timestamp_ms)}
+                  className="flex items-center gap-[8px] py-[5px] px-[6px] min-w-0 rounded-md hover:bg-bg-hover transition-colors text-left group"
                 >
                   <span className="text-[11px] font-mono tabular-nums text-text-tertiary w-[42px] flex-shrink-0">{fmtTime(e.timestamp_ms)}</span>
                   <span className="text-sm leading-none flex-shrink-0" title={e.currency}>{flagOf(e.currency)}</span>

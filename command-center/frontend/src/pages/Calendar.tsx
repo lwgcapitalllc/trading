@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CalendarDays, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
-import { useCalendar } from '@/hooks/useCalendar'
-import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown } from '@/lib/calendar'
+import { useCalendar, useServerClock } from '@/hooks/useCalendar'
+import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown, localWeekStart, localWeekEnd } from '@/lib/calendar'
 import type { CalendarEvent, Impact, Surprise } from '@/types'
 
 const DAY_MS = 86_400_000
@@ -16,13 +16,9 @@ const IMPACTS: Impact[] = ['HIGH', 'MEDIUM', 'LOW']
 
 // ── time helpers (all display in the browser's local timezone) ──────────────────
 
-function localWeekStart(offset: number): number {
-  const d = new Date()
-  const mondayIdx = (d.getDay() + 6) % 7 // 0 = Monday
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() - mondayIdx + offset * 7)
-  return d.getTime()
-}
+// `localWeekStart` / `localWeekEnd` live in `lib/calendar.ts` — the Overview preview reads the
+// same week, and the pair IS the query's cache key, so one definition is what keeps the two
+// pages sharing a single fetch.
 
 const fmtDay = (ms: number) =>
   new Date(ms).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
@@ -100,20 +96,12 @@ export function Calendar() {
   const category = sp.get('cat') ?? ''
 
   const fromMs = useMemo(() => localWeekStart(weekOffset), [weekOffset])
-  const toMs = fromMs + 7 * DAY_MS
+  const toMs = useMemo(() => localWeekEnd(fromMs), [fromMs])
 
   const { data, isLoading, isError } = useCalendar(fromMs, toMs)
 
   // Server-clock offset drives the "now" line + countdown, not the (possibly wrong) browser clock.
-  const offsetRef = useRef(0)
-  const [nowMs, setNowMs] = useState(() => Date.now())
-  useEffect(() => {
-    if (data?.server_now_ms) offsetRef.current = data.server_now_ms - Date.now()
-  }, [data?.server_now_ms])
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now() + offsetRef.current), 1000)
-    return () => clearInterval(id)
-  }, [])
+  const nowMs = useServerClock(data?.server_now_ms)
 
   const allEvents = data?.events ?? []
 
