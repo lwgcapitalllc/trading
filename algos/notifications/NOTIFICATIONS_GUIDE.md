@@ -198,6 +198,17 @@ one everybody learns to ignore. `--status` reports whether it is configured; `--
 checks and sends nothing. ⚠ **The URL is a secret**: anyone holding it can send your pings and keep
 the alert green forever, which is worse than no switch, because you would trust it.
 
+✅ **ARMED on the live VPS 2026-08-05** — a healthchecks.io check, 5 min period / 15 min grace,
+notifying by **email**, which is deliberately worth writing down: every other alert here arrives on
+Telegram, so on the night this one fires it will not be where you are looking.
+
+⚠ **The arming was verified by making it FAIL, and that step is not optional.** `--status`, a healthy
+run and a green tick together prove only that the box can reach the service. A real `/fail` ping is
+the only thing that proves the service reaches a human, and it is the whole reason this switch is off
+the box. **An alarm nobody has heard ring is a configuration, not an alarm.** Repeat the fail-then-
+clear pair after any change to the URL, the provider or its notification channel — a rotated URL that
+was never rung is indistinguishable from a working one right up until the outage.
+
 Tests: `algos/tests/test_deadman.py` (21), weighted toward the ways a check can wrongly say "fine" —
 a bug here is silent by construction, so there is no user report coming.
 

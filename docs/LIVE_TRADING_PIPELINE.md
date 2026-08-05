@@ -324,12 +324,22 @@ reasons when the script runs and finds a fault, which alerts immediately and by 
 ⚠ **It restarts nothing.** `SYS_MONITOR` owns recovery. Two independent things issuing starts for one
 bot is exactly G13.
 
-⚠ **It is INERT until `deadman_url` is set** in the git-ignored `algos/credentials.json` — that one
-step is Aaron's, because the URL comes from an account only he can create (a free healthchecks.io
-check, period 5 min / grace 15). Unset is a supported, honest state (`--status` reports it and the
-task exits 0), because a task that fails every five minutes is one everyone learns to ignore.
-**Until it is set, this gap is closed in CODE and open in FACT** — do not read the task existing as
-the switch existing.
+✅ **ARMED 2026-08-05 and PROVEN, not assumed.** `deadman_url` is set on the VPS (a healthchecks.io
+check, period 5 min / grace 15, notifying by **email** — which is a different inbox from every other
+alert in this suite, and worth knowing on the night it fires). Verified in four steps rather than one:
+`--status` reads the URL back, a real healthy run reported `sent`, **a deliberate `/fail` ping was
+sent and the alert arrived**, and a healthy ping cleared it. `SYS_DEADMAN` is Enabled, last result 0,
+repeating every 5 minutes.
+
+⚠ **Sending the test failure was the point.** Everything up to it proves the box can talk to the
+service; only the fail ping proves the service talks to a human. An alarm nobody has heard ring is a
+configuration, not an alarm — and this one's whole value is that it fires when no other part of the
+system can tell you anything.
+
+⚠ **Unset remains a supported, honest state** (`--status` reports it and the task exits 0), because a
+task that fails every five minutes is one everyone learns to ignore. **A rotated or cleared URL puts
+this gap back to closed-in-CODE and open-in-FACT** — do not read the task existing as the switch
+existing.
 
 ⚠ **The URL is a SECRET.** Whoever holds it can send your pings for you and hold the alert green
 forever, which is strictly worse than no switch, because you would believe in it.
