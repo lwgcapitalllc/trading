@@ -34,11 +34,21 @@ rather than silently ignoring them.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
-import alerts
+# `notify` lives in algos/shared. The runner puts it on sys.path before importing this module,
+# but a test that imports the bridge alone must not have to know that — an import path is not a
+# contract worth restating in every caller.
+_SHARED = Path(__file__).resolve().parent.parent / "shared"
+if str(_SHARED) not in sys.path:
+    sys.path.insert(0, str(_SHARED))
+
+import alerts        # noqa: E402
+import notify        # noqa: E402  (for the TRADE/HEALTH routing kinds only)
 
 
 class BridgeState(str, Enum):
@@ -95,7 +105,7 @@ class OrderBridge:
         self._ex = execution
         self._ledger = ledger
         self._log = log
-        self._notify = notify or (lambda text, reply_to=None: None)
+        self._notify = notify or (lambda text, kind, reply_to=None: None)
         self.dry_run = dry_run
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
@@ -251,7 +261,7 @@ class OrderBridge:
             scratch_r=getattr(getattr(self._ex, "cfg", None), "exec_scratch_r", 0.15),
             threaded=self._pos_alert_id is not None,
             when=self._bar_time(sig)),
-            reply_to=self._pos_alert_id)
+            notify.TRADE, reply_to=self._pos_alert_id)
         self._pos_ticket = None
         self._pos_dir = 0
         self._pos_risk_usd = 0.0
@@ -295,7 +305,8 @@ class OrderBridge:
         self._pos_alert_id = self._notify(alerts.format_entry(
             strategy=self._strategy_name, symbol=self._mt5.symbol, direction=side,
             entry=p.price_open, stop=p.sl, lots=p.volume,
-            digits=self._digits(), point=self._point(), when=self._bar_time(sig)))
+            digits=self._digits(), point=self._point(), when=self._bar_time(sig)),
+            notify.TRADE)
 
     def _agrees(self, positions) -> bool:
         """Both ledgers must tell the same story. Anything else halts — see the module
@@ -421,8 +432,14 @@ class OrderBridge:
         self.halt_reason = reason
         self._log.error(f"HALTED: {reason}")
         self._ledger.event("halted", reason=reason)
+        # HEALTH, not TRADE, and the call is worth defending: a halt is the bot refusing to place
+        # orders, which is a fact about the machinery. It is also the single most consequential
+        # message here — which is why it must not sit in a room that is only checked when a fill
+        # arrives. `log_review.py` raises it AGAIN as a standing chip on the Bots page precisely
+        # because one Telegram line, in any room, is not enough for this one.
         self._notify(f"⛔️ *HALTED* {self._mt5.bot_label}\n{reason}\n\n"
-                     f"No further orders will be placed. Open positions keep their broker stop.")
+                     f"No further orders will be placed. Open positions keep their broker stop.",
+                     notify.HEALTH)
 
     def _moved(self, a: float, b: float) -> bool:
         """Price comparison at the symbol's own precision — a float that differs in the 9th

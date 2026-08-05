@@ -84,6 +84,7 @@ sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
 
 import bot_state as _bot_state                                     # noqa: E402
 from credentials import telegram_credentials                       # noqa: E402
+from notify import chat_for, HEALTH                                # noqa: E402
 
 # How far back a run looks. Two days so a problem late yesterday is still reported this morning,
 # and so a run that crosses midnight sees the record either side of the roll.
@@ -373,14 +374,16 @@ def write_flag(instance_dir: Path, bot_key: str, findings: List[Finding]) -> Non
 
 
 def health_chat() -> tuple[str, str, bool]:
-    """(token, chat_id, is_dedicated). Falls back to the main group and says which it used."""
-    token, group, _admin = telegram_credentials()
-    try:
-        creds = json.loads((ALGOS_ROOT / "credentials.json").read_text(encoding="utf-8"))
-        dedicated = str(creds.get("telegram_health_chat") or "").strip()
-    except (OSError, ValueError):
-        dedicated = ""
-    return (token, dedicated, True) if dedicated else (token, group, False)
+    """(token, chat_id, is_dedicated). Falls back to the main group and says which it used.
+
+    ⚠ The lookup goes through `notify.chat_for`, NOT a direct read of `credentials.json`. It read
+    the file itself until 2026-08-05, which silently ignored `LWG_TELEGRAM_HEALTH_CHAT` — an env
+    override this repo's own template documented and nothing honoured, so setting it routed every
+    finding to the main group while the docs said otherwise. One resolver, one answer.
+    """
+    token, _group, _admin = telegram_credentials()
+    chat, dedicated = chat_for(HEALTH)
+    return token, chat, dedicated
 
 
 def send(text: str, dry_run: bool = False) -> bool:

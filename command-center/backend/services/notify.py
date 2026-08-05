@@ -49,6 +49,47 @@ def _cred(key: str, env: str) -> str:
     return str(_creds().get(key, "") or "")
 
 
+# ── Routing, mirroring algos/shared/notify.py ────────────────────────────────────────────────
+#
+# The KIND of a message picks its room: fills in one chat, everything about the machinery in
+# another. This app sends no trade alerts at all — the live bot does that — so in practice every
+# call here is HEALTH. `TRADE` exists anyway, because the alternative is a module that routes by
+# having only one option, which stops being true the first time someone adds a sender.
+#
+# ⚠ This is a SECOND implementation of one rule, and that is the cost of the `algos/` ↔
+# `command-center/` boundary (see the module docstring — a shared FILE is the allowed seam, a
+# shared import is not). What keeps the two from drifting is that they read the same credential
+# KEYS, and `tests/test_notification_routing.py` on each side pins the same table.
+TRADE = "trade"
+HEALTH = "health"
+
+CHAT_KEYS = {
+    TRADE:  ("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID"),
+    HEALTH: ("telegram_health_chat", "LWG_TELEGRAM_HEALTH_CHAT"),
+}
+
+_warned_kinds: set = set()
+
+
+def chat_for(kind: str) -> str:
+    """The chat a message of this `kind` goes to. HEALTH falls back to the TRADE chat and says
+    so once — the wrong room beats no delivery, which is the same call the algos side makes."""
+    if kind not in CHAT_KEYS:
+        raise ValueError(f"unknown notification kind {kind!r} - expected one of "
+                         f"{sorted(CHAT_KEYS)}")
+    dest = _cred(*CHAT_KEYS[kind])
+    if dest:
+        return dest
+    if kind != TRADE:
+        fallback = _cred(*CHAT_KEYS[TRADE])
+        if fallback and kind not in _warned_kinds:
+            _warned_kinds.add(kind)
+            print(f"notify: {CHAT_KEYS[kind][0]} is not set - {kind} messages are going to the "
+                  f"main group. Set it in algos/credentials.json to split them out.")
+        return fallback
+    return ""
+
+
 def telegram_configured() -> bool:
     """True when a token and a destination both resolve. Useful for a health check that wants
     to say "notifications are off" instead of silently dropping them."""
@@ -56,7 +97,7 @@ def telegram_configured() -> bool:
                 and _cred("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID"))
 
 
-def send_telegram(text: str, chat_id: str = "") -> bool:
+def send_telegram(text: str, kind: str, chat_id: str = "") -> bool:
     """Best-effort send. Returns True on success, and NEVER raises — a notification failure
     must not turn a working endpoint into a 500.
 
@@ -67,7 +108,7 @@ def send_telegram(text: str, chat_id: str = "") -> bool:
     because error text is full of paths. Measured on the VPS side's first real send, 2026-07-31.
     """
     token = _cred("telegram_token", "LWG_TELEGRAM_TOKEN")
-    dest = chat_id or _cred("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID")
+    dest = chat_id or chat_for(kind)
     if not token or not dest:
         return False
 

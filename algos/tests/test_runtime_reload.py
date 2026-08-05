@@ -81,7 +81,8 @@ def runner(tmp_path, monkeypatch):
     r.ledger = _Ledger()
     r.bridge = _Bridge(flat=True)
     r.notes = []
-    r._notify = lambda text, reply_to=None: r.notes.append(text)
+    r._notify = lambda text, kind, reply_to=None: r.notes.append(text)
+    r._notify_health = lambda text: r.notes.append(text)
     r._cfg_mtime = path.stat().st_mtime
     r._path = path
     r.warmed = 0

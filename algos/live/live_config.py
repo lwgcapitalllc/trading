@@ -74,12 +74,18 @@ class LiveConfig:
     # because bots are not interchangeable: a gold bot on a demo account and an FX bot on a
     # funded one are different conversations, and one Telegram group for both means the
     # message that matters is the one you scroll past.
-    #   telegram_chat_id  — the destination. Not a secret (a chat id is useless without a
-    #                       token), so it lives here rather than in the credentials file.
+    #   telegram_chat_id  — where its TRADES go (entry and exit). Not a secret (a chat id is
+    #                       useless without a token), so it lives here rather than in the
+    #                       credentials file.
+    #   telegram_health_chat— where its HEALTH messages go (link lost, re-warmed, halted,
+    #                       stopped, config refused). Separate because the two are read with a
+    #                       different reflex, and a room that pings all day for machinery is one
+    #                       you learn to ignore. Empty = the shared `telegram_health_chat`.
     #   telegram_token_key— NAMES a key in algos/credentials.json ("telegram_token_bleg"),
     #                       never the token itself. Set it only to give this bot its own
     #                       Telegram identity; leave empty to send as the default bot.
     telegram_chat_id: str = ""
+    telegram_health_chat: str = ""
     telegram_token_key: str = ""
 
     # ── runtime ─────────────────────────────────────────────────────────────

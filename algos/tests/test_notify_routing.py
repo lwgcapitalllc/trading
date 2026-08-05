@@ -35,6 +35,7 @@ def _isolated(monkeypatch):
     monkeypatch.setattr(credentials, "_cache", {})
     notify._warned = False
     notify._warned_keys = set()
+    notify._warned_kinds.clear()
     yield
 
 
@@ -115,14 +116,14 @@ def test_the_canonical_keys_keep_their_historical_env_names():
 def test_default_routing_goes_to_the_shared_group(monkeypatch, sent):
     monkeypatch.setattr(credentials, "_cache",
                         {"telegram_token": "T", "telegram_chat_id": "-100shared"})
-    assert notify.send_telegram("hi") is True
+    assert notify.send_telegram("hi", notify.TRADE) is True
     assert sent.calls[-1]["chat_id"] == "-100shared"
 
 
 def test_a_bot_can_send_to_its_own_chat(monkeypatch, sent):
     monkeypatch.setattr(credentials, "_cache",
                         {"telegram_token": "T", "telegram_chat_id": "-100shared"})
-    notify.send_telegram("hi", chat_id="-100mine")
+    notify.send_telegram("hi", notify.TRADE, chat_id="-100mine")
     assert sent.calls[-1]["chat_id"] == "-100mine"
 
 
@@ -131,7 +132,7 @@ def test_a_bot_can_send_as_its_own_telegram_identity(monkeypatch, sent):
     monkeypatch.setattr(credentials, "_cache", {
         "telegram_token": "DEFAULT", "telegram_chat_id": "-100shared",
         "telegram_token_bleg": "SECOND"})
-    notify.send_telegram("hi", chat_id="-100bleg", token_key="telegram_token_bleg")
+    notify.send_telegram("hi", notify.TRADE, chat_id="-100bleg", token_key="telegram_token_bleg")
     assert sent.last_token == "SECOND"
     assert sent.calls[-1]["chat_id"] == "-100bleg"
 
@@ -141,7 +142,7 @@ def test_a_named_token_that_is_missing_falls_back_and_says_so(monkeypatch, sent,
     falls back rather than going mute, and prints the key that needs adding."""
     monkeypatch.setattr(credentials, "_cache",
                         {"telegram_token": "DEFAULT", "telegram_chat_id": "-100shared"})
-    assert notify.send_telegram("hi", token_key="telegram_token_bleg") is True
+    assert notify.send_telegram("hi", notify.TRADE, token_key="telegram_token_bleg") is True
     assert sent.last_token == "DEFAULT"
     assert "telegram_token_bleg" in capsys.readouterr().out
 
@@ -151,7 +152,7 @@ def test_the_fallback_warning_is_printed_once_per_key(monkeypatch, sent, capsys)
     monkeypatch.setattr(credentials, "_cache",
                         {"telegram_token": "T", "telegram_chat_id": "-100shared"})
     for _ in range(3):
-        notify.send_telegram("hi", token_key="telegram_token_bleg")
+        notify.send_telegram("hi", notify.TRADE, token_key="telegram_token_bleg")
     assert capsys.readouterr().out.count("telegram_token_bleg") == 1
 
 
@@ -180,7 +181,7 @@ def test_a_message_telegram_cannot_parse_is_resent_unformatted(monkeypatch, caps
     fake = _RejectsMarkdown()
     monkeypatch.setattr(notify, "_requests", fake)
 
-    assert notify.send_telegram("MPC SOS Fade on MT5_FFT") is True
+    assert notify.send_telegram("MPC SOS Fade on MT5_FFT", notify.TRADE) is True
     assert len(fake.calls) == 2
     assert "parse_mode" in fake.calls[0]          # tried formatted first
     assert "parse_mode" not in fake.calls[1]      # then plain
@@ -201,7 +202,7 @@ def test_a_400_that_is_not_a_parse_error_is_not_retried(monkeypatch):
             return _rejected("Bad Request: chat not found")
 
     monkeypatch.setattr(notify, "_requests", _NotAMember())
-    assert notify.send_telegram("hi") is False
+    assert notify.send_telegram("hi", notify.TRADE) is False
     assert len(calls) == 1
 
 
@@ -210,14 +211,14 @@ def test_the_message_id_comes_back_so_a_later_message_can_reply(monkeypatch, sen
     """Without the id there is no thread, and a trade's outcome floats loose in the feed."""
     monkeypatch.setattr(credentials, "_cache",
                         {"telegram_token": "T", "telegram_chat_id": "-100shared"})
-    assert notify.send_telegram_id("ENTRY") == 101
+    assert notify.send_telegram_id("ENTRY", notify.TRADE) == 101
 
 
 def test_a_reply_carries_the_target_message_id(monkeypatch, sent):
     monkeypatch.setattr(credentials, "_cache",
                         {"telegram_token": "T", "telegram_chat_id": "-100shared"})
-    entry_id = notify.send_telegram_id("ENTRY")
-    notify.send_telegram_id("EXIT", reply_to=entry_id)
+    entry_id = notify.send_telegram_id("ENTRY", notify.TRADE)
+    notify.send_telegram_id("EXIT", notify.TRADE, reply_to=entry_id)
     assert sent.calls[-1]["reply_to"] == entry_id
 
 
@@ -236,7 +237,7 @@ def test_a_deleted_entry_does_not_take_the_exit_alert_with_it(monkeypatch, capsy
             return _ok(77)
 
     monkeypatch.setattr(notify, "_requests", _GoneTarget())
-    assert notify.send_telegram_id("EXIT", reply_to=999) == 77
+    assert notify.send_telegram_id("EXIT", notify.TRADE, reply_to=999) == 77
     assert len(calls) == 2
     assert "reply_to_message_id" not in calls[1]
     assert "standalone" in capsys.readouterr().out
@@ -245,12 +246,12 @@ def test_a_deleted_entry_does_not_take_the_exit_alert_with_it(monkeypatch, capsy
 def test_a_failed_send_reports_no_message_id(monkeypatch):
     """None must mean "there is no thread here", so the next exit does not reply into nothing."""
     monkeypatch.setattr(credentials, "_cache", {})
-    assert notify.send_telegram_id("hi") is None
+    assert notify.send_telegram_id("hi", notify.TRADE) is None
 
 
 # ── never raises ────────────────────────────────────────────────────────────────
 def test_an_unconfigured_notifier_is_a_no_op_not_a_crash(sent):
-    assert notify.send_telegram("hi") is False
+    assert notify.send_telegram("hi", notify.TRADE) is False
     assert sent.calls == []
 
 
@@ -263,7 +264,7 @@ def test_a_dead_network_is_a_no_op_not_a_crash(monkeypatch):
             raise OSError("network is down")
 
     monkeypatch.setattr(notify, "_requests", _Boom())
-    assert notify.send_telegram("hi") is False
+    assert notify.send_telegram("hi", notify.TRADE) is False
 
 
 def test_a_rejection_from_telegram_is_reported_not_raised(monkeypatch, capsys):
@@ -275,5 +276,5 @@ def test_a_rejection_from_telegram_is_reported_not_raised(monkeypatch, capsys):
             return type("R", (), {"status_code": 403, "text": "bot is not a member of the chat"})()
 
     monkeypatch.setattr(notify, "_requests", _Refuses())
-    assert notify.send_telegram("hi", chat_id="-100notamember") is False
+    assert notify.send_telegram("hi", notify.TRADE, chat_id="-100notamember") is False
     assert "403" in capsys.readouterr().out

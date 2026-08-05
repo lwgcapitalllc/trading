@@ -40,6 +40,7 @@ _ENV_KEYS = {
     "telegram_token":           "LWG_TELEGRAM_TOKEN",
     "telegram_chat_id":         "LWG_TELEGRAM_CHAT_ID",
     "telegram_admin_chat_id":   "LWG_TELEGRAM_ADMIN_CHAT_ID",
+    "telegram_health_chat":     "LWG_TELEGRAM_HEALTH_CHAT",
 }
 
 _cache: Optional[dict] = None

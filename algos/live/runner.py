@@ -221,24 +221,36 @@ class LiveRunner:
         log.propagate = False          # the root logger is not this package's to write through
         return log
 
-    def _notify(self, text: str, reply_to=None):
+    def _notify(self, text: str, kind: str, reply_to=None):
         """Every message this bot sends goes to ITS OWN configured destination — the routing is
         per instance, not global, so two bots on two accounts never share one feed unless their
         configs say to. Empty values fall back to the shared default.
+
+        `kind` is `notify.TRADE` or `notify.HEALTH` and decides WHICH of this bot's two rooms it
+        lands in. Almost everything this class sends is HEALTH; the two TRADE messages are the
+        entry and the exit, and they are both sent by the bridge.
 
         Returns Telegram's message id so a later message can reply to this one — that is how a
         trade's exit lands under its own entry instead of loose in the feed. None on any failure,
         which the bridge treats as "no thread to reply to" rather than an error.
         """
         try:
-            from notify import send_telegram_id
-            return send_telegram_id(text,
-                                    chat_id=self.cfg.telegram_chat_id,
-                                    token_key=self.cfg.telegram_token_key,
-                                    reply_to=reply_to)
+            from notify import send_telegram_id, TRADE
+            return send_telegram_id(
+                text, kind,
+                chat_id=(self.cfg.telegram_chat_id if kind == TRADE
+                         else self.cfg.telegram_health_chat),
+                token_key=self.cfg.telegram_token_key,
+                reply_to=reply_to)
         except Exception as e:
             self.log.warning(f"Telegram send failed: {e}")
             return None
+
+    def _notify_health(self, text: str):
+        """The overwhelming majority of this class's messages. Named so a call site reads as a
+        routing decision rather than as a default nobody chose."""
+        from notify import HEALTH
+        return self._notify(text, HEALTH)
 
     def _build_strategy(self):
         """Import the strategy package, build its config from the INSTANCE file only, and
@@ -332,7 +344,7 @@ class LiveRunner:
                 "arriving and the strategy is NOT seeing the market until it reconnects. The "
                 "usual cause is the terminal restarting itself after an auto-update.")
             self.ledger.event("mt5_link_lost", last_bar=str(self.feed.last_bar_time))
-            self._notify(
+            self._notify_health(
                 f"⚠️ *{self.cfg.display_name}* lost its MT5 connection.\n"
                 f"It is not seeing bars until it reconnects. Retrying.")
 
@@ -353,7 +365,7 @@ class LiveRunner:
         self._link_lost_at = None
         self.log.info(f"MT5 link restored after {down / 60:.1f} min — engines re-warmed.")
         self.ledger.event("mt5_link_restored", down_seconds=round(down))
-        self._notify(f"✅ *{self.cfg.display_name}* reconnected to MT5 after "
+        self._notify_health(f"✅ *{self.cfg.display_name}* reconnected to MT5 after "
                      f"{down / 60:.0f} min. Engines re-warmed.")
 
     def connect(self) -> bool:
@@ -571,7 +583,7 @@ class LiveRunner:
         except (VersionMismatch, RuntimeError) as e:
             self.log.error(str(e))
             self.ledger.event("version_mismatch", detail=str(e))
-            self._notify(f"⛔️ *{self.cfg.display_name}* refused to start — the deployed code is "
+            self._notify_health(f"⛔️ *{self.cfg.display_name}* refused to start — the deployed code is "
                          f"not the version it was promoted to run.")
             return 2, "version pin mismatch"
         if not self.cfg.strategy_source_hash:
@@ -625,10 +637,10 @@ class LiveRunner:
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")
             self.ledger.event("startup_failed", error=str(e))
-            self._notify(f"⛔️ *{self.cfg.display_name}* failed to start: {e}")
+            self._notify_health(f"⛔️ *{self.cfg.display_name}* failed to start: {e}")
             return 5, f"startup failed: {e}"
 
-        self._notify(
+        self._notify_health(
             f"🟢 *{self.cfg.display_name}* online\n"
             f"{self.cfg.symbol} {self.cfg.timeframe} · account {self.cfg.account}\n"
             f"v{self.cfg.strategy_version} ({self.source_hash[:8]})"
@@ -714,11 +726,11 @@ class LiveRunner:
                                 # counter as soon as a bar lands cleanly, so a recurrence after
                                 # a real recovery alerts again. Repeating it every poll is how
                                 # a channel that also carries trade alerts gets muted.
-                                self._notify(
+                                self._notify_health(
                                     f"⚠️ *{self.cfg.display_name}* dropped a bar "
                                     f"({row.name}) and is re-warming.\n`{e}`")
                             if bar_errors >= 10:
-                                self._notify(
+                                self._notify_health(
                                     f"⛔️ *{self.cfg.display_name}* stopping — 10 bars in a row "
                                     f"failed to process. A re-warm is not fixing it. Last: {e}")
                                 return 6, f"10 consecutive bar errors, last: {e}"
@@ -738,13 +750,13 @@ class LiveRunner:
                 self.log.error(f"Loop error ({consecutive_errors}): {e}\n{traceback.format_exc()}")
                 self.ledger.event("loop_error", error=str(e), count=consecutive_errors)
                 if consecutive_errors >= 10:
-                    self._notify(f"⛔️ *{self.cfg.display_name}* stopping — 10 consecutive loop "
+                    self._notify_health(f"⛔️ *{self.cfg.display_name}* stopping — 10 consecutive loop "
                                  f"errors. Last: {e}")
                     return 6, f"10 consecutive loop errors, last: {e}"
             time.sleep(self.cfg.poll_seconds)
 
         self.log.info("Stop requested — shutting down.")
-        self._notify(f"⏹ *{self.cfg.display_name}* stopped")
+        self._notify_health(f"⏹ *{self.cfg.display_name}* stopped")
         try:
             self.mt5.disconnect()
         except Exception:
@@ -874,7 +886,7 @@ class LiveRunner:
                 f"Still running the settings loaded at startup. Restart the bot to take "
                 f"them (the version pin and the engine warmup are re-checked on restart).")
             self.ledger.event("config_change_refused", changes=detail)
-            self._notify(f"⚠️ {self.cfg.display_name} — config changed on disk but was NOT "
+            self._notify_health(f"⚠️ {self.cfg.display_name} — config changed on disk but was NOT "
                          f"applied:\n{detail}\n\nStill running the startup settings. "
                          f"Restart the bot to take them.")
             return
@@ -909,7 +921,7 @@ class LiveRunner:
 
         self.log.info(f"Runtime config applied while flat (strategy rebuilt): {detail}")
         self.ledger.event("config_applied", changes=detail)
-        self._notify(f"⚙️ {self.cfg.display_name} — {detail}\nApplied; the bot was flat.")
+        self._notify_health(f"⚙️ {self.cfg.display_name} — {detail}\nApplied; the bot was flat.")
 
     def _config_delta(self, fresh):
         """Split what changed into (reloadable, blocked).

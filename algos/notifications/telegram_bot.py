@@ -43,6 +43,7 @@ ALGOS_ROOT      = Path("C:/trading/algos")
 # ADMIN_CHAT is the primary admin — always has access even if users.json is missing.
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 from credentials import telegram_credentials  # noqa: E402
+from notify import chat_for, HEALTH            # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 USERS_FILE      = ALGOS_ROOT / "users.json"
@@ -104,9 +105,19 @@ def get_updates(offset: int = 0) -> list:
 
 
 def send(text: str):
-    """Broadcast to the group (startup ping, unsolicited alerts)."""
+    """Broadcast the startup ping — HEALTH, because it is this process announcing itself.
+
+    Command REPLIES do not come through here; they go to `send_to`, addressed to whichever chat
+    asked. That is deliberate and is not a routing decision at all: an answer belongs where the
+    question was asked, and a `/balance` typed in the trades group would be baffling if the reply
+    landed somewhere else.
+    """
+    dest, _dedicated = chat_for(HEALTH)
+    if not TELEGRAM_TOKEN or not dest:
+        print(f"Send dropped (Telegram not configured): {text[:80]}")
+        return
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": GROUP_CHAT, "text": text, "parse_mode": "Markdown"}
+    data = {"chat_id": dest, "text": text, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:
@@ -114,7 +125,7 @@ def send(text: str):
 
 
 def send_to(chat_id: str, text: str):
-    """Send a message to a specific chat ID."""
+    """Reply to a specific chat — the one the command came from. Not routed by kind; see `send`."""
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
     try:

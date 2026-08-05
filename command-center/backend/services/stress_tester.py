@@ -1412,7 +1412,11 @@ def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: Op
     if reasons:
         lines.append("Reasons: " + "; ".join(reasons[:3]))
 
-    notify.send_telegram("\n".join(lines))
+    # HEALTH, not TRADE. A finished stress test is a LAB result — neither category fits it
+    # cleanly — and it lands here because the trades chat is reserved for money actually moving
+    # on the account. If lab chatter ever earns its own room, add a third kind in `notify.py`
+    # rather than pointing this at the trades one.
+    notify.send_telegram("\n".join(lines), notify.HEALTH)
 
 
 # ── Main stress test background task ──────────────────────────────────────────

@@ -42,6 +42,7 @@ from fastapi.responses import PlainTextResponse
 import config as cfg
 from models import BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
 from services import bot_params, lab_db
+from services import notify
 from services.notify import send_telegram
 
 router = APIRouter(prefix="/bots", tags=["bots"])
@@ -223,8 +224,14 @@ def _notify_telegram(text: str) -> None:
     Delegates to `services/notify.py` — this router used to carry its own copy of the token,
     chat id and urllib call, which is how the credential ended up committed in six places at
     once. One sender, one credential lookup.
+
+    Everything this router announces is HEALTH: started, stopped, restarted, promoted, runtime
+    params applied. None of them is a fill — the live bot sends those itself, from the box, and
+    it is the only thing here that can. So this helper hardcodes the kind rather than taking one,
+    which is what stops a new endpoint from quietly putting an operational message in the room
+    that carries trades.
     """
-    send_telegram(text)
+    send_telegram(text, notify.HEALTH)
 
 
 def _suppress_stop_alert(bot_key: str) -> None:

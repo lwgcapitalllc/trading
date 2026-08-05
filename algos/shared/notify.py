@@ -2,15 +2,16 @@
 notify.py — Telegram notification helper for VPS-side components.
 
 Single source of truth for sending Telegram messages from bots, the live runner, monitor,
-and any other VPS process. Sends to the group chat by default.
+and any other VPS process. Every message declares its KIND (`TRADE` or `HEALTH`) and the kind
+picks the room — see the routing block below.
 
 Credentials come from `credentials.py` (env var, else the git-ignored `algos/credentials.json`)
 — never from a literal in this file. The previous token was committed here and in five other
 files; it was revoked 2026-07-30 and the constants were replaced by this lookup.
 
 Usage:
-    from notify import send_telegram
-    send_telegram("🟢 *Bot online*")
+    from notify import send_telegram, TRADE, HEALTH
+    send_telegram("🟢 *Bot online*", HEALTH)
 """
 
 import sys
@@ -24,13 +25,69 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from credentials import get as _cred, telegram_credentials  # noqa: E402
 
+# ── Where a message goes is decided by WHAT IT IS ────────────────────────────────────────────
+#
+# Two rooms, because they are read at different times and by a different reflex. A fill is the
+# account moving and it is read the moment it arrives; a re-warm after a link blip is a fact
+# about the machinery, worth having and worth scrolling past. Mixing them costs the trade alert
+# its meaning — a chat that pings nine times a day for routine chatter is one you learn to
+# ignore, and the day you mute it you mute your fills with it. The dead-man's switch already
+# makes the same call one level out by using EMAIL.
+#
+# `kind` is a REQUIRED argument on every sender here, deliberately. A default would route
+# silently, and "the wrong room, quietly" is precisely the failure this exists to end — the
+# same reasoning that makes the ledger's stream routing a table rather than a guess. A new call
+# site that states nothing fails at the call, and `test_notification_routing.py` greps every
+# call site in the repo so it fails in the SUITE first.
+TRADE = "trade"
+HEALTH = "health"
+
+#: kind -> the credential key naming its chat. HEALTH falls back to the TRADE chat (see
+#: `chat_for`); a message in the wrong room beats a message nobody sends.
+CHAT_KEYS = {
+    TRADE:  "telegram_chat_id",
+    HEALTH: "telegram_health_chat",
+}
+
 _warned = False
 _warned_keys: set = set()
+_warned_kinds: set = set()
 
 
-def send_telegram(text: str, chat_id: str = "", token_key: str = "",
+def chat_for(kind: str, override: str = ""):
+    """`(chat_id, is_dedicated)` for a message of this `kind`.
+
+    `override` is the bot's own instance-config value and wins outright — that is what lets two
+    bots on two accounts report into two different rooms.
+
+    HEALTH falls back to the TRADE chat when `telegram_health_chat` is unset, and SAYS SO once.
+    That is the opposite call from `deadman_url`, where unset means the check cannot work at
+    all: here the message is still worth delivering, just not where you wanted it. The fallback
+    is a nuisance you can see, never a silent drop.
+    """
+    if kind not in CHAT_KEYS:
+        raise ValueError(f"unknown notification kind {kind!r} - expected one of "
+                         f"{sorted(CHAT_KEYS)}")
+    if override:
+        return override, True
+    dest = _cred(CHAT_KEYS[kind])
+    if dest:
+        return dest, True
+    if kind != TRADE:
+        fallback = _cred(CHAT_KEYS[TRADE])
+        if fallback and kind not in _warned_kinds:
+            _warned_kinds.add(kind)
+            print(f"notify: {CHAT_KEYS[kind]} is not set - {kind} messages are going to the "
+                  f"main group. Set it in algos/credentials.json to split them out.")
+        return fallback, False
+    return "", False
+
+
+def send_telegram(text: str, kind: str, chat_id: str = "", token_key: str = "",
                   reply_to=None) -> bool:
-    """Send `text` to `chat_id` (default: the configured group). Returns True on success.
+    """Send `text` to the chat this `kind` routes to. Returns True on success.
+
+    `kind` is `TRADE` or `HEALTH` and is required — see the routing block above.
 
     Use `send_telegram_id` instead when the message id is needed — this wrapper exists so the
     many callers that only care whether it went keep reading cleanly.
@@ -52,10 +109,10 @@ def send_telegram(text: str, chat_id: str = "", token_key: str = "",
     starts before the file is written picks it up on the next message instead of staying mute
     for its whole session.
     """
-    return send_telegram_id(text, chat_id, token_key, reply_to) is not None
+    return send_telegram_id(text, kind, chat_id, token_key, reply_to) is not None
 
 
-def send_telegram_id(text: str, chat_id: str = "", token_key: str = "",
+def send_telegram_id(text: str, kind: str, chat_id: str = "", token_key: str = "",
                      reply_to=None):
     """Same send, but returns Telegram's `message_id` (or None on failure).
 
@@ -68,7 +125,7 @@ def send_telegram_id(text: str, chat_id: str = "", token_key: str = "",
     alert, so that case retries as a standalone message.
     """
     global _warned
-    token, group, _admin = telegram_credentials()
+    token, _group, _admin = telegram_credentials()
     if token_key:
         named = _cred(token_key)
         if named:
@@ -78,7 +135,7 @@ def send_telegram_id(text: str, chat_id: str = "", token_key: str = "",
             print(f"notify: credential {token_key!r} is not set - falling back to the default "
                   f"Telegram bot. Add it to algos/credentials.json, or clear telegram_token_key "
                   f"in this bot's instance config.")
-    dest = chat_id or group
+    dest, _dedicated = chat_for(kind, chat_id)
     if not token or not dest:
         if not _warned:
             _warned = True

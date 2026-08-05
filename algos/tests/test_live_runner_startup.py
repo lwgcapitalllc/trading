@@ -116,7 +116,7 @@ def test_the_version_pin_is_checked_before_anything_connects(tmp_path, monkeypat
         raise AssertionError("connect() must not be reached when the pin fails")
 
     monkeypatch.setattr(r, "connect", _boom)
-    monkeypatch.setattr(r, "_notify", lambda text: None)
+    monkeypatch.setattr(r, "_notify_health", lambda text: None)
     assert r.run() == 2                      # 2 = version mismatch, a distinct exit code
 
 
@@ -126,7 +126,7 @@ def test_a_version_mismatch_is_recorded_and_announced(tmp_path, monkeypatch):
     r = runner.LiveRunner(cfg)
     sent = []
     monkeypatch.setattr(r, "connect", lambda: pytest.fail("unreachable"))
-    monkeypatch.setattr(r, "_notify", sent.append)
+    monkeypatch.setattr(r, "_notify_health", sent.append)
     r.run()
 
     assert sent and "refused to start" in sent[0]

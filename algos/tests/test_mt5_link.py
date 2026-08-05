@@ -124,7 +124,7 @@ def _runner(monkeypatch, *, account_info):
                             warning=lambda m, *a, **k: r.warns.append(m),
                             error=lambda m, *a, **k: r.errors.append(m))
     r.alerts = []
-    r._notify = lambda m: r.alerts.append(m)
+    r._notify_health = lambda m: r.alerts.append(m)
 
     monkeypatch.setitem(sys.modules, "MetaTrader5",
                         SimpleNamespace(account_info=account_info))

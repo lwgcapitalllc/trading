@@ -174,16 +174,22 @@ def _stub_mt5(monkeypatch):
     monkeypatch.setitem(sys.modules, "MetaTrader5", m)
 
 
-def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None):
+def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, kinds=None):
     mt5ops = mt5ops or _FakeMt5Ops()
     ledger = ledger or _FakeLedger()
     notes = notes if notes is not None else []
+    kinds = kinds if kinds is not None else []
 
-    def _notify(text, reply_to=None):
-        """Mirrors the real signature: takes an optional reply target, hands back a message id.
-        The id is what a trade's EXIT replies to, so a fake that returns None would quietly test
-        the no-thread path and never the one that runs."""
+    def _notify(text, kind, reply_to=None):
+        """Mirrors the real signature: a routing KIND, an optional reply target, and back comes a
+        message id. The id is what a trade's EXIT replies to, so a fake that returned None would
+        quietly test the no-thread path and never the one that runs.
+
+        `kind` is positional and required here on purpose — a fake that defaulted it would go on
+        passing after a call site stopped stating one, which is the whole thing the routing exists
+        to make impossible. `kinds` records them so a test can assert WHERE a message went."""
         notes.append(text)
+        kinds.append(kind)
         return len(notes)
 
     b = live_bridge.OrderBridge(mt5ops, execution, ledger, _Log(),
@@ -314,6 +320,38 @@ def test_opening_a_position_reports_the_brokers_real_fill():
     assert opened["price"] == 3289.7          # what the broker gave
     assert opened["intended_price"] == 3290.0  # where the strategy rested its limit
     assert notes and "ENTRY" in notes[0]
+
+
+# ── which room each alert goes to ────────────────────────────────────────────────────────────
+# The bridge is the only thing in this repo that sends a TRADE message, and it also sends the
+# single most serious HEALTH one. Both are pinned, because the split is only worth anything if
+# it holds at the one place that produces both kinds.
+
+def test_the_entry_and_exit_alerts_are_TRADES():
+    import notify
+    ex = _FakeExecution(pend_long=_Pend(1, 3290.0, 0.42, 3280.0))
+    kinds: list = []
+    b, ops, ledger, notes = _bridge(ex, kinds=kinds)
+    b.sync(_Dec(), _Sig())
+    ops.positions = [_Pos(901, 0, 3290.0, 0.42, 3280.0)]
+    ex._pos_dir, ex._pend_long = 1, None
+    b.sync(_Dec(stop=3280.0), _Sig())                 # entry alert
+    ops.positions = []
+    ex._pos_dir = 0
+    b.sync(_Dec(), _Sig())                            # exit alert
+    assert kinds, "the bridge sent nothing at all"
+    assert set(kinds) == {notify.TRADE}
+
+
+def test_a_HALT_is_health_not_a_trade():
+    """A halt is the bot refusing to place orders — a fact about the machinery, and the one
+    message that must not be sitting in a room only checked when a fill arrives."""
+    import notify
+    kinds: list = []
+    b, ops, ledger, notes = _bridge(_FakeExecution(), kinds=kinds)
+    b._halt("emulator and broker disagree")
+    assert kinds == [notify.HEALTH]
+    assert notes and "HALTED" in notes[0]
 
 
 def test_closing_a_position_reports_pnl_and_r():

@@ -49,6 +49,7 @@ import bot_state as _bot_state
 # Telegram credentials are resolved from the environment or the git-ignored
 # algos/credentials.json — never pasted here. See algos/shared/credentials.py.
 from credentials import telegram_credentials  # noqa: E402
+from notify import chat_for, HEALTH            # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 
@@ -86,8 +87,20 @@ MAX_BOT_RESTARTS = 3
 
 
 def send_alert(message: str):
+    """Every message this watchdog sends is HEALTH — offline, restarted, stalled, recovered.
+
+    Not one of them is a trade, which is the whole reason the routing exists: this module alone
+    can produce nine different alerts about the machinery, and pointing them at the room that
+    carries fills is what teaches you to swipe that room away. The chat is resolved PER CALL
+    rather than at import, so setting `telegram_health_chat` takes effect on the next alert
+    instead of at the next restart of a task that runs every 60 seconds.
+    """
+    dest, _dedicated = chat_for(HEALTH)
+    if not TELEGRAM_TOKEN or not dest:
+        print(f"Alert dropped (Telegram not configured): {message[:80]}")
+        return
     url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": GROUP_CHAT, "text": message, "parse_mode": "Markdown"}
+    data = {"chat_id": dest, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=data, timeout=10)
     except Exception as e:

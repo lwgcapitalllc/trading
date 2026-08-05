@@ -54,7 +54,7 @@ them is an architecture decision, not a cleanup.
 | `mt5_ops.py` | `shared/` | All MT5 operations — symbol-parameterized, single shared instance per bot |
 | `bot_state.py` | `shared/` | Single source of truth read/write for each instance's `bot_state.json` |
 | `credentials.py` | `shared/` | **The one place secrets are resolved.** Env var → git-ignored `algos/credentials.json` → empty. Never holds a literal. Copy `algos/credentials.template.json` to set a machine up. **Any key resolves, not just the canonical three** — a per-bot secret needs a new entry in that file and nothing else; the env name is always `LWG_<KEY IN CAPS>` (`env_name()`). |
-| `notify.py` | `shared/` | Telegram sender. `send_telegram(text, chat_id="", token_key="")` — both optional, both empty = the shared group and the shared bot, so routing is PER BOT without a second sender. Reads `credentials.py`, never a hardcoded token, and NEVER raises — an unconfigured or unreachable notifier drops the message and prints once, because a notification channel must not be able to stop a trading loop. The four `notifications/` scripts now import their credentials from the same resolver instead of carrying inline copies (the 2026-07-06 refactor note, done 2026-07-30). |
+| `notify.py` | `shared/` | Telegram sender. `send_telegram(text, kind, chat_id="", token_key="")` — **`kind` is `TRADE` or `HEALTH` and is REQUIRED**; it picks the room (see `### Two rooms` below). `chat_id`/`token_key` are optional and empty = the shared destination for that kind and the shared bot, so routing is PER BOT without a second sender. Reads `credentials.py`, never a hardcoded token, and NEVER raises — an unconfigured or unreachable notifier drops the message and prints once, because a notification channel must not be able to stop a trading loop. The four `notifications/` scripts now import their credentials from the same resolver instead of carrying inline copies (the 2026-07-06 refactor note, done 2026-07-30). |
 | `structure_engine.py` | `shared/` | Market structure shim over `market_structure.StructureEngine` (canonical BOS/CHoCH/swing detection, ported from `indicators/structure_engine.pine`) — bot-facing `update(candle: dict)` interface |
 | `bot_utils.py` | `bots/` | Config loader, logging, path resolver |
 | `launcher.py` | `bots/` | Universal Task Scheduler launcher |
@@ -645,6 +645,55 @@ mute them you must not also mute your trades — the same reasoning behind the d
 EMAIL. Unset falls back to the main group and says which it used on stdout: an alert in the wrong
 room beats no alert, which is the OPPOSITE call from `deadman_url`, where unset means the check
 cannot work at all.
+
+### Two rooms — every message declares its KIND
+
+🔴 **Splitting the reviewer's findings out was the small half of this, and shipping it that way would
+have missed the point.** Aaron's rule is that the chat he reads for entries and exits carries nothing
+else. A sweep of every Telegram sender in the repo found **32 messages going to that chat and only 2
+of them were trades**: the live runner's twelve lifecycle messages (link lost, link restored,
+re-warming, startup banner, clean stop, config refused, and the bridge's **HALTED**), the watchdog's
+nine (offline, restarted, stalled, recovered, two CRITICALs), the command center's nine buttons
+(start/stop/restart/promote/runtime params), the Telegram bot's own startup ping, and every finished
+stress test. **The reviewer had a routing config; nothing else did** — which is the shape of fix that
+looks complete and leaves the problem where it was.
+
+So a message now states what it IS and the kind picks the room:
+
+| kind | goes to | who sends it |
+|---|---|---|
+| `TRADE` | `telegram_chat_id` | `live/bridge.py` only — the entry alert and the exit that replies to it |
+| `HEALTH` | `telegram_health_chat` → falls back to `telegram_chat_id` | everything else in the repo |
+
+⚠ **`kind` is a REQUIRED argument, not a defaulted one.** A default routes silently, and "the wrong
+room, quietly" is the exact failure this ends — the same reasoning behind the ledger's stream routing
+being a table rather than a guess. ⚠ **And a required argument alone is not the guard**: a forgotten
+one is a `TypeError` raised at 3am inside the very alert that was trying to tell you something, so
+`tests/test_notification_routing.py` **greps every call site in `algos/` and `command-center/`** and
+fails in the suite instead. Same shape as `test_ledger_streams.py`, for the same reason. Both grep
+tests also assert they MATCHED something — a sweep that finds nothing passes for ever.
+
+⚠ **The fallback is deliberately asymmetric.** HEALTH with no room of its own borrows the trades chat
+and warns once; TRADE never borrows the health chat. Health in the wrong room is a nuisance you can
+see, a fill buried in re-warm chatter is the thing being prevented.
+
+⚠ **The HALT is HEALTH, and it is the call worth defending** — it is the most consequential message
+here, which is precisely why it must not sit in a room only checked when a fill arrives. It is also
+why `log_review.py` raises it AGAIN as a standing chip on the Bots page: one Telegram line, in any
+room, was never enough for that one.
+
+⚠ **Telegram command REPLIES are not routed at all** (`telegram_bot.send_to`) — an answer belongs
+where the question was asked. A `/balance` typed in the trades group replying somewhere else would be
+baffling, and it is not an unsolicited message competing for attention.
+
+⚠ **`command-center/backend/services/notify.py` carries a SECOND copy of this table**, because the two
+subsystems may read each other's files and never import each other's code. What holds them together is
+that both route on the same credential KEYS, pinned by a backend test that READS `shared/notify.py`.
+That app also refuses to use `TRADE` at all, by test: it has no way to know a trade happened.
+
+⚠ **`log_review.py` read `credentials.json` directly until this pass**, which silently ignored
+`LWG_TELEGRAM_HEALTH_CHAT` — an env override this repo's own template documented and nothing honoured.
+It goes through `notify.chat_for` now. **A second reader of one credential is a second answer.**
 
 **ARMED 2026-08-05** — `telegram_health_chat` is set on the VPS to the "LWG Captial Bot Health"
 group, proven by a `--all` run reporting 2 findings into it. ⚠ **Getting a group's chat id took four
