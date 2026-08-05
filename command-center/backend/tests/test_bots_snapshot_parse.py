@@ -30,7 +30,7 @@ def _state_blob() -> str:
     return json.dumps({
         "mpc_sos_fade_demo": {
             "name": "MPC SOS Fade", "status": "live", "started": 1785471363.6,
-            "account": 700107749, "balance": 2000.0, "trades_today": 0,
+            "account": 700107749, "balance": 2000.0, "mt5_link": True,
             "last_updated": "2026-07-31T04:18:43+00:00",
         },
         "last_updated": "2026-07-31T04:18:43.940729",
@@ -75,11 +75,11 @@ def test_schtasks_paths_resolve_to_task_names():
     raw = ('===TASKS===\n'
            '"\\SYS_MONITOR","N/A","Disabled"\n'
            '"\\SYS_TELEGRAM","N/A","Running"\n'
-           '"\\Folder\\SYS_REPORTER","N/A","Ready"\n')
+           '"\\Folder\\SYS_DEADMAN","N/A","Ready"\n')
     tasks = bots._parse_tasks(bots._parse_sections(raw, "head"))
     assert tasks["SYS_MONITOR"] == "Disabled"
     assert tasks["SYS_TELEGRAM"] == "Running"
-    assert tasks["SYS_REPORTER"] == "Ready"        # nested folders resolve too
+    assert tasks["SYS_DEADMAN"] == "Ready"         # nested folders resolve too
 
 
 def test_the_bot_key_is_what_identifies_the_process():

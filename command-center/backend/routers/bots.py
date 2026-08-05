@@ -127,51 +127,41 @@ _BOT_DISPLAY_ORDER = [b.task for b in _BOTS]
 _BY_TASK: dict[str, BotReg] = {b.task: b for b in _BOTS}
 _BY_KEY:  dict[str, BotReg] = {b.key: b for b in _BOTS}
 
+# ⚠ `SYS_REPORTER` and `SYS_PNLTRACKER` were removed 2026-08-05 with the scripts behind
+# them (see `algos/CLAUDE.md`). They had rendered here as DISABLED jobs "waiting for a bot
+# registry", which reads as a feature switched off rather than one that does nothing:
+# both carried an empty registry inherited from the four bots deleted 2026-06-22.
 _SYS_DISPLAY_NAMES = {
     "SYS_TELEGRAM":       "Telegram",
-    "SYS_REPORTER":       "Reporter",
     "SYS_MONITOR":        "Monitor",
-    "SYS_PNLTRACKER":     "P&L Tracker",
+    "SYS_DEADMAN":        "Dead-man switch",
+    "SYS_LOGBACKUP":      "Log backup",
 }
 _DISPLAY_NAMES = {**{b.task: b.display for b in _BOTS}, **_SYS_DISPLAY_NAMES}
 _TASK_BOT_KEYS = {b.task: b.key for b in _BOTS}
 _KEY_DISPLAY   = {b.key: b.display for b in _BOTS}
 
+# The jobs this page reports on. Every entry must have a task in `_SYS_TASK_BY_JOB` below
+# — a name with no task resolves to a permanent UNKNOWN, which reads as a job the page
+# cannot see rather than one it never asked about.
 _SCHEDULED_JOBS = [
-    JobStatus(name="Monitor",     schedule="every 1 min",  status="UNKNOWN"),
-    JobStatus(name="P&L Tracker", schedule="every 1 min",  status="UNKNOWN"),
-    JobStatus(name="Reporter",    schedule="daily 4pm CT", status="UNKNOWN"),
+    JobStatus(name="Monitor",          schedule="every 1 min", status="UNKNOWN"),
+    JobStatus(name="Dead-man switch",  schedule="every 5 min", status="UNKNOWN"),
+    JobStatus(name="Log backup",       schedule="daily 00:30", status="UNKNOWN"),
 ]
+_SYS_TASK_BY_JOB = {v: k for k, v in _SYS_DISPLAY_NAMES.items()}
 
 # Crash-alert suppress keys — must match telegram_bot.py / monitor.py.
 _SUPPRESS_KEYS: dict[str, str] = {b.key: b.suppress_key for b in _BOTS}
 
-# Risk caps per bot — mirrors bot_state.py BOT_THRESHOLDS.
-# EMPTY ON PURPOSE. These are pnl_tracker's daily/weekly ALERT levels, and that job is
-# disabled (algos/CLAUDE.md → "On hold"), so a number here would render a cap on the Bots
-# page that nothing on the VPS enforces. The live bot's real risk lever is
-# `strategy_params.exec_risk_pct` in its instance config — see the runtime panel below.
-_BOT_THRESHOLDS: dict[str, dict[str, float]] = {}
-
-# Thresholds — git-tracked file read by both command center and pnl_tracker (via bot_state.py).
-_THRESHOLDS_JSON_PATH = cfg.MONOREPO_ROOT / "algos" / "shared" / "thresholds.json"
-
-
-def _load_thresholds_json() -> dict[str, dict[str, float]]:
-    if _THRESHOLDS_JSON_PATH.exists():
-        try:
-            return json.loads(_THRESHOLDS_JSON_PATH.read_text())
-        except Exception:
-            pass
-    return {}
-
-
-def _get_thresholds(bot_key: str) -> dict[str, float]:
-    """READ-ONLY. `PATCH /{bot}/caps` wrote this file and was deleted 2026-08-04 — see the
-    note on `PATCH /{bot}/runtime` below. Edit `algos/shared/thresholds.json` by hand."""
-    base = dict(_BOT_THRESHOLDS.get(bot_key, {}))
-    base.update(_load_thresholds_json().get(bot_key, {}))
-    return base
+# ⚠ The risk-cap block that stood here is GONE (2026-08-05), along with
+# `algos/shared/thresholds.json` and `bot_state.BOT_THRESHOLDS`. Those numbers were the P&L
+# tracker's daily-goal / daily-cap / weekly-cap ALERT levels, and with that job deleted
+# nothing read them and nothing ever enforced them — so rendering them here put a cap on
+# the page that the bot would trade straight through. **An alert is not a limit.** The live
+# bot's real risk lever is `strategy_params.exec_risk_pct` in its instance config (see the
+# runtime panel below); a genuine cap has to live in `algos/live/runner.py`, where it can
+# refuse a trade.
 
 
 # ── Per-bot config file mapping ───────────────────────────────────────────────
@@ -627,8 +617,6 @@ def get_snapshot():
             except Exception:
                 total_pnl = None
 
-        thresholds = _get_thresholds(bot_key)
-
         bots.append(BotStatus(
             key=bot_key,
             name=_DISPLAY_NAMES.get(task_name, task_name),
@@ -654,28 +642,22 @@ def get_snapshot():
             uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
             total_pnl_pct=total_pnl,
             day_locked=bool(state.get("day_locked", False)),
-            daily_pnl=state.get("daily_pnl"),
-            daily_pnl_pct=state.get("daily_pnl_pct"),
-            weekly_pnl=state.get("weekly_pnl"),
-            weekly_pnl_pct=state.get("weekly_pnl_pct"),
-            peak_balance=state.get("peak_balance") or None,
-            trades_today=state.get("trades_today"),
             lock_reason=state.get("lock_reason") or None,
             last_updated=state.get("last_updated") or None,
-            daily_goal_pct=thresholds.get("daily_goal"),
-            daily_cap_pct=thresholds.get("daily_cap"),
-            weekly_cap_pct=thresholds.get("weekly_cap"),
         ))
 
     # Scheduled jobs
     jobs: list[JobStatus] = []
     for job in _SCHEDULED_JOBS:
-        task_key = {"Monitor": "SYS_MONITOR", "P&L Tracker": "SYS_PNLTRACKER",
-                    "Reporter": "SYS_REPORTER"}.get(job.name)
+        # Derived from _SYS_DISPLAY_NAMES rather than restated, so a job cannot be listed
+        # under a name this loop then fails to resolve to a task.
+        task_key = _SYS_TASK_BY_JOB.get(job.name)
         t_status = task_statuses.get(task_key, "") if task_key else ""
-        # "Disabled" is its own answer, not a STOPPED. All three of these were switched
-        # off deliberately until a live bot is registered (algos/CLAUDE.md → "On hold"),
-        # and showing them as merely stopped reads as a fault the user should go fix.
+        # "Disabled" is its own answer, not a STOPPED — a task somebody switched off is not
+        # a task that failed, and showing it as merely stopped reads as a fault to go fix.
+        # ⚠ All three of these SHOULD be enabled today: the two that were legitimately off
+        # ("waiting for a bot registry") were deleted 2026-08-05, so a DISABLED here now
+        # means somebody turned a live watchdog off.
         if t_status == "Running":
             status = "RUNNING"
         elif t_status == "Disabled":
@@ -1120,13 +1102,13 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
 #   * `PATCH /caps` did the same restart to write `thresholds.json` for `SYS_PNLTRACKER`,
 #     a task that is DISABLED, plus a loop over `_CAP_CONFIG_FIELDS` — which is empty by
 #     design, because `algos/live/` has no daily-cap or weekly-cap field to write. Every
-#     restart it caused was for nothing.
+#     restart it caused was for nothing. **Its whole subject is gone now: the tracker, the
+#     task and `thresholds.json` were deleted 2026-08-05 (see `_SYS_DISPLAY_NAMES`).**
 #   * `GET /config` is `GET /params` with fewer labels.
 #
 # What replaced them, and why each is the safer shape: `/params` reads (and never writes),
 # and `/runtime` writes ONLY the reloadable set and **does not restart** — the bot re-reads
-# its own config and applies the change while FLAT. Editing thresholds.json is now a hand
-# edit, which is the honest cost of a job nobody has switched on.
+# its own config and applies the change while FLAT.
 
 
 @router.get("/{bot_name}/params", response_model=BotParamsView)

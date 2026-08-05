@@ -265,17 +265,15 @@ class BotStatus(BaseModel):
     total_pnl_pct: Optional[float] = None
     day_locked: bool = False
     # ── Detail fields (populated from bot_state.json) ─────────────────────────
-    daily_pnl: Optional[float] = None
-    daily_pnl_pct: Optional[float] = None
-    weekly_pnl: Optional[float] = None
-    weekly_pnl_pct: Optional[float] = None
-    peak_balance: Optional[float] = None
-    trades_today: Optional[int] = None
+    # ⚠ The derived P&L fields (daily_pnl, weekly_pnl, peak_balance, trades_today) and the
+    # three cap fields (daily_goal_pct / daily_cap_pct / weekly_cap_pct) were REMOVED
+    # 2026-08-05 with `algos/notifications/pnl_tracker.py`, which was their only writer and
+    # had carried an empty bot registry since June. They would have rendered "+0.00% today"
+    # and a cap under fields nothing measures and nothing enforces — the same rule
+    # `mt5_link` above states: never let a fabricated value and a measured one look alike.
+    # `total_pnl_pct` and `balance` survive because `algos/live/runner.py` writes them.
     lock_reason: Optional[str] = None
     last_updated: Optional[str] = None
-    daily_goal_pct: Optional[float] = None
-    daily_cap_pct: Optional[float] = None
-    weekly_cap_pct: Optional[float] = None
 
 
 class BotSnapshot(BaseModel):

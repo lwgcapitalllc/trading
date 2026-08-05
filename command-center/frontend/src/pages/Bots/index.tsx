@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment, type ReactNode } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -34,33 +34,6 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
-}
-
-function StatTile({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex-1 min-w-0 bg-bg-surface border border-border-subtle rounded-md px-[12px] py-[10px]">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-[8px]">
-        {label}
-      </div>
-      <div className="leading-none">{children}</div>
-    </div>
-  )
-}
-
-function PnlTileContent({ usd, pct }: { usd: number | null; pct: number | null }) {
-  if (usd == null || pct == null) return <span className="text-[16px] text-text-tertiary">—</span>
-  const color = pct > 0 ? 'text-pos-text' : pct < 0 ? 'text-neg-text' : 'text-text-tertiary'
-  const sign  = usd >= 0 ? '+' : '-'
-  return (
-    <>
-      <span className={`text-[16px] font-semibold ${color}`}>
-        {sign}${Math.abs(usd).toFixed(2)}
-      </span>
-      <span className={`text-[11px] ml-[6px] opacity-60 ${color}`}>
-        ({sign}{Math.abs(pct).toFixed(2)}%)
-      </span>
-    </>
-  )
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -594,55 +567,21 @@ export function Bots() {
                         <tr className="bg-bg-sunken border-b border-border-subtle">
                           <td colSpan={8} className="px-6 py-[14px]">
 
-                            {/* ── Primary stat tiles ───────────────── */}
-                            <div className="flex gap-[10px] mb-[11px]">
-                              <StatTile label="Daily P&L">
-                                <PnlTileContent usd={bot.daily_pnl} pct={bot.daily_pnl_pct} />
-                              </StatTile>
-                              <StatTile label="Weekly P&L">
-                                <PnlTileContent usd={bot.weekly_pnl} pct={bot.weekly_pnl_pct} />
-                              </StatTile>
-                              <StatTile label="Trades Today">
-                                {bot.trades_today != null
-                                  ? <span className="text-[20px] font-semibold text-text-primary">{bot.trades_today}</span>
-                                  : <span className="text-[20px] text-text-tertiary">—</span>
-                                }
-                              </StatTile>
-                              <StatTile label="Peak Balance">
-                                {bot.peak_balance
-                                  ? <span className="text-[16px] font-semibold font-mono text-text-primary">
-                                      ${bot.peak_balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                  : <span className="text-[16px] text-text-tertiary">—</span>
-                                }
-                              </StatTile>
-                            </div>
-
-                            {/* ── Config strip ─────────────────────── */}
+                            {/* ── Config strip ─────────────────────────────────────────
+                                Four stat tiles (Daily P&L / Weekly P&L / Trades Today /
+                                Peak Balance) and three cap chips (Goal / Daily cap / Weekly
+                                cap) stood here until 2026-08-05. Every one was written by
+                                `algos/notifications/pnl_tracker.py`, deleted that day — it
+                                had carried an empty bot registry since June, so all seven
+                                had been drawing an em-dash or nothing for six weeks while
+                                looking like fields that were merely quiet. Balance, Overall
+                                P&L and Uptime are in the row above and the bot writes them
+                                itself. Do not re-add a tile here without a writer behind
+                                it: a `number | null` nothing populates reads as "no P&L
+                                today" rather than "nothing measures this". ────────────── */}
                             <div className="flex items-center gap-[12px] text-[11px] text-text-tertiary flex-wrap">
-                              {bot.daily_goal_pct != null && (
-                                <>
-                                  <span className="opacity-30">·</span>
-                                  <span>Goal <span className="font-medium text-pos-text ml-[4px]">{bot.daily_goal_pct}%</span></span>
-                                </>
-                              )}
-                              {bot.daily_cap_pct != null && (
-                                <>
-                                  <span className="opacity-30">·</span>
-                                  <span>Daily cap <span className="font-medium text-text-primary ml-[4px]">{bot.daily_cap_pct}%</span></span>
-                                </>
-                              )}
-                              {bot.weekly_cap_pct != null && (
-                                <>
-                                  <span className="opacity-30">·</span>
-                                  <span>Weekly cap <span className="font-medium text-text-primary ml-[4px]">{bot.weekly_cap_pct}%</span></span>
-                                </>
-                              )}
                               {bot.last_updated && (
-                                <>
-                                  <span className="opacity-30">·</span>
-                                  <span>Updated <span className="text-text-secondary ml-[4px]">{relativeTime(bot.last_updated)}</span></span>
-                                </>
+                                <span>Updated <span className="text-text-secondary ml-[4px]">{relativeTime(bot.last_updated)}</span></span>
                               )}
                             </div>
 

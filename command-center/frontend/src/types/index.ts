@@ -326,17 +326,12 @@ export interface BotStatus {
   total_pnl_pct: number | null
   day_locked: boolean
   // detail fields
-  daily_pnl: number | null
-  daily_pnl_pct: number | null
-  weekly_pnl: number | null
-  weekly_pnl_pct: number | null
-  peak_balance: number | null
-  trades_today: number | null
+  // ⚠ The per-day/week P&L fields and the three cap fields were removed 2026-08-05 with
+  // `algos/notifications/pnl_tracker.py`, their only writer. Do not re-add them to this
+  // type without a writer: a `number | null` the backend never populates renders as an
+  // em-dash that reads "no P&L today" rather than "nothing measures this".
   lock_reason: string | null
   last_updated: string | null
-  daily_goal_pct: number | null
-  daily_cap_pct: number | null
-  weekly_cap_pct: number | null
 }
 
 export interface BotSnapshot {
@@ -815,8 +810,22 @@ export interface WalkForwardWindow {
   window: number
   is_pnl: number | null
   oos_pnl: number | null
+  // Null means the Sharpe could not be COMPUTED for that half — no curve on disk, or (on the
+  // NATIVE optimizer-derived path) a mode that has no trade-level data at all and degrades on
+  // profit factor instead. It is NOT the claim "the Sharpe was zero", and drawing it as a 0.00
+  // bar is how a window nothing was measured on came to look like a measured flat one.
   is_sharpe: number | null
   oos_sharpe: number | null
+  // How many trades each half actually closed. The whole verdict turns on this: a window with
+  // fewer than 20 on either side is excluded as not-assessable, and on this repo's strategies
+  // that is usually EVERY window. Written by the engine and undeclared on the backend model until
+  // 2026-08-05, so the page could never show it.
+  is_trades: number | null
+  oos_trades: number | null
+  // The NATIVE path's metric — it has no trade-level data, so it degrades on profit factor and
+  // leaves both Sharpes null.
+  is_pf: number | null
+  oos_pf: number | null
 }
 
 export interface SensitivityShift {
@@ -827,6 +836,12 @@ export interface SensitivityShift {
   // path produced its score. P&L is also a dollar figure, which let any position-sizing parameter
   // swamp the score by arithmetic rather than by fragility.
   degradation?: number
+  // The SAME measurement with its sign kept: signed % change in profit factor. `degradation` has
+  // to be a magnitude (a shift that moves the result is evidence either way, and grading needs one
+  // number to threshold) but a chart drawing a magnitude has to INVENT a direction — and the page
+  // drew every shift as a loss, so a parameter change that IMPROVED profit factor rendered as a
+  // long red bar. Direction is data; it is measured now instead of assumed.
+  pf_delta_pct?: number | null
   profit_factor?: number
   run_id?: string
   new_value?: number
@@ -835,6 +850,19 @@ export interface SensitivityShift {
   // survives on records from before 2026-07-30; the chart still reads it so those stay renderable.
   pnl_delta?: number
   pnl_delta_pct?: number
+}
+
+/** What the sensitivity phase could NOT measure. A page reporting "12 params tested" over a run
+ *  that refused 30 shifts is describing coverage that never happened. */
+export interface SensitivityCoverage {
+  params_perturbed: number
+  shifts_run: number
+  /** Shifts that could test nothing — out of the param's bounds, or landing back on the baseline. */
+  shifts_skipped: string[]
+  /** Shifts whose child backtest failed. */
+  shifts_failed: string[]
+  /** Params behind a switch this run has OFF, so no shift of them could change anything. */
+  params_unreachable: string[]
 }
 
 export interface StressTest {
@@ -868,6 +896,11 @@ export interface StressTest {
   walk_forward_degradation: number | null
   sensitivity_summary: Record<string, Record<string, SensitivityShift>> | null
   sensitivity_max_degradation: number | null
+  sensitivity_coverage: SensitivityCoverage | null
+  /** Which phases were ASKED for, and which of them FAILED. The only thing separating "walk-forward
+   *  was not requested" from "walk-forward ran and crashed" — a null summary means both. */
+  phases_requested: string[] | null
+  phase_failures: Record<string, string> | null
   grade: 'A' | 'B' | 'C' | 'D' | 'F' | null
   grade_reasons: string[] | null
   equity_paths_path: string | null
@@ -882,8 +915,15 @@ export interface StressTestDetail extends StressTest {
   equity_paths: number[][] | null
   distribution: {
     max_dd: { counts: number[]; edges: number[] }
+    /** The same drawdowns as a PERCENT of the running peak. Present only when the run compounds
+     *  (`dd_basis === 'percent'`) — which is exactly when the dollar histogram is in the unit the
+     *  grade did not read. */
+    max_dd_pct?: { counts: number[]; edges: number[] }
     final_pnl: { counts: number[]; edges: number[] }
   } | null
+  /** A results file that is present and unreadable, versus one never written — both used to arrive
+   *  as a bare null, so a corrupt result rendered as a test that simply had no chart. */
+  results_error: string | null
 }
 
 export interface StressTestCreate {
@@ -901,6 +941,9 @@ export interface StressTestTriggerResponse {
   status: string
   estimated_duration_min: number | null
   notes: string[]
+  /** Things knowable BEFORE the work runs — chiefly a walk-forward whose windows cannot each hold
+   *  enough trades to be assessable, which is arithmetic rather than luck and caps the grade at B. */
+  warnings: string[]
 }
 
 export interface StressLock {
