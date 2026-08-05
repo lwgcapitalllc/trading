@@ -143,3 +143,7 @@ algos/mt5_connect.lock
 *VANTAGE_*.csv
 *_Strategy_*_20*.csv
 tv-exports/
+
+# Playwright browser-test artifacts (command-center/frontend)
+test-results/
+playwright-report/

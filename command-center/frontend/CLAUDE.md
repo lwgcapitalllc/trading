@@ -1073,6 +1073,67 @@ question it had not already thought of.
   **169h**, where the old `from + 7 × 86_400_000` gave 168h and quietly dropped the last hour of
   that Sunday.
 
+## Browser tests — `npm test`, and what deliberately is NOT in them
+
+**Added 2026-08-05.** This folder had no test runner at all: the convention was "verify it in a
+real browser", done by hand, which is why the Overview's twelve defects each survived until
+somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
+**17 tests, ~3 min**, run with `npm test` from `frontend/`.
+
+⚠ **It runs against the RUNNING app** (`./start.sh` first — backend on `:8000`, dev server on
+`:5173`), and `playwright.config.ts` deliberately has **no `webServer` block**. The backend here
+talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand is a runner that
+can start things on the trading box. Starting it stays a person's decision — the same reasoning
+`test_integration.py` is deselected under.
+
+⚠ **`workers: 1`, `retries: 0`.** The tests intercept API routes and one installs a **fake clock**;
+parallel workers would be several browsers disagreeing about what time it is. And a retry that
+turns a real flake green is how a broken page ships.
+
+⚠ **Mocks MUTATE THE REAL SNAPSHOT rather than hand-writing a fixture** (`mockSnapshot`). A
+hand-written fixture drifts from the backend's model and then pins a shape the server never sends
+— which is a test that passes while the page is broken.
+
+**Two things were verified by hand and are deliberately NOT committed as tests:**
+
+- 🔴 **The Smart Money render, which needs `FEATURES.smartMoney` flipped ON.** The one-off check
+  did that by REWRITING `lib/features.ts`, and **a committed test that edits a source file is a
+  hazard, not a test** — a crash mid-run leaves the flag on and Smart Money silently returns to
+  the nav. It was run manually (both grids take their 4 / 3 columns, `relativeTime` reads
+  `65d ago`, no console errors); re-run it by hand after touching anything that branch calls.
+  ⚠ **The general point: a flagged-off branch is exactly the code a compiler blesses and nobody
+  renders** — `relativeTime` gained an argument that only that branch passes, and a typecheck is
+  not a render.
+- **The 1s ticker's cost**, measured through CDP `Performance.getMetrics`: **44ms of scripting per
+  10s wall clock (0.44%)** against a 1ms baseline on `/rulesets`, layout and style both 0ms.
+  A one-off measurement, not a threshold worth asserting on every run.
+
+⚠ **Two API facts the suite had to learn the hard way, and both will mislead the next test:**
+`main.tsx` sets a global **`staleTime: 30_000`**, so navigating away and back does NOT re-fetch
+inside 30s (measured: the mocked route was hit exactly once), and **`page.goto` is a full page
+load** that destroys the query cache entirely. Any test about *stale data still on screen* must
+therefore wait out the real poll — which is why one test is 65s and says so.
+
+## Decided 2026-08-05: the Overview does NOT get its own health strip
+
+Asked for and declined, and the reasoning is the reusable part. `SystemHealthStrip` already
+renders API / SSH / NT8 / MT5 in the **sidebar**, which is on screen on the Overview and every
+other page. A second rendering of those four dots would be **two readings of one claim** — this
+repo's most-repeated failure, and the exact argument that made the Bots page's fleet strip share
+one `versionFlags` derivation. A health strip that disagreed with the sidebar six inches away
+would be worse than no strip.
+
+⚠ **`GET /system/readiness` is a different question and is still unanswered anywhere in the UI.**
+It reports the dependencies whose failure mode is SILENCE — an un-backfilled news calendar makes
+the News & Holiday filter inert, missing credentials make every Telegram send a no-op — and
+neither is visible on any page today. That is a real gap and a candidate for its own small card;
+it is just not "put the health dots on the Overview".
+
+Also decided, and recorded so nobody "fixes" it: **"best grade" and "N robust" span ALL stress
+tests ever, on purpose** (Aaron's call). They are a *has this lab ever produced something solid*
+reading, not a recent-form one. **`MIN_TRADES_FOR_BEST` is a different thing and stays** — a
+sample floor is about whether a number means anything, not about how far back it looks.
+
 ## A blank cell is not a diagnosis — the Bots page's `No MT5 link` chip
 
 **Added 2026-08-04, and this page was the ONLY place the incident was visible.** MetaTrader
