@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+#
+# Refuse a commit that changes code without touching the CLAUDE.md that owns it.
+#
+# Why this exists: two people work on this repo from two machines, and the CLAUDE.md
+# files are how each of them (and Claude) learns what the other did. A code change
+# whose doc never landed is invisible on the other machine until it bites.
+#
+# The rule: for every changed file, walk UP from its folder to the first CLAUDE.md.
+# That file is the owner. It has to be in the same commit.
+#
+# The escape valve is a LINE IN THE COMMIT MESSAGE, not a flag, so a skip is
+# recorded in the history where the other person can read it:
+#
+#     DOCS: none - typo in a comment, no behaviour change
+#
+# `git commit --no-verify` also bypasses it and leaves no trace. Don't use it.
+#
+# Installed by ./go, or by scripts/install_hooks.sh — both just point
+# core.hooksPath at this folder, so the hook is versioned like any other file.
+
+set -u
+
+MSG_FILE="$1"
+ROOT="$(git rev-parse --show-toplevel)"
+GIT_DIR="$(git rev-parse --git-dir)"
+
+# ── Cases that are not somebody writing code ──────────────────────────────────
+# A merge, a rebase or a revert carries somebody else's change; asking for a doc
+# update there would ask for the same paragraph twice.
+if [ -f "$GIT_DIR/MERGE_HEAD" ] || [ -d "$GIT_DIR/rebase-merge" ] || [ -d "$GIT_DIR/rebase-apply" ]; then
+  exit 0
+fi
+if grep -qE '^(Merge |Revert |fixup!|squash!)' "$MSG_FILE"; then
+  exit 0
+fi
+
+# ── The honest override ───────────────────────────────────────────────────────
+# `DOCS: none - <reason>`. The reason is required and has to say something, so the
+# line cannot decay into a rubber stamp.
+if grep -qiE '^[[:space:]]*DOCS:[[:space:]]*none' "$MSG_FILE"; then
+  if grep -qiE '^[[:space:]]*DOCS:[[:space:]]*none[[:space:]]*[-—:,][[:space:]]*[^[:space:]].{9,}' "$MSG_FILE"; then
+    exit 0
+  fi
+  echo ""
+  echo "  The DOCS: none line needs a reason of its own - at least ten characters."
+  echo ""
+  echo "      DOCS: none - <why this change needs no CLAUDE.md update>"
+  echo ""
+  exit 1
+fi
+
+# ── What changed ──────────────────────────────────────────────────────────────
+STAGED="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRD)"
+[ -z "$STAGED" ] && exit 0
+
+# Files that carry no doc obligation of their own.
+is_exempt() {
+  case "$1" in
+    *.meta.json)                                    return 1 ;;  # a real contract, not data
+    *.md|*.markdown)                                return 0 ;;  # docs ARE the update
+    .gitignore|.gitattributes|*/.gitignore)         return 0 ;;
+    *.lock|package-lock.json|yarn.lock|poetry.lock) return 0 ;;
+    *.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf|*.webp)    return 0 ;;
+    *.csv|*.parquet|*.db|*.sqlite|*.sqlite3|*.pkl)  return 0 ;;
+    .claude/settings.local.json)                    return 0 ;;  # per-machine
+  esac
+  return 1
+}
+
+# The CLAUDE.md that owns a path: the nearest one walking up to the repo root.
+owner_of() {
+  d="$(dirname "$1")"
+  while :; do
+    if [ "$d" = "." ] || [ "$d" = "/" ] || [ -z "$d" ]; then
+      echo "CLAUDE.md"
+      return
+    fi
+    if [ -f "$ROOT/$d/CLAUDE.md" ]; then
+      echo "$d/CLAUDE.md"
+      return
+    fi
+    d="$(dirname "$d")"
+  done
+}
+
+# ── Pair every changed file with its owner ────────────────────────────────────
+PAIRS=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  is_exempt "$f" && continue
+  PAIRS="$PAIRS$(owner_of "$f")	$f
+"
+done <<EOF
+$STAGED
+EOF
+
+[ -z "$PAIRS" ] && exit 0
+
+# Owners not present in this same commit.
+MISSING="$(printf '%s' "$PAIRS" | cut -f1 | sort -u | while IFS= read -r owner; do
+  printf '%s\n' "$STAGED" | grep -qxF "$owner" || printf '%s\n' "$owner"
+done)"
+
+[ -z "$MISSING" ] && exit 0
+
+# ── Refuse, and say exactly which file to open ────────────────────────────────
+echo ""
+echo "  COMMIT REFUSED - code changed, its CLAUDE.md did not."
+echo ""
+printf '%s\n' "$MISSING" | while IFS= read -r owner; do
+  [ -z "$owner" ] && continue
+  files="$(printf '%s' "$PAIRS" | awk -F'\t' -v o="$owner" '$1 == o { print $2 }')"
+  echo "    $owner"
+  printf '%s\n' "$files" | head -4 | sed 's/^/        /'
+  n="$(printf '%s\n' "$files" | wc -l | tr -d ' ')"
+  [ "$n" -gt 4 ] && echo "        ... and $((n - 4)) more"
+  echo ""
+done
+echo "  Open the file(s) above, write what this change DID and why it matters to"
+echo "  the next person, git add them, and commit again. A line added only to get"
+echo "  past this check is worse than nothing - it reads as documented."
+echo ""
+echo "  If this change genuinely needs no doc update, say so in the message:"
+echo ""
+echo "      DOCS: none - <reason>"
+echo ""
+
+exit 1

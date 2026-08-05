@@ -55,13 +55,25 @@ if [ "$(git -C "$ROOT" ls-files -v "$CONFIG" | cut -c1)" != "S" ]; then
   ok "config.json hidden from git (--skip-worktree)"
 fi
 
-# ── 3. Directories the app writes into ────────────────────────────────────────
+# ── 3. Git hooks ──────────────────────────────────────────────────────────────
+# .git/hooks is not tracked, so a hook written on one machine does not exist on
+# the other — which is the failure the hook itself is about. Point git at the
+# tracked .githooks/ folder instead, on every machine, every run.
+if [ "$(git -C "$ROOT" config core.hooksPath)" = ".githooks" ]; then
+  ok "git hooks installed (.githooks)"
+else
+  git -C "$ROOT" config core.hooksPath .githooks
+  chmod +x "$ROOT"/.githooks/* 2>/dev/null || true
+  ok "git hooks installed - commits now require the matching CLAUDE.md"
+fi
+
+# ── 4. Directories the app writes into ────────────────────────────────────────
 mkdir -p "$ROOT/command-center/backend/data" \
          "$ROOT/command-center/backend/reports/lab" \
          "$ROOT/backtest/cache" \
          "$ROOT/engines/news/data"
 
-# ── 4. SSH to the VPS ─────────────────────────────────────────────────────────
+# ── 5. SSH to the VPS ─────────────────────────────────────────────────────────
 # Needed for NinjaTrader/MT5 backtests, pulling bar history, and the health dots.
 # Asks for the IP once, writes the host block, and never asks again.
 if grep -qE '^\s*Host\s+.*\bforexvps\b' "$SSH_CONFIG" 2>/dev/null; then
@@ -106,7 +118,7 @@ EOF
   fi
 fi
 
-# ── 5. Economic calendar ──────────────────────────────────────────────────────
+# ── 6. Economic calendar ──────────────────────────────────────────────────────
 if [ -s "$ROOT/engines/news/data/events.json" ]; then
   ok "news calendar present"
 else
@@ -115,7 +127,7 @@ else
   say  "  command-center/backend/.venv/bin/python engines/news/tools/backfill.py --from 2021-01"
 fi
 
-# ── 6. Open the browser once the frontend is actually up ──────────────────────
+# ── 7. Open the browser once the frontend is actually up ──────────────────────
 (
   for _ in $(seq 1 90); do
     if lsof -ti:5173 >/dev/null 2>&1; then
@@ -127,7 +139,7 @@ fi
   done
 ) &
 
-# ── 7. Launch ─────────────────────────────────────────────────────────────────
+# ── 8. Launch ─────────────────────────────────────────────────────────────────
 # start.sh creates the venv on first run, installs backend requirements, runs
 # npm install, opens the tunnels, and starts both servers. Ctrl-C stops it all.
 exec "$ROOT/command-center/start.sh"

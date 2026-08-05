@@ -8,8 +8,14 @@ the whole VPS.
 |---|---|---|
 | `bootstrap_vps.ps1` | MT5 / algos side — clone, deps, MT5 check, secrets, Task Scheduler, start | elevated PowerShell |
 | `bootstrap_ninjatrader.ps1` | Futures side — NT8 + .NET check, user-folder restore, deploy `.cs`, nt8_agent deps + task, health | PowerShell as `trader` (elevated for task creation) |
+| `install_hooks.sh` | This clone's git hooks — points `core.hooksPath` at the tracked `.githooks/` | any shell, on a dev machine |
 
-Both are **idempotent** — safe to re-run. Each runs in independent phases; a failed
+`install_hooks.sh` exists because `core.hooksPath` is per-clone local config that `git clone`
+does not carry, so a fresh clone commits with no checks and looks exactly like one that has
+them. `./go` runs it for you; run it by hand on a clone that never runs `./go`. What the hook
+enforces is in the root `CLAUDE.md` → `## Committing`.
+
+All three are **idempotent** — safe to re-run. Each runs in independent phases; a failed
 phase reports and the run continues, ending with a status summary.
 
 ---
