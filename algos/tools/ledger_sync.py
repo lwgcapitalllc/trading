@@ -20,6 +20,13 @@ why the summary line says how many days are outstanding rather than just "done".
 
 **What it will not do.** It stages only files it just fetched into `*/ledger/`, and only ones
 matching `decisions-YYYY-MM-DD.jsonl` — never `git add -A`, never a path it did not write.
+
+**Where it writes: `algos/ledger_archive/`, NOT the bot's own instance directory.** The bot
+writes the live files, so the VPS always holds an untracked copy of every day this commits —
+and git refuses to overwrite an untracked file on pull, which is correct and which broke `git
+pull` on the VPS outright (measured 2026-08-05, the pull aborted). Committing into the live
+path would have required a manual delete before every future pull, on the one box that has to
+stay current. The archive mirrors the VPS layout so the two differ only by the root.
 """
 
 from __future__ import annotations
@@ -47,7 +54,18 @@ from log_backup import LEDGER_RE  # noqa: E402  — one definition of a ledger f
 REMOTE_PATH_RE = re.compile(r"^[A-Za-z0-9._-]+/ledger/decisions-\d{4}-\d{2}-\d{2}\.jsonl$")
 
 REPO_ROOT = _HERE.parent.parent
-LOCAL_INSTANCES = REPO_ROOT / "algos" / "markets" / "fx" / "instances"
+# 🔴 The archive is a SEPARATE tree from the bot's own instance directory, and that is not
+# tidiness — writing it back to `algos/markets/fx/instances/<bot>/ledger/` broke `git pull`
+# on the VPS (measured 2026-08-05: *"untracked working tree files would be overwritten by
+# merge"*, and the pull aborted). The bot writes those files, so the VPS always holds its own
+# untracked copy of every day this tool commits; git will not clobber one, and it is right not
+# to. Every VPS pull would have needed a manual delete first, forever — on the box that has to
+# stay current for the watchdog, the dead-man's switch and the live loop itself.
+#
+# It mirrors the VPS layout exactly (`<bot>/ledger/decisions-YYYY-MM-DD.jsonl`) so an archived
+# file and its live original differ only by the root, which keeps a hand `diff` trivial and
+# lets `REMOTE_PATH_RE` and the commit-msg hook's exemption pattern stay as they are.
+LOCAL_ARCHIVE = REPO_ROOT / "algos" / "ledger_archive"
 
 DEFAULT_HOST = "forexvps"
 REMOTE_INSTANCES = "C:/trading/algos/markets/fx/instances"
@@ -77,7 +95,7 @@ def fetch(host: str, rel_paths: list[str], dry_run: bool = False) -> list[Path]:
     """Copy each closed ledger file down into the local repo. Returns the local paths."""
     got = []
     for rel in rel_paths:
-        local = LOCAL_INSTANCES / rel
+        local = LOCAL_ARCHIVE / rel
         if dry_run:
             got.append(local)
             continue

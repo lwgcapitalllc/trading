@@ -103,6 +103,19 @@ algos/markets/fx/instances/*/deployed/
 algos/markets/fx/instances/*/deployed.new/
 algos/markets/fx/instances/*/deployed.json
 
+# The LIVE ledger the bot is appending to right now. The archived copy that must survive the
+# box is committed by `algos/tools/ledger_sync.py` to `algos/ledger_archive/` instead — a
+# separate tree, deliberately.
+#
+# 🔴 This rule exists because the paragraph above was proven right a second time, by the same
+# mechanism, on 2026-08-05. Days 07-31 and 08-04 were committed into this path; the VPS still
+# held its own untracked copies (it wrote them), and `git pull` on the VPS aborted with
+# *"untracked working tree files would be overwritten by merge"*. Every future pull would have
+# needed a manual delete first — on the one box that has to stay current for the watchdog, the
+# dead-man's switch and the live loop. **A file the VPS WRITES cannot also be a file git
+# DELIVERS.** That is the rule; `deployed/` and this are two instances of it.
+algos/markets/fx/instances/*/ledger/
+
 # Watchdog + process runtime state. Written by SYS_MONITOR and the Telegram bot on the
 # VPS. Per-machine runtime, never source.
 algos/monitor_state.json
