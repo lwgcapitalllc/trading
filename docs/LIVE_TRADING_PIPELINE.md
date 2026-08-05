@@ -334,6 +334,63 @@ the switch existing.
 ⚠ **The URL is a SECRET.** Whoever holds it can send your pings for you and hold the alert green
 forever, which is strictly worse than no switch, because you would believe in it.
 
+### G17 — The shadow diff RAN, and it found a knife-edge in the entry model — 2026-08-04
+
+Step 9.2, executed. `algos/tools/shadow_diff.py` joins the live bot's own `bar` ledger stream to
+a lab replay of the same window **on bar TIMESTAMP** (never on index — the two count from
+different places) and diffs them field by field. **148 live bars, 2026-07-31 → 2026-08-05.**
+
+**The clock is right.** 148 of 148 live bars have a lab bar at the same timestamp; zero missing.
+That is the check this step exists for, and it passes outright.
+
+**The feeds differ by a systematic 4–5 cents.** Vantage (the lab) quotes gold consistently ABOVE
+PU Prime (the live account) — `lab − live` is +$0.04 to +$0.05 on every one of the 148 bars, never
+once the other way. That is a quote-level difference between two brokers, not drift, and it is
+expected: every backtest in this repo was measured on Vantage and the bot trades PU Prime.
+
+**Ten of the eleven compared decision fields are bar-for-bar identical.** Stages, arms, vetoes,
+stops, TP ladder — no divergence anywhere.
+
+🔴 **The eleventh is the finding.** `long_edge` differs on all 148 bars: on 123 of them by exactly
+the feed offset (+$0.04, i.e. the same level priced off a 4-cent-higher feed), and on **25
+consecutive bars — 2026-07-31 14:30 to 20:30, one leg — by $10.08.**
+
+**The cause was isolated, not guessed: both prices are rungs on the SAME fib ladder.** At
+2026-07-31 14:30 the lab's own ladder reads 0.618 = 4041.958 and 0.702 = 4031.841. The live bot
+rested at **0.618**; the lab rested at **0.702**. Same leg, same anchors (ash 4116.39 / asl
+3995.95), same stage on both sides — **the entry RULE picked a different rung.**
+
+That is `exec_fib_nearest` (rule 3, ON by default since 2026-08-02), which rests on whichever of
+the two bracketing levels is nearer the gap edge. **It is a discontinuous choice, and nothing had
+measured how sharp the discontinuity is: four cents of feed difference moved the resting entry by
+$10.12.**
+
+⚠ **It is not just a different price, it is a different TRADE.** With the stop at 0.886 (4009.68),
+entry 4041.96 is a $32.28 stop and entry 4031.84 is a $22.16 stop — **46% apart**. Same nominal 1R,
+so the R-based backtest is unaffected, but the position SIZE, the fill probability and the distance
+price must travel are all materially different. A backtest's fill rate is therefore **not
+transferable across brokers at the margin**, and this is the mechanism.
+
+✅ **Nothing was affected in this window.** No trade was taken, `l_stage` never exceeded 1 on either
+side, and no stop was ever set — the edge was being computed but never rested. So this is a measured
+sensitivity, not an incident.
+
+**What is NOT yet known, and is the follow-up:** how OFTEN the rung flips. A constant price offset
+cannot cause it (every level shifts together); it is the small VARIATION in the offset — 0.04 on
+some bars, 0.05 on others — that moves a gap edge relative to a fixed rung. The honest measurement
+is a jitter test: replay 6.5 years with a few cents of noise added to the bar prices and count how
+many trades change. Until that is run, treat "the backtest's trade list transfers to this broker"
+as unmeasured.
+
+⚠ **The diff compares only what the ledger records.** `l_sos_bar` / `s_sos_bar` / `l_arm_src` /
+`s_arm_src` come off the SEQUENCE object, which a replay does not retain per bar; the tool names
+them as uncompared rather than dropping them quietly. Read a green run as "every field that CAN be
+compared matched", never as "everything matched".
+
+⚠ **Running it found a defect one layer down** — the bar cache was recording the window it
+REQUESTED rather than the data it RECEIVED, so the first run could only compare 66 of 148 bars.
+Fixed in `backtest/data/source.py::_covered_end`; see `backtest/CLAUDE.md`.
+
 ### G11 — The Bots page is CORRECT for many bots and unreadable with them — **CLOSED 2026-08-04**
 
 **All three bullets below are closed.** Configure is a bot SELECTOR (a left rail) plus a detail panel
@@ -760,9 +817,11 @@ git-ignored local folder whenever the app starts. Both idempotent.
 ### Step 9 — Go live, carefully
 
 1. **Dry run, one week minimum.** Bot runs, logs every decision, sends nothing to the broker.
-2. **Shadow diff.** Replay the same window through the lab's python runner and diff the decision
-   streams. They should be identical — the strategy is the same object. Any difference is a live-feed
-   or clock problem, which is exactly what this step exists to catch.
+2. **Shadow diff.** ✅ **RUN 2026-08-04 — `algos/tools/shadow_diff.py`, and it did its job** (G17).
+   148 live bars: clock perfect (148/148 timestamps align), 10 of 11 decision fields bar-for-bar
+   identical, and the eleventh exposed a knife-edge in rule 3 that nothing had measured — 4 cents of
+   broker quote difference moved a resting entry by $10.12 by flipping which fib rung it chose.
+   Re-run it after any live session, and after any entry-logic change.
 3. **Feed parity.** `compare_feeds.py` against the live terminal — clock offset must read a flat 0h.
 4. **Arm at reduced risk.** Not `exec_risk_pct = 10`. See the open question below.
 5. **One bot only.** B-LEG waits for the allocator and the overlap audit (G10).

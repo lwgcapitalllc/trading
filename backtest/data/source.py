@@ -80,8 +80,52 @@ class BarSource:
             return self.cache.load(symbol, base_tf)
         fetched = self.agent.bars(symbol, base_tf, start_date, end_date)
         self.cache.save(symbol, base_tf, fetched)
-        self.coverage.record(symbol, base_tf, start_date, end_date)
+        # Record what CAME BACK, never what was asked for — see `_covered_end`.
+        covered_to = _covered_end(fetched, end_date)
+        if covered_to >= start_date:
+            self.coverage.record(symbol, base_tf, start_date, covered_to)
         return self.cache.load(symbol, base_tf)
+
+
+def _covered_end(fetched: pd.DataFrame, end_date: str) -> str:
+    """The last date this fetch may honestly claim to have covered.
+
+    🔴 **This exists because recording the REQUESTED window silently truncated every later
+    run.** `_load_base` used to `coverage.record(start_date, end_date)` straight after the
+    fetch, whatever came back. Ask for bars up to a date the broker does not have yet — which
+    every `--end today` and every `end = last_bar + 1 day` does — and that date is marked
+    fetched forever. The next request reads as a cache HIT and returns a frame that stops
+    where the old fetch stopped, with no error, no warning, and no way to tell from the
+    result. **Measured on the live cache 2026-08-04: the sidecar claimed history through
+    2026-08-06 while the file held nothing past 2026-08-03 03:45**, and the agent was serving
+    the missing 170 bars on request the whole time.
+
+    That is this repo's recurring shape — the system quietly answers a NARROWER question than
+    the one asked — and it is the same failure as the hardcoded history floor, arriving from
+    the other end of the window.
+
+    Two clamps, and the second is the one that is easy to miss:
+
+    1. **Never past the last bar returned.** If the data stops earlier than the request, the
+       request over-reached.
+    2. **Never into today.** A day that is still filling looks identical to a complete one from
+       the bars alone — a frame ending 00:15 on the last day is either "the broker stops here"
+       or "it is 00:20 right now", and nothing in the frame distinguishes them. So the recent
+       edge is never marked covered and simply refetches until it is genuinely in the past.
+
+    A window that ends in the past is unaffected, so no historical run does extra work. The cost
+    is one agent call per run that reaches the live edge, which is the correct price for never
+    handing a backtest a short frame it cannot detect.
+    """
+    import datetime as _dt
+
+    end = end_date
+    if not fetched.empty:
+        last = str(pd.Timestamp(fetched.index[-1]).date())
+        if last < end:
+            end = last
+    yesterday = str(_dt.date.today() - _dt.timedelta(days=1))
+    return min(end, yesterday)
 
 
 def _slice(bars: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:

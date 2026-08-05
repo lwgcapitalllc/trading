@@ -193,6 +193,29 @@ The root `conftest.py` has to `collect_ignore` `algos/nt8/test_bt_switch.py`: it
 script, not a test, and it calls `sys.exit(1)` at IMPORT when pywinauto is missing, which crashes
 collection for the whole repo rather than failing one file.
 
+**`tools/shadow_diff.py` — did the LIVE bot decide what the LAB says it should have?** Step 9.2 of
+`docs/LIVE_TRADING_PIPELINE.md`. It joins the bot's own `bar` ledger stream to a lab replay of the
+same window and diffs them field by field. The claim it checks is narrow and therefore useful:
+`algos/live/` holds no trading logic, so the two run the same strategy object and **any difference
+is data — a feed, a clock, or a warm-up — never logic.**
+
+⚠ **Joined on bar TIMESTAMP, never on index.** The live index counts on from wherever warm-up
+stopped and survives restarts; the lab's counts from the first row of whatever frame it was handed.
+Two unrelated integers that look comparable — the trap `strategies/CLAUDE.md` records from the
+B-LEG harness, where 2,409 comparisons failed at one flat offset while the logic was identical.
+
+⚠ **FEED drift and DECISION drift are reported SEPARATELY**, because the live bot trades PU Prime
+`XAUUSD.s` and the lab replays Vantage `XAUUSD` — different brokers, so their bars genuinely differ.
+Merging them would let a quote gap read as a strategy bug, or hide a real divergence inside an
+expected one. ⚠ **It compares only what the ledger records**; the sequence fields are named as
+uncompared rather than dropped, so a green run means "every field that CAN be compared matched".
+
+**First run, 2026-08-04, 148 live bars:** clock perfect (148/148 timestamps align), 10 of 11
+decision fields bar-for-bar identical, feeds differing by a systematic +4-5 cents. The eleventh
+exposed a knife-edge in the entry model — see the header entry and `LIVE_TRADING_PIPELINE.md` G17.
+Tests: `algos/tests/test_shadow_diff.py` (11), all on the join, because a join that matches too
+little invents drift and one that matches too much invents parity.
+
 Standalone MT5 lab tooling (not imported by any bot) lives in `tools/`: `download_mt5_history.py` (warm the lab MT5 history cache) and `audit_mt5_data_quality.py` (its read-only companion — probes what the broker actually serves). Both run on the VPS against `C:\MT5_Lab`.
 
 **Backtest data source — pinned to MT5_Lab only (2026-07-22).** All backtest price/tick data comes from the MT5 agent (`markets/fx/tools/mt5_agent.py`, VPS port 8766). Its `_ensure_mt5()` binds the Python API to the **MT5_Lab** terminal64.exe *only* (`TERMINAL_PATH` / `MT5_DATA_DIR`, else the baked-in `C:\MT5_Lab` default); if a live bot terminal (MT5_FFT, etc.) is already attached it drops and re-binds, and if MT5_Lab can't be reached it FAILS loudly rather than silently reading the wrong account. This closed a real leak — the old code called `mt5.initialize()` with no path and grabbed whichever terminal answered first. **MT5_Lab is logged into a Vantage demo (account 25815745, `VantageMarkets-Demo`)** so backtest data matches TradingView's `VANTAGE_XAUUSD`; this replaced the earlier PU Prime `XAUUSD.s` feed. Vantage's gold symbol name/suffix may differ from `XAUUSD.s` — if a run returns no bars, check the symbol name first. To pick up an agent-code change: `git pull` on the VPS **and** restart the `MT5AgentRDP` scheduled task (kill only the specific `mt5_agent.py` PID) — never a blanket `taskkill python.exe`, which also kills the NT8 backtest agent (`NT8Agent` task).
