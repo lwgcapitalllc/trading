@@ -33,7 +33,7 @@ import pytest
 _REPO = Path(__file__).resolve().parent.parent.parent
 # `bots/` for the module itself, `shared/` for the `bot_state` it imports bare — the coordinator
 # runs from `C:\trading\algos\bots` on the VPS, where both are already on the path.
-for _p in (_REPO / "algos" / "bots", _REPO / "algos" / "shared"):
+for _p in (_REPO / "algos" / "bots", _REPO / "algos" / "shared", _REPO / "algos" / "live"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 import startup_coordinator as sc  # noqa: E402
@@ -84,6 +84,43 @@ def test_the_pair_is_required_not_either_half(monkeypatch):
         "python.exe C:\\trading\\algos\\bots\\startup_coordinator.py --bot mpc_sos_fade_demo\n"))
 
     assert sc.bot_is_running("mpc_sos_fade_demo") is False
+
+
+def test_the_runners_own_guard_does_not_match_the_coordinator_that_launched_it(monkeypatch,
+                                                                              tmp_path):
+    """🔴 The SAME defect one level down, found by reading rather than by it biting.
+
+    `runner.already_running()` excluded its own PID but matched on `--bot <key>` alone — and
+    `startup_coordinator.py --bot <key>` carries that key too. In single-bot mode the coordinator
+    Popens the runner and exits, so the runner's check RACES its own launcher and would
+    sometimes refuse to start the very bot it was asked for, logging an error and returning 0.
+
+    ⚠ The PID rule and the script+key pair cover different impostors — itself, and its launcher —
+    so both stay.
+    """
+    import json
+    import runner as rn
+    import live_config
+
+    body = {"bot_key": "smoke", "mt5_path": "C:/MT5/x.exe", "account": 1,
+            "server": "Demo", "symbol": "XAUUSD", "magic": 1}
+    (tmp_path / "smoke").mkdir(parents=True)
+    (tmp_path / "smoke" / "config.json").write_text(json.dumps(body))
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    r = rn.LiveRunner.__new__(rn.LiveRunner)
+    r.cfg = live_config.load("smoke")
+    r.log = type("L", (), {"warning": staticmethod(lambda *a: None),
+                           "error": staticmethod(lambda *a: None)})()
+
+    # `already_running` imports subprocess inside the method, so the module itself is the seam.
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a, 0, stdout="CommandLine  ProcessId\n"
+                         "python.exe C:\\t\\algos\\bots\\startup_coordinator.py --bot smoke  4242\n",
+            stderr=""))
+
+    assert r.already_running() is False, "the runner refused to start because of its own launcher"
 
 
 def test_an_unreadable_process_list_is_treated_as_running(monkeypatch):

@@ -544,7 +544,12 @@ Found by stopping the live bot to deploy and being unable to bring it back — n
    same check right by excluding its own PID** — two implementations of one rule, one wrong, the
    shape this repo keeps meeting. The match now requires the RUNNER SCRIPT *and* the key, per
    line: the key alone says which bot, the script alone says which fleet, **only the pair says a
-   running bot**, and a coordinator holding the same key is not one.
+   running bot**, and a coordinator holding the same key is not one. ⚠ **`runner.already_running()`
+   had the SAME latent race and it was found by reading, not by it biting**: it excluded its own
+   PID but matched `--bot <key>` alone, and the coordinator that Popens it is still alive while it
+   boots — so the runner could refuse to start the very bot it was asked for, log an error and
+   return 0. Fixed the same way. **The PID rule and the script+key pair cover different impostors
+   — itself, and its launcher — so both stay.**
 2. **`wait_for_connection` watched `<bot>.log`, which the dated handler had stopped writing.** A
    perfectly healthy start would have timed out after 180s and been marked `offline`. ⚠ **A
    healthy start reported as a failure is worse than a silent one — it sends you to fix a bot

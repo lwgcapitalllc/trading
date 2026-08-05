@@ -476,9 +476,20 @@ class LiveRunner:
         covers the paths the coordinator does not own — the command center, the watchdog, and a
         hand-typed command.
 
-        ⚠ **Matched on `--bot <key>`, not on the script name.** Every live bot is `runner.py`,
-        so the script identifies the FLEET; only the key identifies the bot. Matching the script
-        would stop a SECOND, different bot from ever starting.
+        ⚠ **The match needs BOTH the runner script and the key, and the key alone is not enough.**
+        Every live bot is `runner.py`, so the script identifies the FLEET and only the key
+        identifies the bot — matching the script *alone* would stop a second, different bot from
+        ever starting. But the key alone matches **`startup_coordinator.py --bot <key>`**, which
+        is the process that just launched this one and is still alive while it boots: in
+        single-bot mode the coordinator Popens the runner and exits, so this check races it and
+        would sometimes refuse to start the very bot it was asked for. **The identical defect,
+        one level up, made the command center's Start button a permanent no-op** — found
+        2026-08-05 and fixed in `startup_coordinator.bot_is_running` the same way. Only the PAIR
+        identifies a running bot.
+
+        ⚠ **The PID exclusion stays as well as the pair, not instead of it.** They cover
+        different impostors: the PID rule stops this process matching itself, the pair stops it
+        matching its own launcher. Either alone leaves one of the two open.
 
         ⚠ **An unreadable process list answers False and lets this one start.** The opposite
         default would let one bad `wmic` call keep a dead bot down indefinitely, and "cannot
@@ -495,7 +506,7 @@ class LiveRunner:
             return False
         me = str(os.getpid())
         for line in r.stdout.splitlines():
-            if f"--bot {self.cfg.bot_key}" not in line:
+            if f"--bot {self.cfg.bot_key}" not in line or "runner.py" not in line:
                 continue
             pid = line.strip().split()[-1]
             if pid.isdigit() and pid != me:
