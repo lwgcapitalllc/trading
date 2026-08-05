@@ -385,12 +385,43 @@ transferable across brokers at the margin**, and this is the mechanism.
 side, and no stop was ever set — the edge was being computed but never rested. So this is a measured
 sensitivity, not an incident.
 
-**What is NOT yet known, and is the follow-up:** how OFTEN the rung flips. A constant price offset
-cannot cause it (every level shifts together); it is the small VARIATION in the offset — 0.04 on
-some bars, 0.05 on others — that moves a gap edge relative to a fixed rung. The honest measurement
-is a jitter test: replay 6.5 years with a few cents of noise added to the bar prices and count how
-many trades change. Until that is run, treat "the backtest's trade list transfers to this broker"
-as unmeasured.
+✅ **THE FOLLOW-UP RAN 2026-08-05, AND THE RUNG FLIP IS THE SMALL HALF OF THE ANSWER.**
+`backtest/tools/jitter_audit.py` replays the strategy with a per-bar ±$0.05 offset and counts what
+changes. **MEASURED over 186,220 M15 bars (2018-09-13 → 2026-08-04), baseline 183 trades /
++134.75R, 12 seeds:**
+
+| what changed | per run | share of the trade list |
+|---|---|---|
+| **rung flips** (this section's finding) | 1.4 | 0.8% |
+| trades RETIMED (same setup, filled ≤16 bars away) | 4.3 | 2.4% |
+| trades LOST outright | 10.7 | 5.8% |
+| trades GAINED | 10.4 | — |
+
+🔴 **The fill is the sensitivity, not the entry rule — an order of magnitude bigger.** Every entry
+here is a resting limit at an exact price, so five cents decides whether price reaches it at all.
+About **6% of the trade list changes** on a few cents of quote difference, and almost none of that
+is the strategy deciding differently.
+
+✅ **The edge survives comfortably: all 12 seeds finished POSITIVE**, +92.24R to +148.13R, mean
++131.74R, sd 15.06R. ✅ **And the baseline is not optimistic** — median jittered **+134.52R** against
+a **+134.75R** baseline, i.e. the shipped figure sits mid-distribution rather than at the top of it.
+
+**So the conclusion splits in two, and only the first half is supported: the STRATEGY transfers, the
+TRADE LIST does not.** Expect the live trade list to be a cousin of the backtest's, not a twin, and
+do not treat a divergence in which specific setups filled as evidence that something is wrong.
+
+⚠ **When a flip does fire it is violent — median 31% change in the 1R stop distance, max 84.5%.**
+The trade is sized to its stop, so the nominal R never moves; the POSITION SIZE and the fill
+probability do. Read a flip as a size event, not a return event.
+
+⚠ **The flip figure is a FLOOR.** A flip that also moves the entry BAR is counted as retimed or as
+lost+gained, never as a flip.
+
+⚠ **Retiming is why the number is 6% and not 9%.** The first pass scored a limit that filled one bar
+later as one trade destroyed plus one invented, which overstates the churn — it is the same setup.
+Pairs are matched one-to-one, nearest first; without that constraint one jittered trade would be
+claimed as the twin of two baseline trades and both counts would collapse toward zero, reporting
+perfect stability by double-counting.
 
 ⚠ **The diff compares only what the ledger records.** `l_sos_bar` / `s_sos_bar` / `l_arm_src` /
 `s_arm_src` come off the SEQUENCE object, which a replay does not retain per bar; the tool names
