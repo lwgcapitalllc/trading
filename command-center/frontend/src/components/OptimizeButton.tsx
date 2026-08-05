@@ -29,6 +29,17 @@ function rangeValueCount(min: string, max: string, step: string): number | null 
   return Math.floor((hi - lo) / incr + 1e-9) + 1
 }
 
+// Why a range can't be counted — shown per axis, and the reason Go is blocked. A range that
+// only "shows — combos" is one the user reads as still typing; an inverted min/max is a
+// finished, wrong answer and the backend rejects it. Say which.
+function rangeProblem(min: string, max: string, step: string): string | null {
+  const lo = parseFloat(min), hi = parseFloat(max), incr = parseFloat(step)
+  if (isNaN(lo) || isNaN(hi) || isNaN(incr)) return 'incomplete'
+  if (incr <= 0) return 'step must be greater than 0'
+  if (lo > hi)   return 'max is below min'
+  return null
+}
+
 // ── Optimizer modal ────────────────────────────────────────────────────────────
 
 function OptimizerModal({
@@ -59,6 +70,14 @@ function OptimizerModal({
   const isPropFirm = selectedFirm?.ruleset_type === 'prop_eval' || selectedFirm?.ruleset_type === 'prop_funded'
   const [regimeFilter, setRegimeFilter] = useState<string>('')
 
+  // Minimum trades a combo needs before it is allowed to WIN. Profit factor has no opinion
+  // about sample size, so without a floor two lucky trades at PF 8.0 outrank two hundred at
+  // PF 2.0 and the optimizer hands you the two. 30 is a starting point, not a rule — it is
+  // editable here and shown on the results page, which is what keeps it from being a silent
+  // narrowing. The API's own default is 0: nothing is assumed of a caller that says nothing.
+  const [minTrades, setMinTrades] = useState('30')
+  const minTradesNum = Math.max(0, Math.floor(Number(minTrades) || 0))
+
   // Foundational params are injected from the ruleset — never exposed in the optimizer grid.
   const FOUNDATIONAL_PARAMS = new Set([
     'AccountSize', 'RiskPerTradePct', 'MaxDailyLoss', 'DailyHaltFraction',
@@ -84,27 +103,51 @@ function OptimizerModal({
     setFirmId(evalFirm?.ruleset_id ?? '')
     setMode('eval')
     setRegimeFilter('')
+    setMinTrades('30')
   }
   // True once the user has changed anything from the opened-run defaults.
   const isDirty =
     Object.values(axes).some(a => a.mode !== 'fixed') ||
     firmId !== (evalFirm?.ruleset_id ?? '') ||
     mode !== 'eval' ||
-    regimeFilter !== ''
+    regimeFilter !== '' ||
+    minTrades !== '30'
 
   const rangeParamCount = Object.values(axes).filter(a => a.mode !== 'fixed').length
 
   // Total backtests = cartesian product of every swept range's value count.
-  // `incomplete` flags ranges still being typed (min/max/step not yet valid).
+  // `incomplete` flags ranges still being typed; `rangeErrors` flags ones that are finished
+  // and wrong (step 0, max below min) — those used to be lumped together as "— combos" with
+  // the Go button still enabled, so the run started and died minutes later.
   let comboCount = 1
   let comboIncomplete = false
-  for (const ax of Object.values(axes)) {
+  const rangeErrors: Record<string, string> = {}
+  for (const [name, ax] of Object.entries(axes)) {
     if (ax.mode === 'list') { comboCount *= Math.max(1, ax.values.length); continue }
     if (ax.mode !== 'range') continue
+    const problem = rangeProblem(ax.min, ax.max, ax.step)
+    if (problem && problem !== 'incomplete') rangeErrors[name] = problem
     const c = rangeValueCount(ax.min, ax.max, ax.step)
     if (c == null) { comboIncomplete = true; continue }
     comboCount *= c
   }
+
+  // Roughly how long the grid will take, from the source run's own measured duration. Only a
+  // Python sweep is predictable this way — it replays the SAME bars this run replayed, on this
+  // box, across cores. NT8 and MT5 load data once and parallelise inside their own tester, so
+  // per-combo cost there is not this run's cost and no estimate is offered.
+  const runSeconds = run.started_at && run.completed_at
+    ? Math.max(1, (new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()) / 1000)
+    : null
+  const cores = Math.max(1, (navigator.hardwareConcurrency || 4) - 1)
+  const estSeconds = run.runner === 'python' && runSeconds && !comboIncomplete
+    ? (runSeconds * comboCount) / cores
+    : null
+  const fmtEta = (s: number) =>
+    s < 90 ? `~${Math.round(s)}s`
+    : s < 5400 ? `~${Math.round(s / 60)} min`
+    : s < 172800 ? `~${(s / 3600).toFixed(1)} hours`
+    : `~${(s / 86400).toFixed(1)} days`
   // Color thresholds — each combo is a full backtest, so nudge the user to taper.
   const comboTone =
     comboCount > 1000 ? { text: 'text-neg-text',  bg: 'bg-neg-muted',  border: 'border-neg-text/20'  }
@@ -195,6 +238,10 @@ function OptimizerModal({
       toast.error('Fix whole-number errors before running')
       return
     }
+    if (Object.keys(rangeErrors).length) {
+      toast.error('Fix the invalid ranges before running')
+      return
+    }
 
     triggerOpt.mutate({
       strategy_id:        run.strategy_id,
@@ -211,6 +258,12 @@ function OptimizerModal({
       param_grid,
       regime_filter:      isNt8 ? (regimeFilter || null) : null,
       source_run_id:      run.run_id,
+      // Inherit the source run's cost contract. Without this the whole grid was ranked on a
+      // FREE book and its winner then compared against a run that had spread and swap charged
+      // — two numbers produced under different physics, presented as a comparison.
+      cost_layers:        run.cost_layers,
+      broker_profile:     run.broker_profile,
+      min_trades:         minTradesNum,
     }, {
       onSuccess: (data) => {
         onClose()
@@ -294,6 +347,37 @@ function OptimizerModal({
                 </select>
               </div>
             )}
+            <div className="col-span-3">
+              <label className="block text-[11px] text-text-tertiary mb-1 uppercase tracking-wide font-medium">
+                Minimum trades to win
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={minTrades}
+                  onChange={e => setMinTrades(e.target.value)}
+                  className="w-24 bg-bg-sunken border border-border-subtle rounded-md px-2 py-[6px] text-[12px] font-mono focus:outline-none focus:border-accent"
+                />
+                <span className="text-[11px] text-text-tertiary leading-snug">
+                  {minTradesNum === 0
+                    ? 'No floor — the highest profit factor wins, even on two trades.'
+                    : `Combos under ${minTradesNum} trades still run and still show in the table — they just can't be the ★ winner.`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Cost inheritance — what this grid will be charged, stated rather than assumed */}
+          <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-bg-sunken border border-border-subtle">
+            <span className="text-[11px] text-text-tertiary leading-snug">
+              {run.runner !== 'python'
+                ? <>Costs come from the {runnerLabel} tester's own settings — commission ${run.commission_per_side}/side, {run.slippage_ticks} tick slippage.</>
+                : run.cost_layers?.length
+                ? <>Every combo is charged the same costs as this run — <span className="text-text-secondary font-medium">{run.cost_layers.join(', ')}</span> on <span className="font-mono">{run.broker_profile}</span>. The winner is comparable to the run you launched from.</>
+                : <>This run charged <span className="text-text-secondary font-medium">no costs</span>, so the grid runs free too. A free winner is not comparable to a priced run.</>}
+            </span>
           </div>
 
           {/* Param editor (shared) — mark a parameter to sweep it across a range */}
@@ -319,9 +403,25 @@ function OptimizerModal({
             />
           </div>
 
+          {Object.keys(rangeErrors).length > 0 && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-neg-muted border border-neg-text/20">
+              <AlertTriangle size={13} className="text-neg-text flex-shrink-0 mt-[1px]" />
+              <p className="text-[12px] text-neg-text leading-snug">
+                {Object.entries(rangeErrors).map(([k, why]) => `${k}: ${why}`).join(' · ')}
+              </p>
+            </div>
+          )}
+
           {rangeParamCount > 0 && (
             <p className="text-[11px] text-text-tertiary">
               {rangeParamCount} parameter{rangeParamCount !== 1 ? 's' : ''} will be swept using the native optimizer.
+              {estSeconds != null && <>
+                {' '}At this run's own speed that is roughly{' '}
+                <span className={estSeconds > 6 * 3600 ? 'text-warn-text font-semibold' : 'text-text-secondary font-medium'}>
+                  {fmtEta(estSeconds)}
+                </span>
+                {' '}on {cores} core{cores !== 1 ? 's' : ''}.
+              </>}
               {comboCount > 1000 && !comboIncomplete && ' That is a lot of combinations — consider widening the step or trimming a range.'}
             </p>
           )}
@@ -360,7 +460,19 @@ function OptimizerModal({
           </button>
           <button
             onClick={handleGo}
-            disabled={triggerOpt.isPending || rangeParamCount === 0 || jobBlocked || Object.keys(intErrors).length > 0}
+            title={
+              comboIncomplete ? 'One of the ranges is not filled in yet'
+              : Object.keys(rangeErrors).length ? 'One of the ranges is invalid'
+              : undefined
+            }
+            // comboIncomplete and rangeErrors are both blocking now. They were shown as
+            // "— combos" and nothing else, so Go stayed enabled and the backend was handed a
+            // grid it could not expand.
+            disabled={
+              triggerOpt.isPending || rangeParamCount === 0 || jobBlocked ||
+              comboIncomplete || Object.keys(rangeErrors).length > 0 ||
+              Object.keys(intErrors).length > 0
+            }
             className="px-5 py-[7px] rounded-md text-[13px] font-semibold bg-accent text-bg-base hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {triggerOpt.isPending ? 'Starting…' : 'Go'}

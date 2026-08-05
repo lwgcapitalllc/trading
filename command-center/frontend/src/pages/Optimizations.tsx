@@ -4,17 +4,34 @@ import { Sliders, ChevronRight, Trash2 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import { useOptimizations, useBacktestRuns } from '@/hooks/useLab'
+import { useOptimizations } from '@/hooks/useLab'
+import { RUNNER_LABEL, runnerScope } from '@/lib/runner'
 import { EmptyState } from '@/components/EmptyState'
 import StickyHeader from '@/components/StickyHeader'
 import { ConfirmDeleteModal, RunsTableSkeleton, fmtOptStatus } from '@/pages/Backtests'
+
+// A ruleset id is a slug — `lucidflex_50k_eval`. Printing it raw put a database key in a
+// column headed "Firm"; this is the same shortener the detail page uses.
+function firmShortName(firmId: string): string {
+  const parts = firmId.split('_')
+  if (parts.length < 3) return firmId
+  const brandMap: Record<string, string> = { lucidflex: 'LF', apex: 'Apex', tradeify: 'TF' }
+  const brand = brandMap[parts[0]] ?? parts[0].slice(0, 2).toUpperCase()
+  const size  = (parts[1] ?? '').toUpperCase()
+  const tier  = parts[2] === 'eval' ? 'Eval' : parts[2] === 'funded' ? 'Funded' : (parts[2] ?? '')
+  return `${brand}${size} ${tier}`
+}
+
+function fmtWhen(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+    ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
 
 export function Optimizations() {
   const navigate  = useNavigate()
   const qc = useQueryClient()
   const { data: opts, isLoading } = useOptimizations()
-  const { data: allRuns } = useBacktestRuns()
-  const hasRuns = (allRuns?.filter(r => (!r.optimization_id || r.status === 'running') && !r.sweep_id).length ?? 0) > 0
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
@@ -82,18 +99,18 @@ export function Optimizations() {
       {isLoading ? (
         <RunsTableSkeleton />
       ) : !opts?.length ? (
+        // One wording, one destination. The old version fetched EVERY run in the lab purely to
+        // choose between two sentences that say the same thing, on a page that has no runs.
         <EmptyState
           icon={<Sliders size={20} />}
           title="No optimizations yet"
-          description={hasRuns
-            ? 'Click "Optimize" on a completed run to start a native optimization.'
-            : 'Run a backtest first, then click "Optimize" on a completed run to start a native optimization.'}
+          description='Click "Optimize" on a completed backtest run to sweep its parameters.'
           action={
             <button
-              onClick={() => navigate(hasRuns ? '/backtests?tab=runs' : '/strategies')}
+              onClick={() => navigate('/backtests?tab=runs')}
               className="flex items-center gap-1.5 bg-accent text-bg-base font-semibold text-[12px] px-3.5 py-2 rounded-md hover:opacity-90 transition-opacity"
             >
-              {hasRuns ? 'View Runs' : 'Browse Strategies'}
+              View Runs
               <ChevronRight size={14} />
             </button>
           }
@@ -108,10 +125,12 @@ export function Optimizations() {
                 </th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategy</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Runner</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Firm</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Mode</th>
-                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Method</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Winner</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Started</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 <th className="px-3 py-3 w-10" />
               </tr>
@@ -136,12 +155,27 @@ export function Optimizations() {
                         className="w-3.5 h-3.5 rounded accent-accent cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                       />
                     </td>
-                    <td className="px-4 py-3 font-medium">{opt.strategy_id}</td>
+                    <td className="px-4 py-3 font-medium">{opt.strategy_name ?? opt.strategy_id}</td>
                     <td className="px-4 py-3 font-mono text-text-secondary">{opt.instrument}</td>
-                    <td className="px-4 py-3 text-text-secondary text-[12px]">{opt.ruleset_id ?? '—'}</td>
+                    <td className="px-4 py-3 text-text-tertiary text-[12px]">{RUNNER_LABEL[runnerScope(opt.runner)]}</td>
+                    <td className="px-4 py-3 text-text-secondary text-[12px]">
+                      {opt.ruleset_id ? firmShortName(opt.ruleset_id) : '—'}
+                    </td>
                     <td className="px-4 py-3 capitalize text-text-secondary">{opt.mode}</td>
-                    <td className="px-4 py-3 capitalize text-text-secondary">{opt.search_method}</td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{opt.completed_runs}/{opt.estimated_runs}</td>
+                    <td className="px-4 py-3 text-[12px]">
+                      {/* A finished optimization with no winner is a real outcome (every combo
+                          was rejected), not a blank cell — say so. */}
+                      {opt.best_run_id ? (
+                        <span className="inline-flex items-center gap-1 font-mono text-gold-text">
+                          ★ {opt.best_run_id.slice(0, 8)}
+                          {opt.winner_note && <span title={opt.winner_note} className="text-warn-text">⚠</span>}
+                        </span>
+                      ) : opt.status === 'complete' ? (
+                        <span className="text-text-tertiary">none</span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-text-tertiary text-[12px] whitespace-nowrap">{fmtWhen(opt.created_at)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-[2px] rounded-pill text-[11px] font-semibold uppercase tracking-[0.4px] ${st.cls}`}>{st.label}</span>
                     </td>

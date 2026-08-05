@@ -563,6 +563,9 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
 export function fmtOptStatus(s: string) {
   if (s === 'complete')       return { label: 'Complete', cls: 'bg-pos-muted text-pos-text' }
   if (s === 'running')        return { label: 'Running',  cls: 'bg-accent/10 text-accent' }
+  // Cancelling stores 'failed_cancelled', so the generic failed branch below labelled a
+  // deliberate stop as a fault — and the detail page said "Cancelled" for the same row.
+  if (s === 'failed_cancelled') return { label: 'Cancelled', cls: 'bg-bg-hover text-text-secondary' }
   if (s.startsWith('failed')) return { label: 'Failed',   cls: 'bg-neg-muted text-neg-text' }
   return { label: s, cls: 'bg-bg-hover text-text-secondary' }
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { runningJobFor, runnerScope } from '@/lib/runner'
 import { ArrowLeft, Download, CheckCircle2, Loader2, XCircle, AlertTriangle, RotateCcw, Square, Trash2, Activity, ChevronUp, ChevronDown, Copy, Check, SlidersHorizontal } from 'lucide-react'
-import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns } from '@/hooks/useLab'
+import { useOptimization, useCancelOptimization, useRetryOptimization, useRerunOptimization, useDeleteOptimization, useRetryBacktest, useRunningVpsJob, useOptimizationLog, useBacktestRuns, useBacktestRun } from '@/hooks/useLab'
 import { useRunningStressLock, useStressTests } from '@/hooks/useStressTests'
 import type { BacktestSummary, OptimizationDetail as Opt } from '@/types'
 import StickyHeader from '@/components/StickyHeader'
@@ -41,13 +41,16 @@ function firmChipCls(firmId: string): string {
 
 // ── Live elapsed timer ────────────────────────────────────────────────────────
 
-function useElapsed(startIso: string | null, endIso: string | null, running: boolean) {
-  const [elapsed, setElapsed] = useState(0)
+// Returns null when there is no honest number to show — a finished job with no end time is a
+// row written before `fail_optimization` recorded one, and counting up to now() on it produced
+// "Ran for 74h" on something that died on Tuesday.
+function useElapsed(startIso: string | null, endIso: string | null, running: boolean): number | null {
+  const [elapsed, setElapsed] = useState<number | null>(null)
   useEffect(() => {
-    if (!startIso) return
+    if (!startIso) { setElapsed(null); return }
     const start = new Date(startIso).getTime()
     if (!running) {
-      setElapsed(Math.round(((endIso ? new Date(endIso).getTime() : Date.now()) - start) / 1000))
+      setElapsed(endIso ? Math.round((new Date(endIso).getTime() - start) / 1000) : null)
       return
     }
     const tick = () => setElapsed(Math.round((Date.now() - start) / 1000))
@@ -60,23 +63,33 @@ function useElapsed(startIso: string | null, endIso: string | null, running: boo
 
 // ── CSV export ────────────────────────────────────────────────────────────────
 
-function exportCsv(runs: BacktestSummary[], paramKeys: string[]) {
-  const headers = ['rank', ...paramKeys, 'net_pnl', 'max_drawdown', 'profit_factor', 'win_rate', 'trade_count', 'sharpe', 'worthiness']
+// RFC-4180 quoting. Without it a value containing a comma (a list-swept string, an error
+// message) silently shifts every column to its right by one, which reads as corrupt data
+// rather than as a formatting bug.
+function csvCell(v: unknown): string {
+  const s = v == null ? '' : String(v)
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function exportCsv(runs: BacktestSummary[], paramKeys: string[], optId: string) {
+  // run_id first: without it a row cannot be joined back to the run it describes, which is the
+  // one thing you export a grid to do.
+  const headers = ['rank', 'run_id', ...paramKeys, 'net_pnl', 'max_drawdown', 'profit_factor', 'win_rate', 'trade_count', 'sharpe', 'worthiness']
   const rows = runs
     .filter(r => r.status === 'complete')
     .sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity))
     .map((r, i) => [
-      i + 1,
+      i + 1, r.run_id,
       ...paramKeys.map(k => r.params?.[k] ?? ''),
       r.net_pnl ?? '', r.max_drawdown ?? '', r.profit_factor ?? '',
       r.win_rate ?? '', r.trade_count ?? '', r.sharpe ?? '',
       r.worthiness?.tier ?? '',
-    ].join(','))
-  const csv   = [headers.join(','), ...rows].join('\n')
+    ].map(csvCell).join(','))
+  const csv   = [headers.map(csvCell).join(','), ...rows].join('\n')
   const blob  = new Blob([csv], { type: 'text/csv' })
   const url   = URL.createObjectURL(blob)
   const a     = document.createElement('a')
-  a.href = url; a.download = 'optimization_results.csv'; a.click()
+  a.href = url; a.download = `optimization_${optId}.csv`; a.click()
   URL.revokeObjectURL(url)
 }
 
@@ -225,7 +238,7 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
               {isComplete ? 'Duration' : isRunning ? 'Elapsed' : 'Ran for'}
             </div>
             <div className="text-[20px] font-mono font-semibold text-text-primary tabular-nums leading-none">
-              {fmtDuration(elapsed)}
+              {elapsed == null ? <span className="text-text-tertiary">—</span> : fmtDuration(elapsed)}
             </div>
           </div>
 
@@ -251,17 +264,10 @@ function ProgressCard({ opt, onCancel, onRetry, cancelling, retrying, jobBlocked
                 {retrying ? 'Starting…' : `Retry ${failedCount} failed`}
               </button>
             )}
-            {hasFailures && isRunning && (
-              <button
-                onClick={onRetry}
-                disabled={retrying || jobBlocked}
-                title={jobBlocked ? 'Another NT8 job is running — wait for it to finish' : undefined}
-                className="flex items-center gap-[6px] px-3 py-[6px] rounded-md text-[12px] font-medium border border-accent/30 text-accent hover:bg-accent/10 disabled:opacity-50 transition-colors"
-              >
-                <RotateCcw size={11} className={retrying ? 'animate-spin' : ''} />
-                {retrying ? 'Queuing…' : `Retry ${failedCount} failed`}
-              </button>
-            )}
+            {/* No Retry button while running. `retry-failed` calls ensure_platform_idle, and
+                this optimization IS the job holding that platform, so the request could only
+                ever come back 409 — a button whose single outcome is an error toast. Cancel
+                first, then retry; that path is one line above. */}
           </div>
         </div>
       </div>
@@ -344,13 +350,53 @@ function fmtMoney(val: number | null | undefined): string {
   return `${sign}$${Math.round(Math.abs(val)).toLocaleString('en-US')}`
 }
 
-function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
+type SortKey = 'profit_factor' | 'net_pnl' | 'max_drawdown' | 'trade_count' | 'sharpe'
+
+// Max drawdown is the one column where SMALLER is better, so its default direction is the
+// opposite of every other column's. Sorting it descending like the rest would put the worst
+// combination at the top under a header the reader has just clicked to find the best.
+const SORT_ASC_DEFAULT: Record<SortKey, boolean> = {
+  profit_factor: false, net_pnl: false, max_drawdown: true, trade_count: false, sharpe: false,
+}
+
+function SortHeader({ label, col, sort, setSort, title }: {
+  label: string
+  col: SortKey
+  sort: { key: SortKey; asc: boolean }
+  setSort: (s: { key: SortKey; asc: boolean }) => void
+  title?: string
+}) {
+  const active = sort.key === col
+  return (
+    <th
+      title={title}
+      onClick={() => setSort(active ? { key: col, asc: !sort.asc } : { key: col, asc: SORT_ASC_DEFAULT[col] })}
+      className={`text-left px-3 py-2 font-medium cursor-pointer select-none whitespace-nowrap hover:text-text-secondary transition-colors ${active ? 'text-accent' : 'text-text-tertiary'}`}
+    >
+      {label}
+      <span className="ml-1 text-[9px]">{active ? (sort.asc ? '▲' : '▼') : '↕'}</span>
+    </th>
+  )
+}
+
+function ResultsTable({ runs, sweptKeys, navigate, bestRunId, minTrades, sort, setSort }: {
   runs: BacktestSummary[]
   sweptKeys: string[]
   navigate: ReturnType<typeof useNavigate>
   bestRunId?: string
+  minTrades: number
+  sort: { key: SortKey; asc: boolean }
+  setSort: (s: { key: SortKey; asc: boolean }) => void
 }) {
-  const sorted = [...runs].sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity))
+  // Memoised: a 1,000-row grid was re-sorted on every render, and the page re-renders every
+  // 3 seconds while the job runs.
+  const sorted = useMemo(() => {
+    const dir = sort.asc ? 1 : -1
+    const miss = sort.asc ? Infinity : -Infinity   // nulls sort last whichever way you're going
+    return [...runs].sort((a, b) =>
+      ((a[sort.key] ?? miss) - (b[sort.key] ?? miss)) * dir)
+  }, [runs, sort])
+
   return (
     <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto">
       <table className="w-full text-[12px]">
@@ -360,22 +406,29 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
             {sweptKeys.map(k => (
               <th key={k} className="text-left px-3 py-2 text-text-tertiary font-medium font-mono">{k}</th>
             ))}
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">P&L</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
-            <th className="text-left px-3 py-2 text-text-tertiary font-medium">Score</th>
+            <SortHeader label="P&L"     col="net_pnl"       sort={sort} setSort={setSort} />
+            <SortHeader label="Max DD"  col="max_drawdown"  sort={sort} setSort={setSort} />
+            <SortHeader label="Trades"  col="trade_count"   sort={sort} setSort={setSort} />
+            <SortHeader label="Sharpe"  col="sharpe"        sort={sort} setSort={setSort} />
+            <SortHeader label="Profit factor" col="profit_factor" sort={sort} setSort={setSort}
+              title="The optimizer's score for raw mode — gross wins ÷ gross losses" />
             <th className="px-3 py-2 w-16" />
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
-          {sorted.map((run, i) => {
-            const isBest = bestRunId ? run.run_id === bestRunId : i === 0
+          {sorted.map(run => {
+            // ★ is the winner the BACKEND chose, never "whatever is on row 1". Falling back to
+            // row 1 made the star follow the sort, so re-sorting by trades appeared to crown a
+            // different combination.
+            const isBest = run.run_id === bestRunId
+            const belowFloor = minTrades > 0 && (run.trade_count ?? 0) < minTrades
             const pnlCls = (run.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'
             return (
               <tr
                 key={run.run_id}
                 onClick={() => navigate(`/backtests/runs/${run.run_id}`)}
-                className={`hover:bg-bg-hover cursor-pointer transition-colors ${isBest ? 'border-l-2 border-l-gold-text bg-gold-muted/10' : ''}`}
+                className={`hover:bg-bg-hover cursor-pointer transition-colors ${isBest ? 'border-l-2 border-l-gold-text bg-gold-muted/10' : ''} ${belowFloor ? 'opacity-45' : ''}`}
+                title={belowFloor ? `Under the ${minTrades}-trade minimum — not eligible to win` : undefined}
               >
                 <td className="px-3 py-[9px] w-6">
                   {isBest && <span className="text-gold-text font-bold">★</span>}
@@ -393,6 +446,9 @@ function ResultsTable({ runs, sweptKeys, navigate, bestRunId }: {
                 </td>
                 <td className="px-3 py-[9px] text-left tabular-nums text-text-secondary">
                   {run.trade_count ?? '—'}
+                </td>
+                <td className="px-3 py-[9px] text-left font-mono tabular-nums text-text-secondary">
+                  {run.sharpe?.toFixed(2) ?? '—'}
                 </td>
                 <td className={`px-3 py-[9px] text-left font-mono tabular-nums font-semibold ${isBest ? 'text-gold-text' : 'text-text-primary'}`}>
                   {run.profit_factor?.toFixed(2) ?? '—'}
@@ -417,7 +473,10 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
   navigate: ReturnType<typeof useNavigate>
   bestRunId?: string
 }) {
-  const sorted = [...runs].sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity))
+  const sorted = useMemo(
+    () => [...runs].sort((a, b) => (b.profit_factor ?? -Infinity) - (a.profit_factor ?? -Infinity)),
+    [runs],
+  )
   const maxPf = Math.max(...sorted.map(r => r.profit_factor ?? 0), 1)
 
   function tierColor(run: BacktestSummary): string {
@@ -441,7 +500,7 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
       <svg width={svgW} height={svgH} className="font-mono">
         {sorted.map((run, i) => {
           const pf    = run.profit_factor ?? 0
-          const isBest = bestRunId ? run.run_id === bestRunId : i === 0
+          const isBest = run.run_id === bestRunId
           const barW  = Math.max(4, (pf / maxPf) * BAR_AREA)
           const cy    = PAD_Y + i * (BAR_H + PAD_Y)
           const label = sweptKeys.map(k => run.params?.[k] ?? '?').join(' / ')
@@ -505,6 +564,120 @@ function RankedBars({ runs, sweptKeys, navigate, bestRunId }: {
       <p className="text-[11px] text-text-tertiary mt-2">
         Sorted by profit factor. Bar color: <span className="text-pos-text">green</span> = Tier 1, <span className="text-accent">cyan</span> = Tier 2, <span className="text-neg-text">red</span> = Tier 3.
       </p>
+    </div>
+  )
+}
+
+// ── Robustness (grid sensitivity) ─────────────────────────────────────────────
+
+// How isolated the winner is in the grid. The backend has computed and STORED this on every
+// native optimization since the grid-sensitivity pass landed, and nothing displayed it — which
+// made it the one number a parameter sweep exists to produce and the one number the page did
+// not show. 0 = the neighbours score the same (a plateau you can actually trade). 1 = the
+// neighbours collapse (a lone spike, i.e. the winner is a property of this history).
+function RobustnessCard({ score, summary }: {
+  score: number
+  summary: Record<string, Partial<Record<'up' | 'down', { value: number; profit_factor: number; degradation: number }>>> | null
+}) {
+  const pct = Math.round(score * 100)
+  const tone = score >= 0.5 ? { text: 'text-neg-text',  bg: 'bg-neg-muted',  border: 'border-neg-text/20' }
+    : score >= 0.25       ? { text: 'text-warn-text', bg: 'bg-warn-muted/40', border: 'border-warn-text/20' }
+    : { text: 'text-pos-text', bg: 'bg-pos-muted', border: 'border-pos-text/20' }
+  const verdict = score >= 0.5
+    ? 'Fragile — one step either side of the winner and the result largely disappears. That is the shape of a number fitted to this history.'
+    : score >= 0.25
+    ? 'Mixed — the winner sits on a slope. Nearby settings are worse but not worthless.'
+    : 'Robust — the settings either side score about the same, so the winner is a plateau rather than a spike.'
+
+  return (
+    <div className={`rounded-xl border px-5 py-4 ${tone.bg} ${tone.border}`}>
+      <div className="flex items-baseline gap-3 mb-1">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+          Winner robustness
+        </span>
+        <span className={`text-[18px] font-mono font-semibold tabular-nums ${tone.text}`}>{pct}%</span>
+        <span className="text-[11px] text-text-tertiary">worst neighbour drop</span>
+      </div>
+      <p className="text-[12px] text-text-secondary leading-snug">{verdict}</p>
+      {summary && Object.keys(summary).length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border-subtle/60 flex flex-wrap gap-x-5 gap-y-1.5">
+          {Object.entries(summary).map(([param, sides]) => (
+            <span key={param} className="text-[11px] font-mono text-text-tertiary">
+              <span className="text-text-secondary">{param}</span>
+              {(['down', 'up'] as const).map(d => sides[d] && (
+                <span key={d} className="ml-2">
+                  {d === 'down' ? '↓' : '↑'}{sides[d]!.value} → PF {sides[d]!.profit_factor.toFixed(2)}
+                  <span className={sides[d]!.degradation >= 0.5 ? 'text-neg-text' : 'text-text-tertiary'}>
+                    {' '}(−{Math.round(sides[d]!.degradation * 100)}%)
+                  </span>
+                </span>
+              ))}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Baseline comparison ───────────────────────────────────────────────────────
+
+// The run this optimization was launched FROM. Without it the grid is a ranking with no
+// reference point — you can see which combination won and not whether it beat the settings you
+// already had, which is the only question that decides whether to adopt it.
+// Structural, not `BacktestSummary` — the baseline arrives as a BacktestDetail and the winner
+// as a summary, and this only ever reads the four KPIs both carry.
+type BaselineKpis = Pick<BacktestSummary, 'profit_factor' | 'net_pnl' | 'max_drawdown' | 'trade_count'>
+
+function BaselineRow({ baseline, winner }: { baseline: BaselineKpis; winner?: BaselineKpis }) {
+  const delta = (a: number | null | undefined, b: number | null | undefined) =>
+    a == null || b == null ? null : a - b
+  const pfDelta   = delta(winner?.profit_factor, baseline.profit_factor)
+  const pnlDelta  = delta(winner?.net_pnl, baseline.net_pnl)
+  const beat      = pfDelta != null && pfDelta > 0
+
+  const Cell = ({ label, base, win, fmt }: {
+    label: string; base: number | null | undefined; win: number | null | undefined
+    fmt: (v: number | null | undefined) => string
+  }) => (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-text-tertiary mb-0.5">{label}</div>
+      <div className="text-[13px] font-mono tabular-nums">
+        <span className="text-text-tertiary">{fmt(base)}</span>
+        <span className="text-text-tertiary mx-1.5">→</span>
+        <span className="text-text-primary font-semibold">{fmt(win)}</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="rounded-xl border border-border-subtle bg-bg-surface px-5 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.7px] text-text-secondary">
+          Starting run → winner
+        </span>
+        {winner && (
+          <span className={`inline-flex px-2 py-[2px] rounded text-[10px] font-semibold ${beat ? 'bg-pos-muted text-pos-text' : 'bg-warn-muted/50 text-warn-text'}`}>
+            {beat ? 'BEAT THE BASELINE' : 'DID NOT BEAT THE BASELINE'}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-8 gap-y-3">
+        <Cell label="Profit factor" base={baseline.profit_factor} win={winner?.profit_factor}
+          fmt={v => v?.toFixed(2) ?? '—'} />
+        <Cell label="Net P&L" base={baseline.net_pnl} win={winner?.net_pnl} fmt={fmtMoney} />
+        <Cell label="Max DD" base={baseline.max_drawdown} win={winner?.max_drawdown}
+          fmt={v => v == null ? '—' : `$${Math.round(v).toLocaleString('en-US')}`} />
+        <Cell label="Trades" base={baseline.trade_count} win={winner?.trade_count}
+          fmt={v => v == null ? '—' : String(v)} />
+      </div>
+      {pnlDelta != null && (
+        <p className="text-[11px] text-text-tertiary mt-3">
+          {beat
+            ? `The winner is ${pfDelta!.toFixed(2)} profit factor better than the run you started from.`
+            : 'The grid found nothing better than the settings you already had — the starting run stands.'}
+        </p>
+      )}
     </div>
   )
 }
@@ -611,11 +784,16 @@ export function OptimizationDetail() {
   const stressRunIds = useMemo(() => new Set(stressLock?.run_ids ?? []), [stressLock])
   const bestRunId = opt?.best_run_id ?? undefined
   // Tuning iterations spawned from the winner run (standalone runs with source_run_id = winner).
-  const { data: allRunsForTune } = useBacktestRuns()
+  // Scoped to this strategy — the unfiltered call pulled EVERY run in the lab on a page that
+  // needs at most a handful, and it polls.
+  const { data: allRunsForTune } = useBacktestRuns(
+    opt?.strategy_id ? { strategy_id: opt.strategy_id } : undefined)
   const tuneIterations = useMemo(
     () => (allRunsForTune ?? []).filter(r => bestRunId && r.source_run_id === bestRunId && !r.sweep_id && !r.optimization_id),
     [allRunsForTune, bestRunId],
   )
+  // The run this optimization was launched from, for the baseline comparison.
+  const { data: baselineRun } = useBacktestRun(opt?.source_run_id ?? null)
   const tuneRunning = tuneIterations.filter(r => r.status === 'running').length
   const hasRunningStress = !!bestRunId && stressRunIds.has(bestRunId)
   const { data: bestRunStressTests } = useStressTests(hasRunningStress ? bestRunId : undefined)
@@ -623,16 +801,32 @@ export function OptimizationDetail() {
 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [viewMode, setViewMode]           = useState<'table' | 'bars'>('table')
+  const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: 'profit_factor', asc: false })
+  // Hide combos under the optimization's own trade floor. Off by default so the grid is never
+  // silently narrower than it says it is — the ineligible rows are dimmed either way.
+  const [hideBelowFloor, setHideBelowFloor] = useState(false)
 
-  const paramKeys = opt ? Object.keys(opt.param_grid) : []
-  const sweptKeys = paramKeys.filter(k => {
+  const paramKeys = useMemo(() => (opt ? Object.keys(opt.param_grid) : []), [opt])
+  const sweptKeys = useMemo(() => paramKeys.filter(k => {
     const spec = opt?.param_grid[k]
     return Array.isArray(spec) ? spec.length > 1 : typeof spec === 'object' && spec !== null
-  })
+  }), [paramKeys, opt])
 
   const isRunning    = opt?.status === 'running'
-  const completeRuns = opt?.runs.filter(r => r.status === 'complete') ?? []
-  const failedRuns   = opt?.runs.filter(r => r.status.startsWith('failed')) ?? []
+  const minTrades    = opt?.min_trades ?? 0
+  const completeRuns = useMemo(
+    () => opt?.runs.filter(r => r.status === 'complete') ?? [], [opt])
+  const failedRuns   = useMemo(
+    () => opt?.runs.filter(r => r.status.startsWith('failed')) ?? [], [opt])
+  const visibleRuns  = useMemo(
+    () => (hideBelowFloor && minTrades > 0
+      ? completeRuns.filter(r => (r.trade_count ?? 0) >= minTrades)
+      : completeRuns),
+    [completeRuns, hideBelowFloor, minTrades])
+  const belowFloorCount = completeRuns.length - (minTrades > 0
+    ? completeRuns.filter(r => (r.trade_count ?? 0) >= minTrades).length
+    : completeRuns.length)
+  const winnerRun = completeRuns.find(r => r.run_id === bestRunId)
 
   return (
     <div>
@@ -744,8 +938,35 @@ export function OptimizationDetail() {
                   Regime: {opt.regime_filter.replace('_', ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}
                 </span>
               )}
+              {/* What the grid was CHARGED. A ranking produced on a free book is not comparable
+                  to a priced run, and until this chip existed nothing on the page said which
+                  one you were looking at. `null` (pre-layers) and `[]` (charged nothing on
+                  purpose) are different answers and are worded differently. */}
+              <span
+                className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary"
+                title={opt.cost_layers?.length
+                  ? `Charged on the ${opt.broker_profile} profile`
+                  : 'Every combination was replayed with no spread, swap or commission'}
+              >
+                {opt.cost_layers === null ? 'Costs: not recorded'
+                  : opt.cost_layers.length ? `Costs: ${opt.cost_layers.join(', ')}`
+                  : 'Costs: none charged'}
+              </span>
+              {minTrades > 0 && (
+                <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium font-mono bg-bg-surface border border-border-subtle text-text-tertiary">
+                  Min {minTrades} trades to win
+                </span>
+              )}
             </div>
           </div>
+
+          {/* The winner was picked by a fallback, not by the rule the chips above name. */}
+          {opt.winner_note && (
+            <div className="flex items-start gap-2 px-4 py-3 rounded-lg bg-warn-muted/30 border border-warn-text/20">
+              <AlertTriangle size={14} className="text-warn-text flex-shrink-0 mt-[1px]" />
+              <p className="text-[12px] text-warn-text leading-snug">{opt.winner_note}</p>
+            </div>
+          )}
 
           {/* Progress */}
           <ProgressCard
@@ -771,6 +992,17 @@ export function OptimizationDetail() {
           )}
 
 
+          {/* Robustness + baseline — the two things that decide whether to ADOPT the winner */}
+          {!isRunning && opt.grid_sensitivity_score != null && completeRuns.length > 1 && (
+            <RobustnessCard
+              score={opt.grid_sensitivity_score}
+              summary={opt.grid_sensitivity_summary}
+            />
+          )}
+          {!isRunning && baselineRun && completeRuns.length > 0 && (
+            <BaselineRow baseline={baselineRun} winner={winnerRun} />
+          )}
+
           {/* Results */}
           {completeRuns.length > 0 && (
             <div>
@@ -790,6 +1022,17 @@ export function OptimizationDetail() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {belowFloorCount > 0 && (
+                    <label className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={hideBelowFloor}
+                        onChange={e => setHideBelowFloor(e.target.checked)}
+                        className="w-3 h-3 rounded accent-accent cursor-pointer"
+                      />
+                      Hide {belowFloorCount} under {minTrades} trades
+                    </label>
+                  )}
                   {/* View toggle */}
                   <div className="flex rounded-md border border-border-subtle overflow-hidden text-[11px]">
                     {(['table', 'bars'] as const).map(v => (
@@ -819,7 +1062,7 @@ export function OptimizationDetail() {
                     </button>
                   )}
                   <button
-                    onClick={() => exportCsv(opt.runs, paramKeys)}
+                    onClick={() => exportCsv(opt.runs, paramKeys, opt.optimization_id)}
                     className="flex items-center gap-2 px-3 py-[5px] rounded-md text-[11px] text-text-secondary hover:text-text-primary bg-bg-surface border border-border-subtle hover:border-border-default transition-colors"
                   >
                     <Download size={12} />
@@ -830,15 +1073,18 @@ export function OptimizationDetail() {
 
               {viewMode === 'table' && (
                 <ResultsTable
-                  runs={completeRuns}
+                  runs={visibleRuns}
                   sweptKeys={sweptKeys}
                   navigate={navigate}
                   bestRunId={opt.best_run_id ?? undefined}
+                  minTrades={minTrades}
+                  sort={sort}
+                  setSort={setSort}
                 />
               )}
               {viewMode === 'bars' && (
                 <RankedBars
-                  runs={completeRuns}
+                  runs={visibleRuns}
                   sweptKeys={sweptKeys}
                   navigate={navigate}
                   bestRunId={opt.best_run_id ?? undefined}

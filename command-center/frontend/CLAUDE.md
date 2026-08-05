@@ -1064,6 +1064,85 @@ background-tab stall.
 
 ---
 
+## The Optimizations page — audited 2026-08-04, and it had never been run
+
+The `optimizations` table was **EMPTY** when this audit ran. That is the frame for everything
+below: the page had never been driven end to end, so every defect was latent rather than
+corrupting data, and none of them had been caught by use. The backend half is in
+`../backend/CLAUDE.md`; this section is the UI half.
+
+**What a reader could not see, and now can.**
+
+- **Winner robustness** (`RobustnessCard`). The backend has computed `grid_sensitivity_score`
+  on every native optimization since that pass landed, and stored it, and **nothing rendered
+  it** — the one number a parameter sweep exists to produce was the one number the page did not
+  show. 0 = the settings either side score the same (a plateau you can trade); 1 = they
+  collapse (a lone spike, i.e. a number fitted to this history). The per-param breakdown prints
+  each neighbour's PF and its % drop.
+- **`BaselineRow`** — the run the optimization was launched FROM, beside the winner. Without it
+  the grid is a ranking with no reference point: you can see which combination won and not
+  whether it beat the settings you already had, which is the only question that decides whether
+  to adopt it. It reads `opt.source_run_id` through `useBacktestRun`.
+- **`winner_note`** — an amber banner when the ★ was picked by a FALLBACK rather than by the
+  rule the chips above it name (an empty regime-filtered population, a trade floor that
+  excluded everything). Falling back is right, because an optimization with no winner is
+  useless. Falling back *silently* is this repo's signature defect.
+- **A costs chip.** A grid ranked on a free book is not comparable to a priced run, and nothing
+  said which one you were looking at. ⚠ `cost_layers === null` ("not recorded", a row predating
+  layers) and `[]` ("none charged") are worded **differently** on purpose.
+
+**Things that were true on screen and wrong.**
+
+- `useElapsed` returned a number for a finished run with no `completed_at`, counting up from
+  `Date.now()` — so a failed optimization read `Ran for 74h` and kept climbing. It returns
+  `null` now and the page draws `—`. The backend stamps `completed_at` on failure too.
+- `fmtOptStatus` labelled `failed_cancelled` as **Failed** on the list page while the detail
+  page said **Cancelled** for the same row. One row, two words. `fmtOptStatus` gained the case.
+- ★ fell back to `i === 0` when `bestRunId` was absent, so with the table sortable the star
+  followed the sort and appeared to crown a different combination. **★ is the winner the
+  BACKEND chose, or nothing.**
+- The Retry-N-failed button rendered *while running* too. `retry-failed` calls
+  `ensure_platform_idle`, and the running optimization IS the job holding that platform, so the
+  request could only ever 409 — a button whose single outcome was an error toast. Removed;
+  cancel first, then retry.
+
+**Two toasts, and the useful one was the one thrown away.** Every optimization mutation's
+`onError` read `(e as {detail?: string}).detail` off an error that never carried it, so the
+branch could not fire and a generic message toasted **on top of** the one `api.request` had
+already shown. `api/client.ts` now throws **`ApiError`** (carrying `status` + `detail`) and the
+optimization hooks have **no `onError` toast at all**. ⚠ The rule: `request` owns the message;
+a hook's `onError` is for BRANCHING on a reason, not for restating it.
+
+**Modal (`OptimizeButton.tsx`).**
+- Go is blocked on `comboIncomplete` and on `rangeErrors` (step ≤ 0, max below min). Both used
+  to render as `— combos` with Go still enabled, so the run started and died minutes later.
+  `rangeProblem()` distinguishes *still typing* from *finished and wrong* and names the param.
+- **Cost layers are inherited from the source run** and stated in the modal. Without this the
+  whole grid was ranked on a free book and its winner compared against a priced run — two
+  numbers produced under different physics, presented as a comparison.
+- **`min_trades` (Minimum trades to win)**, defaulted to **30 in the modal** and **0 in the
+  API**. Profit factor has no opinion about sample size, so two lucky trades at PF 8.0 outrank
+  two hundred at PF 2.0. ⚠ The split of defaults is deliberate: nothing is assumed of a caller
+  that states nothing (the 0/0 commission rule), and the modal's 30 is *visible and editable*,
+  which is what keeps it from being a silent narrowing. A combo under the floor still runs and
+  still shows — dimmed — it just cannot be ★.
+- A **runtime estimate**, from the source run's own measured duration × combos ÷ cores. ⚠
+  **Python only.** A python sweep replays the same bars this run replayed on this box; NT8 and
+  MT5 load data once and parallelise inside their own tester, so per-combo cost there is not
+  this run's cost and no estimate is offered rather than a wrong one.
+
+**Payload and render.** The detail endpoint now ships only the **grid's own** param keys per
+combo (a combo's stored params are fixed+swept, 50+ keys on a Python strategy), the table and
+bar chart sorts are `useMemo`'d, and both pages stopped pulling the **entire** lab run list —
+`OptimizationDetail` scopes it to `{ strategy_id }`, and `Optimizations` dropped it outright
+(it fetched every run to choose between two empty-state sentences that said the same thing).
+
+**List page.** Runner, winner (with a ⚠ when a `winner_note` exists), and start time are
+columns now; Firm prints a short name instead of the raw `lucidflex_50k_eval` slug; the Method
+column went (every new optimization is `native`).
+
+---
+
 ## ProgressCard pattern (SweepDetail / OptimizationDetail)
 
 Both detail pages use an identical `ProgressCard` sub-component with:
@@ -1077,7 +1156,7 @@ Both detail pages use an identical `ProgressCard` sub-component with:
 - Failed/partial: unchanged (red/amber)
 - Running: unchanged (cyan spinner, already matched)
 
-`useElapsed(startIso, endIso, running)` — counts up live when `running`, freezes at final duration when done.
+`useElapsed(startIso, endIso, running)` — counts up live when `running`, freezes at final duration when done, and returns **`null`** when a finished job has no `completed_at` (the caller draws `—`). ⚠ It must never fall back to `Date.now()` for a finished job: a failed optimization then reads `Ran for 74h` and keeps climbing, which is how a job that died on Tuesday looked like a job still running.
 
 Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBacktest().mutate(run.run_id)`. Spinner activates on the specific row via `retryRun.variables === run.run_id`. `e.stopPropagation()` prevents the row-click navigation from firing.
 

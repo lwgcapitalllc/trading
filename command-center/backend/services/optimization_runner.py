@@ -471,7 +471,20 @@ async def _run_batch(
 
 # ── Grid sensitivity (Part A) ─────────────────────────────────────────────────
 
-def _compute_grid_sensitivity(combos_all: list[dict], param_ranges: dict) -> tuple[float, dict]:
+def _num(v: Any) -> float:
+    """Comparable number for a param value. A list-swept axis carries strings and bools, and
+    the neighbour matching below is numeric — an un-coercible value simply never matches,
+    which drops that param from the summary rather than raising mid-grid."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float("nan")
+
+def _compute_grid_sensitivity(
+    combos_all: list[dict],
+    param_ranges: dict,
+    winner_params: Optional[dict] = None,
+) -> tuple[Optional[float], dict]:
     """
     Measure how isolated the winner is in the full optimizer grid.
 
@@ -479,17 +492,46 @@ def _compute_grid_sensitivity(combos_all: list[dict], param_ranges: dict) -> tup
     down in that param, all others matching) and measures the PF degradation.
     A flat plateau → score near 0 (robust). A lone spike → score near 1 (overfit).
 
-    Returns (max_degradation_score, per_param_summary_dict).
+    Returns (max_degradation_score, per_param_summary_dict), and **`None` for the score when
+    the question could not be answered** — an empty grid, a winner not present in it (a retried
+    combo), a non-positive winner PF (no degradation to express as a fraction of it), or no
+    neighbours to compare against (every axis a single value).
+
+    ⚠ **`None` rather than 0.0, and that is the whole point of this return type.** 0.0 is the
+    PERFECT-PLATEAU score — the strongest "trust this winner" the metric can say — so using it
+    for "not measured" puts the most reassuring number on screen exactly when nothing was
+    checked. The caller stores nothing on None and the card does not render.
+
+    ⚠ `winner_params` must be the params of the run `_pick_best_run` ACTUALLY chose. Passing
+    None falls back to the highest profit factor, which is the same combination only when the
+    objective is `raw_profit_factor` AND no trade floor excluded the top row. Under `eval` or
+    `funded` mode the objective is not profit factor at all, so the fallback measures the
+    robustness of a combination that is not the ★ — a number under a label describing something
+    else, which is exactly what this page was audited for.
     """
     if not combos_all:
-        return 0.0, {}
+        return None, {}
 
-    winner = max(combos_all, key=lambda c: c.get("kpis", {}).get("profit_factor") or 0.0)
+    if winner_params is None:
+        winner_params = max(
+            combos_all, key=lambda c: c.get("kpis", {}).get("profit_factor") or 0.0
+        ).get("params", {})
+
+    # The winner's own PF is read from the grid, keyed off its params, so the degradation is
+    # always measured against the row the neighbours are compared to.
+    winner = next(
+        (c for c in combos_all
+         if all(abs(_num(c.get("params", {}).get(k)) - _num(v)) < 1e-6
+                for k, v in winner_params.items() if k in param_ranges)),
+        None,
+    )
+    if winner is None:
+        return None, {}
     winner_pf = winner.get("kpis", {}).get("profit_factor") or 0.0
     winner_params = winner.get("params", {})
 
     if winner_pf <= 0:
-        return 0.0, {}
+        return None, {}
 
     # Collect sorted unique values per ranged param for neighbor lookup
     param_vals: dict[str, list] = {}
@@ -536,6 +578,11 @@ def _compute_grid_sensitivity(combos_all: list[dict], param_ranges: dict) -> tup
 
         if param_summary:
             summary[pname] = param_summary
+
+    # No neighbour was found on any axis — every axis is a single value, or the winner's row
+    # has no adjacent sibling in the grid. Nothing was compared, so there is no score.
+    if not summary:
+        return None, {}
 
     return round(max_degradation, 4), summary
 
@@ -701,16 +748,6 @@ async def run_native_optimization(optimization_id: str) -> None:
     # count so the progress bar reaches 100% instead of sitting at grid_size% complete.
     lab_db.update_optimization_estimated_runs(optimization_id, len(combos))
 
-    # Step 3A — grid sensitivity from the FULL combo set (before any cut).
-    # Measures how isolated the winner is; no new NT8 backtests required.
-    try:
-        gs_score, gs_summary = _compute_grid_sensitivity(combos, param_ranges)
-        lab_db.update_optimization_grid_sensitivity(optimization_id, gs_score, gs_summary)
-        log.info("Native opt %s: grid_sensitivity_score=%.4f (%d params in summary)",
-                 optimization_id, gs_score, len(gs_summary))
-    except Exception as exc:
-        log.warning("Grid sensitivity compute failed for opt %s: %s", optimization_id, exc)
-
     # Drawdown substitution for prop firm evaluation.
     # NT8 "Max. drawdown" is the cumulative peak-to-trough over the full backtest (~months).
     # Prop firm max_loss_eod is a per-DAY limit.  Comparing them directly marks every combo
@@ -753,7 +790,7 @@ async def run_native_optimization(optimization_id: str) -> None:
             "runner":             runner_str,
             "kpis":               kpis,
         })
-        scored.append({"run_id": run_id, "kpis": kpis})
+        scored.append({"run_id": run_id, "kpis": kpis, "combo_params": combo_params})
 
     await asyncio.to_thread(lab_db.insert_complete_optimization_runs, rows_to_insert)
 
@@ -784,6 +821,26 @@ async def run_native_optimization(optimization_id: str) -> None:
     complete_rows = await asyncio.to_thread(lab_db.list_optimization_runs, optimization_id)
     complete_rows = [r for r in complete_rows if r["status"] == "complete"]
     best_run_id, note = await _pick_best_run(complete_rows, opt, firm)
+
+    # Grid sensitivity is measured LAST, anchored to the run the scorer actually chose.
+    # It used to run before the winner existed and anchor itself on the highest profit factor
+    # — the same combination only under `raw` mode with no trade floor, so under `eval` or
+    # `funded` it described a row that is not the ★. The page labels this "Winner robustness".
+    try:
+        winner_params = next(
+            (s["combo_params"] for s in scored if s["run_id"] == best_run_id), None)
+        gs_score, gs_summary = _compute_grid_sensitivity(combos, param_ranges, winner_params)
+        if gs_score is None:
+            # Nothing written, so the column stays NULL and the card does not render. Storing
+            # 0.0 here would print "0% — Robust" over a grid nobody measured.
+            log.info("Native opt %s: grid sensitivity not measurable — left unset", optimization_id)
+        else:
+            lab_db.update_optimization_grid_sensitivity(optimization_id, gs_score, gs_summary)
+            log.info("Native opt %s: grid_sensitivity_score=%.4f (%d params in summary)",
+                     optimization_id, gs_score, len(gs_summary))
+    except Exception as exc:
+        log.warning("Grid sensitivity compute failed for opt %s: %s", optimization_id, exc)
+
     lab_db.set_optimization_winner_note(optimization_id, note)
     lab_db.complete_optimization(optimization_id, best_run_id)
     await _persist_log()

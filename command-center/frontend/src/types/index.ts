@@ -1087,6 +1087,12 @@ export interface OptimizationRequest {
   param_grid: Record<string, ParamAxisSpec>
   source_run_id?: string | null
   regime_filter?: string | null
+  // Python runner only. Omitted (undefined) means "charge nothing stated" — NOT the same as
+  // [], which is an explicit empty layer set. Mirrors BacktestRunRequest.
+  cost_layers?: CostLayer[] | null
+  broker_profile?: string | null
+  // A combo below this many trades is still run and listed — it just cannot be the winner.
+  min_trades?: number
 }
 
 export interface OptimizationSummary {
@@ -1106,6 +1112,16 @@ export interface OptimizationSummary {
   regime_filter: string | null
   created_at: string
   completed_at: string | null
+  runner: string
+  strategy_name: string | null
+  winner_note: string | null
+  grid_sensitivity_score: number | null
+}
+
+export interface GridSensitivityNeighbor {
+  value: number
+  profit_factor: number
+  degradation: number
 }
 
 export interface OptimizationDetail extends OptimizationSummary {
@@ -1115,6 +1131,10 @@ export interface OptimizationDetail extends OptimizationSummary {
   runs: BacktestSummary[]
   live_pct: number | null
   live_message: string | null
+  cost_layers: CostLayer[] | null
+  broker_profile: string | null
+  min_trades: number
+  grid_sensitivity_summary: Record<string, Partial<Record<'up' | 'down', GridSensitivityNeighbor>>> | null
 }
 
 // ── Lab — Instrument Summary ──────────────────────────────────────────────────

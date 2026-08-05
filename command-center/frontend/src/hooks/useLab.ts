@@ -412,10 +412,7 @@ export function useDeleteOptimization() {
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
     },
-    onError: (e: unknown) => {
-      const msg = (e as { detail?: string })?.detail
-      toast.error(msg ?? 'Failed to delete optimization')
-    },
+    // No onError toast — see useTriggerOptimization. `api.request` already showed the reason.
   })
 }
 
@@ -801,14 +798,11 @@ export function useTriggerOptimization() {
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
       qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: (e: unknown) => {
-      const detail = (e as { detail?: string })?.detail
-      if (detail?.includes('already running')) {
-        toast.error(detail)
-      } else {
-        toast.error('Failed to start optimization')
-      }
-    },
+    // No onError toast on any of these four. `api.request` already toasted the server's own
+    // `detail` — "another job is already running", "step must be greater than 0" — and adding a
+    // generic one produced TWO toasts where the second, useless one is the one that stays on
+    // screen. The reason the first one was never seen is that these handlers read `e.detail`
+    // off a plain Error that never had it, so the branch could not fire.
   })
 }
 
@@ -816,13 +810,19 @@ export function useCancelOptimization() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (optimizationId: string) =>
-      api.post<{ optimization_id: string; status: string }>(`/optimizations/${optimizationId}/cancel`),
-    onSuccess: (_data, optimizationId) => {
-      toast.success('Optimization cancelled')
+      api.post<{ optimization_id: string; status: string; job_stopped?: boolean }>(`/optimizations/${optimizationId}/cancel`),
+    onSuccess: (data, optimizationId) => {
+      // The row is cancelled either way; whether the RUNNER was reached is a different fact
+      // and the one that decides whether the machine is still busy.
+      if (data.job_stopped === false) {
+        toast.warning('Marked cancelled, but the runner could not be reached — it may still be working')
+      } else {
+        toast.success('Optimization cancelled')
+      }
       qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: () => toast.error('Failed to cancel optimization'),
   })
 }
 
@@ -836,7 +836,6 @@ export function useRetryOptimization() {
       qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
     },
-    onError: () => toast.error('Failed to retry optimization'),
   })
 }
 
@@ -846,10 +845,11 @@ export function useRerunOptimization() {
     mutationFn: (optimizationId: string) =>
       api.post<{ optimization_id: string; status: string; estimated_runs: number }>(`/optimizations/${optimizationId}/rerun`),
     onSuccess: (_data, optimizationId) => {
+      toast.success('Re-running optimization')
       qc.invalidateQueries({ queryKey: ['lab', 'optimization', optimizationId] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+      qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: () => toast.error('Failed to re-run optimization'),
   })
 }
 
