@@ -32,20 +32,23 @@
 strategy("MPC A+ Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 var GRP_TABLE = "Confirmation Table"
 bool showConfTable = input.bool(false, "Show Confirmation Table", group = GRP_TABLE, display = display.none)
-string tablePositionInput = input.string("Top Center", "Table Position", group = GRP_TABLE, options = ["Top Left", "Top Center", "Top Right", "Middle Left", "Middle Center", "Middle Right", "Bottom Left", "Bottom Center", "Bottom Right"], display = display.none)
-string tableSizeInput = input.string("Tiny", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
+// Four corners, not nine (Aaron, 2026-08-04) — synced from mpc_assistant.pine. The six
+// middle/centre positions parked the table over the candles, which is the one place a
+// status panel must never sit, and "Top Center" was the DEFAULT here. Text size loses
+// "Huge" for the same reason and now defaults to Small.
+string tablePositionInput = input.string("Top Right", "Table Position", group = GRP_TABLE, options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"], active = showConfTable, display = display.none)
+string tableSizeInput = input.string("Small", "Table Text Size", group = GRP_TABLE, options = ["Tiny", "Small", "Normal", "Large"], active = showConfTable, display = display.none)
 
+// The `=>` fallback on each is doing real work now that options have been removed: a chart
+// saved with "Top Center" or "Huge" still holds that string, and it lands here rather than
+// on a position or size the panel no longer offers. That matters more in this file than in
+// the indicator — "Top Center" was the shipped default, so every saved chart holds it.
 f_tablePosition(string opt) =>
     switch opt
-        "Top Left"      => position.top_left
-        "Top Center"    => position.top_center
         "Top Right"     => position.top_right
-        "Middle Left"   => position.middle_left
-        "Middle Center" => position.middle_center
-        "Middle Right"  => position.middle_right
-        "Bottom Left"   => position.bottom_left
-        "Bottom Center" => position.bottom_center
+        "Top Left"      => position.top_left
         "Bottom Right"  => position.bottom_right
+        "Bottom Left"   => position.bottom_left
         => position.top_right
 
 f_tableSize(string opt) =>
@@ -54,8 +57,7 @@ f_tableSize(string opt) =>
         "Small"  => size.small
         "Normal" => size.normal
         "Large"  => size.large
-        "Huge"   => size.huge
-        => size.tiny
+        => size.normal
 
 
 //============================================================
@@ -3072,13 +3074,38 @@ plot(array.get(a_lastLows,  1), "WL", color.new(i_weeklyColor,  100), editable =
 // ⚠ COSMETIC ONLY: every line below READS state and writes none of it back, so no
 // fill, exit or stat can move. The one thing that is NOT free is compile budget — if
 // CE10117 returns, this block is the first thing to cut again.
-color JARVIS_YELLOW = #fbe35e
+// ── PALETTE REFRESH (Aaron, 2026-08-04) — synced from mpc_assistant.pine ──
+// The company blue and yellow stay; everything around them was re-picked so the table
+// reads as one panel instead of a grid of coloured text. Three changes carry it:
+//   1. The BODY is a softened charcoal (#0B0E14) rather than near-black, and the HEADER
+//      is the only true black on the table — so the header separates by itself and the
+//      frame no longer has to do it with a heavy yellow border.
+//   2. The FRAME is the blue at 70%, one pixel, matching the internal borders. The old
+//      2px yellow frame outranked the header text it was drawing attention to.
+//   3. The INFO column is a muted slate (#94A3B8) rather than white-at-40%. A transparent
+//      white takes its tint from whatever is behind it; a solid grey does not, so the
+//      third column now reads the same over the chart as over the table's own fill.
+// The bull/bear pair moved to the brighter modern pair because they now sit on a TINTED
+// cell rather than on flat charcoal — see f_jRow4 for that.
+color JARVIS_YELLOW = #ffde59
 color JARVIS_BLUE   = #17578e
 color JARVIS_WHITE  = #ffffff
 color JARVIS_BLACK  = #000000
-color JARVIS_BSL    = color.new(#ff4444, 0)
-color JARVIS_SSL    = color.new(#00cc66, 0)
-color JARVIS_NEUTRAL = color.new(#888888, 0)
+color JARVIS_BG     = color.new(#0B0E14, 0)
+color JARVIS_HEADBG = color.new(#000000, 0)
+color JARVIS_BORDER = color.new(JARVIS_BLUE, 70)
+// The header's own blue — a bright cyan, and the ONLY place it appears. It is what
+// separates the branding cell from the two yellow column headings beside it, now that
+// they no longer sit in a coloured band.
+color JARVIS_GLOW   = #00E5FF
+color JARVIS_MUTED  = color.new(#94A3B8, 0)
+color JARVIS_BSL    = color.new(#FF5252, 0)
+color JARVIS_SSL    = color.new(#00E676, 0)
+color JARVIS_NEUTRAL = color.new(#94A3B8, 0)
+// The LIQ BSL row's own red — a hotter one than the bearish red, deliberately. A swept
+// pool is an EVENT that just happened, not a running bias like the Weekly/Daily rows, so
+// it should not sit at the same visual weight as two rows that are describing trend.
+color JARVIS_LIQRED = color.new(#FF1744, 0)
 
 // ── 1. LIQUIDITY slots ──
 var string liq_h4h = "", var string liq_h4l = ""
@@ -3176,28 +3203,61 @@ else if int_bear_bos
 bool int_struct_valid = int_struct != "" and not na(int_struct_bar)
 
 // ── Draw table ──
-var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 3, 18,
-  bgcolor      = color.new(#0a0a14, 5),
-  border_color = color.new(JARVIS_BLUE, 50),
+// FOUR columns now — GROUP · row · STATUS · INFO (Aaron, 2026-08-04, synced from
+// mpc_assistant.pine). The first column is a spanning tag (SETUP / BIAS / LIQ / STR)
+// printed ONCE on the group's first row and blank on the rest, so the rows read as four
+// bands rather than one long list.
+// THE GRID STAYS ON. It was briefly borderless in the indicator on the reasoning that a
+// blank group cell reads as its own box, so the tag could visually own the rows beneath
+// it. True, and not what was wanted — the grid is what makes this readable as a TABLE.
+// The grouping comes from the TAG ALONE; a blank cell in a bordered grid still groups, it
+// just reads as an indent rather than a merged band. Borders are the blue at 70%, the
+// same colour as the frame, so the grid separates without competing with the tinted
+// status cells.
+var table jarvisTable = table.new(f_tablePosition(tablePositionInput), 4, 18,
+  bgcolor      = JARVIS_BG,
+  border_color = JARVIS_BORDER,
   border_width = 1,
-  frame_color  = JARVIS_YELLOW,
-  frame_width  = 2)
+  frame_color  = JARVIS_BORDER,
+  frame_width  = 1)
 
-f_jRow3(table t, int row, string sec, string val, color vc, string detail) =>
-    table.cell(t, 0, row, sec,
-      text_color  = color.new(JARVIS_WHITE, 20),
+// ── THE STATUS CELL IS TINTED WITH ITS OWN COLOUR (Aaron, 2026-08-04) ──
+// The middle column used to be coloured TEXT on the same flat fill as everything else, so
+// a row's state had to be read off the words. It now sits on a wash of its own colour and
+// the state is visible before a single word is.
+// ONE RULE — `color.new(vc, 87)` — rather than a status→background lookup, and that is a
+// deliberate departure from the reference table this came off. The reference keys its
+// tint off the status TEXT, and this table's statuses are not a fixed vocabulary: they
+// are "▲ READY LONG", "▲ AWAIT FVG SHORT", "EXTREME", "2/3 LONG", "Pass", "Swept". A
+// lookup would need extending every time a row gains a state, and the one it missed would
+// silently render untinted — the same class of "a label nobody is checking" this repo
+// keeps meeting. Deriving from the colour the row already decided cannot fall out of step.
+// `grp` is the GROUP tag and is passed EMPTY on every row but the first of its group.
+// It cannot be latched inside this function — Pine lets a function read a global but
+// never write one (CE10088, the error `ob_export.pine` hit on 2026-07-31) — so the caller
+// owns the once-only rule. A+ SETUP and Weekly can hardcode theirs because they always
+// print; LIQ and the EXT/INT pair need a real latch, since either of their two rows can
+// be the one that appears. See the `gLiq` / `gMs` locals there.
+f_jRow4(table t, int row, string grp, string sec, string val, color vc, string detail) =>
+    table.cell(t, 0, row, grp,
+      text_color  = JARVIS_YELLOW,
       text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
+      bgcolor     = JARVIS_BG,
       text_halign = text.align_left)
-    table.cell(t, 1, row, val,
+    table.cell(t, 1, row, sec,
+      text_color  = JARVIS_WHITE,
+      text_size   = f_tableSize(tableSizeInput),
+      bgcolor     = JARVIS_BG,
+      text_halign = text.align_center)
+    table.cell(t, 2, row, val,
       text_color  = vc,
       text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
+      bgcolor     = color.new(vc, 87),
       text_halign = text.align_center)
-    table.cell(t, 2, row, detail,
-      text_color  = color.new(JARVIS_WHITE, 40),
+    table.cell(t, 3, row, detail,
+      text_color  = JARVIS_MUTED,
       text_size   = f_tableSize(tableSizeInput),
-      bgcolor     = color.new(#0a0a14, 15),
+      bgcolor     = JARVIS_BG,
       text_halign = text.align_center)
 
 // Most recent BSL/SSL source — priority: NY > London > Asia > Daily > H4
@@ -3761,15 +3821,30 @@ if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
 f_drawTable() =>
     if showConfTable and barstate.islast
         // Header
-        table.cell(jarvisTable, 0, 0, "MPC- JARVIS",
+        // "JARVIS", not "MPC- JARVIS" — the long form was the widest string in this
+        // column, so the branding was setting the width of every group tag under it. The
+        // watermark still carries the full name.
+        // SOURCE → INFO (Aaron, 2026-08-04). "Source" was accurate for the LIQ pair and
+        // the two bias rows, where the column really does name where the read came from,
+        // but it was never what the column held on the A+ SETUP row, which carries the
+        // confluence tags. "Info" is the honest name for a column that is whatever that
+        // row still needs to tell you.
+        // The branding sits over the GROUP column and column 1's header is deliberately
+        // EMPTY — the row labels under it (A+, W, D, BSL, EXT) are named by their group
+        // tag, so a heading there would be inventing a word for a column that does not
+        // need one. JARVIS is the one cyan on the table; STATUS and INFO stay yellow,
+        // which is what tells the reader the branding is not a column heading.
+        table.cell(jarvisTable, 0, 0, "JARVIS",
+          text_color = JARVIS_GLOW, text_size = f_tableSize(tableSizeInput),
+          bgcolor = JARVIS_HEADBG, text_halign = text.align_center)
+        table.cell(jarvisTable, 1, 0, "",
+          bgcolor = JARVIS_HEADBG)
+        table.cell(jarvisTable, 2, 0, "STATUS",
           text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-        table.cell(jarvisTable, 1, 0, "STATUS",
+          bgcolor = JARVIS_HEADBG, text_halign = text.align_center)
+        table.cell(jarvisTable, 3, 0, "INFO",
           text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
-        table.cell(jarvisTable, 2, 0, "SOURCE",
-          text_color = JARVIS_YELLOW, text_size = f_tableSize(tableSizeInput),
-          bgcolor = JARVIS_BLUE, text_halign = text.align_center)
+          bgcolor = JARVIS_HEADBG, text_halign = text.align_center)
 
         int r = 1
 
@@ -3801,54 +3876,70 @@ f_drawTable() =>
                 string poiTag = seqPoi ? " + POI" : ""
                 string divTag = seqDiv ? " + DIV" : ""
                 if seqStage == 4 and seqFvg
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
+                    f_jRow4(jarvisTable, r, "SETUP", "A+", (seqIsLong ? "▲ " : "▼ ") + "READY " + seqSide, seqCol, "E1 zone + FVG" + poiTag + divTag)
                 else if seqStage == 4
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
+                    f_jRow4(jarvisTable, r, "SETUP", "A+", (seqIsLong ? "▲ " : "▼ ") + "AWAIT FVG " + seqSide, JARVIS_YELLOW, "E1 zone, no FVG yet" + poiTag + divTag)
                 else if seqStage == 3
-                    f_jRow3(jarvisTable, r, "A+ SETUP", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
+                    f_jRow4(jarvisTable, r, "SETUP", "A+", (seqIsLong ? "▲ " : "▼ ") + "EARLY " + seqSide, JARVIS_YELLOW, "0.5 early" + (seqFvg ? " + FVG" : "") + poiTag + divTag)
                 else if seqStage == 2
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
+                    f_jRow4(jarvisTable, r, "SETUP", "A+", "2/3 " + seqSide, seqCol, "SOS ✓ await retrace" + poiTag)
                 else
-                    f_jRow3(jarvisTable, r, "A+ SETUP", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
+                    f_jRow4(jarvisTable, r, "SETUP", "A+", "1/3 " + seqSide, JARVIS_NEUTRAL, "Sweep/Div ✓ await SOS" + poiTag)
                 r := r + 1
             else if aplusL_blocked or aplusS_blocked
-                f_jRow3(jarvisTable, r, "A+ SETUP", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
+                f_jRow4(jarvisTable, r, "SETUP", "A+", "EXTREME", JARVIS_YELLOW, aplusL_blocked ? "Bear div / OB - reversal risk" : "Bull div / OS - reversal risk")
                 r := r + 1
             else
-                f_jRow3(jarvisTable, r, "A+ SETUP", "Pass", JARVIS_NEUTRAL, "No sequence")
+                f_jRow4(jarvisTable, r, "SETUP", "A+", "Pass", JARVIS_NEUTRAL, "No sequence")
                 r := r + 1
 
-            // WEEKLY — Established Context (last closed week vs the one before)
-            f_jRow3(jarvisTable, r, "Weekly", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
+            // WEEKLY — Established Context (last closed week vs the one before). Opens the
+            // BIAS group, and it is unconditional, so the tag is hardcoded rather than
+            // latched.
+            f_jRow4(jarvisTable, r, "BIAS", "W", wEstState, wEstState == "Bullish" ? JARVIS_SSL : wEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, wEstDesc)
             r := r + 1
 
             // DAILY — Established Context (last closed day vs the one before)
-            f_jRow3(jarvisTable, r, "Daily", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
+            f_jRow4(jarvisTable, r, "", "D", dEstState, dEstState == "Bullish" ? JARVIS_SSL : dEstState == "Bearish" ? JARVIS_BSL : JARVIS_NEUTRAL, dEstDesc)
             r := r + 1
 
-            // LIQ BSL
+            // LIQ — EITHER row can be the one that prints, so the group tag is a real
+            // latch rather than a hardcode: it rides on whichever appears first and is
+            // blanked after.
+            // ⚠ The STATUS column says "Swept", not "BSL"/"SSL". Those words moved to the
+            // row label, and leaving them in both places printed `LIQ | BSL | BSL | Day
+            // High` — the same word twice with no second meaning. The status column's job
+            // is what HAPPENED, and what happened is the pool was taken; WHICH pool is the
+            // row label and WHERE it was is the Info column. Nothing is lost, and the
+            // colour still carries the side.
+            string gLiq = "LIQ"
             if recentBSL != ""
-                f_jRow3(jarvisTable, r, "LIQ BSL", "BSL", JARVIS_BSL, recentBSL)
+                f_jRow4(jarvisTable, r, gLiq, "BSL", "Swept", JARVIS_LIQRED, recentBSL)
+                gLiq := ""
                 r := r + 1
 
-            // LIQ SSL
             if recentSSL != ""
-                f_jRow3(jarvisTable, r, "LIQ SSL", "SSL", JARVIS_SSL, recentSSL)
+                f_jRow4(jarvisTable, r, gLiq, "SSL", "Swept", JARVIS_SSL, recentSSL)
                 r := r + 1
 
-        // STRUCTURE — EXT always, INT only if within current fib range
+        // STRUCTURE — EXT always, INT only if within current fib range. Same latch as LIQ:
+        // either row can be the first to print, so the tag is carried in a local.
+        string gMs = "STR"
         if ext_struct != ""
-            f_jRow3(jarvisTable, r, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
+            f_jRow4(jarvisTable, r, gMs, "EXT", ext_struct, str.contains(ext_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "External")
+            gMs := ""
             r := r + 1
         if int_struct_valid
-            f_jRow3(jarvisTable, r, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
+            f_jRow4(jarvisTable, r, gMs, "INT", int_struct, str.contains(int_struct, "▲") ? JARVIS_SSL : JARVIS_BSL, "Internal")
             r := r + 1
 
         // Wipe any leftover cells below the last drawn row. Without this, a tick
         // that draws FEWER rows than the previous one leaves the old rows visible
         // (e.g. a ghost duplicate of the final row after a row above disappears).
+        // 3, not 2 — the wipe must reach the new fourth column, or a shrinking table
+        // leaves a ghost Info cell hanging off the bottom right with no row beside it.
         if r <= 17
-            table.clear(jarvisTable, 0, r, 2, 17)
+            table.clear(jarvisTable, 0, r, 3, 17)
 
 f_drawTable()
 
