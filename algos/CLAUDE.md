@@ -216,6 +216,28 @@ exposed a knife-edge in the entry model — see the header entry and `LIVE_TRADI
 Tests: `algos/tests/test_shadow_diff.py` (11), all on the join, because a join that matches too
 little invents drift and one that matches too much invents parity.
 
+**`tools/broker_facts.py` — MEASURE the live broker's costs instead of assuming them (2026-08-05).**
+G5's measurable half. Every cost figure in this repo was taken on **VANTAGE** and the live bot
+trades **PU PRIME**; this repo has already recorded a 50% error from quoting one broker's spread
+for the other ($0.22 vs $0.33), and the shadow diff found the feeds differ by a systematic 4-5
+cents on every bar. Read-only: it attaches to an already-running, already-logged-in terminal,
+reads the symbol specification, then samples live ticks for a spread DISTRIBUTION.
+
+⚠ **A single spread reading is not the spread**, and the instance config's `_measured` block
+records exactly one — "spread 33 points", taken once on 2026-07-31. Gold widens at the 17:00 NY
+rollover, around news and out of hours; the Vantage figure this repo trusts is a MEDIAN over 1.49M
+ticks. The sampler is the point of the tool and the specification read is the cheap half.
+⚠ **It asserts the ACCOUNT before printing anything.** This box runs two terminals — MT5_FFT (PU
+Prime, the live bot) and MT5_Lab (Vantage, the backtest agent) — and `mt5.initialize()` with no
+path grabs whichever answers first, which is the leak `_ensure_mt5()` below was written to close.
+**Reporting Vantage's swap as PU Prime's is the exact error this tool exists to end, and it would
+look completely normal.**
+⚠ **A stale tick repeated for five minutes is NOT a rock-steady spread** — the sampler counts
+repeats separately and reports no statistics at all when nothing fresh arrives, because a shut
+market is otherwise the most confident-looking wrong answer it could give.
+⚠ **It writes nothing.** `_measured` is a claim about when a reading was taken and by whom; a tool
+silently rewriting it would make a fresh measurement indistinguishable from a stale one.
+
 Standalone MT5 lab tooling (not imported by any bot) lives in `tools/`: `download_mt5_history.py` (warm the lab MT5 history cache) and `audit_mt5_data_quality.py` (its read-only companion — probes what the broker actually serves). Both run on the VPS against `C:\MT5_Lab`.
 
 **Backtest data source — pinned to MT5_Lab only (2026-07-22).** All backtest price/tick data comes from the MT5 agent (`markets/fx/tools/mt5_agent.py`, VPS port 8766). Its `_ensure_mt5()` binds the Python API to the **MT5_Lab** terminal64.exe *only* (`TERMINAL_PATH` / `MT5_DATA_DIR`, else the baked-in `C:\MT5_Lab` default); if a live bot terminal (MT5_FFT, etc.) is already attached it drops and re-binds, and if MT5_Lab can't be reached it FAILS loudly rather than silently reading the wrong account. This closed a real leak — the old code called `mt5.initialize()` with no path and grabbed whichever terminal answered first. **MT5_Lab is logged into a Vantage demo (account 25815745, `VantageMarkets-Demo`)** so backtest data matches TradingView's `VANTAGE_XAUUSD`; this replaced the earlier PU Prime `XAUUSD.s` feed. Vantage's gold symbol name/suffix may differ from `XAUUSD.s` — if a run returns no bars, check the symbol name first. To pick up an agent-code change: `git pull` on the VPS **and** restart the `MT5AgentRDP` scheduled task (kill only the specific `mt5_agent.py` PID) — never a blanket `taskkill python.exe`, which also kills the NT8 backtest agent (`NT8Agent` task).
