@@ -201,6 +201,22 @@ def _suppress_stop_alert(bot_key: str) -> None:
     )
 
 
+class VpsUnreachable(RuntimeError):
+    """The SSH call itself failed — no answer came back at all.
+
+    That is NOT the same as an answer which happens to be empty, and everything on the Bots
+    page depends on the difference. `wmic … get commandline` prints nothing when no bot is
+    running, and a dead tunnel also prints nothing — so while both arrived as `""`,
+    `get_snapshot` reported **every bot STOPPED with a null balance and no error anywhere**.
+    A confident wrong answer, on the one page whose job is to tell you whether the bots are
+    up. Measured 2026-08-04: a broken `ssh` exits **255 with empty stdout and raises no
+    exception**, so the old body returned `""` and the caller could not tell.
+
+    Same rule as `mt5_link` and `mt5_connected` one layer up, and the repo's standing one:
+    *no data* and *cannot ask* must never be the same value.
+    """
+
+
 def _ssh(cmd: str) -> str:
     result = subprocess.run(
         ["ssh", VPS_HOST, cmd],
@@ -208,7 +224,19 @@ def _ssh(cmd: str) -> str:
     )
     # Windows stdout is cp1252; decode with replacement so non-UTF-8 chars
     # (arrows, dashes, degree signs) don't raise UnicodeDecodeError → 500.
-    return result.stdout.decode("utf-8", errors="replace").strip()
+    out = result.stdout.decode("utf-8", errors="replace").strip()
+
+    # OpenSSH reserves 255 for its OWN failures — host unresolvable, connection refused,
+    # auth rejected, tunnel dead. A remote command that merely fails reports its own code:
+    # `type` on a missing file exits 1, a `wmic … call terminate` that matched nothing
+    # likewise, and those are ORDINARY here — half the commands in this module end in
+    # `2>nul` precisely because failing is the normal case. So 255 is the only code read as
+    # "we never got an answer", and only with empty stdout, so a remote program that
+    # genuinely exits 255 after printing something is still believed.
+    if result.returncode == 255 and not out:
+        err = result.stderr.decode("utf-8", errors="replace").strip()
+        raise VpsUnreachable(err or f"ssh to {VPS_HOST} failed and said nothing")
+    return out
 
 
 _MARKER_RE = re.compile(r"(?<!\n)(===[A-Z0-9_]+===)")
@@ -341,60 +369,136 @@ def _uptime_seconds(state: dict) -> int | None:
 
 
 _USERS_FILE_VPS = r"C:\trading\algos\users.json"
+_USERS_PY_PATH  = "C:/trading/algos/users.json"
+
+# Markers the VPS echoes back, so "no file" and "no answer" are different values here too.
+_USERS_ABSENT  = "===USERS_ABSENT==="
+_USERS_WRITTEN = "===USERS_WRITTEN==="
+
+
+class UsersFileUnreadable(RuntimeError):
+    """We could not establish what users.json currently holds.
+
+    Every write here is a READ-MODIFY-WRITE of the whole file, so a failed read is not a
+    read-shaped inconvenience — it is a delete. `_read_users_vps` used to answer `{}` for a
+    missing file, an unreadable file, a locked file, a corrupt file and a dead SSH alike,
+    and `add_user` then wrote `{"users": {the one new user}}`, **silently removing everyone
+    else**. Remove and role-change happened to be safe (they 404 on an empty dict); add was
+    the one that destroys.
+
+    So the absent case is now the ONLY one that answers `{}` — it is the genuine first-user
+    path, and the VPS says so in its own words rather than by returning nothing.
+    """
 
 
 def _read_users_vps() -> dict:
-    raw = _ssh(f"type {_USERS_FILE_VPS} 2>nul")
+    """Read users.json off the VPS, or raise. Never guesses `{}`.
+
+    `type x 2>nul` cannot express the difference between "no such file" and "could not read
+    it", which is exactly the difference that matters, so this asks Python on the far end.
+    """
+    raw = _ssh(
+        f'python -c "import pathlib,sys;'
+        f"p=pathlib.Path(r'{_USERS_PY_PATH}');"
+        f"sys.stdout.write(p.read_text(encoding='utf-8') if p.exists() else '{_USERS_ABSENT}')\""
+    ).strip()
+
+    if raw == _USERS_ABSENT:
+        return {}
     if not raw:
-        return {}
+        # The one-liner itself failed (no python on PATH, file locked mid-read). Empty is
+        # not an answer — a bare `{}` here is how the file gets emptied.
+        raise UsersFileUnreadable(f"the VPS returned nothing for {_USERS_FILE_VPS}")
     try:
-        return json.loads(raw).get("users", {})
-    except Exception:
-        return {}
+        data = json.loads(raw)
+    except Exception as e:
+        raise UsersFileUnreadable(f"{_USERS_FILE_VPS} did not parse: {e}") from e
+    users = data.get("users")
+    if not isinstance(users, dict):
+        raise UsersFileUnreadable(f"{_USERS_FILE_VPS} has no `users` object")
+    return users
 
 
 def _write_users_vps(users: dict) -> None:
+    """Back the file up, write it, and confirm the write happened.
+
+    The backup exists because this replaces the whole file from a dict assembled in this
+    process; if that dict is ever wrong, `users.json.bak` is the only copy of who had
+    access. The confirmation exists because a remote Python traceback exits non-zero with
+    empty stdout, which `_ssh` correctly does NOT treat as a connection failure — so without
+    a marker to look for, a failed write reports success.
+    """
     payload = json.dumps({"users": users}, indent=2, ensure_ascii=True)
     b64 = base64.b64encode(payload.encode("utf-8")).decode("ascii")
-    _ssh(
-        f"python -c \"import base64; open(r'C:/trading/algos/users.json', 'w', encoding='utf-8')"
-        f".write(base64.b64decode(b'{b64}').decode())\""
+    out = _ssh(
+        f'python -c "import base64,pathlib,shutil;'
+        f"p=pathlib.Path(r'{_USERS_PY_PATH}');"
+        f"p.exists() and shutil.copy2(p, p.with_name(p.name + '.bak'));"
+        f"p.write_text(base64.b64decode(b'{b64}').decode(), encoding='utf-8');"
+        f"print('{_USERS_WRITTEN}')\""
     )
+    if _USERS_WRITTEN not in out:
+        raise UsersFileUnreadable(
+            f"the write to {_USERS_FILE_VPS} was not confirmed — it may be unchanged"
+        )
+
+
+def _users_or_502() -> dict:
+    """Every users endpoint reads through here, so a read failure can never reach a write.
+
+    502 rather than 500: nothing is wrong with this backend, we could not get an answer out
+    of the VPS — and the caller needs to know it was not told "there are no users".
+    """
+    try:
+        return _read_users_vps()
+    except VpsUnreachable as e:
+        raise HTTPException(status_code=502, detail=f"Cannot reach the VPS — {e}")
+    except UsersFileUnreadable as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+def _save_users_or_502(users: dict) -> None:
+    try:
+        _write_users_vps(users)
+    except VpsUnreachable as e:
+        raise HTTPException(status_code=502, detail=f"Cannot reach the VPS — {e}")
+    except UsersFileUnreadable as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/users", response_model=list[TelegramUser])
 def list_users():
-    users = _read_users_vps()
+    users = _users_or_502()
     return [TelegramUser(chat_id=k, **v) for k, v in users.items()]
 
 
 @router.post("/users", status_code=201)
 def add_user(body: TelegramUserCreate):
-    users = _read_users_vps()
+    users = _users_or_502()
     if body.chat_id in users:
         raise HTTPException(status_code=409, detail="User already exists")
     users[body.chat_id] = {"name": body.name, "role": body.role, "added": date.today().isoformat()}
-    _write_users_vps(users)
+    _save_users_or_502(users)
     return {"status": "ok"}
 
 
 @router.delete("/users/{chat_id}")
 def remove_user(chat_id: str):
-    users = _read_users_vps()
+    users = _users_or_502()
     if chat_id not in users:
         raise HTTPException(status_code=404, detail="User not found")
     del users[chat_id]
-    _write_users_vps(users)
+    _save_users_or_502(users)
     return {"status": "ok"}
 
 
 @router.patch("/users/{chat_id}")
 def update_user_role(chat_id: str, body: TelegramUserRoleUpdate):
-    users = _read_users_vps()
+    users = _users_or_502()
     if chat_id not in users:
         raise HTTPException(status_code=404, detail="User not found")
     users[chat_id]["role"] = body.role
-    _write_users_vps(users)
+    _save_users_or_502(users)
     return {"status": "ok"}
 
 
@@ -404,6 +508,11 @@ def get_snapshot():
         snap = _fetch_vps_snapshot()
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
+    except VpsUnreachable as e:
+        # Named separately from the generic failure below because this is the one the page
+        # used to render as "every bot stopped". An unanswerable question must arrive as an
+        # error, never as a snapshot full of confident STOPPEDs.
+        raise HTTPException(status_code=502, detail=f"Cannot reach the VPS — {e}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS fetch failed: {e}")
 
@@ -849,7 +958,7 @@ def save_bot_config(bot_name: str, update: BotConfigUpdate):
 
         try:
             _suppress_stop_alert(bot_key)
-            _ssh(f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul')
+            _kill_bot(bot_key)
             _time.sleep(3)
             _launch_bot(bot_key)
         except Exception as e:
@@ -982,7 +1091,7 @@ def save_bot_caps(bot_name: str, caps: BotCapUpdate):
     # 5. Restart the bot so new config.json values take effect
     try:
         _suppress_stop_alert(bot_key)
-        _ssh(f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul')
+        _kill_bot(bot_key)
         _time.sleep(3)
         _launch_bot(bot_key)
     except Exception as e:
@@ -1016,9 +1125,7 @@ def stop_bot(bot_name: str):
     _, bot_key = _resolve_bot(bot_name)
     try:
         _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert
-        out = _ssh(
-            f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
-        )
+        out = _kill_bot(bot_key)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
@@ -1034,9 +1141,7 @@ def restart_bot(bot_name: str):
     _, bot_key = _resolve_bot(bot_name)
     try:
         _suppress_stop_alert(bot_key)  # must run before kill so monitor skips crash alert
-        stop_out = _ssh(
-            f'wmic process where "commandline like \'%{bot_key}%\'" call terminate 2>nul'
-        )
+        stop_out = _kill_bot(bot_key)
         _time.sleep(3)
         start_out = _launch_bot(bot_key)
     except subprocess.TimeoutExpired:
