@@ -237,6 +237,40 @@ repeats separately and reports no statistics at all when nothing fresh arrives, 
 market is otherwise the most confident-looking wrong answer it could give.
 ⚠ **It writes nothing.** `_measured` is a claim about when a reading was taken and by whom; a tool
 silently rewriting it would make a fresh measurement indistinguishable from a stale one.
+⚠ **Everything it PRINTS is ASCII, deliberately.** The VPS console is cp1252 and one non-ASCII
+character raises `UnicodeEncodeError` mid-print — on the first run every number was measured and
+printed and then a trailing warning line killed the process with a traceback and exit 1, so **a
+successful measurement looked like a crash**. `sys.stdout.reconfigure(errors="replace")` is the
+belt; degrading one character beats discarding the report it was decorating.
+
+**FIRST MEASUREMENT — PU Prime demo `XAUUSD.s`, 2026-08-05 15:2x UTC (London/NY overlap, market
+open), 120 fresh tick reads, 0 repeats.** Against the Vantage figures every backtest here uses:
+
+| | PU Prime (live) | Vantage (all backtests) | gap |
+|---|---|---|---|
+| spread, median | **$0.32** (32 pts) | $0.22 | **+45%** |
+| spread, p99 / max | $0.36 / $0.36 | 0.31 (p99) | — |
+| swap LONG /lot/night | **−79.60** | −74.84 | 6% worse |
+| swap SHORT /lot/night | **+30.25** | +26.98 | 12% better |
+| contract / tick value | 100 oz / $1.00 | same | — |
+| broker min stop | 20 pts = **$0.20** | — | — |
+
+⚠ **The $0.33 in the instance config's `_measured` block was a single instant on 2026-07-31 and it
+happens to be close — do not read that as confirmation.** A sample of one cannot be near or far
+from a median; it just landed inside the band this time. The p99 already reaches $0.36 inside two
+minutes of an open session.
+⚠ **The spread is 45% wider than every cost figure in this repo assumes.** `backtest/fills.py`'s
+`PROFILES` carries PU Prime at $0.33 from 688k ticks, which is closer, but the layered-cost tables
+in `strategies/python/mpc_sos_fade/CLAUDE.md` were all run on Vantage's $0.22 — so the charged rows
+there understate this account.
+⚠ **The short swap is a CREDIT and it is BIGGER here than on Vantage.** Gold's long swap costs and
+its short swap pays; on the 6.5-year replay shorts were paid 2.14R while longs paid 8.55R, so this
+broker is slightly better for the short side and slightly worse for the long one.
+⚠ **STILL A SNAPSHOT.** 120 seconds of one session is not the spread — gold widens at the 17:00 NY
+rollover, around news and out of hours, and the Vantage number it is being compared against is a
+median over 1.49M ticks spanning a year. **Re-run in an Asian session and across a rollover before
+this number goes into a cost model.** Commission is unmeasured here and remains so until a real
+trade closes — `get_deal_breakdown` records it per trade now.
 
 Standalone MT5 lab tooling (not imported by any bot) lives in `tools/`: `download_mt5_history.py` (warm the lab MT5 history cache) and `audit_mt5_data_quality.py` (its read-only companion — probes what the broker actually serves). Both run on the VPS against `C:\MT5_Lab`.
 

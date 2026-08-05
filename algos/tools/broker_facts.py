@@ -43,6 +43,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 INSTANCES = REPO / "algos" / "markets" / "fx" / "instances"
 
+# This runs on the VPS, where the console is cp1252 and a single non-ASCII character raises
+# UnicodeEncodeError mid-print. It cost this tool its whole run on the first try: every number was
+# measured and printed, then a trailing warning line killed the process with a traceback and an
+# exit code 1, so a SUCCESSFUL measurement looked like a crash. The printed strings are ASCII now,
+# and this is the belt for the next person who forgets — `errors="replace"` degrades one character
+# rather than discarding the report it was decorating.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+
 
 def load_instance(bot_key: str) -> dict:
     cfg = INSTANCES / bot_key / "config.json"
@@ -123,7 +132,7 @@ def sample_spread(mt5, symbol: str, seconds: int, point: float) -> dict:
         time.sleep(1.0)
 
     if not seen:
-        return {"n": 0, "stale_reads": stale, "note": "no fresh ticks — market shut?"}
+        return {"n": 0, "stale_reads": stale, "note": "no fresh ticks - market shut?"}
 
     seen.sort()
     def pct(p: float) -> float:
@@ -162,7 +171,7 @@ def main(argv=None) -> int:
         print()
 
         s = spec(mt5, symbol)
-        print(f"SPECIFICATION — {s['symbol']}")
+        print(f"SPECIFICATION - {s['symbol']}")
         for k in ("digits", "point", "contract_size", "tick_value", "tick_size",
                   "volume_min", "volume_max", "volume_step",
                   "stops_level_points", "freeze_level_points",
@@ -174,9 +183,9 @@ def main(argv=None) -> int:
         print()
         print("READ THESE TWO CAREFULLY")
         print(f"  broker minimum stop  {s['stops_level_points']} points "
-              f"= ${s['stops_level_points'] * pt:.2f} — enforced by the TERMINAL, independent of "
+              f"= ${s['stops_level_points'] * pt:.2f} - enforced by the TERMINAL, independent of "
               f"exec_min_stop_mode")
-        print(f"  swap long / short    {s['swap_long']} / {s['swap_short']} — a POSITIVE value is "
+        print(f"  swap long / short    {s['swap_long']} / {s['swap_short']} - a POSITIVE value is "
               f"a credit paid TO you, and gold's short swap normally is one")
 
         if args.sample > 0:
@@ -187,13 +196,13 @@ def main(argv=None) -> int:
                 print(f"  {d.get('note')} ({d['stale_reads']} repeated ticks)")
             else:
                 print(f"  {d['n']} fresh reads ({d['stale_reads']} repeats)")
-                print(f"  min ${d['min']:.2f} · median ${d['median']:.2f} "
-                      f"({d['median_points']:.0f} points) · p90 ${d['p90']:.2f} "
-                      f"· p99 ${d['p99']:.2f} · max ${d['max']:.2f}")
+                print(f"  min ${d['min']:.2f} | median ${d['median']:.2f} "
+                      f"({d['median_points']:.0f} points) | p90 ${d['p90']:.2f} "
+                      f"| p99 ${d['p99']:.2f} | max ${d['max']:.2f}")
                 print()
-                print("  ⚠ A few minutes is a SNAPSHOT of one session, not the spread. Gold widens")
-                print("    at the 17:00 NY rollover, around news and out of hours. Sample again in")
-                print("    a different session before quoting a median as the broker's cost.")
+                print("  NOTE: a few minutes is a SNAPSHOT of one session, not the spread. Gold")
+                print("  widens at the 17:00 NY rollover, around news and out of hours. Sample")
+                print("  again in another session before quoting a median as the broker's cost.")
     finally:
         mt5.shutdown()
     return 0
