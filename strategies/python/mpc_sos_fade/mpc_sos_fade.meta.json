@@ -266,7 +266,7 @@
       "group": "Risk & stop",
       "core": true,
       "label": "Minimum stop distance",
-      "desc": "Skip a setup whose stop sits closer to the entry than the floor below. Percent of price scales itself as gold runs 1200 to 3300. Fixed dollars is one flat number at both ends. ATR multiple is the only one that reacts to a quiet versus a violent market at the same price. This is an entry filter and has nothing to do with the runner trail.",
+      "desc": "Skip a setup whose stop sits closer to the entry than the floor below. Size is risk divided by stop distance, so a stop that collapses onto the entry does not risk less, it builds a huge position. Percent of price scales itself as gold runs 1200 to 4100. Fixed dollars is one flat number at both ends. ATR multiple reacts to a quiet versus a violent market, and is the WRONG tool here: the dangerous stops print on quiet bars, so ATR lets them straight through. This is an entry filter and has nothing to do with the runner trail.",
       "choices": [
         "Off",
         "% of price",
@@ -278,8 +278,8 @@
       "name": "exec_min_stop_val",
       "group": "Risk & stop",
       "label": "Minimum stop floor (unit = mode above)",
-      "desc": "The unit follows the mode above: a percent, dollars of price, or an ATR multiple. Mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of 188 trades and are slightly positive. Harder floors start eating winners.",
-      "step": 0.05,
+      "desc": "The unit follows the mode above: a percent, dollars of price, or an ATR multiple. Default 0.08 percent, measured over 7.9 years: it refuses only the very tightest setups, which were losers, and is +2R. 0.10 costs 1.8R, 0.15 costs 25R, 0.30 costs 48R. Below 0.05 it stops refusing anything.",
+      "step": 0.01,
       "show_if": {
         "exec_min_stop_mode": [
           "% of price",

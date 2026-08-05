@@ -17,7 +17,7 @@
     "exec_risk_pct": 2.0,
     "exec_sl_level": "0.886",
     "exec_min_stop_mode": "% of price",
-    "exec_min_stop_val": 0.1,
+    "exec_min_stop_val": 0.08,
     "fill_model": "bar"
   },
   "strategy_source_hash": "",
@@ -37,7 +37,7 @@
   "_account": "Login number. Checked after connecting; the bot shuts down rather than trade the wrong account.",
   "_symbol": "The BROKER's symbol string, exactly. PU Prime gold is XAUUSD.s, Vantage is XAUUSD. Wrong here = no bars and no trades.",
   "_magic": "Unique per bot. Every order this bot places carries it, and every order it reads back is filtered by it — this is what stops two bots on one terminal cancelling each other's orders.",
-  "_strategy_params": "The FULL promoted parameter set, written out explicitly. exec_risk_pct: the shipped default is 10, which measured a 54.9% max drawdown over 6.5 years — choose deliberately. exec_min_stop_mode: turn this ON for live; see strategies/python/mpc_sos_fade/CLAUDE.md. fill_model must stay 'bar' — 'tick' is a backtest cost model and needs a tick source the live bot does not have.",
+  "_strategy_params": "The FULL promoted parameter set, written out explicitly. exec_risk_pct: the shipped default is 10, which measured a 54.9% max drawdown over 6.5 years — choose deliberately. exec_min_stop_mode: ON by default since 2026-08-05 at '% of price' 0.08, swept over 7.9 years — 0.10 costs 1.8R, 0.15 costs 25R, and ATR mode is the wrong tool because the dangerous stops print on quiet bars; see strategies/python/mpc_sos_fade/CLAUDE.md. fill_model must stay 'bar' — 'tick' is a backtest cost model and needs a tick source the live bot does not have.",
   "_strategy_source_hash": "Content hash of the strategy package (see algos/live/version.py). The bot re-hashes on startup and REFUSES to run if the code moved. Empty = unpinned, allowed but logged loudly.",
   "_telegram_chat_id": "Where THIS bot reports. Empty = the shared group in algos/credentials.json. Set it when a bot deserves its own feed — a demo gold bot and a funded FX bot in one group means the message that matters is the one you scroll past. A chat id is not a secret (it is useless without a token), which is why it lives here.",
   "_telegram_token_key": "Optional, and only if this bot should appear as its OWN Telegram bot rather than the default one. It NAMES a key in algos/credentials.json (e.g. 'telegram_token_bleg') — never the token itself, because this file is not the place for a secret. Empty = send as the default bot. Remember a Telegram bot can only post to chats it has been added to.",

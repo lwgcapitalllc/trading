@@ -122,7 +122,7 @@ class SosFadeConfig:
     #   The test is INCLUSIVE (<= / >=) because 0.786 is a SNAP TARGET — rule 3 assigns fiboP5 to the
     #   edge directly with no arithmetic in between, so the comparison is exact.
     exec_sl_buf_tk: float = 0.0        # "Stop buffer beyond the level (ticks)"
-    exec_min_stop_mode: str = "Off"    # "Minimum stop distance" (Pine execMinStopMode)
+    exec_min_stop_mode: str = "% of price"  # "Minimum stop distance" (Pine execMinStopMode)
     #   ∈ {"Off", "% of price", "Fixed $", "x ATR(14)"}. An ENTRY filter, nothing to do with the
     #   runner trail: refuse a setup whose stop lands closer to the entry than this floor.
     #   **This is the guard for the hazard the `exec_sl_level` warning describes.** The dollar risk
@@ -130,15 +130,40 @@ class SosFadeConfig:
     #   SIZE — and once the stop is narrower than an ordinary bar, price travels straight through
     #   it and the realised loss is no longer the 1R that was agreed. Measured at `0.786`: a $0.20
     #   stop, a 39,033 oz position, ~180% of equity lost in a single bar (Run 4).
-    #   DEFAULT "Off" so the shipped baseline and every historical result are unchanged. Run 7
-    #   measured `"% of price"` at 0.10 as the best of three independent definitions — it refuses
-    #   6 of 188 trades over 8 years, is +2.5R (noise-level, so adopt it for SAFETY not for the
-    #   money), and leaves 2021/2024/2025/2026 byte-identical. **Turn it on for live trading.**
-    exec_min_stop_val: float = 0.10    # "Minimum stop floor (unit = mode above)"
+    #
+    #   🔴 **DEFAULT CHANGED 2026-08-05: "Off" → "% of price" at 0.08** (Aaron's call, after the
+    #   sweep below). It had been "Off" so that the shipped baseline and every historical result
+    #   stayed unchanged — **that is no longer true, and it is the cost of this change**: a run
+    #   replayed at defaults from today refuses trades that older runs took, so every figure in
+    #   this folder measured at "Off" describes a different configuration. The A+ baseline moves
+    #   from **183 trades / +134.75R** to **181 / +136.75R** over 7.9 years.
+    #
+    #   **MEASURED over 186,220 M15 bars (2018-09-13 → 2026-08-04), 23 configs, one real replay
+    #   each — refusing a setup frees the single position slot, so the trade list reshuffles and
+    #   no arithmetic over a finished list can stand in for a replay:**
+    #     % of price  0.05 → 183 tr  +134.75R  (+0.00, refuses nothing)
+    #     % of price  0.08 → 181 tr  +136.75R  (+2.00)   ← SHIPPED
+    #     % of price  0.10 → 176 tr  +132.92R  (−1.84)
+    #     % of price  0.15 → 165 tr  +109.47R  (−25.28)
+    #     % of price  0.30 → 130 tr   +87.10R  (−47.65)
+    #     Fixed $     1.25 → 180 tr  +137.75R  (+3.00)
+    #     x ATR(14)   0.35 → 183 tr  +134.75R  (+0.00, and see the ⚠ below)
+    #
+    #   ⚠ **A small floor GAINS R, and the reason is mechanical rather than lucky: the three
+    #   tightest stops in 7.9 years ($1.03, $1.06, $1.18) were all full −1.00R losers.** Fixed
+    #   $1.25 refuses exactly those three and gains exactly +3.00R.
+    #   ⚠ **DO NOT read +2R as an edge.** The jitter audit measured this strategy's run-to-run
+    #   spread at **sd 15.06R**, so every value from 0.05 to 0.08 is statistically indistinguishable
+    #   from zero and from each other. 0.08 is chosen as the HIGHEST value that does not start
+    #   costing, i.e. the most protection for nothing — a SAFETY choice, not a profit one.
+    #   ⚠ **"x ATR(14)" is the WRONG TOOL for this hazard, measured rather than assumed.** At 0.35
+    #   and 0.40 it never refuses the $1.03 stop at all, because that bar was quiet and $1.03 was
+    #   not tight *relative to ATR*. The hazard is `qty = risk / dist`, which is pure price units —
+    #   volatility does not enter it. ATR blocks a different set of trades than the one at risk.
+    exec_min_stop_val: float = 0.08    # "Minimum stop floor (unit = mode above)"
     #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
-    #   Read only when the mode is not "Off". Mild floors (0.10% / $1.50 / 0.5 ATR) refuse 3-6 of
-    #   188 trades and are slightly positive; harder floors (0.15%+ / $2.50+ / 1.0 ATR+) start
-    #   eating winners.
+    #   Read only when the mode is not "Off". See the sweep table above for every measured rung;
+    #   below 0.05 the floor refuses nothing at all, and 0.09 upward starts costing.
     exec_tp1_pct: float = 0.0          # "TP1 size %"
     exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart

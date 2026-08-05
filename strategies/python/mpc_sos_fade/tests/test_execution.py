@@ -838,14 +838,39 @@ def _quiet_bars(ex, seq, n, start=0):
     return dec
 
 
-def test_min_stop_defaults_off_and_refuses_nothing():
-    """"Off" must stay inert: it is the historical default, so turning this feature on may not
-    move a single past result until someone selects a mode."""
-    assert SosFadeConfig().exec_min_stop_mode == "Off"
-    ex = Execution(_cfg())
+def test_off_is_still_inert_for_anyone_reproducing_an_old_run():
+    """"Off" must stay inert — it is what every result measured before 2026-08-05 was taken at, so
+    selecting it has to reproduce those runs exactly.
+
+    This used to also assert that "Off" was the DEFAULT. It is not any more (see the test below),
+    and the two claims are worth keeping apart: *this* one is about the mode being a faithful
+    no-op, which is what makes an old run reproducible, and it stays true forever.
+    """
+    ex = Execution(_cfg(exec_min_stop_mode="Off"))
     dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     assert dec.long_armed is True
     assert ex._pend_long is not None
+
+
+def test_the_shipped_default_is_the_measured_guard_not_off():
+    """🔴 DEFAULT CHANGED 2026-08-05: "Off" → "% of price" 0.08 (Aaron's call).
+
+    Swept over 186,220 M15 bars, one real replay per config: baseline 183 trades / +134.75R,
+    0.08 → 181 / +136.75R, 0.10 → 176 / +132.92R, 0.15 → −25R. A small floor GAINS R because the
+    three tightest stops in 7.9 years were all full −1.00R losers.
+
+    ⚠ **The consequence this test exists to make loud: a run replayed at DEFAULTS from today is
+    not comparable to one replayed at defaults before it.** Every A+ figure in this folder measured
+    at "Off" describes a different configuration. Pin the mode explicitly when reproducing one.
+
+    ⚠ It must stay in lockstep with `indicators/mpc_strategy.pine`'s `execMinStopMode` /
+    `execMinStopVal` defaults and its export mirror — toggle parity is a hard requirement, and a
+    default that differs between the two silently makes `compare_strategy.py` compare two
+    strategies whenever an export predates the column.
+    """
+    cfg = SosFadeConfig()
+    assert cfg.exec_min_stop_mode == "% of price"
+    assert cfg.exec_min_stop_val == 0.08
 
 
 def test_pct_floor_refuses_a_stop_narrower_than_the_floor():

@@ -770,9 +770,13 @@ setups the Python took while the comparator reported green), the decode in `comp
 them. Default `"Off"` ⇒ byte-identical to the previous build ⇒ no historical result moves. 11 new
 tests; 111 green.
 
-✅ **CLOSED 2026-08-05 — parity proven with the guard FIRING, and shipped live at `"% of price"`
-0.10.** `algos/markets/fx/instances/mpc_sos_fade_demo/config.json` now carries
-`exec_min_stop_mode = "% of price"`, `exec_min_stop_val = 0.1`. `compare_strategy.py` is **exit 0 at
+✅ **CLOSED 2026-08-05 — parity proven with the guard FIRING, and shipped as the DEFAULT at
+`"% of price"` 0.08** (strategy `config.py`, both A+ Pine files, the lab meta, the instance template
+and the live bot). ⚠ **It shipped at 0.10 for a few hours first and that was wrong: 0.10 costs 7
+trades and 1.84R over 7.9 years, while 0.08 gains 2.00R.** The correction is written up under
+*What the value costs* below; the short version is that **a green parity gate says the two
+implementations agree about a setting and nothing about whether the setting is a good one.**
+The value that shipped had passed the gate. `compare_strategy.py` is **exit 0 at
 warmups 100 / 500 / 1000 / 2000** on a 21,899-bar `VANTAGE_XAUUSD, 15m` export taken with the guard
 enabled at `"% of price"` 0.30, and **block code 7 ("Stop too tight") fires 213 times in it** — 49
 long, 164 short.
@@ -789,11 +793,44 @@ parity run says the two implementations AGREE, never that either is RIGHT — an
 that about a branch neither one entered. Before trusting a gate on a feature, check the feature was
 EXERCISED.** The check is cheap and mechanical: this one is a block-code histogram over the export.
 
-⚠ **Parity was proven at 0.30 and the live config ships 0.10.** Same code path, same floor formula
+**WHAT THE VALUE COSTS — MEASURED 2026-08-05, and it moved the shipped number.** 23 configs over
+186,220 M15 bars (2018-09-13 → 2026-08-04), **one real replay each**:
+
+| mode | value | trades | total R | vs Off |
+|---|---|---|---|---|
+| Off | — | 183 | +134.75 | — |
+| % of price | 0.05 | 183 | +134.75 | +0.00 |
+| **% of price** | **0.08** | **181** | **+136.75** | **+2.00** ← shipped |
+| % of price | 0.10 | 176 | +132.92 | −1.84 |
+| % of price | 0.15 | 165 | +109.47 | −25.28 |
+| % of price | 0.30 | 130 | +87.10 | −47.65 |
+| Fixed $ | 1.25 | 180 | +137.75 | +3.00 |
+| Fixed $ | 5 | 139 | +109.41 | −25.34 |
+| x ATR(14) | 0.30 / 0.35 | 183 | +134.75 | +0.00 |
+| x ATR(14) | 0.50 | 180 | +130.03 | −4.72 |
+
+⚠ **Every row is a REPLAY, and the cheap alternative gets the SIGN wrong.** One position slot means
+a refused setup frees the slot and the trade list reshuffles downstream, so deleting the refused
+rows from a finished trade list scores 0.10 at **+1.84R** where the replay gives **−1.84R**.
+⚠ **A small floor GAINS R mechanically: the three tightest stops in 7.9 years — $1.03, $1.06,
+$1.18 — were all full −1.00R losers.** `Fixed $` 1.25 refuses exactly those three for exactly
++3.00R. Median stop distance is **$8.88**, so they are genuine outliers, not a cluster.
+⚠ **Do NOT read +2R as an edge.** `backtest/tools/jitter_audit.py` measured this strategy's
+run-to-run spread at **sd 15.06R**, so 0.05 through 0.08 are statistically indistinguishable.
+**0.08 is the HIGHEST value that does not start costing — the most protection for nothing.** A
+safety choice, which is the standing this guard has had since Run 7.
+⚠ 🔴 **`x ATR(14)` was measured and REJECTED, against intuition.** It is the only mode that adapts
+to volatility and it was cheapest on R — and at 0.35 and 0.40 **it never refuses the $1.03 stop**,
+because that bar was quiet so $1.03 was not tight *relative to ATR*. **The hazard is
+`qty = risk / stop_distance`: pure price units, volatility nowhere in it.** ATR blocks a different
+set of trades from the one at risk — cheapness, not safety.
+⚠ **Parity was proven at 0.30 and the live config ships 0.08.** Same code path, same floor formula
 (`px * val / 100`), same refusal and the same block code — only the constant differs. State it that
-way rather than claiming 0.10 was itself diffed.
-⚠ **This CHANGES which trades the bot takes** versus every result measured at `"Off"`, including the
-161-trade / +135.94R baseline. 0.10 is Run 7's measured best, not a safe-looking round number.
+way rather than claiming 0.08 was itself diffed.
+⚠ **This CHANGES which trades the bot takes** versus every result measured at `"Off"`, and the A+
+baseline moves with it: **183 trades / +134.75R → 181 / +136.75R**. `exec_min_stop_mode` defaulted
+`"Off"` precisely so no historical result moved; that protection is now spent, deliberately. **Pin
+the mode explicitly when reproducing an older run.**
 ⚠ **It does not replace the two independent backstops** and must not be read as doing so: the
 broker's own 20-point `SYMBOL_TRADE_STOPS_LEVEL` rejects a degenerate stop at the terminal, and
 `place_pending_limit` refuses one before it is sent. This guard is the one acting on OUR side of the
