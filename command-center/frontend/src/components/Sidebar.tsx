@@ -9,8 +9,13 @@ import type { LucideIcon } from 'lucide-react'
 import { SystemHealthStrip } from '@/components/SystemHealthStrip'
 import { useBacktestRuns, useOptimizations } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
+import { FEATURES } from '@/lib/features'
+import type { FeatureKey } from '@/lib/features'
 
-type NavEntry = { to: string; label: string; icon: LucideIcon; live: boolean }
+// `feature` ties a row to a flag in lib/features.ts. A row whose flag is off is
+// not rendered here AND has no route in App.tsx — the two must move together, or
+// a hidden page is still reachable by typing its URL.
+type NavEntry = { to: string; label: string; icon: LucideIcon; live: boolean; feature?: FeatureKey }
 
 // Grouped by what each item IS, not by page type. Order inside "Lab" follows the
 // actual strategy-development lifecycle (write → backtest → optimize → stress test),
@@ -35,7 +40,7 @@ const SECTIONS: { label?: string; items: NavEntry[] }[] = [
     label: 'Live',
     items: [
       { to: '/bots',        label: 'Bots',        icon: Bot,   live: true },
-      { to: '/smart-money', label: 'Smart Money', icon: Radar, live: true },
+      { to: '/smart-money', label: 'Smart Money', icon: Radar, live: true, feature: 'smartMoney' },
     ],
   },
   {
@@ -46,6 +51,12 @@ const SECTIONS: { label?: string; items: NavEntry[] }[] = [
     ],
   },
 ]
+
+// A row behind an OFF flag is dropped, and a section left with nothing goes with
+// it — a section header over no rows is a heading for nothing.
+const VISIBLE_SECTIONS = SECTIONS
+  .map(section => ({ ...section, items: section.items.filter(i => !i.feature || FEATURES[i.feature]) }))
+  .filter(section => section.items.length > 0)
 
 // Pulsing dot meaning "a job is running under this item". Anchored to the icon's top-right
 // corner so it reads identically whether the sidebar is expanded or collapsed.
@@ -185,7 +196,7 @@ export function Sidebar() {
       <div className="flex flex-col flex-1 py-[14px] px-3">
 
       {/* ── Grouped nav sections ──────────────────────────────────── */}
-      {SECTIONS.map((section, i) => (
+      {VISIBLE_SECTIONS.map((section, i) => (
         <div key={section.label ?? 'top'}>
           {/* Section header: a label when expanded, a thin divider when collapsed.
               The first (Overview) section has no header — it sits flush at the top. */}

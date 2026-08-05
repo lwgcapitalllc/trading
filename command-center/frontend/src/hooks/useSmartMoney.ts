@@ -12,10 +12,13 @@ import type {
 // gets overwritten with the old completed state before Python starts writing.
 let _lastTriggerMs = 0
 
-export function useSmartMoneyRuns() {
+// `enabled` exists so a caller behind a feature flag can stop the fetch as well
+// as the render — the Overview passes FEATURES.smartMoney.
+export function useSmartMoneyRuns(enabled = true) {
   return useQuery({
     queryKey: ['smart-money', 'runs'],
     queryFn: () => api.get<SmartMoneyRunSummary[]>('/smart-money/runs'),
+    enabled,
   })
 }
 
@@ -68,10 +71,11 @@ export function useConfigGitStatus() {
   })
 }
 
-export function useRunProgress() {
+export function useRunProgress(enabled = true) {
   return useQuery({
     queryKey: ['smart-money', 'progress'],
     queryFn: () => api.get<RunProgress>('/smart-money/progress'),
+    enabled,
     refetchInterval: (query) => {
       const status = (query.state.data as RunProgress | undefined)?.status
       // For 60s after a trigger, always poll at 1.5s regardless of status —

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
@@ -19,6 +19,7 @@ import { TuningWorkbench } from '@/pages/TuningWorkbench'
 import { StressTests } from '@/pages/StressTests'
 import StressTestDetail from '@/pages/StressTestDetail'
 import { Settings } from '@/pages/Settings'
+import { FEATURES } from '@/lib/features'
 
 export default function App() {
   return (
@@ -36,8 +37,14 @@ export default function App() {
           <main className="flex-1 overflow-y-auto p-[22px]">
             <Routes>
               <Route path="/"                         element={<Overview />} />
-              <Route path="/smart-money"              element={<SmartMoney />} />
-              <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
+              {/* Routes and nav items move together — a page with no way to reach
+                  it is still reachable by URL, which is not "removed". */}
+              {FEATURES.smartMoney && (
+                <>
+                  <Route path="/smart-money"              element={<SmartMoney />} />
+                  <Route path="/smart-money/:runId/candidates/:id" element={<SmartMoney />} />
+                </>
+              )}
               <Route path="/bots"                     element={<Bots />} />
               <Route path="/calendar"                 element={<Calendar />} />
               <Route path="/strategies"                             element={<Strategies />} />
@@ -54,6 +61,10 @@ export default function App() {
               <Route path="/stress-tests"                       element={<StressTests />} />
               <Route path="/stress-tests/:stressTestId"         element={<StressTestDetail />} />
               <Route path="/settings"                 element={<Settings />} />
+              {/* An unmatched path rendered nothing at all — a blank main area beside
+                  a working sidebar, which reads as the app breaking. A bookmark to a
+                  flagged-off page (or any typo) lands on the Overview instead. */}
+              <Route path="*"                         element={<Navigate to="/" replace />} />
             </Routes>
           </main>
         </div>

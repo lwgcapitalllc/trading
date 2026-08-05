@@ -7,6 +7,7 @@ import { useSmartMoneyRuns, useRunProgress } from '@/hooks/useSmartMoney'
 import { useBacktestRuns, useStrategies, useOptimizations, useRulesets } from '@/hooks/useLab'
 import { useStressTests } from '@/hooks/useStressTests'
 import { useCalendar } from '@/hooks/useCalendar'
+import { FEATURES } from '@/lib/features'
 import { flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtCountdown } from '@/lib/calendar'
 import { StatCard } from '@/components/StatCard'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
@@ -155,8 +156,12 @@ export function Overview() {
   const navigate = useNavigate()
 
   const { data: snapshot, isLoading: botsLoading, isError: botsError } = useBotSnapshot()
-  const { data: runs } = useSmartMoneyRuns()
-  const { data: progress } = useRunProgress()
+
+  // Hidden means not fetched. `useRunProgress` polls every 30s forever, so a card
+  // that is merely not rendered would go on costing a request twice a minute.
+  const smartMoney = FEATURES.smartMoney
+  const { data: runs } = useSmartMoneyRuns(smartMoney)
+  const { data: progress } = useRunProgress(smartMoney)
   const { data: backtestRuns } = useBacktestRuns()
   const { data: strategies } = useStrategies()
   const { data: rulesets } = useRulesets()
@@ -224,7 +229,9 @@ export function Overview() {
       </div>
 
       {/* ── Stat Row ──────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-[10px] mb-5">
+      {/* Column count follows what is actually rendered — two cards in a 4-column
+          grid leaves half the row blank, which reads as data that failed to load. */}
+      <div className={`grid ${smartMoney ? 'grid-cols-4' : 'grid-cols-2'} gap-[10px] mb-5`}>
 
         <StatCard
           label="Bots Running"
@@ -258,29 +265,33 @@ export function Overview() {
           onClick={() => navigate('/bots')}
         />
 
-        <StatCard
-          label="Last Scan"
-          value={latestRun ? relativeTime(latestRun.generated_at) : '—'}
-          sub={latestRun ? `run ${latestRun.run_id.slice(0, 8)}…` : 'no runs yet'}
-          onClick={() => navigate('/smart-money')}
-        />
+        {smartMoney && (
+          <>
+            <StatCard
+              label="Last Scan"
+              value={latestRun ? relativeTime(latestRun.generated_at) : '—'}
+              sub={latestRun ? `run ${latestRun.run_id.slice(0, 8)}…` : 'no runs yet'}
+              onClick={() => navigate('/smart-money')}
+            />
 
-        <StatCard
-          label="Candidates"
-          value={latestRun ? String(latestRun.total_qualified) : '—'}
-          sub={
-            pipelineRunning ? 'scan in progress' :
-            latestRun       ? 'from last run' :
-                              'no data'
-          }
-          subVariant={latestRun && latestRun.total_qualified > 0 ? 'pos' : 'neutral'}
-          onClick={() => navigate('/smart-money')}
-        />
+            <StatCard
+              label="Candidates"
+              value={latestRun ? String(latestRun.total_qualified) : '—'}
+              sub={
+                pipelineRunning ? 'scan in progress' :
+                latestRun       ? 'from last run' :
+                                  'no data'
+              }
+              subVariant={latestRun && latestRun.total_qualified > 0 ? 'pos' : 'neutral'}
+              onClick={() => navigate('/smart-money')}
+            />
+          </>
+        )}
 
       </div>
 
       {/* ── Module Cards ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-[14px]">
+      <div className={`grid ${smartMoney ? 'grid-cols-3' : 'grid-cols-2'} gap-[14px]`}>
 
         {/* ── Bots ──────────────────────────────────────────────── */}
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
@@ -330,6 +341,7 @@ export function Overview() {
         </div>
 
         {/* ── Smart Money ───────────────────────────────────────── */}
+        {smartMoney && (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
 
           {/* Card header — navigates to Smart Money page */}
@@ -400,6 +412,7 @@ export function Overview() {
             )}
           </div>
         </div>
+        )}
 
         {/* ── Research ──────────────────────────────────────── */}
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
