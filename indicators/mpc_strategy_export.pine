@@ -1864,8 +1864,25 @@ f_processEq() =>
         int phBar = bar_index - eqPivotLen
         if not na(eqPrevPh) and math.abs(eqPh - eqPrevPh) <= eqTol
             float lvl = math.max(eqPh, eqPrevPh)
-            line ln = line.new(eqPrevPhBar, lvl, bar_index + i_lineExtend, lvl, color = eqhColor, style = line.style_dotted, width = 1)
-            label lb = label.new(bar_index + i_lineExtend, lvl, "EQH", style = label.style_none, textcolor = eqhColor, size = f_liqSize(), textalign = text.align_left)
+            // ── EQ APPEARANCE, SYNCED FROM mpc_assistant.pine (Aaron, 2026-08-04) ──
+            // DRAWING ONLY, and that boundary is the whole point of this edit: the
+            // indicator's pass ALSO changed what an EQ level IS (a wick takes it, not a
+            // close) and its three detection constants. None of that is here. Those move
+            // trades through eqExemptFvg — they change which gaps exist, so they change
+            // which entries fire — and Python still reads a close, so porting them would
+            // put compare_strategy.py red. The two files stay forked on DETECTION and
+            // agree on APPEARANCE.
+            // SOLID, not dotted, and the line ENDS AT THE LIVE CANDLE rather than running
+            // i_lineExtend bars past it. An EQ level is a pool, not a forecast: extending
+            // it into empty space reads as a level that is still being offered.
+            line ln = line.new(eqPrevPhBar, lvl, bar_index, lvl, color = eqhColor, style = line.style_solid, width = 1)
+            // style_label_left with an INVISIBLE box (color = na), not style_none.
+            // style_none centres its text ON the anchor, so half the glyph sits above the
+            // level and it reads as an offset tag floating over the line. style_label_left
+            // anchors the label's LEFT edge at the point and centres the text vertically on
+            // it — the tag starts exactly where the line ends and sits ON the level, which
+            // is what "at the end of the line" means. The na box keeps the plain-text look.
+            label lb = label.new(bar_index, lvl, "EQH", style = label.style_label_left, color = color(na), textcolor = eqhColor, size = f_liqSize(), textalign = text.align_left)
             array.push(eqhLines, ln), array.push(eqhLbls, lb), array.push(eqhPx, lvl), array.push(eqhBar, eqPrevPhBar)
             while array.size(eqhLines) > eqMax
                 line.delete(array.shift(eqhLines)), label.delete(array.shift(eqhLbls)), array.shift(eqhPx), array.shift(eqhBar)
@@ -1875,8 +1892,9 @@ f_processEq() =>
         int plBar = bar_index - eqPivotLen
         if not na(eqPrevPl) and math.abs(eqPl - eqPrevPl) <= eqTol
             float lvl = math.min(eqPl, eqPrevPl)
-            line ln = line.new(eqPrevPlBar, lvl, bar_index + i_lineExtend, lvl, color = eqlColor, style = line.style_dotted, width = 1)
-            label lb = label.new(bar_index + i_lineExtend, lvl, "EQL", style = label.style_none, textcolor = eqlColor, size = f_liqSize(), textalign = text.align_left)
+            // Mirror of the EQH pair — see the note there for both changes.
+            line ln = line.new(eqPrevPlBar, lvl, bar_index, lvl, color = eqlColor, style = line.style_solid, width = 1)
+            label lb = label.new(bar_index, lvl, "EQL", style = label.style_label_left, color = color(na), textcolor = eqlColor, size = f_liqSize(), textalign = text.align_left)
             array.push(eqlLines, ln), array.push(eqlLbls, lb), array.push(eqlPx, lvl), array.push(eqlBar, eqPrevPlBar)
             while array.size(eqlLines) > eqMax
                 line.delete(array.shift(eqlLines)), label.delete(array.shift(eqlLbls)), array.shift(eqlPx), array.shift(eqlBar)
@@ -1894,8 +1912,10 @@ f_processEq() =>
                 // Read the origin from eqhBar, NOT line.get_x1 — querying an
                 // already-aged line is the very thing that can throw.
                 line.set_x1(ehl, math.max(array.get(eqhBar, i), bar_index - EQ_ORIGIN_CAP))
-                line.set_x2(ehl, bar_index + i_lineExtend)
-                label.set_x(array.get(eqhLbls, i), bar_index + i_lineExtend)
+                // bar_index, not bar_index + i_lineExtend — the line ends at the live
+                // candle, matching the indicator. See the note at line.new above.
+                line.set_x2(ehl, bar_index)
+                label.set_x(array.get(eqhLbls, i), bar_index)
     if eqShow and array.size(eqlLines) > 0
         for i = array.size(eqlLines) - 1 to 0
             float lvl = array.get(eqlPx, i)
@@ -1905,8 +1925,8 @@ f_processEq() =>
             else
                 line ell = array.get(eqlLines, i)
                 line.set_x1(ell, math.max(array.get(eqlBar, i), bar_index - EQ_ORIGIN_CAP))
-                line.set_x2(ell, bar_index + i_lineExtend)
-                label.set_x(array.get(eqlLbls, i), bar_index + i_lineExtend)
+                line.set_x2(ell, bar_index)
+                label.set_x(array.get(eqlLbls, i), bar_index)
     int _ret = 0
 f_processEq()
 //============================================================
