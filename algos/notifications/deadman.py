@@ -139,7 +139,7 @@ def check_health(now: float | None = None) -> list[str]:
 
     running = _running_keys()
     if running is None:
-        return ["cannot read the process list — the box is not answering wmic"]
+        return ["cannot read the process list - the box is not answering wmic"]
 
     states = _bot_state()
     for key, name in BOTS.items():
@@ -188,6 +188,10 @@ def _send(url: str, body: str = "") -> bool:
 
 
 def main(argv=None) -> int:
+    # ⚠ Everything PRINTED below is plain ASCII on purpose. The VPS console is cp1252 and cannot
+    # encode an em-dash; `logging` responds by DISCARDING the record (which is how the live bot
+    # silently lost log lines on 2026-07-31) and a bare print mangles it. The docstrings and
+    # comments in this file are unrestricted — they are never written to that console.
     ap = argparse.ArgumentParser(description="External dead-man's switch")
     ap.add_argument("--status", action="store_true", help="report configuration, send nothing")
     ap.add_argument("--dry-run", action="store_true", help="run the checks, send nothing")
@@ -199,7 +203,7 @@ def main(argv=None) -> int:
         if url:
             print(f"configured: yes  ({url[:28]}...)")
         else:
-            print("configured: NO — there is no external dead-man's switch on this box.")
+            print("configured: NO - there is no external dead-man's switch on this box.")
             print(f"  set `deadman_url` in {ALGOS_ROOT / 'credentials.json'}"
                   f" or {env_name('deadman_url')}")
         return 0
@@ -217,11 +221,11 @@ def main(argv=None) -> int:
         # Not an error. A box with no switch configured is a known gap, and a task that
         # fails every five minutes teaches everyone to ignore it — which is how a real
         # failure gets ignored too.
-        print("no deadman_url configured — nothing sent (see --status)")
+        print("no deadman_url configured - nothing sent (see --status)")
         return 0
 
     if args.dry_run:
-        print(f"dry run — would have pinged {url}{FAIL_SUFFIX if problems else ''}")
+        print(f"dry run - would have pinged {url}{FAIL_SUFFIX if problems else ''}")
         return 0
 
     if problems:
