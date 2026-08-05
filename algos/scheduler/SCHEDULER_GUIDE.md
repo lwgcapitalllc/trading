@@ -13,6 +13,7 @@ All tasks run as `trader` user on the VPS.
 | SYS_MONITOR | Scheduled | Every 1 min | `notifications/monitor.py` |
 | SYS_PNLTRACKER | Scheduled | Every 1 min | `notifications/pnl_tracker.py` |
 | SYS_REPORTER | Scheduled | Daily 4pm CT | `notifications/reporter.py` |
+| SYS_DEADMAN | Scheduled | Every 5 min | `notifications/deadman.py` |
 
 **No BOT_ tasks currently exist** — all four first-attempt bots were deleted 2026-06-22.
 When a new bot is deployed it gets a disabled `BOT_<NAME>` task; `SYS_STARTUP` uses
@@ -52,6 +53,53 @@ bot that is alive but WEDGED, which is a state no "is it running" check can see.
 
 ---
 
+## `SYS_DEADMAN` — the one alert that does not come from this box
+
+Every other task in this list reports FROM the VPS. So does the bot, and so does Telegram. That
+means a dead box, a dead network or a dead Task Scheduler produces **silence**, and silence is also
+what a healthy Sunday produces. Nothing in this suite could tell those apart until 2026-08-04.
+
+`deadman.py` inverts it. It checks that each registered bot is running, stamping a fresh heartbeat,
+and holding a live MT5 link — and pings an **external** service only when all of that is true. That
+service expects the ping on a schedule and alerts you when it stops. The alerting lives off the box,
+so it survives the box.
+
+⚠ **The ping is CONDITIONAL on health, and that is the whole design.** A task that pings
+unconditionally proves only that Task Scheduler is alive: a healthy system and a bot that died an
+hour ago would send the identical green tick. That is the same broken-probe shape that let a dead
+MT5 link read as a quiet market — stated the other way round. Never trust a positive result a
+broken system can also produce.
+
+⚠ **It sends a second, different signal on a detected problem** (`<url>/fail`, with the reasons in
+the body), so a bot failure alerts immediately and by name while a box failure alerts on timeout.
+Without that, both would be the same silence and the script would be throwing away a distinction it
+is standing right next to.
+
+⚠ **It never restarts anything.** `SYS_MONITOR` owns recovery. Two independent things issuing starts
+for one bot is how you get two copies on one account — see the `SYS_STARTUP` section above.
+
+⚠ **It is a separate task from `SYS_MONITOR` deliberately.** The watchdog is the bigger program and
+the likelier to break; a dead-man's switch sharing its process shares its failure modes and stops
+being an independent check.
+
+**Setup — one step, and it is the only part that is not in git.** Create a free check at
+healthchecks.io (period 5 minutes, grace 15), then put its ping URL in the git-ignored
+`algos/credentials.json` as `deadman_url`. Point that check's notification at Telegram or email.
+Until it is set the task runs, reports honestly, and sends nothing:
+
+```bash
+ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\notifications\deadman.py --status"
+ssh forexvps "C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe C:\trading\algos\notifications\deadman.py --dry-run"
+```
+
+**An unconfigured switch is a supported state, not an error.** A scheduled task that fails every
+five minutes is a task everyone learns to ignore — and then the real failure is ignored with it.
+
+⚠ **The URL is a SECRET.** Anyone holding it can send your pings for you and hold the alert
+permanently green, which is worse than having no switch, because you would believe in it.
+
+---
+
 ## Install All Tasks (PowerShell)
 
 ```powershell
@@ -60,7 +108,8 @@ $tasks = @(
     "telegram_task.xml:SYS_TELEGRAM",
     "monitor_task.xml:SYS_MONITOR",
     "pnl_tracker_task.xml:SYS_PNLTRACKER",
-    "reporter_task.xml:SYS_REPORTER"
+    "reporter_task.xml:SYS_REPORTER",
+    "deadman_task.xml:SYS_DEADMAN"
 )
 foreach ($t in $tasks) {
     $parts = $t.Split(":")

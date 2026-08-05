@@ -299,6 +299,41 @@ until today it had never been REPLAYED over one; every previous B-LEG number in 
 B-LEG having something to deploy.** Optimizing it is real work with a real risk of curve-fitting 50
 trades, and it is not on this plan.
 
+### G16 — No external dead-man's switch — **CLOSED 2026-08-04**
+
+Every alert this suite has ever sent originates ON the VPS: the bot's own Telegram messages,
+`monitor.py`, `pnl_tracker.py`, `reporter.py`. So the box has to be alive and networked to tell you
+it is in trouble, and if it is neither you get **silence** — which is exactly what a healthy Sunday
+produces. The 50-minute blind-bot incident (G12) was survivable only because the box was up.
+
+`algos/notifications/deadman.py` + `SYS_DEADMAN` (every 5 minutes, SYSTEM). It checks each
+registered bot's process, heartbeat freshness and `mt5_link`, and pings an **external** service only
+when all three are good. That service alerts when the pings stop, so the alerting lives off the box
+and survives it.
+
+⚠ **The ping is CONDITIONAL on health, and that is the design rather than an implementation detail.**
+An unconditional ping proves only that Task Scheduler is alive — a healthy system and a bot that died
+an hour ago send the identical green tick. **This is G12's probe rule from the other side: never
+trust a POSITIVE result a broken system can also produce.**
+
+⚠ **Two signals, because otherwise a dead bot and a dead box are the same silence.** A plain ping
+(missing ⇒ timeout alert, meaning *nothing on that box can talk to me* — the far end genuinely does
+not know why, and inventing a reason would be a made-up diagnosis), and `<url>/fail` carrying the
+reasons when the script runs and finds a fault, which alerts immediately and by name.
+
+⚠ **It restarts nothing.** `SYS_MONITOR` owns recovery. Two independent things issuing starts for one
+bot is exactly G13.
+
+⚠ **It is INERT until `deadman_url` is set** in the git-ignored `algos/credentials.json` — that one
+step is Aaron's, because the URL comes from an account only he can create (a free healthchecks.io
+check, period 5 min / grace 15). Unset is a supported, honest state (`--status` reports it and the
+task exits 0), because a task that fails every five minutes is one everyone learns to ignore.
+**Until it is set, this gap is closed in CODE and open in FACT** — do not read the task existing as
+the switch existing.
+
+⚠ **The URL is a SECRET.** Whoever holds it can send your pings for you and hold the alert green
+forever, which is strictly worse than no switch, because you would believe in it.
+
 ### G11 — The Bots page is CORRECT for many bots and unreadable with them — raised 2026-08-04
 
 Aaron's question, and the answer is yes on the part that matters: `ConfigureTab` maps over
@@ -370,10 +405,9 @@ was destroyed at the bottom and could not be recovered anywhere above it. Before
 anywhere in this system, ask whether its negative result can be produced by a healthy system too — if
 it can, it is not a probe.
 
-⚠ **Still open, and this incident is the argument for it:** there is **no external dead-man's
-switch.** Every alert in the suite originates ON the VPS, so if the box or its network dies, silence
-is indistinguishable from health. The same is true of a bot the watchdog cannot restart. Something
-off-box has to expect a regular signal and complain when it stops.
+✅ **CLOSED 2026-08-04 by `SYS_DEADMAN`** — see G16. This incident was the argument for it: every
+alert in the suite originated ON the VPS, so a dead box or a dead network produced silence, and
+silence is what a healthy Sunday produces too.
 
 ### G13 — Every recovery path could produce a duplicate — **CLOSED 2026-08-04**
 

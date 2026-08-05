@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>fxut9200941\trader</Author>
+    <URI>\SYS_DEADMAN</URI>
+    <Description>External dead-man's switch. Pings an off-box service only while the bots are actually healthy, so the ABSENCE of a ping is the alarm. This is the one alert that survives the VPS or its network dying. Does not restart anything - SYS_MONITOR owns recovery.</Description>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT2M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+  </Settings>
+  <Triggers>
+    <TimeTrigger>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Repetition>
+        <Interval>PT5M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe</Command>
+      <Arguments>C:\trading\algos\notifications\deadman.py</Arguments>
+      <WorkingDirectory>C:\trading\algos</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

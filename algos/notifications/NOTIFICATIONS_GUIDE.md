@@ -149,6 +149,58 @@ different failure and would restart a process whose problem is not the process.
 as a `No MT5 link` chip. A blank balance is not a diagnosis — before this field, it was the only
 visible symptom anywhere in the system.
 
+### deadman.py (SYS_DEADMAN — every 5 min) — added 2026-08-04
+
+**Every other entry on this page is sent BY the VPS.** The bot's own alerts, the watchdog, the P&L
+tracker, the daily report — all of them need the box alive and networked to reach you. So the one
+failure this suite could never report is the one where the box or its network dies, because that
+produces **silence**, and silence is also what a healthy Sunday produces.
+
+`deadman.py` inverts the direction. It checks the things that must be true and pings an **external**
+service only when they all are:
+
+| Checked | Failure reported |
+|---|---|
+| the process is running | `<bot>: process is not running` |
+| the heartbeat is < 5 min old | `<bot>: heartbeat is Ns old (stalled)` |
+| `mt5_link` is not `false` | `<bot>: MT5 link is down` |
+| `wmic` answered at all | `cannot read the process list` |
+| `bot_state.json` is readable | `<bot>: bot_state.json cannot be read` |
+
+The external service expects that ping on a schedule and alerts YOU when it stops. **The alerting
+lives off the box, which is the entire point** — a dead VPS, a dead network, a dead Task Scheduler
+and a dead Python all produce the same outcome: you find out.
+
+**Two signals, and the difference is deliberate.**
+
+- **ping** — sent only when everything checks out. Missing pings mean *nothing on that box can talk
+  to me*, and the receiving end cannot say why, because it does not know.
+- **`/fail`** — sent when the script RUNS and finds a problem, with the reasons in the body. The box
+  is fine, the fault is named, and you hear at once instead of after the grace period.
+
+Without the second, a dead bot and a dead box would be the same silence.
+
+⚠ **The ping is CONDITIONAL on health and must stay that way.** An unconditional ping proves only
+that Task Scheduler is alive — a healthy system and a bot that died an hour ago would send the same
+green tick. This is the 2026-08-04 probe lesson from the other side: never trust a POSITIVE result a
+broken system can also produce.
+
+⚠ **`mt5_link` is read `is False`, never falsy.** `None` means the bot has not been asked yet (a
+fresh start, or a build predating the field) and is not a dead terminal — the same three-state
+contract the Bots page and the health strip follow.
+
+⚠ **It never restarts anything.** `monitor.py` owns recovery, and two independent things issuing
+starts for one bot is how a book gets doubled.
+
+**Configuration:** `deadman_url` in the git-ignored `algos/credentials.json` (or `LWG_DEADMAN_URL`).
+Unset is supported — the script says so and exits 0, because a task that fails every five minutes is
+one everybody learns to ignore. `--status` reports whether it is configured; `--dry-run` runs the
+checks and sends nothing. ⚠ **The URL is a secret**: anyone holding it can send your pings and keep
+the alert green forever, which is worse than no switch, because you would trust it.
+
+Tests: `algos/tests/test_deadman.py` (21), weighted toward the ways a check can wrongly say "fine" —
+a bug here is silent by construction, so there is no user report coming.
+
 ### pnl_tracker.py (SYS_PNLTRACKER — every 1 min)
 P&L engine. Writes balance, daily/weekly P&L to `bot_state.json`. MT5 is the only source of truth.
 This is the sole source of P&L threshold alerts — monitor.py does not duplicate these.
