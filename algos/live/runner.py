@@ -319,9 +319,44 @@ class LiveRunner:
             self.strategy.execution.step(sig, seq)
         self._bar_index = bar.index          # live bars count on from here — see _on_bar
         self.feed.mark_seen(df)
+
+        # 🔴 DISCARD what the warm-up recorded, or the decision LEDGER fills with history.
+        #
+        # `execution.step` appends every blocked and missed setup it sees to `execution.blocks`
+        # / `.misses`, and it has no idea whether it is being replayed or traded — it is the
+        # same object either way, which is the property that earns Pine parity and is not
+        # going to change. `_drain_records()` then writes whatever is sitting there on the
+        # FIRST LIVE BAR, stamped with the live timestamp. So each start dumped 5,000 bars of
+        # history into the ledger as though the bot had refused those setups today.
+        #
+        # MEASURED on the real record before this landed, and it was not a corner case — it
+        # was ALL of it: across 2026-07-31, 08-04 and 08-05, **560 blocked/missed rows and not
+        # one of them from the day it was written**, ages 6 to 75 days, and ~430 of the 560
+        # were duplicates because every restart re-dumped the same warm-up (5 starts on 08-05
+        # → every setup written 5 times).
+        #
+        # ⚠ **The damage is to the one record nothing else holds.** No broker statement
+        # contains a refusal, so this file is the only evidence of what the bot declined —
+        # and "what did it refuse today" was answerable only by comparing each row's own
+        # `bar_time` against its `ts`, which nothing did.
+        #
+        # ⚠ Discarding is right rather than tagging them: a warm-up setup is not a decision
+        # this bot made, it is history it replayed to build state, and a backtest already
+        # reports it properly. Keeping them under a flag would leave every consumer needing
+        # to know about the flag.
+        ex = self.strategy.execution
+        dropped = len(getattr(ex, "blocks", [])) + len(getattr(ex, "misses", []))
+        if hasattr(ex, "blocks"):
+            ex.blocks.clear()
+        if hasattr(ex, "misses"):
+            ex.misses.clear()
+
         self.log.info(
             f"Warmed {len(df)} bars ({df.index[0]} → {df.index[-1]}) in {time.time()-t0:.1f}s")
-        self.ledger.event("warmed", bars=len(df), first=str(df.index[0]), last=str(df.index[-1]))
+        # `replayed_setups` is COUNTED rather than silently dropped: a number that falls to
+        # zero is how anyone notices the strategy stopped recording refusals at all.
+        self.ledger.event("warmed", bars=len(df), first=str(df.index[0]),
+                          last=str(df.index[-1]), replayed_setups=dropped)
         return df
 
     def _bind_code(self) -> None:
