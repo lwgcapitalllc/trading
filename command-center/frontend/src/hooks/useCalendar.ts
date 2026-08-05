@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
-import type { CalendarResponse } from '@/types'
+import type { CalendarCurrencies, CalendarResponse } from '@/types'
 
 // One endpoint: GET /calendar?from&to returns the WHOLE week (all majors, all impacts, all
 // categories). The page does currency/impact/category/day filtering client-side, so filter changes
@@ -21,6 +21,20 @@ export function useCalendar(fromMs: number, toMs: number, refetchMs = 45_000) {
     queryFn: () => api.get<CalendarResponse>(`/calendar?${params.toString()}`),
     refetchInterval: refetchMs,
     placeholderData: (prev) => prev, // keep the current week on screen while paging/refetching
+  })
+}
+
+/** The currency roster the filter chips are drawn from.
+ *
+ * ⚠ A SEPARATE query from the week, deliberately. The roster is a property of the backend's
+ * country list, not of any week — folding it into the calendar payload would make the chip row
+ * disappear whenever a week was loading or had failed, and a filter you cannot see is still a
+ * filter that is applied. It never changes while the app is open, so it is fetched once. */
+export function useCalendarCurrencies() {
+  return useQuery({
+    queryKey: ['calendar', 'currencies'],
+    queryFn: () => api.get<CalendarCurrencies>('/calendar/currencies'),
+    staleTime: Infinity,
   })
 }
 

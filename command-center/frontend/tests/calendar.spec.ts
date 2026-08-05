@@ -50,12 +50,22 @@ type Opts = {
   delayMs?: number
   /** Build the week's events from its Monday. Default: one event per weekday at noon. */
   build?: (monday: Date) => CalendarEvent[]
+  /** The roster `/calendar/currencies` serves. Deliberately NOT the real nine by default — a test
+   *  that asserts the shipped list would pass just as well against a hardcoded copy of it. */
+  currencies?: string[]
 }
 
 /** Intercept /api/calendar and serve a week generated from the requested window.
  *  Returns a live count of how many times it answered. */
 async function mockCalendar(page: Page, opts: Opts = {}) {
   const served = { n: 0 }
+  // Registered first; the glob below cannot match it (Playwright's `*` stops at a `/`).
+  await page.route('**/api/calendar/currencies', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ currencies: opts.currencies ?? ['USD', 'EUR', 'GBP'] }),
+    }))
   await page.route('**/api/calendar*', async route => {
     if (opts.failAfter !== undefined && served.n >= opts.failAfter) {
       served.n++
@@ -273,5 +283,68 @@ test.describe('Calendar — the countdown', () => {
     await page.goto('/calendar?day=4')   // the day the event is on; see the note above
     await page.waitForLoadState('networkidle')
     await expect(page.getByTestId('now-line')).toContainText(/\dd \d+h/)
+  })
+})
+
+// ── the filter roster ──────────────────────────────────────────────────────────
+//
+// Both of these are about a filter that is applied but cannot be SEEN. The currency chips were a
+// hardcoded copy of a list only the backend knows, so a bloc it started querying would have had no
+// chip; and a NONE-impact row was governed by a hidden "all three ticked" rule rather than by a
+// control of its own. Neither would ever have rendered an error.
+
+test.describe('Calendar — the filter roster', () => {
+  test('the currency chips are the backend roster, not a list held in the page', async ({ page }) => {
+    // A roster the shipped page has never contained. The old hardcoded nine would ignore this
+    // entirely and draw its own chips — which is the defect, stated as a test.
+    await mockCalendar(page, { currencies: ['USD', 'SEK', 'NOK'] })
+    await page.goto('/calendar')
+    await page.waitForLoadState('networkidle')
+    const chips = page.getByTestId('currency-chip')
+    await expect(chips).toHaveText([/USD/, /SEK/, /NOK/])
+  })
+
+  test('a currency held in the URL but absent from the roster is still offered', async ({ page }) => {
+    // Otherwise a stale bookmark filters the list with no way to clear it — the same trap the
+    // category dropdown had.
+    await mockCalendar(page, { currencies: ['USD', 'EUR'] })
+    await page.goto('/calendar?cur=ZAR')
+    await page.waitForLoadState('networkidle')
+    await expect(page.locator('[data-testid="currency-chip"][title="ZAR"]')).toBeVisible()
+  })
+
+  test('a NONE-impact row gets its own chip and survives unticking another level', async ({ page }) => {
+    // ⚠ THE OLD RULE: NONE rows were shown only while all three chips were ticked, so unticking
+    // `Low` — a different level entirely — silently took them with it.
+    await mockCalendar(page, {
+      build: monday => {
+        const d = new Date(monday); d.setDate(d.getDate() + 1); d.setHours(12, 0, 0, 0)
+        return [
+          ev({ timestamp_ms: d.getTime(), impact: 'NONE', title: 'Unrated Release' }),
+          ev({ timestamp_ms: d.getTime() + 3600_000, impact: 'LOW', title: 'Minor Release' }),
+        ]
+      },
+    })
+    await page.goto('/calendar?day=1')
+    await page.waitForLoadState('networkidle')
+    expect(await rows(page).count()).toBe(2)
+
+    await page.getByTestId('impact-chip').filter({ hasText: 'Low' }).click()
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('Unrated Release')
+
+    await page.getByTestId('impact-chip').filter({ hasText: 'None' }).click()
+    await expect(rows(page)).toHaveCount(0)
+  })
+
+  test('no None chip on a week that has no unrated row', async ({ page }) => {
+    // A control for a state that cannot occur is UI nobody can read. MEASURED: zero NONE-impact
+    // events in 2,000 real ones — so on the live feed this chip is simply never drawn.
+    // ⚠ This one is red at HEAD only because the testid did not exist there; the three-chip
+    // behaviour it asserts was already right. Kept to pin that half, not claimed as a catch.
+    await mockCalendar(page)
+    await page.goto('/calendar')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByTestId('impact-chip')).toHaveText([/High/, /Medium/, /Low/])
   })
 })

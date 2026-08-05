@@ -1251,3 +1251,10 @@ export interface CalendarResponse {
   from_ms: number
   to_ms: number
 }
+
+// The currency chips are DERIVED from the backend's own country query, never restated here — the
+// two are different namespaces (TradingView is asked for blocs US/EU/GB and answers with currencies
+// USD/EUR/GBP), so only the backend can map one to the other.
+export interface CalendarCurrencies {
+  currencies: string[]
+}

@@ -1048,9 +1048,41 @@ empty on every other day of the real week (pass `?day=` explicitly), and a **`fo
 force a refetch** — the app's global `staleTime: 30_000` skips it, so a poll failure has to be
 driven by fast-forwarding the clock past the 45s interval.
 
-The backend half — the beat/miss polarity list that had been written for the wrong provider, and
-the HIGH-impact inflation print it coloured backwards — is in `../backend/CLAUDE.md` →
-*The calendar's polarity list was written for the wrong provider*.
+### The two filters that were applied without being visible
+
+**Closed the same day, after the nine above.** Both were measured and recorded as *not worth
+changing* first, then done properly rather than left as a note — a known gap in a filter row is a
+thing somebody comes back to, and neither cost much.
+
+🔴 **A `NONE`-impact row was governed by a rule with no control.** `IMPACTS` held the three visible
+levels and `passFilters` read `impactAll || enabledImpacts.has(...)`, where `impactAll` meant *all
+three ticked* — so unticking **Low**, a different level entirely, silently took every unrated row
+with it. `NONE` is a level like the others now, and its chip renders **only when the loaded week
+contains one**: a control for a state that cannot occur is UI nobody can read, and one that appears
+the moment the state does is the honest version of both. ⚠ **The level stays in `enabledImpacts`
+whether or not its chip is drawn**, so an unrenderable row is never hidden by its own absence.
+(MEASURED: zero NONE-impact events in 2,000 real ones — TradingView's `importance` is always
+1/0/−1. That is why this was latent, and exactly why it was worth closing rather than noting.)
+
+🔴 **The currency chips were a hardcoded nine beside a comment saying they mirrored the backend.**
+Two statements of one claim, and **not even in the same namespace**: the feed is QUERIED by bloc
+code (`US`/`EU`/`GB`) and ANSWERS with an ISO currency (`USD`/`EUR`/`GBP`), so the frontend could
+never have derived it and a tenth bloc would simply never have got a chip — a currency present in
+the rows and absent from the filter, which reads as a quiet week. `useCalendarCurrencies()` →
+`GET /calendar/currencies` now serves it, mapped backend-side. ⚠ **A SEPARATE query from the week,
+deliberately** — the roster is a property of the backend's configuration, not of any week, so
+folding it into the calendar payload would make the chip row vanish whenever a week was loading or
+had failed, and **a filter you cannot see is still a filter that is applied**. ⚠ **A currency held
+in the URL but missing from the roster is still offered**, or a stale bookmark filters with no way
+to clear it — the same rule `categoryMissing` follows one control over.
+
+**4 new browser checks (15 total), all 4 red against the page at `HEAD`** — though be precise about
+the last one: it asserts the three-chip default, which was already correct, and failed there only
+because its `data-testid` did not exist. It is kept to pin that half, not claimed as a catch.
+
+The backend half — the beat/miss polarity list that had been written for the wrong provider, the
+HIGH-impact inflation print it coloured backwards, and the currency-roster mapping — is in
+`../backend/CLAUDE.md` → *The calendar's polarity list was written for the wrong provider*.
 
 ## The Overview was audited 2026-08-05, and its job was to be WRONG quietly
 

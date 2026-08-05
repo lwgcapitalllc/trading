@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { CalendarDays, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
-import { useCalendar, useServerClock } from '@/hooks/useCalendar'
+import { useCalendar, useCalendarCurrencies, useServerClock } from '@/hooks/useCalendar'
 import {
   flagOf, IMPACT_DOT, IMPACT_LABEL, fmtTime, fmtDay, fmtWeekRange, fmtCountdown,
   localWeekStart, localWeekEnd, dayIndexOf as weekDayIndex,
@@ -11,10 +11,14 @@ import type { CalendarEvent, Impact, Surprise } from '@/types'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-// The nine majors' currencies (mirrors the backend DEFAULT_COUNTRIES). Chips toggle these; none
-// selected = all.
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'NZD', 'CHF', 'CNY']
-const IMPACTS: Impact[] = ['HIGH', 'MEDIUM', 'LOW']
+// ⚠ Every impact level the feed can emit, INCLUDING `NONE`, and the list must stay complete.
+// It used to be the three visible ones, with a `impactAll` special case letting NONE rows through
+// only while all three were ticked — so a level nothing could name was filtered by a rule nobody
+// could see. `NONE` is a level like any other now; its chip is rendered only when the loaded week
+// actually contains one, so the control exists exactly when there is something to control.
+// (MEASURED 2026-08-05: zero NONE rows in 2,000 real events — TradingView's `importance` is always
+// 1/0/−1. The point is that if that ever changes, the page filters it instead of guessing.)
+const IMPACTS: Impact[] = ['HIGH', 'MEDIUM', 'LOW', 'NONE']
 
 // ── time helpers (all display in the browser's local timezone) ──────────────────
 
@@ -96,7 +100,6 @@ export function Calendar() {
   const enabledImpacts = new Set<Impact>(
     impRaw === null ? IMPACTS : (impRaw.split(',').filter(Boolean) as Impact[]),
   )
-  const impactAll = enabledImpacts.size === IMPACTS.length // default → also lets NONE-impact rows show
   const category = sp.get('cat') ?? ''
 
   // ⚠ Recomputed EVERY RENDER, never memoized on `[weekOffset]`. A value derived from the CLOCK
@@ -129,7 +132,7 @@ export function Calendar() {
 
   const passFilters = (e: CalendarEvent) =>
     (selectedCurrencies.length === 0 || selectedCurrencies.includes(e.currency)) &&
-    (impactAll || enabledImpacts.has(e.impact)) &&
+    enabledImpacts.has(e.impact) &&
     (category === '' || e.category === category)
 
   // Everything matching the currency/impact/category filters (but NOT the day selection) — drives
@@ -181,6 +184,24 @@ export function Calendar() {
   // empty list, which reads as the page breaking rather than as a filter still being applied. The
   // selection is kept (paging back must restore it) and the empty state names it instead.
   const categoryMissing = category !== '' && !loadingWeek && allEvents.length > 0 && !categories.includes(category)
+
+  // A `NONE` chip only when the week holds one — a control for a state that cannot occur is UI
+  // nobody can interpret, and one that appears the moment the state does is the honest version of
+  // both. The level stays in `enabledImpacts` either way, so an unrenderable row is never hidden.
+  const weekHasNone = useMemo(() => allEvents.some((e) => e.impact === 'NONE'), [allEvents])
+  const visibleImpacts = IMPACTS.filter((lvl) => lvl !== 'NONE' || weekHasNone)
+
+  // ⚠ The chips come from the BACKEND's own country query (`GET /calendar/currencies`), never from
+  // a list restated here. They are two namespaces — the feed is asked for blocs (US/EU/GB) and
+  // answers with currencies (USD/EUR/GBP) — so a hardcoded copy is a claim only the backend can
+  // check, and a tenth bloc would simply never have got a chip. A currency held in the URL but
+  // absent from the roster is still offered, or a stale bookmark would filter with no way to clear
+  // it — the same rule as `categoryMissing` above.
+  const { data: currencyRoster } = useCalendarCurrencies()
+  const currencies = useMemo(() => {
+    const roster = currencyRoster?.currencies ?? []
+    return [...roster, ...selectedCurrencies.filter((c) => !roster.includes(c))]
+  }, [currencyRoster, sp])
 
   const todayWeekdayIdx = (new Date().getDay() + 6) % 7 // 0 = Mon — today's weekday, any week
   const todayIdx = weekOffset === 0 ? todayWeekdayIdx : -1
@@ -281,12 +302,12 @@ export function Calendar() {
 
       {/* ── Filters ── */}
       <div className="flex items-center flex-wrap gap-3 mb-4">
-        {/* Impact — independent toggles (High/Medium/Low), default all on */}
+        {/* Impact — independent toggles, default all on. `None` appears only if the week has one. */}
         <div className="flex items-center gap-1">
-          {IMPACTS.map((lvl) => {
+          {visibleImpacts.map((lvl) => {
             const on = enabledImpacts.has(lvl)
             return (
-              <button key={lvl} onClick={() => toggleImpact(lvl)}
+              <button key={lvl} data-testid="impact-chip" onClick={() => toggleImpact(lvl)}
                 className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border transition-colors ${
                   on ? 'border-accent/40 bg-accent/10 text-text-primary' : 'border-border-default text-text-tertiary hover:bg-bg-hover'
                 }`}>
@@ -318,10 +339,10 @@ export function Calendar() {
 
         {/* Currency chips */}
         <div className="flex items-center flex-wrap gap-1">
-          {CURRENCIES.map((c) => {
+          {currencies.map((c) => {
             const on = selectedCurrencies.includes(c)
             return (
-              <button key={c} onClick={() => toggleCurrency(c)} title={c}
+              <button key={c} data-testid="currency-chip" onClick={() => toggleCurrency(c)} title={c}
                 className={`flex items-center gap-1 text-[11px] font-mono px-1.5 py-1 rounded border transition-colors ${
                   on ? 'border-accent/40 bg-accent/10 text-accent' : 'border-border-default text-text-tertiary hover:text-text-secondary hover:bg-bg-hover'
                 }`}>
