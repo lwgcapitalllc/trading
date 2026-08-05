@@ -84,6 +84,25 @@ f_swingCol(color c) =>
 //============================================================
 var GRP_TOOLS = "Chart Tools"
 bool showFVGInput        = input.bool(true,  "Fair Value Gaps",   group = GRP_TOOLS, tooltip = "FVG on the chart. A fair value gap is the price void left by a 3-candle imbalance, where the first and third candles do not overlap.", display = display.none)
+// ── FVG-ONLY DIRECTION FILTER (Aaron, 2026-08-05) ──
+// Separate from "Trend-Aligned Zones Only" below, and it reads a DIFFERENT direction —
+// those are the two reasons it exists rather than being folded into the shared switch.
+//   SEPARATE, because gaps and order blocks are not looked at the same way. Filtering
+//     the gaps down to the trade's side is an execution decision; the blocks are context
+//     and are often worth seeing on both sides. One control could not express that.
+//   DIFFERENT DIRECTION, and this is the load-bearing half. The shared filter reads
+//     `st.dir` — the CHART's own structure. On a 15m chart that is the 15m trend, which
+//     is roughly what a reader means. On a 1m chart it is the 1m structure, which flips
+//     several times inside one 15m leg, so a short's gaps would appear and vanish while
+//     the setup itself never changed. This one reads the DRAWN FIB's direction, so it is
+//     the direction of the leg the trade is actually on and holds for that leg's life.
+// ⚠ ABSOLUTE — unlike the shared filter, an EQ-backed gap does NOT get an exemption here.
+// "Only gaps with bias" has to mean only gaps with bias, or the switch is a label that
+// does not describe what the code does. The EQ exemption still protects a counter-side
+// gap from the CAP (it stays alive underneath); this just refuses to draw it.
+// ⚠ HIDES, never deletes — same as every other visibility rule here. The gap keeps
+// living and mitigating, and reappears if the fib flips direction.
+bool fvgBiasInput        = input.bool(false, "    ↳ Trend-Aligned FVGs Only", group = GRP_TOOLS, active = showFVGInput, tooltip = "Off (default) shows fair value gaps in both directions. On draws ONLY the gaps on the same side as the current External Fib's leg — bearish gaps on a bearish setup, bullish on a bullish one. This is the leg the trade is being taken on, so it holds steady for the whole setup instead of flipping with the chart's own structure. Applies to fair value gaps ONLY; order blocks are left alone. Hidden, not deleted: a gap comes back if the fib turns.", display = display.none)
 // ── THE FVG COUNT IS LOCKED AGAIN (Aaron, 2026-08-03) ──
 // It was exposed on 2026-08-02 as "Max Active FVGs", for the same reason the order-block
 // count was exposed the day before: so the number could be tested against a real chart.
@@ -455,6 +474,35 @@ float fvgThreshHTF = 0.1
 float fvgThreshPct = fvgIsLTF ? fvgThreshLTF : fvgThreshHTF
 bool fvgRequireClose = fvgIsLTF ? false : true
 int   fvgMaxCount  = 7
+// ── THE ENTRY-ZONE GAPS ARE EXEMPT FROM THE CAP (Aaron, 2026-08-05) ──
+// The complaint, and it is the cap working exactly as written: after a bearish SOS price
+// drops and prints gap after gap on the way down. Every one takes a slot, the FIFO drops
+// from the front, and the gaps it drops are the OLDEST — which on a retrace setup are the
+// ones UP IN THE ENTRY ZONE, the only gaps the trade is ever taken from. The chart threw
+// away the levels being watched to make room for levels below price that nothing reads.
+// So a gap overlapping the live fib's 0.382-0.886 band, ON THE TRADE'S OWN SIDE, no longer
+// counts against `fvgMaxCount` and is never chosen for eviction. It rides on top of the
+// cap exactly as an EQ-backed gap does, and dies only when price mitigates it.
+// ⚠ DIRECTION-MATCHED, deliberately. On a bearish leg only BEARISH gaps are protected —
+// the bullish gaps printing inside the same band belong to the move against the setup, and
+// the A+ entry rule cannot read them either (it requires `isBull == (fibo_dir == 1)`). So
+// this pins the gaps a short is actually taken from and lets the rest queue as before.
+// ⚠ 0.382, not 0.5, is the shallow edge — the band the reader marks up by hand. It is one
+// rung shallower than the bot's own 0.5-0.886 entry zone, so a gap sitting just above 0.5
+// survives to be looked at rather than being evicted for being a hair too shallow.
+// The band arrives here from the fib block ~800 lines BELOW, because Pine needs a
+// declaration before its use and fiboP* are declared down there. See the publish site.
+bool  fvgExemptZone = true
+var float fvgZoneLo  = na
+var float fvgZoneHi  = na
+var int   fvgZoneDir = 0
+// The fib's RAW direction, published from the same place and read by `fvgBiasInput`.
+// Deliberately NOT fvgZoneDir, which is zeroed once the leg completes so a finished setup
+// stops PINNING gaps against the cap. The bias FILTER must keep working after TP3 — the
+// leg is still the leg, and a reader who asked to see one side wants one side either way.
+// Two globals because they answer two questions; sharing one would tie the filter's life
+// to the cap exemption's, which is a coupling nobody asked for.
+var int   fvgBiasDir = 0
 
 //============================================================
   // EQUAL HIGHS / LOWS (EQH / EQL) — liquidity pools
@@ -3671,6 +3719,16 @@ var array<float> fvgBots   = array.new<float>()
 var array<bool>  fvgIsBull = array.new<bool>()
 var array<int>   fvgBorn   = array.new<int>()
 
+// True when a gap sits in the live fib ENTRY BAND on the trade's own side — the gaps a
+// setup is actually entered from. Read by the cap below, both to COUNT and to CHOOSE what
+// to drop, so a protected gap never holds a slot and is never the one evicted.
+// The band is last bar's (see fvgZoneLo's declaration). That lag is deliberate: this
+// decides which gap to THROW AWAY, never which one to trade, and a live leg's band moves
+// by a few dollars a bar.
+f_fvgZoneKeep(float gTop, float gBot, bool isBull) =>
+    fvgExemptZone and fvgZoneDir != 0 and isBull == (fvgZoneDir == 1) and not na(fvgZoneLo)
+      and gTop >= fvgZoneLo and gBot <= fvgZoneHi
+
 f_fvgClearAll() =>
     if array.size(fvgBoxes) > 0
         for i = 0 to array.size(fvgBoxes) - 1
@@ -3727,15 +3785,20 @@ f_processFvg() =>
         // instead (eqMax levels per side, each dying on a close through it). That is the intended
         // trade: the cap exists to stop clutter, and a gap backed by a live liquidity pool is the
         // opposite of clutter. Turn eqExemptFvg OFF to get the plain FIFO back.
+        // TWO exemptions now, and they compose: a gap is protected if it is backed by an
+        // EQ pool OR it is sitting in the live entry band on the trade's side. Both must be
+        // applied to BOTH loops — the count and the drop scan — or the bug the note above
+        // describes comes straight back, with a protected gap holding a slot and evicting
+        // an ordinary one in its place.
         int _nonEq = 0
         if array.size(fvgBoxes) > 0
             for _di = 0 to array.size(fvgBoxes) - 1
-                if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                if not ((eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol)) or f_fvgZoneKeep(array.get(fvgTops, _di), array.get(fvgBots, _di), array.get(fvgIsBull, _di)))
                     _nonEq += 1
         while _nonEq > fvgMaxCount
             int _dropIdx = -1
             for _di = 0 to array.size(fvgBoxes) - 1
-                if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                if not ((eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol)) or f_fvgZoneKeep(array.get(fvgTops, _di), array.get(fvgBots, _di), array.get(fvgIsBull, _di)))
                     _dropIdx := _di
                     break
             if _dropIdx == -1
@@ -3773,8 +3836,13 @@ f_processFvg() =>
                 // Directional filter: hide misaligned gaps (st.dir 0 = undecided, show all).
                 // A gap behind an EQH/EQL is exempt — kept visible as liquidity confluence.
                 bool nearEq  = eqExemptFvg and f_fvgNearEq(gTop, gBot, eqTol)
+                // The FVG-only bias filter — the trade's own leg, not the chart's structure.
+                // ANDed on TOP of everything, with no EQ exemption, so "only gaps with bias"
+                // is literally true. `fvgBiasDir == 0` means no fib is live yet, and an
+                // undecided direction must show everything rather than hide the chart.
+                bool biasOk  = not fvgBiasInput or fvgBiasDir == 0 or isBull == (fvgBiasDir == 1)
                 // drawFVG first — the toggle hides every gap; detection above still ran.
-                bool visible = drawFVG and (nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1))
+                bool visible = drawFVG and biasOk and (nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1))
                 box.set_bgcolor(fb, visible ? (isBull ? fvgBullColor : fvgBearColor) : color(na))
                 box.set_text_color(fb, visible ? (isBull ? color.new(color.green, 0) : color.new(color.red, 0)) : color(na))
     int _ret = 0
@@ -4614,6 +4682,21 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     if _fibOneMin and (fibo7Touched or rTp50)
         fiboResetActive := true
 
+    // ── PUBLISH THE ENTRY BAND FOR THE FVG CAP (Aaron, 2026-08-05) ──
+    // Read on the NEXT bar by f_processFvg, which runs ~800 lines above this. It cannot
+    // read fiboP1/fiboP6 directly — Pine needs a declaration before its use and those are
+    // declared here — so the band is published into globals declared up beside the cap.
+    // 0.382 → 0.886, the band a reader marks by hand, ordered so a short's band (which runs
+    // the other way) still compares correctly.
+    // fibo_dir is what makes the exemption direction-matched; zeroed once the leg has
+    // completed (fiboResetActive = TP3 banked) so a finished setup stops pinning gaps and
+    // its levels go back into the ordinary FIFO queue.
+    fvgZoneLo  := math.min(fiboP1, fiboP6)
+    fvgZoneHi  := math.max(fiboP1, fiboP6)
+    fvgZoneDir := fiboResetActive ? 0 : fibo_dir
+    // Raw, un-zeroed — see fvgBiasDir's declaration for why the two differ.
+    fvgBiasDir := fibo_dir
+
     color c1 = fibo1Touched ? fibo1Color : FIBO_GREY
     string tx1 = f_fiboLabel(fibo1Value, "TP2", "TP2") + str.tostring(fiboP1, format.mintick) + ")"
     [l1, lb1] = f_fibLevel(drawFibo and not fiboResetActive and fiboShowAligned, fibo1Line, fibo1Label, fiboStartIndex, fiboP1, bar_index + fiboLineExtend, c1, f_fiboLineStyle(fibo1Style), tx1)
@@ -4662,31 +4745,21 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
     fibo7Line := l7
     fibo7Label := lb7
 
-// 1m entry view — hide every FVG outside the 0.382→1.0 band of the External Fib.
-// Only gaps in that entry zone (0.382 up through 1.0) may show; anything shallower
-// than 0.382 is blanked, overriding the EQ exemption and directional filter, so the
-// 1m chart carries just the entry-zone gaps. Runs AFTER the fib is computed so it
-// reads this bar's fiboP1/fiboP10, not a stale copy. No-op on every other timeframe.
-f_fvg1mZone() =>
-    if timeframe.in_seconds() == 60 and showFVG and array.size(fvgBoxes) > 0
-        float _fzLo = na
-        float _fzHi = na
-        // Only band the gaps while the aligned fib is actually showing; if it's
-        // canceled (countering SOS / no aligned SOS yet) the band stays na and every
-        // 1m gap is hidden — the chart stays clean until the next aligned setup.
-        if fiboShowAligned and not fiboResetActive and not na(fiboP1) and not na(fiboP10) and not na(fiboP7)
-            float _fzShallow = fiboP1 + (fiboP7 - fiboP1) * 0.25
-            _fzLo := math.min(_fzShallow, fiboP10)
-            _fzHi := math.max(_fzShallow, fiboP10)
-        for i = 0 to array.size(fvgBoxes) - 1
-            float gTop = array.get(fvgTops, i)
-            float gBot = array.get(fvgBots, i)
-            bool inBand = not na(_fzLo) and gTop >= _fzLo and gBot <= _fzHi
-            if not inBand
-                box.set_bgcolor(array.get(fvgBoxes, i), color(na))
-                box.set_text_color(array.get(fvgBoxes, i), color(na))
-    int _ret = 0
-f_fvg1mZone()
+// ── THE 1m ENTRY-ZONE FVG FILTER IS GONE (Aaron, 2026-08-05) ──
+// `f_fvg1mZone()` used to run on the 1m chart ONLY and blank every gap outside the
+// External Fib's entry band. Two consequences, and the second is why it went: an
+// out-of-band gap was hidden, and — because the band was derived from the fib — a 1m
+// chart with NO aligned REV setup showed no gaps AT ALL. That is most of the session.
+// The fib gate behind it needs a retraced 15m setup (`rStage >= 3`) plus a 1m SOS in
+// the 15m's direction confirming after the 15m SOS closed, so the bar for drawing
+// anything was far higher than "is there a gap here".
+// The 1m now draws gaps on exactly the same rules as every other timeframe: the
+// sub-15m detection floor (0.0, no middle-bar close test), the `fvgMaxCount` cap plus
+// the EQ exemption, `dirOnlyInput` if the reader wants it, and the Fair Value Gaps
+// toggle. A gap lives until a candle CLOSES fully through its far edge.
+// ⚠ Deleted rather than made inert — this file sits at Pine's compile-token cap
+// (CE10117), so a dead branch is not free. Recover from git if the banded 1m view is
+// ever wanted back as an option.
 
 f_macroLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
