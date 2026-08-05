@@ -116,3 +116,44 @@ def test_the_snapshot_reports_each_bots_own_account_type(monkeypatch):
     by_name = {b.name: b for b in snap.bots}
     for reg in bots._BOTS:
         assert by_name[reg.display].account_type == reg.account_type
+
+
+# ── Which name identifies a bot ───────────────────────────────────────────────
+
+def test_a_bot_resolves_by_its_key(monkeypatch):
+    """The key is the stable identifier. Every route was keyed on the DISPLAY NAME — a
+    label, chosen for a human, and therefore the one field somebody eventually changes."""
+    for b in bots._BOTS:
+        assert bots._resolve_bot(b.key) == (b.task, b.key)
+
+
+def test_a_bot_still_resolves_by_its_display_name(monkeypatch):
+    """Kept working on purpose — the frontend renders off `BotStatus.name` and there is no
+    version of this worth a flag day."""
+    for b in bots._BOTS:
+        assert bots._resolve_bot(b.display) == (b.task, b.key)
+        assert bots._resolve_bot(b.display.lower()) == (b.task, b.key)
+
+
+def test_the_key_is_tried_before_the_display_name(monkeypatch):
+    """If a future bot's display name equals another bot's key, name-first would route one
+    bot's Stop to the other. The registry cannot rule that out — the two namespaces are
+    free — so the ORDER is the guarantee."""
+    a = bots.BotReg(task="A", key="shared", display="A one", account_type="demo")
+    b = bots.BotReg(task="B", key="b_key", display="Shared", account_type="live")
+    monkeypatch.setattr(bots, "_BOTS", [a, b])
+    monkeypatch.setattr(bots, "_BY_KEY", {x.key: x for x in (a, b)})
+    assert bots._resolve_bot("shared") == ("A", "shared")
+
+
+def test_an_unknown_reference_is_a_404():
+    with pytest.raises(Exception) as e:
+        bots._resolve_bot("no_such_bot")
+    assert getattr(e.value, "status_code", None) == 404
+
+
+def test_the_snapshot_carries_the_key_the_routes_accept(monkeypatch):
+    """A page can only use the stable identifier if the snapshot hands it one."""
+    monkeypatch.setattr(bots, "_fetch_vps_snapshot", lambda: {})
+    for row in bots.get_snapshot().bots:
+        assert bots._resolve_bot(row.key)[1] == row.key

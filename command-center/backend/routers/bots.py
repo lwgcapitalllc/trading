@@ -630,6 +630,7 @@ def get_snapshot():
         thresholds = _get_thresholds(bot_key)
 
         bots.append(BotStatus(
+            key=bot_key,
             name=_DISPLAY_NAMES.get(task_name, task_name),
             # An MT5 login is an INT everywhere it matters — LiveConfig.account is typed
             # int and BotMT5.connect compares it numerically to refuse the wrong account.
@@ -827,15 +828,31 @@ def restart_bots():
 # Routes registered AFTER the literal /start|stop|restart|emergency paths so
 # FastAPI matches the literals first (no ambiguity).
 
-def _resolve_bot(bot_name: str) -> tuple[str, str]:
-    """Return (task_name, bot_key) for a display-name, or raise 404."""
-    task_name = next(
-        (t for t, dn in _DISPLAY_NAMES.items() if dn.lower() == bot_name.lower()),
-        None,
-    )
-    if not task_name or task_name not in _TASK_BOT_KEYS:
-        raise HTTPException(status_code=404, detail=f"Bot '{bot_name}' not found")
-    return task_name, _TASK_BOT_KEYS[task_name]
+def _resolve_bot(ref: str) -> tuple[str, str]:
+    """Return `(task_name, bot_key)` for a **bot key or a display name**, else 404.
+
+    The key is tried FIRST and is the identifier new callers should use. Every route here
+    was keyed on the DISPLAY NAME — a label, chosen for a human, and therefore the one field
+    somebody will eventually change: renaming "MPC SOS Fade" would have broken every
+    bookmark, the Configure tab's `?bot=` selection, and any script anyone had written,
+    while the bot itself was untouched. The key is what identifies the process on the VPS
+    (`runner.py --bot <key>`), so it is already the stable name; it just was not reachable
+    from here.
+
+    Display names keep working, and deliberately so: the frontend renders bots off
+    `BotStatus.name` and there is no version of this worth a flag day. The rule for new code
+    is simply "pass the key".
+
+    ⚠ Key before name, never the other way round. If a future bot's display name happened to
+    equal another bot's key, name-first would silently route one bot's Stop to the other —
+    and `test_bot_registry.py` cannot rule that out, because the two namespaces are free.
+    """
+    reg = _BY_KEY.get(ref)
+    if reg is None:
+        reg = next((b for b in _BOTS if b.display.lower() == ref.lower()), None)
+    if reg is None:
+        raise HTTPException(status_code=404, detail=f"Bot '{ref}' not found")
+    return reg.task, reg.key
 
 
 _COORDINATOR = r"C:\trading\algos\bots\startup_coordinator.py"

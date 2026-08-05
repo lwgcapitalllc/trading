@@ -75,7 +75,13 @@ def funded_sharpe_under_drawdown(run: dict, firm: dict) -> float:
 
 @_register("raw_profit_factor")
 def raw_profit_factor(run: dict, firm) -> float:
-    """For MT5/no-ruleset mode. Maximise profit factor directly."""
+    """For MT5/Python/no-ruleset mode. Maximise profit factor directly.
+
+    ⚠ Profit factor alone has no sample-size opinion: two lucky trades at PF 8.0 outrank two
+    hundred trades at PF 2.0, and the optimizer would hand you the two. The floor that stops
+    that is `min_trades` on the optimization row, applied in `_pick_best_run` rather than here
+    — a combo below the floor is still SCORED and still listed, it just cannot win.
+    """
     return run.get("profit_factor") or 0.0
 
 

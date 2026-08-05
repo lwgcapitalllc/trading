@@ -527,6 +527,21 @@ def init_db() -> None:
             # Speed Step 3 — grid sensitivity stored on the optimization row
             "ALTER TABLE optimizations ADD COLUMN grid_sensitivity_score REAL",
             "ALTER TABLE optimizations ADD COLUMN grid_sensitivity_summary TEXT",
+            # 2026-08-04 — an optimization carries the same cost contract a single run does.
+            # Until today the grid was ALWAYS ranked on a free book while the run it was
+            # launched from had spread and swap charged, so the winner was chosen under
+            # different physics from the number it was compared against. Same NULL-vs-'[]'
+            # rule as backtest_runs: NULL = row predates layers, '[]' = charge nothing.
+            "ALTER TABLE optimizations ADD COLUMN cost_layers TEXT",
+            "ALTER TABLE optimizations ADD COLUMN broker_profile TEXT",
+            # Minimum trades a combo must have to be eligible to WIN. 0 = no floor, which is
+            # what an API caller that states nothing gets — the modal states it explicitly.
+            "ALTER TABLE optimizations ADD COLUMN min_trades INTEGER NOT NULL DEFAULT 0",
+            # Set when the winner was NOT picked the way the page's header claims — an empty
+            # regime-filtered population, or a trade floor that excluded every combo. The
+            # fallback is deliberate (an optimization with no winner is useless), but a
+            # silent fallback is a page claiming something the code did not do.
+            "ALTER TABLE optimizations ADD COLUMN winner_note TEXT",
             # bar_type/bar_value were missing from optimizations table
             "ALTER TABLE optimizations ADD COLUMN bar_type TEXT NOT NULL DEFAULT 'Minute'",
             "ALTER TABLE optimizations ADD COLUMN bar_value INTEGER NOT NULL DEFAULT 5",
@@ -1785,21 +1800,33 @@ def delete_run(run_id: str) -> list[str]:
     return deleted
 
 
-def delete_optimization(optimization_id: str) -> bool:
+def delete_optimization(optimization_id: str) -> tuple[bool, list[str]]:
+    """Delete an optimization and everything hanging off it.
+
+    ⚠ The stress-test purge is NOT optional. `stress_tests.run_id` is a FOREIGN KEY into
+    `backtest_runs` and `PRAGMA foreign_keys=ON` is set in `_connect()`, so deleting a child
+    run that has been stress-tested raises IntegrityError and the whole endpoint 500s. Reached
+    on a python optimization by retrying a combo as a full backtest and stress-testing it.
+
+    Returns (deleted, run_ids_whose_report_dirs_the_caller_should_remove) — the child runs plus
+    any stress-test child runs the purge took with them.
+    """
     with _connect() as conn:
         child_ids = [
             r["run_id"] for r in conn.execute(
                 "SELECT run_id FROM backtest_runs WHERE optimization_id = ?", (optimization_id,)
             ).fetchall()
         ]
+        removed = list(child_ids)
         if child_ids:
+            removed.extend(_purge_stress_tests_for_runs(conn, child_ids))
             placeholders = ",".join("?" * len(child_ids))
             conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({placeholders})", child_ids)
             conn.execute(f"DELETE FROM backtest_runs WHERE run_id IN ({placeholders})", child_ids)
         cur = conn.execute(
             "DELETE FROM optimizations WHERE optimization_id = ?", (optimization_id,)
         )
-    return cur.rowcount > 0, child_ids
+    return cur.rowcount > 0, removed
 
 
 def get_run_verdict_summary(run_id: str) -> list[dict]:
@@ -2328,8 +2355,9 @@ def insert_optimization(data: dict) -> None:
                 (optimization_id, strategy_id, instrument, start_date, end_date,
                  commission_per_side, slippage_ticks, ruleset_id, mode, search_method,
                  param_grid, status, estimated_runs, completed_runs, created_at,
-                 source_run_id, regime_filter, bar_type, bar_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+                 source_run_id, regime_filter, bar_type, bar_value,
+                 cost_layers, broker_profile, min_trades)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data["optimization_id"], data["strategy_id"], data["instrument"],
             data["start_date"], data["end_date"],
@@ -2338,6 +2366,10 @@ def insert_optimization(data: dict) -> None:
             json.dumps(data["param_grid"]), data["status"], data["estimated_runs"],
             now, data.get("source_run_id"), data.get("regime_filter"),
             data.get("bar_type", "Minute"), data.get("bar_value", 5),
+            # ⚠ NULL, not '[]', when the caller says nothing — same contract as backtest_runs.
+            None if data.get("cost_layers") is None else json.dumps(data["cost_layers"]),
+            data.get("broker_profile"),
+            int(data.get("min_trades") or 0),
         ))
 
 
@@ -2348,7 +2380,23 @@ def get_optimization(optimization_id: str) -> Optional[dict]:
         ).fetchone()
     if not row:
         return None
-    return _parse_json_fields(dict(row), ["param_grid"])
+    # cost_layers stays None when the column is NULL — `_parse_json_fields` only touches
+    # strings, which is exactly the NULL-is-not-[] distinction this row depends on.
+    return _parse_json_fields(dict(row), ["param_grid", "cost_layers", "grid_sensitivity_summary"])
+
+
+def set_optimization_winner_note(optimization_id: str, note: Optional[str]) -> None:
+    """Record that the winner was picked by a FALLBACK rule rather than the one the page names.
+
+    Written by `_pick_best_run` when the stated scoring produced no eligible combo. The page
+    renders it beside the ★ — a fallback nobody can see is a page claiming something the code
+    did not do, which is this repo's most-repeated defect.
+    """
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE optimizations SET winner_note=? WHERE optimization_id=?",
+            (note, optimization_id),
+        )
 
 
 def list_optimizations(strategy_id: Optional[str] = None) -> list[dict]:
@@ -2405,10 +2453,14 @@ def complete_optimization(optimization_id: str, best_run_id: Optional[str]) -> N
 
 
 def fail_optimization(optimization_id: str, error: str) -> None:
+    # completed_at is what the page measures "Ran for" against. Leaving it NULL on a failure
+    # made the detail page fall back to now(), so a job that died on Tuesday counted upward
+    # forever and read "Ran for 74h". A failure IS a finish.
+    now = int(time.time())
     with _connect() as conn:
         conn.execute(
-            "UPDATE optimizations SET status=? WHERE optimization_id=?",
-            (f"failed: {error[:200]}", optimization_id),
+            "UPDATE optimizations SET status=?, completed_at=? WHERE optimization_id=?",
+            (f"failed: {error[:200]}", now, optimization_id),
         )
 
 
@@ -2422,20 +2474,32 @@ def cancel_sweep_runs(sweep_id: str) -> None:
 
 
 def reset_optimization_for_rerun(optimization_id: str) -> list[str]:
-    """Delete all child runs and reset the optimization row to running. Returns deleted run_ids."""
+    """Delete all child runs and reset the optimization row to running. Returns deleted run_ids.
+
+    ⚠ Same FK hazard as `delete_optimization` — the child runs' `evaluations` and any
+    `stress_tests` must go FIRST or the DELETE raises IntegrityError under
+    `PRAGMA foreign_keys=ON`. An NT8 optimization writes an evaluation row per combo, so
+    re-run crashed on every one of them until 2026-08-04.
+    """
     with _connect() as conn:
         run_ids = [r["run_id"] for r in conn.execute(
             "SELECT run_id FROM backtest_runs WHERE optimization_id=?",
             (optimization_id,),
         ).fetchall()]
+        removed = list(run_ids)
+        if run_ids:
+            removed.extend(_purge_stress_tests_for_runs(conn, run_ids))
+            ph = ",".join("?" * len(run_ids))
+            conn.execute(f"DELETE FROM evaluations WHERE run_id IN ({ph})", run_ids)
         conn.execute("DELETE FROM backtest_runs WHERE optimization_id=?", (optimization_id,))
         conn.execute(
             """UPDATE optimizations
-               SET status='running', completed_runs=0, completed_at=NULL, best_run_id=NULL
+               SET status='running', completed_runs=0, completed_at=NULL, best_run_id=NULL,
+                   winner_note=NULL, grid_sensitivity_score=NULL, grid_sensitivity_summary=NULL
                WHERE optimization_id=?""",
             (optimization_id,),
         )
-    return run_ids
+    return removed
 
 
 def cancel_optimization(optimization_id: str) -> None:
@@ -2522,6 +2586,87 @@ def insert_run_optimization(data: dict) -> None:
             data["optimization_id"],
             data.get("runner", "ninjatrader"),
         ))
+
+
+def insert_complete_optimization_runs(rows: list[dict]) -> None:
+    """Insert a native optimizer's whole combo grid in ONE connection.
+
+    A native combo arrives already finished — there is nothing to poll — so the insert and the
+    "mark complete with these KPIs" write are the same write. Doing them as two statements per
+    combo through `_connect()` opened ~2 connections per combo; a 1,000-combo grid opened 2,000.
+
+    Native combo runs carry no equity curve, trades or daily P&L (the platform reports one grid,
+    not N result sets), so the three path columns stay NULL and every consumer must treat a
+    combo row as KPIs-only.
+    """
+    if not rows:
+        return
+    payload = [
+        (
+            r["run_id"], r["strategy_id"], r["instrument"], json.dumps(r["params"]),
+            r["bar_type"], r["bar_value"], r["start_date"], r["end_date"],
+            r["commission_per_side"], r["slippage_ticks"],
+            r["created_at"], r["created_at"], r["created_at"],
+            r["optimization_id"], r.get("runner", "ninjatrader"),
+            (k := r.get("kpis") or {}).get("net_pnl"), k.get("max_drawdown"),
+            k.get("profit_factor"), k.get("win_rate"), k.get("win_count"),
+            k.get("trade_count"), k.get("sharpe"), k.get("sortino"), k.get("cagr"),
+            k.get("avg_win"), k.get("avg_loss"), k.get("avg_trade_duration_min"),
+            k.get("worst_day_pnl"), k.get("worst_losing_streak"), k.get("platform_sharpe"),
+            int(k["sharpe_low_sample"]) if k.get("sharpe_low_sample") is not None else None,
+            k.get("profit_concentration_pct"), k.get("profit_concentration_basis"),
+            k.get("max_drawdown_pct"), k.get("scratch_count"), k.get("trade_concentration_pct"),
+        )
+        for r in rows
+    ]
+    with _connect() as conn:
+        conn.executemany("""
+            INSERT INTO backtest_runs
+                (run_id, strategy_id, instrument, params, bar_type, bar_value,
+                 start_date, end_date, commission_per_side, slippage_ticks,
+                 status, created_at, started_at, completed_at, optimization_id, runner,
+                 net_pnl, max_drawdown, profit_factor, win_rate, win_count, trade_count,
+                 sharpe, sortino, cagr, avg_win, avg_loss, avg_trade_duration_min,
+                 worst_day_pnl, worst_losing_streak, platform_sharpe, sharpe_low_sample,
+                 profit_concentration_pct, profit_concentration_basis,
+                 max_drawdown_pct, scratch_count, trade_concentration_pct)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete', ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, payload)
+
+
+def update_run_worthiness_bulk(rows: list[tuple[str, str, Optional[str], str]]) -> None:
+    """(run_id, tier, reason, ruleset_id) for many runs in one connection."""
+    if not rows:
+        return
+    with _connect() as conn:
+        conn.executemany(
+            "UPDATE backtest_runs SET worthiness_tier=?, worthiness_reason=?, "
+            "worthiness_computed_against_firm=? WHERE run_id=?",
+            [(t, reason, rid, run_id) for run_id, t, reason, rid in rows],
+        )
+
+
+def get_evaluations_for_runs(run_ids: list[str]) -> dict[str, list[dict]]:
+    """Every run's evaluations in ONE query, keyed by run_id.
+
+    The optimizer scores each combo through an objective that reads `_evaluations`; asking per
+    combo opened one connection per combo on top of the read of the row itself.
+    """
+    if not run_ids:
+        return {}
+    out: dict[str, list[dict]] = {rid: [] for rid in run_ids}
+    with _connect() as conn:
+        # SQLite's default host-parameter ceiling is 999 — chunk rather than assume the grid
+        # is small, because the whole point of this function is the thousand-combo case.
+        for i in range(0, len(run_ids), 500):
+            chunk = run_ids[i:i + 500]
+            ph = ",".join("?" * len(chunk))
+            for r in conn.execute(
+                f"SELECT * FROM evaluations WHERE run_id IN ({ph})", chunk
+            ).fetchall():
+                out[r["run_id"]].append(dict(r))
+    return out
 
 
 def list_optimization_runs(optimization_id: str) -> list[dict]:

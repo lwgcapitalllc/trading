@@ -18,7 +18,10 @@ from models import (
     OptimizationRequest, OptimizationSummary, OptimizationDetail,
 )
 from services import lab_db, runner_dispatch, history_limits
-from services.optimization_runner import expand_grid, pick_search_method, sample_combinations, run_optimization, retry_failed_runs
+from services.optimization_runner import (
+    expand_grid, pick_search_method, sample_combinations, run_optimization,
+    retry_failed_runs, validate_param_grid,
+)
 from routers.backtests import _row_to_summary
 from routers._locks import ensure_platform_idle
 
@@ -53,6 +56,14 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
             f"{runner} sweeps numeric ranges only — {', '.join(listed)} "
             "cannot be swept as a list of values.")
 
+    # Check the grid BEFORE anything expands it. A step of 0 used to reach the expander's
+    # `while v <= hi: v += step` loop and never come back — on the event loop, so it took the
+    # whole backend with it, not just this request.
+    try:
+        validate_param_grid(req.param_grid)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
     try:
         history_limits.validate_window(
             req.instrument, req.start_date, req.end_date,
@@ -63,7 +74,9 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
     ensure_platform_idle(runner)
 
     method = pick_search_method(req.param_grid, req.search_method)
-    all_combos = expand_grid(req.param_grid)
+    # Off the event loop — a big grid is a real amount of work and this handler is async, so
+    # expanding it inline stalls every other request for the duration.
+    all_combos = await asyncio.to_thread(expand_grid, req.param_grid)
     sampled    = sample_combinations(all_combos, method)
     estimated  = len(sampled)
 
@@ -87,6 +100,9 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
         "regime_filter":      req.regime_filter,
         "bar_type":           req.bar_type,
         "bar_value":          req.bar_value,
+        "cost_layers":        req.cost_layers,
+        "broker_profile":     req.broker_profile,
+        "min_trades":         req.min_trades,
     })
 
     asyncio.create_task(run_optimization(opt_id))
@@ -101,25 +117,42 @@ async def trigger_optimization(req: OptimizationRequest) -> dict:
 @router.get("", response_model=list[OptimizationSummary])
 def list_optimizations(strategy_id: Optional[str] = None) -> list[OptimizationSummary]:
     rows = lab_db.list_optimizations(strategy_id=strategy_id)
-    return [_row_to_opt_summary(r) for r in rows]
+    # One lookup per distinct strategy, not one per row — the list page shows the strategy's
+    # NAME and its runner, and both live on the strategy row.
+    strategies = {sid: lab_db.get_strategy(sid) for sid in {r["strategy_id"] for r in rows}}
+    return [_row_to_opt_summary(r, strategies.get(r["strategy_id"])) for r in rows]
 
 
 @router.get("/{optimization_id}", response_model=OptimizationDetail)
-def get_optimization(optimization_id: str) -> OptimizationDetail:
+async def get_optimization(optimization_id: str) -> OptimizationDetail:
     opt = lab_db.get_optimization(optimization_id)
     if not opt:
         raise HTTPException(404, "Optimization not found")
 
     strategy = lab_db.get_strategy(opt["strategy_id"])
     run_rows  = lab_db.list_optimization_runs(optimization_id)
-    summaries = [_row_to_summary(r) for r in run_rows]
+
+    # Ship only the params the page can draw. A combo row's `params` is fixed_params merged
+    # with the swept ones — 50+ keys on a Python strategy — and the page renders exactly the
+    # grid's keys. On a 1,000-combo grid polled every 3s that is most of the response, repeated
+    # every three seconds, for columns nothing displays.
+    grid_keys = set(opt["param_grid"].keys())
+    summaries = []
+    for r in run_rows:
+        s = _row_to_summary(r)
+        if s.params:
+            s.params = {k: v for k, v in s.params.items() if k in grid_keys}
+        summaries.append(s)
 
     live_pct     = None
     live_message = None
     if opt["status"] == "running":
         try:
             runner_str  = (strategy or {}).get("runner", "ninjatrader")
-            status_data = runner_dispatch.job_status(f"nopt_{optimization_id}", runner_str)
+            # Off the event loop — for NT8/MT5 this is an HTTP call over the SSH tunnel, and
+            # the page polls it every 3 seconds while the job runs.
+            status_data = await asyncio.to_thread(
+                runner_dispatch.job_status, f"nopt_{optimization_id}", runner_str)
             live_pct     = int(status_data.get("pct") or 0) or None
             live_message = status_data.get("message") or None
         except Exception:
@@ -147,6 +180,13 @@ def get_optimization(optimization_id: str) -> OptimizationDetail:
         runs=summaries,
         live_pct=live_pct,
         live_message=live_message,
+        source_run_id=opt.get("source_run_id"),
+        cost_layers=opt.get("cost_layers"),
+        broker_profile=opt.get("broker_profile"),
+        min_trades=opt.get("min_trades") or 0,
+        winner_note=opt.get("winner_note"),
+        grid_sensitivity_score=opt.get("grid_sensitivity_score"),
+        grid_sensitivity_summary=opt.get("grid_sensitivity_summary") or None,
     )
 
 
@@ -191,14 +231,44 @@ async def rerun_optimization(optimization_id: str) -> dict:
 
 
 @router.post("/{optimization_id}/cancel", status_code=200)
-def cancel_optimization(optimization_id: str) -> dict:
+async def cancel_optimization(optimization_id: str) -> dict:
     opt = lab_db.get_optimization(optimization_id)
     if not opt:
         raise HTTPException(404, "Optimization not found")
     if opt["status"] not in ("running",):
         raise HTTPException(400, f"Optimization is not running (status: {opt['status']})")
+
+    # The DB write is what the page reads and what releases the per-platform job lock, so it
+    # MUST be paired with a real stop. Until 2026-08-04 it was the only thing that happened:
+    # the sweep kept burning every core, the lock said the platform was free, and the job
+    # finished by overwriting its own cancelled status with 'complete'.
+    #
+    # Runner-agnostic on purpose — python's cancel is a cooperative flag its replay loop
+    # checks, NT8's and MT5's is a request to the agent. Same call, three implementations.
+    runner = (lab_db.get_strategy(opt["strategy_id"]) or {}).get("runner", "ninjatrader")
+    stopped = True
+    try:
+        await asyncio.to_thread(
+            runner_dispatch.cancel_job, f"nopt_{optimization_id}", runner)
+    except Exception as exc:
+        # The row is still marked cancelled — a job we could not reach is one the poller will
+        # abandon on its next tick anyway. Report it rather than claiming a clean stop.
+        stopped = False
+        _log_cancel_failure(optimization_id, exc)
+
     lab_db.cancel_optimization(optimization_id)
-    return {"optimization_id": optimization_id, "status": "failed_cancelled"}
+    return {
+        "optimization_id": optimization_id,
+        "status": "failed_cancelled",
+        "job_stopped": stopped,
+    }
+
+
+def _log_cancel_failure(optimization_id: str, exc: Exception) -> None:
+    import logging
+    logging.getLogger("optimizations").warning(
+        "Could not stop the runner job for %s: %s — the row is marked cancelled and the "
+        "poller will abandon it", optimization_id, exc)
 
 
 @router.post("/{optimization_id}/retry-failed", status_code=202)
@@ -236,7 +306,7 @@ def get_optimization_log(optimization_id: str, lines: int = 300) -> str:
     return ""
 
 
-def _row_to_opt_summary(row: dict) -> OptimizationSummary:
+def _row_to_opt_summary(row: dict, strategy: Optional[dict] = None) -> OptimizationSummary:
     return OptimizationSummary(
         optimization_id=row["optimization_id"],
         strategy_id=row["strategy_id"],
@@ -254,4 +324,8 @@ def _row_to_opt_summary(row: dict) -> OptimizationSummary:
         regime_filter=row.get("regime_filter"),
         created_at=row["created_at"],
         completed_at=row.get("completed_at"),
+        runner=(strategy or {}).get("runner", "ninjatrader"),
+        strategy_name=(strategy or {}).get("name"),
+        winner_note=row.get("winner_note"),
+        grid_sensitivity_score=row.get("grid_sensitivity_score"),
     )

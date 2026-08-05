@@ -241,6 +241,11 @@ class DisqualifiedCandidate(BaseModel):
 # ── Bots ─────────────────────────────────────────────────────────────────────
 
 class BotStatus(BaseModel):
+    # The bot's STABLE identifier — `mpc_sos_fade_demo`, the same string that appears on the
+    # VPS process commandline (`runner.py --bot <key>`). Use this for URLs, selection state
+    # and API paths; `name` is a label chosen for a human, so it is the field that will
+    # eventually be changed, and anything keyed on it breaks when it is.
+    key: str
     name: str
     account: str
     account_type: str       # "demo" | "live"
@@ -1133,6 +1138,14 @@ class OptimizationRequest(BaseModel):
     param_grid: dict                    # {param: {min, max, step} | [val, ...]}
     source_run_id: Optional[str] = None
     regime_filter: Optional[str] = None  # TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY
+    # Layered costs, same contract as BacktestRunRequest — python runner only, and NULL is not
+    # []: nothing stated keeps the old free-book behaviour rather than silently charging.
+    cost_layers: Optional[list[str]] = None
+    broker_profile: Optional[str] = None
+    # A combo below this trade count is still run, scored and listed — it just cannot WIN.
+    # 0 = no floor, which is what a caller stating nothing gets (nothing is assumed, the same
+    # rule the 0/0 commission default follows). The optimize modal states it explicitly.
+    min_trades: int = 0
 
 
 class OptimizationSummary(BaseModel):
@@ -1152,6 +1165,10 @@ class OptimizationSummary(BaseModel):
     regime_filter: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+    runner: str = "ninjatrader"
+    strategy_name: Optional[str] = None
+    winner_note: Optional[str] = None
+    grid_sensitivity_score: Optional[float] = None
 
 
 class OptimizationDetail(BaseModel):
@@ -1176,6 +1193,18 @@ class OptimizationDetail(BaseModel):
     runs: list[BacktestSummary] = []
     live_pct: Optional[int] = None
     live_message: Optional[str] = None
+    source_run_id: Optional[str] = None
+    cost_layers: Optional[list[str]] = None
+    broker_profile: Optional[str] = None
+    min_trades: int = 0
+    # Set when the ★ was picked by a fallback rather than by the rule the page names.
+    winner_note: Optional[str] = None
+    # How isolated the winner is in the grid: 0 = a flat plateau (robust), 1 = a lone spike
+    # (overfit). Computed on every native run since the grid-sensitivity pass landed and stored
+    # on the row ever since — nothing displayed it until 2026-08-04, which made it the one
+    # number the page exists to produce and the one number it did not show.
+    grid_sensitivity_score: Optional[float] = None
+    grid_sensitivity_summary: Optional[dict] = None
 
 
 # ── Lab — instrument summary (for Tier 3 modal) ───────────────────────────────

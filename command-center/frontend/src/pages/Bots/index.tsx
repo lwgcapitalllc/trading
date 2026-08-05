@@ -124,7 +124,14 @@ function JobDot({ status }: { status: string }) {
   )
 }
 
-function LogModal({ botName, onClose }: { botName: string; onClose: () => void }) {
+function LogModal({ botName, botLabel, onClose }: {
+  /** The bot KEY — what the API is called with. */
+  botName: string
+  /** What a human calls it — what the header shows. Separate, so a rename never changes
+   *  which bot's log is fetched. */
+  botLabel: string
+  onClose: () => void
+}) {
   const { data: log, isLoading, error } = useBotLog(botName)
   const [copied, setCopied] = useState(false)
   function copyLog() {
@@ -137,7 +144,7 @@ function LogModal({ botName, onClose }: { botName: string; onClose: () => void }
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6" onClick={onClose}>
       <div className="bg-bg-surface border border-border-default rounded-lg w-full max-w-3xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-          <span className="text-[13px] font-semibold">{botName} — stdout log</span>
+          <span className="text-[13px] font-semibold">{botLabel} — stdout log</span>
           <div className="flex items-center gap-2">
             {log && (
               <button onClick={copyLog} title="Copy log" className="p-1 rounded hover:bg-bg-hover text-text-tertiary hover:text-text-secondary transition-colors">
@@ -210,7 +217,7 @@ function AffectedBots({ bots }: { bots: BotStatus[] }) {
         Affects {bots.length} {bots.length === 1 ? 'bot' : 'bots'}
       </p>
       {bots.map(b => (
-        <div key={b.name} className="flex items-center gap-[6px] py-[2px]">
+        <div key={b.key} className="flex items-center gap-[6px] py-[2px]">
           <span className={`w-[5px] h-[5px] rounded-full flex-shrink-0 ${
             b.status === 'RUNNING' ? 'bg-pos' : 'bg-neg'
           }`} />
@@ -307,7 +314,10 @@ export function Bots() {
   const anyPerBotPending = startOne.isPending || stopOne.isPending || restartOne.isPending
   const anyBusy          = anyGlobalPending || anyPerBotPending
 
-  const pendingBotName: string | undefined =
+  // These four all hold a bot KEY, never a display name — see `BotStatus.key`. A name is a
+  // label chosen for a human and is the field that eventually changes; state that ADDRESSES
+  // a bot has to survive that. Display text is looked up from the row instead.
+  const pendingBotKey: string | undefined =
     startOne.isPending   ? startOne.variables :
     stopOne.isPending    ? stopOne.variables :
     restartOne.isPending ? restartOne.variables :
@@ -317,6 +327,10 @@ export function Bots() {
     stopOne.isPending    ? 'Stopping…'   :
     restartOne.isPending ? 'Restarting…' :
     null
+
+  // Key → what a human calls it. State addresses a bot by key; every string a person reads
+  // goes through here, so a rename changes the copy and never the target.
+  const labelOf = (key: string) => allBots.find(b => b.key === key)?.name ?? key
 
   const lastRefresh = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '—'
 
@@ -469,16 +483,16 @@ export function Bots() {
               <tbody>
                 {bots.map((bot: BotStatus) => {
                   const isRunning     = bot.status === 'RUNNING'
-                  const isThisRowBusy = pendingBotName === bot.name
-                  const isExpanded    = expandedBot === bot.name
+                  const isThisRowBusy = pendingBotKey === bot.key
+                  const isExpanded    = expandedBot === bot.key
                   return (
-                    <Fragment key={bot.name}>
+                    <Fragment key={bot.key}>
 
                       {/* ── Main row ────────────────────────────── */}
                       <tr className="border-b border-border-subtle hover:bg-bg-hover/40 transition-colors duration-[80ms]">
                         <td
                           className="px-6 py-[11px] font-medium align-middle cursor-pointer select-none"
-                          onClick={() => setExpandedBot(isExpanded ? null : bot.name)}
+                          onClick={() => setExpandedBot(isExpanded ? null : bot.key)}
                         >
                           <div className="flex items-center gap-[7px]">
                             <ChevronRight
@@ -545,13 +559,13 @@ export function Bots() {
                                     title="Stop bot"
                                     variant="neg"
                                     disabled={anyGlobalPending}
-                                    onClick={() => setConfirmStopBot(bot.name)}
+                                    onClick={() => setConfirmStopBot(bot.key)}
                                   />
                                   <RowActionBtn
                                     icon={RotateCcw}
                                     title="Restart bot"
                                     disabled={anyGlobalPending}
-                                    onClick={() => restartOne.mutate(bot.name)}
+                                    onClick={() => restartOne.mutate(bot.key)}
                                   />
                                 </>
                               ) : (
@@ -560,7 +574,7 @@ export function Bots() {
                                   title="Start bot"
                                   variant="pos"
                                   disabled={anyGlobalPending}
-                                  onClick={() => startOne.mutate(bot.name)}
+                                  onClick={() => startOne.mutate(bot.key)}
                                 />
                               )}
                             </div>
@@ -570,7 +584,7 @@ export function Bots() {
                           <RowActionBtn
                             icon={FileText}
                             title="View log"
-                            onClick={() => setLogBot(bot.name)}
+                            onClick={() => setLogBot(bot.key)}
                           />
                         </td>
                       </tr>
@@ -785,7 +799,8 @@ export function Bots() {
       {tab === 'users' && <UsersTab />}
 
       {/* ── Log modal ─────────────────────────────────────────────────────────── */}
-      {logBot && <LogModal botName={logBot} onClose={() => setLogBot(null)} />}
+      {logBot && <LogModal botName={logBot} botLabel={labelOf(logBot)}
+                           onClose={() => setLogBot(null)} />}
 
       {/* ── Confirm modals ────────────────────────────────────────────────────── */}
       {confirm === 'start' && (
@@ -841,8 +856,8 @@ export function Bots() {
       )}
       {confirmStopBot && (
         <ConfirmModal
-          label={`Stop ${confirmStopBot}?`}
-          description={`This will terminate the ${confirmStopBot} process on the VPS. The bot will stop trading immediately. Restart it manually when ready.`}
+          label={`Stop ${labelOf(confirmStopBot)}?`}
+          description={`This will terminate the ${labelOf(confirmStopBot)} process on the VPS. The bot will stop trading immediately. Restart it manually when ready.`}
           confirmLabel="Stop bot"
           confirmClass="bg-neg-muted text-neg-text border border-neg/40 hover:bg-neg/10"
           onConfirm={() => { stopOne.mutate(confirmStopBot); setConfirmStopBot(null) }}

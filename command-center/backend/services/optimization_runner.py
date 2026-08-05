@@ -103,17 +103,54 @@ def _regime_filtered_score(
     return obj_fn(filtered_kpis, firm)
 
 
+def _rank(
+    rows: list[dict],
+    obj_fn,
+    firm: Optional[dict],
+    evals_by_run: dict[str, list[dict]],
+    regime_filter: Optional[str],
+    date_to_regime: dict[str, str],
+    min_trades: int,
+) -> Optional[str]:
+    """One scoring pass. Returns the winning run_id, or None if nothing was eligible."""
+    best_run_id: Optional[str] = None
+    best_score = float("-inf")
+    for row in rows:
+        if min_trades and (row.get("trade_count") or 0) < min_trades:
+            continue
+        run_id = row["run_id"]
+        if regime_filter and date_to_regime:
+            score = _regime_filtered_score(run_id, date_to_regime, regime_filter, obj_fn, firm)
+        else:
+            score = obj_fn({**row, "_evaluations": evals_by_run.get(run_id, [])}, firm)
+        # `-inf` is how every objective here says INELIGIBLE (drawdown breached, no trades in
+        # the target regime). Starting the comparison at -inf and using a strict `>` therefore
+        # left best_run_id None when every combo was ineligible — a finished optimization with
+        # no winner and nothing on the page explaining it. The fallbacks below are the answer.
+        if score > best_score:
+            best_score  = score
+            best_run_id = run_id
+    return best_run_id
+
+
 async def _pick_best_run(
     complete_rows: list[dict],
     opt: dict,
     firm: Optional[dict],
-) -> Optional[str]:
+) -> tuple[Optional[str], Optional[str]]:
     """
-    Score all complete child runs and return the best run_id.
-    If opt["regime_filter"] is set, scores using regime-filtered KPIs.
+    Score all complete child runs and return (best_run_id, winner_note).
+
+    If opt["regime_filter"] is set, scores using regime-filtered KPIs. If opt["min_trades"] is
+    set, a combo below the floor is scored and listed but cannot win.
+
+    `winner_note` is non-None when the winner came from a FALLBACK rather than the stated rule.
+    An optimization that names no winner is useless, so falling back is right — but the page
+    must say the ★ was not chosen the way its header claims.
     """
     obj_fn = choose_objective(opt["mode"])
     regime_filter: Optional[str] = opt.get("regime_filter") or None
+    min_trades = int(opt.get("min_trades") or 0)
 
     date_to_regime: dict[str, str] = {}
     if regime_filter:
@@ -132,22 +169,47 @@ async def _pick_best_run(
             log.warning("Could not build regime map (filter='%s'): %s — scoring unfiltered", regime_filter, exc)
             regime_filter = None
 
-    best_run_id: Optional[str] = None
-    best_score = float("-inf")
+    # One query for every combo's evaluations, not one per combo.
+    evals_by_run = (
+        {} if (regime_filter and date_to_regime)
+        else await asyncio.to_thread(
+            lab_db.get_evaluations_for_runs, [r["run_id"] for r in complete_rows])
+    )
 
-    for row in complete_rows:
-        run_id = row["run_id"]
-        if regime_filter and date_to_regime:
-            score = _regime_filtered_score(run_id, date_to_regime, regime_filter, obj_fn, firm)
-        else:
-            evals = lab_db.get_evaluations(run_id)
-            score = obj_fn({**row, "_evaluations": evals}, firm)
+    def rank(rf: Optional[str], floor: int) -> Optional[str]:
+        return _rank(complete_rows, obj_fn, firm, evals_by_run, rf, date_to_regime, floor)
 
-        if score > best_score:
-            best_score  = score
-            best_run_id = run_id
+    best = rank(regime_filter, min_trades)
+    if best:
+        return best, None
 
-    return best_run_id
+    # Fallback 1 — the trade floor excluded everything. Drop the floor, keep the scoring.
+    if min_trades:
+        best = rank(regime_filter, 0)
+        if best:
+            return best, (
+                f"No combination reached the {min_trades}-trade minimum, so the winner is the "
+                "best of the whole grid. Treat it as a small sample.")
+
+    # Fallback 2 — no combo traded in the target regime (or every combo breached drawdown).
+    # Re-score unfiltered; this needs the evaluations the filtered pass skipped.
+    if regime_filter:
+        evals_by_run = await asyncio.to_thread(
+            lab_db.get_evaluations_for_runs, [r["run_id"] for r in complete_rows])
+        best = rank(None, min_trades) or rank(None, 0)
+        if best:
+            return best, (
+                f"No combination produced trades in {regime_filter.replace('_', ' ').lower()} "
+                "conditions, so the winner is scored on ALL trades — the regime filter did "
+                "not apply.")
+
+    # Nothing scored at all (an empty grid, or every combo ineligible on both passes).
+    if complete_rows:
+        best = max(complete_rows, key=lambda r: r.get("profit_factor") or 0.0)["run_id"]
+        return best, (
+            "Every combination was rejected by the scoring rule, so the winner is simply the "
+            "highest profit factor. Read it as a ranking, not a pass.")
+    return None, None
 
 
 # NT8 Strategy Analyzer is single-window — only one backtest can use it at a time.
@@ -161,27 +223,75 @@ _GENETIC_MAX_SAMPLES = 200
 
 # ── Grid expansion ────────────────────────────────────────────────────────────
 
-def _expand_axis(spec: Any) -> list:
-    """Expand a single param spec to a list of values."""
+# One axis may not produce more values than this, and one grid may not produce more combos.
+# Both are backstops against a typo, not opinions about a sensible grid — 250k combos is far
+# past anything anyone would sit through, and the point is to REFUSE rather than to start.
+_MAX_AXIS_VALUES = 10_000
+_MAX_GRID_COMBOS = 250_000
+
+
+def _expand_axis(spec: Any, name: str = "parameter") -> list:
+    """Expand a single param spec to a list of values.
+
+    ⚠ Raises rather than looping. Until 2026-08-04 the range branch was a `while v <= hi`
+    loop with `v += step` and no guard on step: a `0` typed into a step box (or a max below
+    the min with a negative step) never terminated, appending to a list forever. It ran inside
+    the request handler on the event loop, so it did not hang the optimization — it hung the
+    whole backend, every endpoint, until the process was killed.
+    """
     if isinstance(spec, list):
+        if not spec:
+            raise ValueError(f"{name}: value list is empty — a swept parameter needs at least one value")
+        if len(spec) > _MAX_AXIS_VALUES:
+            raise ValueError(f"{name}: {len(spec)} values is more than the {_MAX_AXIS_VALUES} limit")
         return spec
     if isinstance(spec, dict):
-        lo   = float(spec["min"])
-        hi   = float(spec["max"])
-        step = float(spec["step"])
-        vals = []
-        v = lo
-        while v <= hi + 1e-9:
-            vals.append(round(v, 8))
-            v += step
-        return vals
+        try:
+            lo   = float(spec["min"])
+            hi   = float(spec["max"])
+            step = float(spec["step"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"{name}: range needs numeric min, max and step ({exc})") from exc
+        if not all(math.isfinite(v) for v in (lo, hi, step)):
+            raise ValueError(f"{name}: min, max and step must be finite numbers")
+        if step <= 0:
+            raise ValueError(f"{name}: step must be greater than 0 (got {step:g})")
+        if hi < lo:
+            raise ValueError(f"{name}: max ({hi:g}) is below min ({lo:g})")
+        # Counted arithmetically, not accumulated — the old loop's repeated `v += step` drifted
+        # on floats, and an exact count is also what lets the ceiling be checked before building.
+        n = int(math.floor((hi - lo) / step + 1e-9)) + 1
+        if n > _MAX_AXIS_VALUES:
+            raise ValueError(
+                f"{name}: {lo:g} → {hi:g} step {step:g} is {n:,} values, over the "
+                f"{_MAX_AXIS_VALUES:,} limit — widen the step or narrow the range")
+        return [round(lo + i * step, 8) for i in range(n)]
     return [spec]
+
+
+def validate_param_grid(param_grid: dict) -> int:
+    """Check a grid is expandable and return how many combinations it produces.
+
+    Raises ValueError with a message meant for a human. Called at REQUEST time so a bad grid
+    is a 400 instead of a job that fails minutes later (or, before the guards above, a wedged
+    backend).
+    """
+    if not param_grid:
+        raise ValueError("param_grid cannot be empty")
+    total = 1
+    for name, spec in param_grid.items():
+        total *= len(_expand_axis(spec, name))
+        if total > _MAX_GRID_COMBOS:
+            raise ValueError(
+                f"that grid is over {_MAX_GRID_COMBOS:,} combinations — widen a step or "
+                "drop a swept parameter")
+    return total
 
 
 def expand_grid(param_grid: dict) -> list[dict]:
     """Return list of {param: value} dicts for all combinations."""
     keys   = list(param_grid.keys())
-    axes   = [_expand_axis(param_grid[k]) for k in keys]
+    axes   = [_expand_axis(param_grid[k], k) for k in keys]
     combos = list(itertools.product(*axes))
     return [{k: v for k, v in zip(keys, combo)} for combo in combos]
 
@@ -506,6 +616,13 @@ async def run_native_optimization(optimization_id: str) -> None:
         "slippage_ticks":     opt["slippage_ticks"],
         "param_ranges":       param_ranges,
         "fixed_params":       fixed_params,
+        # Layered costs ride through to `python_runner._cost_profile`. NT8 and MT5 ignore them
+        # (they have no such contract), which is why they are passed unconditionally rather than
+        # behind a runner branch — the spec states what was asked for, and each runner charges
+        # what it can. ⚠ NULL is NOT [] here either: an optimization row written before this
+        # column keeps the old, free-book behaviour rather than being silently re-priced.
+        "cost_layers":        opt.get("cost_layers"),
+        "broker_profile":     opt.get("broker_profile"),
     }
 
     try:
@@ -515,11 +632,20 @@ async def run_native_optimization(optimization_id: str) -> None:
         await _persist_log()
         return
 
-    # Poll the single VPS job until it completes or stalls
+    # Poll the single job until it completes, is cancelled, or stalls
     started_at   = time.time()
     last_written = -1  # track last completed_count written to DB to avoid redundant writes
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
+
+        # Cancel is issued against the DB row by the endpoint; this loop is what makes it mean
+        # something. Without the check, a cancelled optimization kept running to the end and
+        # then overwrote its own 'failed_cancelled' status with 'complete'.
+        current = lab_db.get_optimization(optimization_id)
+        if current and current.get("status") == "failed_cancelled":
+            log.info("Native opt %s cancelled — stopping the poller", optimization_id)
+            await _persist_log()
+            return
 
         try:
             status_data = await asyncio.to_thread(runner_dispatch.job_status, opt_job_id, runner_str)
@@ -599,61 +725,66 @@ async def run_native_optimization(optimization_id: str) -> None:
 
     from services import evaluator, worthiness
 
+    # A native combo arrives already finished, so the whole grid is one bulk write rather than
+    # two statements (and two sqlite connections) per combo. On a 1,000-combo grid that was
+    # ~2,000 connections before the evaluator and the winner scan even started.
+    rows_to_insert: list[dict] = []
+    scored: list[dict] = []
     for combo in combos:
         run_id = uuid.uuid4().hex[:12]
         run_ids.append(run_id)
 
-        kpis        = combo.get("kpis", {})
+        kpis         = combo.get("kpis", {})
         combo_params = combo.get("params", {})
-        full_params  = {**fixed_params, **combo_params}
 
-        lab_db.insert_run_optimization({
+        rows_to_insert.append({
             "run_id":             run_id,
             "strategy_id":        opt["strategy_id"],
             "instrument":         opt["instrument"],
-            "params":             full_params,
+            "params":             {**fixed_params, **combo_params},
             "bar_type":           opt.get("bar_type", "Minute"),
             "bar_value":          opt.get("bar_value", 5),
             "start_date":         opt["start_date"],
             "end_date":           opt["end_date"],
             "commission_per_side": opt["commission_per_side"],
             "slippage_ticks":     opt["slippage_ticks"],
-            "status":             "complete",
             "created_at":         now,
             "optimization_id":    optimization_id,
             "runner":             runner_str,
+            "kpis":               kpis,
         })
+        scored.append({"run_id": run_id, "kpis": kpis})
 
-        # Persist KPIs (no equity curve / daily PnL for native combo runs)
-        lab_db.update_run_complete(run_id, kpis, {
-            "equity_curve": None,
-            "trades":       None,
-            "daily_pnl":    None,
-        })
+    await asyncio.to_thread(lab_db.insert_complete_optimization_runs, rows_to_insert)
 
-        # Evaluate against rulesets using effective_dd (MaxDailyLoss) not cumulative max_drawdown.
-        kpis_for_eval = {**kpis}
-        if _effective_dd is not None:
-            kpis_for_eval["max_drawdown"] = _effective_dd
-        evaluator.evaluate_run(run_id, ruleset_ids, kpis_for_eval, [], [])
-
-        w = worthiness.score_run_after_evals(
-            run_id, ruleset_ids,
-            kpis.get("profit_factor"),
-            kpis_for_eval.get("max_drawdown"),
-            kpis.get("trade_count"),
-        )
-        if w:
-            lab_db.update_run_worthiness(run_id, w[0], w[1], w[2])
+    # Evaluate against rulesets using effective_dd (MaxDailyLoss) not cumulative max_drawdown.
+    # Skipped wholesale when there is no ruleset — every python optimization is in that case,
+    # and evaluating against nothing is a per-combo call that can only return [].
+    worthiness_rows: list[tuple] = []
+    if ruleset_ids:
+        for s in scored:
+            kpis = s["kpis"]
+            kpis_for_eval = {**kpis}
+            if _effective_dd is not None:
+                kpis_for_eval["max_drawdown"] = _effective_dd
+            evaluator.evaluate_run(s["run_id"], ruleset_ids, kpis_for_eval, [], [])
+            w = worthiness.score_run_after_evals(
+                s["run_id"], ruleset_ids,
+                kpis.get("profit_factor"),
+                kpis_for_eval.get("max_drawdown"),
+                kpis.get("trade_count"),
+            )
+            if w:
+                worthiness_rows.append((s["run_id"], w[0], w[1], w[2]))
+        await asyncio.to_thread(lab_db.update_run_worthiness_bulk, worthiness_rows)
 
     lab_db.set_optimization_completed_runs(optimization_id, len(run_ids))
 
     # Score all completed runs and pick the winner
-    complete_rows = [
-        row for run_id in run_ids
-        if (row := lab_db.get_run(run_id)) and row["status"] == "complete"
-    ]
-    best_run_id = await _pick_best_run(complete_rows, opt, firm)
+    complete_rows = await asyncio.to_thread(lab_db.list_optimization_runs, optimization_id)
+    complete_rows = [r for r in complete_rows if r["status"] == "complete"]
+    best_run_id, note = await _pick_best_run(complete_rows, opt, firm)
+    lab_db.set_optimization_winner_note(optimization_id, note)
     lab_db.complete_optimization(optimization_id, best_run_id)
     await _persist_log()
 
@@ -736,7 +867,8 @@ async def run_optimization(optimization_id: str) -> None:
         row for run_id in run_ids
         if (row := lab_db.get_run(run_id)) and row["status"] == "complete"
     ]
-    best_run_id = await _pick_best_run(complete_rows, opt, firm)
+    best_run_id, note = await _pick_best_run(complete_rows, opt, firm)
+    lab_db.set_optimization_winner_note(optimization_id, note)
     lab_db.complete_optimization(optimization_id, best_run_id)
     if best_run_id and ruleset_ids:
         from services import stress_tester
@@ -813,7 +945,8 @@ async def retry_single_optimization_run(run_id: str, evaluate_rulesets: Optional
 
     # Re-score best run across all complete runs
     all_complete = [r for r in lab_db.list_optimization_runs(opt_id) if r["status"] == "complete"]
-    best_run_id = await _pick_best_run(all_complete, opt, firm)
+    best_run_id, note = await _pick_best_run(all_complete, opt, firm)
+    lab_db.set_optimization_winner_note(opt_id, note)
     lab_db.complete_optimization(opt_id, best_run_id)
     if best_run_id and ruleset_ids:
         from services import stress_tester
@@ -875,7 +1008,8 @@ async def retry_failed_runs(optimization_id: str) -> None:
         r for r in lab_db.list_optimization_runs(optimization_id)
         if r["status"] == "complete"
     ]
-    best_run_id = await _pick_best_run(all_complete, opt, firm)
+    best_run_id, note = await _pick_best_run(all_complete, opt, firm)
+    lab_db.set_optimization_winner_note(optimization_id, note)
     lab_db.complete_optimization(optimization_id, best_run_id)
     if best_run_id and ruleset_ids:
         from services import stress_tester

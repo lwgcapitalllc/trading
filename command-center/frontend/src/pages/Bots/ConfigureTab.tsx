@@ -303,8 +303,11 @@ function Warn({ children }: { children: React.ReactNode }) {
   )
 }
 
-function DeployCard({ botName }: { botName: string }) {
-  const { data: v, isLoading } = useBotVersion(botName)
+// `botKey` addresses the API and `botLabel` is what a human reads. They are separate props
+// on purpose: a display name is the field somebody eventually renames, and a control that
+// ACTS on a name acts on nothing the day it changes.
+function DeployCard({ botKey, botLabel }: { botKey: string; botLabel: string }) {
+  const { data: v, isLoading } = useBotVersion(botKey)
   const preview = usePreviewPromote()
   const promote = usePromoteBot()
   const [output, setOutput] = useState<string | null>(null)
@@ -321,7 +324,7 @@ function DeployCard({ botName }: { botName: string }) {
       title="Deployed version"
       right={
         <button
-          onClick={() => { setOutput(null); preview.mutate({ botName }, {
+          onClick={() => { setOutput(null); preview.mutate({ botName: botKey }, {
             onSuccess: r => setOutput(r.output) }) }}
           disabled={busy}
           className="inline-flex items-center gap-[4px] text-[9px] uppercase tracking-[0.4px]
@@ -381,14 +384,14 @@ function DeployCard({ botName }: { botName: string }) {
                 the page that changes what a live account trades, and the reader arrived here
                 by clicking a rail row — the name is the thing being confirmed. */}
             <button
-              onClick={() => promote.mutate({ botName, restart: true }, {
+              onClick={() => promote.mutate({ botName: botKey, restart: true }, {
                 onSuccess: r => setOutput(r.output) })}
               disabled={busy}
               className="inline-flex items-center gap-[4px] text-[10px] px-[10px] py-[4px]
                          rounded bg-gold-text/15 text-gold-bright hover:bg-gold-text/25
                          disabled:opacity-40"
             >
-              <PackageCheck size={11} /> Deploy &amp; restart <span className="font-mono">{botName}</span>
+              <PackageCheck size={11} /> Deploy &amp; restart <span className="font-mono">{botLabel}</span>
             </button>
             <button
               onClick={() => setOutput(null)}
@@ -411,8 +414,8 @@ function DeployCard({ botName }: { botName: string }) {
 
 // ── the one editable lever ──────────────────────────────────────────────────────
 
-function RuntimeEditor({ botName, row, balance }: {
-  botName: string; row: BotParamRow; balance: number | null
+function RuntimeEditor({ botKey, botLabel, row, balance }: {
+  botKey: string; botLabel: string; row: BotParamRow; balance: number | null
 }) {
   const current = Number(row.value)
   const [draft, setDraft] = useState<string>(String(current))
@@ -426,7 +429,7 @@ function RuntimeEditor({ botName, row, balance }: {
   const dirty = valid && next !== current
 
   function commit() {
-    save.mutate({ botName, values: { [row.name]: next } },
+    save.mutate({ botName: botKey, values: { [row.name]: next } },
       { onSuccess: () => setConfirming(false) })
   }
 
@@ -487,7 +490,7 @@ function RuntimeEditor({ botName, row, balance }: {
 
       {confirming && (
         <ConfirmRuntime
-          botName={botName}
+          botLabel={botLabel}
           label={row.label}
           from={current}
           to={next}
@@ -513,8 +516,8 @@ function RuntimeEditor({ botName, row, balance }: {
  * changed is a choice the reader made a scroll ago and can no longer see — and this dialog
  * is the last point at which a wrong row is still free to fix.
  */
-function ConfirmRuntime({ botName, label, from, to, unit, balance, pending, onCancel, onConfirm }: {
-  botName: string; label: string; from: number; to: number; unit: string; balance: number | null
+function ConfirmRuntime({ botLabel, label, from, to, unit, balance, pending, onCancel, onConfirm }: {
+  botLabel: string; label: string; from: number; to: number; unit: string; balance: number | null
   pending: boolean; onCancel: () => void; onConfirm: () => void
 }) {
   const bigger = to > from
@@ -525,7 +528,7 @@ function ConfirmRuntime({ botName, label, from, to, unit, balance, pending, onCa
         onClick={e => e.stopPropagation()}
       >
         <p className="text-[13px] font-semibold mb-1">
-          Change {label} on <span className="font-mono">{botName}</span>
+          Change {label} on <span className="font-mono">{botLabel}</span>
         </p>
         <p className="text-[11px] text-text-tertiary mb-4">
           This commits the instance config, pushes it, and the VPS pulls it.
@@ -611,7 +614,8 @@ function ParamGroup({ group, rows }: { group: string; rows: BotParamRow[] }) {
 }
 
 function BotPanel({ bot }: { bot: BotStatus }) {
-  const { data, isLoading, error } = useBotParams(bot.name)
+  // Every API path takes the KEY — the routes accept either, new code passes the key.
+  const { data, isLoading, error } = useBotParams(bot.key)
 
   if (isLoading) {
     return <div className="text-[11px] text-text-tertiary">Loading {bot.name}…</div>
@@ -643,7 +647,8 @@ function BotPanel({ bot }: { bot: BotStatus }) {
           {v.runtime.length === 0
             ? <p className="text-[11px] text-text-tertiary">No runtime-editable settings.</p>
             : v.runtime.map(r => (
-                <RuntimeEditor key={r.name} botName={bot.name} row={r} balance={bot.balance} />
+                <RuntimeEditor key={r.name} botKey={bot.key} botLabel={bot.name}
+                                 row={r} balance={bot.balance} />
               ))}
         </Card>
       </div>
@@ -657,7 +662,7 @@ function BotPanel({ bot }: { bot: BotStatus }) {
         <Row label="Magic">{fmt(v.identity.magic)}</Row>
       </Card>
 
-      <DeployCard botName={bot.name} />
+      <DeployCard botKey={bot.key} botLabel={bot.name} />
 
       <div className="col-span-2">
         <Card
@@ -690,10 +695,12 @@ export function ConfigureTab() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const bots = snapshot?.bots ?? []
-  const names = bots.map(b => b.name)
+  // The KEY, not the display name — see `BotStatus.key`. A name is a label chosen for a
+  // human and is the field that eventually changes; everything addressable keys off `key`.
+  const keys = bots.map(b => b.key)
 
   // One fetch per bot, sharing DeployCard's cache entries — see `useBotVersions`.
-  const versionQueries = useBotVersions(names)
+  const versionQueries = useBotVersions(keys)
   const flags     = versionQueries.map(q => versionFlags(q.data))
   const unreadable = versionQueries.filter(q => !q.isPending && !q.data).length
   const loading    = versionQueries.some(q => q.isPending)
@@ -701,12 +708,18 @@ export function ConfigureTab() {
   // Selection lives in the URL, like every other tab state in this app — so a link to a
   // specific bot's config is a real link, and a refresh does not silently move you to
   // another bot's promote button.
+  //
+  // ⚠ Keyed on `bot.key`, never the display name. `?bot=MPC%20SOS%20Fade` is a bookmark
+  // that dies the day somebody renames the bot — and the thing it silently falls back to is
+  // `bots[0]`, i.e. a DIFFERENT bot's promote button, with the URL still naming the one you
+  // wanted. A stale key falls back the same way, but a key is not a label and nobody edits
+  // it for readability.
   const requested = searchParams.get('bot')
-  const selected = bots.find(b => b.name === requested) ?? bots[0] ?? null
+  const selected = bots.find(b => b.key === requested) ?? bots[0] ?? null
 
-  function selectBot(name: string) {
+  function selectBot(key: string) {
     const next = new URLSearchParams(searchParams)
-    next.set('bot', name)
+    next.set('bot', key)
     setSearchParams(next, { replace: true })
   }
 
@@ -730,12 +743,12 @@ export function ConfigureTab() {
             <div className="flex flex-col gap-[2px]">
               {bots.map((b, i) => (
                 <RailRow
-                  key={b.name}
+                  key={b.key}
                   bot={b}
                   flags={flags[i]}
                   unread={!versionQueries[i]?.isPending && !versionQueries[i]?.data}
-                  selected={selected?.name === b.name}
-                  onSelect={() => selectBot(b.name)}
+                  selected={selected?.key === b.key}
+                  onSelect={() => selectBot(b.key)}
                 />
               ))}
             </div>
@@ -773,7 +786,7 @@ export function ConfigureTab() {
                 </span>
                 <span className="text-[11px] font-mono text-text-tertiary">{selected.account}</span>
               </div>
-              <BotPanel key={selected.name} bot={selected} />
+              <BotPanel key={selected.key} bot={selected} />
             </>
           )}
         </div>
