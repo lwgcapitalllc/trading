@@ -1,0 +1,13 @@
+2026-08-05 18:06:58,317 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash fbf3b94bebf0 | commit 90491ba | frozen | DRY RUN
+2026-08-05 18:06:58,853 [INFO] Connected | #700107749 | $2,000.00 | PUPrime-Demo
+2026-08-05 18:06:58,853 [INFO] MT5 connection lock released
+2026-08-05 18:06:58,911 [INFO] Sizing against account balance $2,000.00
+2026-08-05 18:07:02,037 [INFO] Warmed 5000 bars (2026-05-20 23:30:00+00:00 → 2026-08-05 17:45:00+00:00) in 3.0s
+2026-08-05 18:07:03,631 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-05 18:12:25,525 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash fbf3b94bebf0 | commit 5278bf1 | frozen | LIVE
+2026-08-05 18:12:25,525 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-05T18:06:58+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-05 18:12:26,057 [INFO] Connected | #700107749 | $2,000.00 | PUPrime-Demo
+2026-08-05 18:12:26,057 [INFO] MT5 connection lock released
+2026-08-05 18:12:26,120 [INFO] Sizing against account balance $2,000.00
+2026-08-05 18:12:28,590 [INFO] Warmed 5000 bars (2026-05-20 23:30:00+00:00 → 2026-08-05 17:45:00+00:00) in 2.3s
+2026-08-05 18:12:29,418 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
