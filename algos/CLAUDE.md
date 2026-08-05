@@ -646,6 +646,21 @@ EMAIL. Unset falls back to the main group and says which it used on stdout: an a
 room beats no alert, which is the OPPOSITE call from `deadman_url`, where unset means the check
 cannot work at all.
 
+**ARMED 2026-08-05** — `telegram_health_chat` is set on the VPS to the "LWG Captial Bot Health"
+group, proven by a `--all` run reporting 2 findings into it. ⚠ **Getting a group's chat id took four
+failed attempts and both causes are worth writing down, because the symptom of each is an EMPTY
+`getUpdates` and they are indistinguishable from outside.** (1) **BotFather privacy mode is ON**
+(`getMe` → `can_read_all_group_messages: false`), so the bot never receives a plain group message —
+only a SLASH COMMAND or an @mention — and the update you are waiting for was never delivered rather
+than lost. (2) **The running Telegram bot long-polls with an offset, which DELETES each update as it
+confirms it**, so a message sent while it is alive is gone before you can read it; killing it is not
+enough either, because `SYS_MONITOR` restarts it inside ~60s and eats the next one too. The sequence
+that works: `schtasks /change /tn SYS_TELEGRAM /disable`, terminate the process by scoped commandline,
+send `/status` in the group, read `chat.id`, then re-enable and `schtasks /run`. ⚠ **Re-enable it** —
+disabling that task silences every fill alert on the box, and nothing else reports that it is off.
+⚠ **Read `getUpdates` WITHOUT an `offset` parameter while diagnosing**: passing one confirms the
+updates and destroys the evidence you are hunting for.
+
 🔴 **Its first real run on the VPS crashed while PRINTING a finding.** A Windows console is cp1252
 and cannot encode the arrows, dashes and icons a finding is written with, and Python does not
 degrade — it raises `UnicodeEncodeError`. So a scheduled task that detects a halted bridge dies on
