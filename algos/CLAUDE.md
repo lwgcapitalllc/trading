@@ -646,7 +646,15 @@ EMAIL. Unset falls back to the main group and says which it used on stdout: an a
 room beats no alert, which is the OPPOSITE call from `deadman_url`, where unset means the check
 cannot work at all.
 
-Tests: `tests/test_log_review.py` (22), weighted toward the ways a checker wrongly says "fine" — the
+🔴 **Its first real run on the VPS crashed while PRINTING a finding.** A Windows console is cp1252
+and cannot encode the arrows, dashes and icons a finding is written with, and Python does not
+degrade — it raises `UnicodeEncodeError`. So a scheduled task that detects a halted bridge dies on
+its way to telling you. `live/runner._make_logger` carries the identical fix for the identical
+reason, so this is now a rule for **anything that prints on that box**: reconfigure stdout/stderr to
+UTF-8 with `errors="replace"`, because an unencodable character must cost a glyph, never the message.
+⚠ **It was found by RUNNING it, not by reading it** — the module's own tests all passed on the Mac.
+
+Tests: `tests/test_log_review.py` (23), weighted toward the ways a checker wrongly says "fine" — the
 same reason `test_deadman.py` is. **A bug in this module is silent by construction: every other alarm
 here fails loudly and gets reported, this one fails by having nothing to say, and having nothing to
 say is also what a healthy day looks like.**

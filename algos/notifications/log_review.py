@@ -407,6 +407,19 @@ def send(text: str, dry_run: bool = False) -> bool:
 
 
 def main(argv=None) -> int:
+    # 🔴 A Windows console is cp1252 and cannot encode the arrows, dashes and icons these
+    # findings are written with. Python does not degrade — it raises UnicodeEncodeError and
+    # takes the whole run down, so a scheduled task that finds a HALTED bridge dies while
+    # printing it and nobody is told. Measured on the VPS the first time this ran there.
+    # `algos/live/runner._make_logger` carries the identical fix and the identical comment;
+    # this is the second module to need it, so treat it as a rule for anything that prints
+    # here. A character it cannot encode must cost a glyph, never the message.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
     ap = argparse.ArgumentParser(description="Review the bots' own health record.")
     ap.add_argument("--dry-run", action="store_true", help="find and print, send nothing")
     ap.add_argument("--all", action="store_true",

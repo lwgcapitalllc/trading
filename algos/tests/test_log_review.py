@@ -298,3 +298,26 @@ def test_the_flag_is_not_written_into_bot_state(tmp_path):
 
     assert (tmp_path / "review.json").exists()
     assert not (tmp_path / "bot_state.json").exists()
+
+
+# ── the console it has to survive ────────────────────────────────────────────
+def test_findings_print_on_a_cp1252_console(tmp_path, monkeypatch, capsys):
+    """🔴 Found by RUNNING it on the VPS, not by reading it. A Windows console is cp1252 and
+    cannot encode the arrows, dashes and icons a finding is written with — and Python does not
+    degrade, it raises `UnicodeEncodeError`. So the first real run died while PRINTING a finding,
+    which means a scheduled task that detects a halted bridge crashes on its way to telling you.
+
+    ⚠ `algos/live/runner._make_logger` carries the identical fix for the identical reason. This is
+    the second module here to need it, so it is a rule for anything that prints on that box: an
+    unencodable character must cost a glyph, never the message.
+    """
+    _write(tmp_path, _healthy() + [
+        _event("halted", "2026-08-05T17:00:00+00:00", reason="emulator — broker disagree ⚠")])
+
+    monkeypatch.setattr(lr._bot_state, "BOT_INSTANCES", {"b": tmp_path})
+    monkeypatch.setattr(lr._bot_state, "BOT_NAMES", {"b": "Bot — One"})
+    monkeypatch.setattr(lr._bot_state, "read_bot", lambda k: RUNNING)
+    monkeypatch.setattr(lr, "STATE_FILE", tmp_path / "state.json")
+
+    assert lr.main(["--dry-run"]) == 0
+    assert "needs review" in capsys.readouterr().out
