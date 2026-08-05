@@ -171,7 +171,10 @@ async def trigger_stress_test(body: StressTestCreate):
         # from the run loop.
         n_params = sensitivity_param_count(strategy, run.get("params") or {})
         n_backtests = n_params * sensitivity_shift_count(runner)
-        sens_min = _estimate_sens_duration_min(n_params, runner)
+        # The RUN is passed so the estimate can use its own measured duration instead of a
+        # per-job constant — a 6.6-year replay costs ~69s a child, not the 12s the constant
+        # assumes, and the modal was quoting ~12 min for a ~69 min job.
+        sens_min = _estimate_sens_duration_min(n_params, runner, run)
         est_min += sens_min
         notes.append(f"Sensitivity: at most ~{sens_min} min ({n_backtests} backtests before "
                      f"no-op shifts are skipped)")

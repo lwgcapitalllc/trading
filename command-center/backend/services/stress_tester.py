@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 import uuid
 from datetime import date, timedelta
@@ -508,8 +509,41 @@ def _estimate_wf_duration_min(n_windows: int, runner: str = "ninjatrader") -> in
     return max(1, int(n_windows * 2 * _mins_per_job(runner)))  # 2 backtests per window
 
 
-def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader") -> int:
-    return max(1, int(n_params * sensitivity_shift_count(runner) * _mins_per_job(runner)))
+def _estimate_sens_duration_min(n_params: int, runner: str = "ninjatrader",
+                                source_run: Optional[dict] = None) -> int:
+    """Wall-clock minutes for the sensitivity phase.
+
+    Two corrections, both from a real measurement rather than a constant.
+
+    ⚠ **A per-job constant is wrong by construction, because the cost scales with the WINDOW.**
+    `_mins_per_job` says 0.2 min for python — true for a short backtest, and a 6.6-year M15 replay
+    (~165k bars) measured **69s per child, 65-71s across children**. The modal therefore quoted
+    ~12 minutes for a job that would have taken ~69. So when the source run's own duration is on
+    the record, use it: it is the same replay over the same bars, which is exactly the reasoning
+    the optimizer modal's estimate already uses.
+
+    ⚠ **The python path runs them in PARALLEL**, so the serial sum is no longer the wall clock —
+    dividing by the worker count is the difference between 69 minutes and about 7."""
+    n_jobs = n_params * sensitivity_shift_count(runner)
+    per_job = _mins_per_job(runner)
+    if source_run:
+        started, completed = source_run.get("started_at"), source_run.get("completed_at")
+        # `is not None`, never truthiness — a timestamp of 0 is a value, not an absence, and
+        # `if started` would silently drop it back to the constant.
+        if started is not None and completed is not None and completed > started:
+            per_job = max(per_job, (completed - started) / 60.0)
+
+    workers = 1
+    if runner == "python" and n_jobs:
+        try:
+            from backtest.optimizer import default_workers
+            workers = default_workers(n_jobs)
+        except Exception:
+            workers = 1
+    # Ceiling, not floor: N jobs over W workers takes ceil(N/W) rounds, and rounding down promises
+    # a wait the machine cannot meet.
+    rounds = math.ceil(n_jobs / workers) if workers else n_jobs
+    return max(1, int(math.ceil(rounds * per_job)))
 
 
 def phases_requested(include_walk_forward: bool, include_sensitivity: bool) -> list[str]:
@@ -527,6 +561,42 @@ def phases_requested(include_walk_forward: bool, include_sensitivity: bool) -> l
     if include_sensitivity:
         phases.append("sensitivity")
     return phases
+
+
+def sensitivity_plan(numeric_params: list, base_params: dict,
+                     shifts: list) -> tuple[list[dict], list[str]]:
+    """The one-param-at-a-time shift list, and what was refused. PURE — no DB, no backtests.
+
+    Split out of the run loop so the DECISIONS (which shifts are worth running) are testable
+    without running anything, and so the serial and parallel executors cannot disagree about what
+    the experiment IS. Returns `[{param, label, value}]` in the order they should run, plus the
+    human-readable skip reasons.
+
+    ⚠ It is deliberately NOT a grid. Sensitivity moves ONE parameter at a time from the baseline;
+    the cartesian product of the same shifts is a different and far larger experiment answering a
+    different question."""
+    plan: list[dict] = []
+    skipped: list[str] = []
+    for param in numeric_params:
+        pname = param["name"]
+        baseline_val = base_params[pname]
+        seen_vals: set = set()
+        for shift_label, factor in shifts:
+            new_val, refusal = shifted_value(param, baseline_val, factor)
+            if refusal is not None:
+                skipped.append(f"{pname} {shift_label} ({refusal})")
+                continue
+            # A perturbation landing back on the baseline TESTS NOTHING — it re-runs the identical
+            # backtest and books a 0% delta, which reads as "rock solid" when the truth is "never
+            # measured". Two common causes: the param is 0 (0 x 1.10 == 0), or an int rounds
+            # straight back (pivot width 5: +10% -> 6 and +25% -> 6, so four shifts probe two
+            # values). Measured on 630cefbebd8347db: 43 of 60 backtests were exact re-runs.
+            if new_val == baseline_val or new_val in seen_vals:
+                skipped.append(f"{pname} {shift_label} (={new_val})")
+                continue
+            seen_vals.add(new_val)
+            plan.append({"param": pname, "label": shift_label, "value": new_val})
+    return plan, skipped
 
 
 def walk_forward_feasibility(trade_count: int, n_windows: int) -> tuple[bool, str]:
@@ -570,6 +640,163 @@ def is_cancelled(stress_test_id: str) -> bool:
 
 
 # ── VPS child-run helper (mirrors sweep_runner._run_one) ──────────────────────
+
+def _sens_child_row(ctx: dict, entry: dict, child_id: str) -> dict:
+    """The lab row for one sensitivity shift. Shared by both executors so a child cannot come out
+    differently depending on which one ran it — including `measured_on`, the baseline's physics."""
+    src = ctx["source_run"]
+    return {
+        "run_id": child_id,
+        "strategy_id": src["strategy_id"],
+        "instrument": src["instrument"],
+        "params": {**ctx["base_params"], entry["param"]: entry["value"]},
+        "bar_type": src["bar_type"],
+        "bar_value": src["bar_value"],
+        "start_date": src["start_date"],
+        "end_date": src["end_date"],
+        "commission_per_side": src["commission_per_side"],
+        "slippage_ticks": src["slippage_ticks"],
+        "status": "running",
+        "created_at": int(time.time()),
+        "stress_test_id": ctx["stress_test_id"],
+        "walk_forward_window_id": f"sens_{entry['param']}_{entry['label']}",
+        "runner": ctx["runner"],
+        **ctx["measured_on"],
+    }
+
+
+async def _run_shifts_serial(plan: list, ctx: dict) -> list[dict]:
+    """One child backtest at a time.
+
+    This is the path for NT8 and MT5, and it is not a fallback — each drives ONE physical terminal,
+    so there is nothing to parallelise and firing concurrent jobs at a single Strategy Tester would
+    be actively harmful. It is also the path any runner takes when the pool cannot be used."""
+    out = []
+    for entry in plan:
+        if is_cancelled(ctx["stress_test_id"]):
+            break
+        child_id = uuid.uuid4().hex[:16]
+        lab_db.insert_run_stress_test_child(_sens_child_row(ctx, entry, child_id))
+        src = ctx["source_run"]
+        job_spec = {
+            "job_id": child_id,
+            "strategy_class": ctx["strategy"]["class_name"],
+            "instrument": src["instrument"],
+            "params": {**ctx["base_params"], entry["param"]: entry["value"]},
+            "bar_type": src["bar_type"],
+            "bar_value": src["bar_value"],
+            "start_date": src["start_date"],
+            "end_date": src["end_date"],
+            "commission_per_side": src["commission_per_side"],
+            "slippage_ticks": src["slippage_ticks"],
+            **ctx["measured_on"],
+        }
+        ok = await _run_child_backtest(child_id, job_spec, ctx["runner"])
+        child = lab_db.get_run(child_id) if ok else None
+        out.append({
+            "entry": entry, "run_id": child_id, "ok": ok,
+            "pf": (child or {}).get("profit_factor"),
+            "pnl": (child or {}).get("net_pnl") or 0.0,
+        })
+    return out
+
+
+async def _run_shifts_pooled(plan: list, ctx: dict) -> list[dict]:
+    """Every shift in ONE sweep across this box's cores. Python runner only.
+
+    🔴 **Why a process pool and not `asyncio.gather` over the existing per-child path.**
+    `python_runner.start_backtest` runs each backtest on a THREAD, and an engine replay is pure
+    Python stepping one bar at a time — GIL-bound. Gathering N of those is the obvious fix, would
+    look like it worked, and would buy almost nothing. MEASURED before this change: 69s per child
+    (65-71s across children, i.e. compute-bound, not I/O), 60 shifts, ~69 minutes on ONE core of a
+    12-core box, while `backtest/optimizer.run_sweep` had been fanning optimizer grids across every
+    core the whole time.
+
+    ⚠ It submits through `runner_dispatch` -> `python_runner`, NOT by calling `run_sweep` here,
+    because `_cost_profile` lives there. A second caller building its own cost profile is exactly
+    how the children came to be measured on a free book while their parent was charged.
+
+    ⚠ Rows are matched back by `(param, value)`, never by INDEX: `run_sweep` compacts its result
+    list on cancellation, so a cancelled sweep returns fewer rows than combos and index-matching
+    would silently attribute one shift's numbers to a different parameter. `sensitivity_plan`
+    dedupes values per param, so the pair is unique."""
+    from services import runner_dispatch
+
+    src = ctx["source_run"]
+    ids = {(e["param"], e["value"]): uuid.uuid4().hex[:16] for e in plan}
+    for entry in plan:
+        lab_db.insert_run_stress_test_child(
+            _sens_child_row(ctx, entry, ids[(entry["param"], entry["value"])]))
+
+    job_id = f"sens_{ctx['stress_test_id']}"
+    spec = {
+        "job_id": job_id,
+        "strategy_class": ctx["strategy"]["class_name"],
+        "instrument": src["instrument"],
+        "bar_type": src["bar_type"],
+        "bar_value": src["bar_value"],
+        "start_date": src["start_date"],
+        "end_date": src["end_date"],
+        "commission_per_side": src["commission_per_side"],
+        "slippage_ticks": src["slippage_ticks"],
+        "fixed_params": ctx["base_params"],
+        "param_sets": [{e["param"]: e["value"]} for e in plan],
+        **ctx["measured_on"],
+    }
+    await asyncio.to_thread(runner_dispatch.start_native_optimization, spec, "python")
+
+    while True:
+        await asyncio.sleep(_POLL_INTERVAL)
+        if is_cancelled(ctx["stress_test_id"]):
+            try:
+                await asyncio.to_thread(runner_dispatch.cancel_job, job_id, "python")
+            except Exception:
+                pass
+            break
+        try:
+            sd = await asyncio.to_thread(runner_dispatch.job_status, job_id, "python")
+        except Exception:
+            continue
+        if not str(sd.get("status", "running")).startswith("running"):
+            break
+
+    rows = []
+    try:
+        res = await asyncio.to_thread(runner_dispatch.native_opt_results, job_id, "python")
+        rows = res.get("combos") or []
+    except Exception as exc:
+        log.warning("Sensitivity %s: could not read sweep results — %s", ctx["stress_test_id"], exc)
+
+    by_key = {}
+    for row in rows:
+        params = row.get("params") or {}
+        if len(params) == 1:
+            (pname, val), = params.items()
+            by_key[(pname, val)] = row.get("kpis") or {}
+
+    out = []
+    for entry in plan:
+        child_id = ids[(entry["param"], entry["value"])]
+        kpis = by_key.get((entry["param"], entry["value"]))
+        if kpis is None:
+            # Never written as a zero-KPI "complete" row: a shift the sweep did not return was not
+            # measured, and a complete row reading 0 would be scored as "this parameter does
+            # nothing" — the most reassuring answer available for an absent measurement.
+            lab_db.update_run_status(child_id, "failed_unknown",
+                                     "sweep returned no result for this shift")
+            out.append({"entry": entry, "run_id": child_id, "ok": False, "pf": None, "pnl": 0.0})
+            continue
+        # ⚠ No equity_curve / daily_pnl: a sweep worker returns KPIs only. Nothing reads a
+        # sensitivity child's curve (scoring uses profit factor and net P&L, and the UI never
+        # navigates to one), so the paths are NULL rather than pointing at files that do not
+        # exist. A canonical Sharpe is likewise not computed — there is no daily series to
+        # compute it from, and inventing one would be a fabricated measurement.
+        lab_db.update_run_complete(child_id, kpis,
+                                   {"equity_curve": None, "trades": None, "daily_pnl": None})
+        out.append({"entry": entry, "run_id": child_id, "ok": True,
+                    "pf": kpis.get("profit_factor"), "pnl": kpis.get("net_pnl") or 0.0})
+    return out
+
 
 async def _run_child_backtest(run_id: str, job_spec: dict, runner: str = "ninjatrader") -> bool:
     """Start a VPS backtest and poll to completion. Returns True on success."""
@@ -1038,121 +1265,63 @@ async def run_sensitivity_task(stress_test_id: str) -> tuple[bool, Optional[str]
     # fragility. See child_measurement_fields.
     measured_on = child_measurement_fields(source_run)
 
+    # WHAT to run (pure) is decided before anything runs, so the two executors cannot disagree
+    # about the experiment, and the decisions are testable without a backtest.
+    plan, skipped = sensitivity_plan(numeric_params, base_params, SHIFTS)
+
+    ctx = {
+        "stress_test_id": stress_test_id, "source_run": source_run, "strategy": strategy,
+        "runner": runner, "base_params": base_params, "measured_on": measured_on,
+    }
+    # HOW to run it. The pool is python-only and that is not a limitation to lift later: NT8 and
+    # MT5 each drive one physical terminal, so their shifts have nothing to run in parallel ON.
+    if runner == "python" and plan:
+        results = await _run_shifts_pooled(plan, ctx)
+    else:
+        results = await _run_shifts_serial(plan, ctx)
+
+    if is_cancelled(stress_test_id):
+        return (False, "cancelled")
+
     sensitivity: dict = {}
     max_degradation: Optional[float] = None
-
-    skipped: list[str] = []
     failed_shifts: list[str] = []
 
-    for param in numeric_params:
-        pname = param["name"]
-        baseline_val = base_params[pname]
-        param_result = {}
-        # Values already measured for THIS param, so an int shift that rounds onto one we have
-        # already run doesn't run it twice.
-        seen_vals: set = set()
+    for res in results:
+        entry = res["entry"]
+        pname, shift_label = entry["param"], entry["label"]
+        child_pf = res["pf"]
+        pnl_delta = (res["pnl"] or 0.0) - baseline_pnl
+        if not res["ok"]:
+            failed_shifts.append(f"{pname} {shift_label}")
 
-        for shift_label, factor in SHIFTS:
-            if is_cancelled(stress_test_id):
-                return (False, "cancelled")
-            new_val, refusal = shifted_value(param, baseline_val, factor)
-            if refusal is not None:
-                skipped.append(f"{pname} {shift_label} ({refusal})")
-                continue
+        # `degradation` is the SCORED field and the same key the grid path writes, so the chart
+        # renders and labels both paths identically. None = this shift could not be measured (the
+        # child failed, or a profit factor was missing/infinite) — never 0.0, which would claim the
+        # parameter was tested and did nothing.
+        #
+        # `pf_delta_pct` is the SAME measurement with its SIGN kept. The score has to be a magnitude
+        # — a shift that moves the result is evidence either way, and grading needs one number to
+        # threshold — but a chart drawing a magnitude has to invent a direction, and the page drew
+        # every one of them as a LOSS. Direction is data; it belongs here, not in a renderer.
+        degradation = None
+        pf_delta_pct = None
+        if pf_usable and child_pf is not None and np.isfinite(child_pf):
+            pf_delta_pct = (child_pf - baseline_pf) / baseline_pf * 100.0
+            degradation = abs(child_pf - baseline_pf) / baseline_pf
 
-            # A perturbation that lands back on the baseline TESTS NOTHING — it re-runs the
-            # identical backtest and books a 0% delta, which reads as "rock solid" when the truth
-            # is "never measured". Two ways it happens, both common:
-            #   • the param is 0 (0 x 1.10 == 0) — e.g. a TP rung or buffer left at zero;
-            #   • an int rounds straight back (pivot width 5: +10% -> 6 and +25% -> 6 as well,
-            #     so four shifts probe two distinct values).
-            # Measured on stress test 630cefbebd8347db: 43 of 60 sensitivity backtests were exact
-            # re-runs of the baseline, ~56 minutes of the 78-minute phase. Skip them, and record
-            # what was skipped rather than dropping it silently.
-            if new_val == baseline_val or new_val in seen_vals:
-                skipped.append(f"{pname} {shift_label} (={new_val})")
-                continue
-            seen_vals.add(new_val)
+        sensitivity.setdefault(pname, {})[shift_label] = {
+            "run_id": res["run_id"],
+            "new_value": entry["value"],
+            "degradation": None if degradation is None else round(degradation, 4),
+            "pf_delta_pct": None if pf_delta_pct is None else round(pf_delta_pct, 2),
+            "profit_factor": child_pf,
+            # Dollar effect, kept for reference only. NOT read by grading or the chart.
+            "pnl_delta": round(pnl_delta, 2),
+        }
 
-            perturbed_params = {**base_params, pname: new_val}
-            child_id = uuid.uuid4().hex[:16]
-            sens_tag = f"sens_{pname}_{shift_label}"
-
-            lab_db.insert_run_stress_test_child({
-                "run_id": child_id,
-                "strategy_id": source_run["strategy_id"],
-                "instrument": source_run["instrument"],
-                "params": perturbed_params,
-                "bar_type": source_run["bar_type"],
-                "bar_value": source_run["bar_value"],
-                "start_date": source_run["start_date"],
-                "end_date": source_run["end_date"],
-                "commission_per_side": source_run["commission_per_side"],
-                "slippage_ticks": source_run["slippage_ticks"],
-                "status": "running",
-                "created_at": int(time.time()),
-                "stress_test_id": stress_test_id,
-                "walk_forward_window_id": sens_tag,
-                "runner": runner,
-                **measured_on,
-            })
-
-            job_spec = {
-                "job_id": child_id,
-                "strategy_class": strategy["class_name"],
-                "instrument": source_run["instrument"],
-                "params": perturbed_params,
-                "bar_type": source_run["bar_type"],
-                "bar_value": source_run["bar_value"],
-                "start_date": source_run["start_date"],
-                "end_date": source_run["end_date"],
-                "commission_per_side": source_run["commission_per_side"],
-                "slippage_ticks": source_run["slippage_ticks"],
-                **measured_on,
-            }
-            ok = await _run_child_backtest(child_id, job_spec, runner)
-            child = lab_db.get_run(child_id) if ok else None
-            child_pnl = child.get("net_pnl") or 0.0 if child else 0.0
-            child_pf = child.get("profit_factor") if child else None
-            pnl_delta = child_pnl - baseline_pnl
-            if not ok:
-                failed_shifts.append(f"{pname} {shift_label}")
-
-            # `degradation` is the SCORED field and the same key the grid path writes, so the chart
-            # renders and labels both paths identically. None = this shift could not be measured
-            # (the child failed, or a profit factor was missing/infinite) — never 0.0, which would
-            # claim the parameter was tested and did nothing.
-            #
-            # `pf_delta_pct` is the SAME measurement with its SIGN kept. The score has to be a
-            # magnitude — a shift that moves the result is evidence either way, and grading needs
-            # one number to threshold — but a chart drawing a magnitude has to invent a direction,
-            # and the page drew every one of them as a LOSS. A shift that IMPROVED profit factor
-            # was rendered as a long red bar. Direction is data; it belongs here, not in a renderer.
-            degradation = None
-            pf_delta_pct = None
-            if pf_usable and child_pf is not None and np.isfinite(child_pf):
-                pf_delta_pct = (child_pf - baseline_pf) / baseline_pf * 100.0
-                degradation = abs(child_pf - baseline_pf) / baseline_pf
-
-            param_result[shift_label] = {
-                "run_id": child_id,
-                "new_value": new_val,
-                "degradation": None if degradation is None else round(degradation, 4),
-                "pf_delta_pct": None if pf_delta_pct is None else round(pf_delta_pct, 2),
-                "profit_factor": child_pf,
-                # Dollar effect, kept for reference only. NOT read by grading or the chart — the
-                # chart switches to the profit-factor bar as soon as `pnl_delta_pct` is absent.
-                "pnl_delta": round(pnl_delta, 2),
-            }
-
-            if degradation is not None:
-                max_degradation = degradation if max_degradation is None else max(max_degradation, degradation)
-
-        # A param with no measurable shift at all (every one landed on the baseline) is omitted
-        # rather than stored as an all-zero row: the chart draws one bar per shift, so an empty
-        # row would render four flat bars claiming the param was tested and didn't matter.
-        if param_result:
-            sensitivity[pname] = param_result
+        if degradation is not None:
+            max_degradation = degradation if max_degradation is None else max(max_degradation, degradation)
 
     if skipped:
         log.info("Sensitivity %s: skipped %d perturbation(s) that could test nothing: %s",

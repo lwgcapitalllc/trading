@@ -770,6 +770,13 @@ real stress test on a real **charged** 161-trade XAUUSD M15 baseline (`spread`+`
 - **Sensitivity skips what it cannot reach**: 3 of 17 numeric non-foundational params on this run
   are behind a switch it has off, so 12 backtests that could only reproduce the baseline are not
   run, and the coverage says so.
+- ✅ **A full sensitivity phase finished, which is what "driven end to end" finally means here.**
+  `status: complete`, grade **D** with real reasons ("Median simulation is profitable but median
+  drawdown breaches the limit" / "55% probability of breaching ruleset limit at some point"), and
+  `sensitivity_coverage` populated on real charged data: **12 params perturbed, 46 shifts run, 0
+  failed, 14 skipped and NAMED** (`exec_tp1_pct`/`exec_tp2_pct` sit at 0.0 so every shift lands
+  back on 0; `div_pivot_len ±25%` rounds onto values already run) **and 3 params unreachable and
+  named**. `phase_failures` is `{}` — empty, and distinguishable from null.
 
 ⚠ **The drive killed its own test TWICE, and the pair is the cleanest proof the
 `phases_requested` fix was needed.** The backend is served with `--reload`; a `.py` edit landed
@@ -826,6 +833,60 @@ positive claim that nothing else was requested.
 🔴 **The native walk-forward path failing left the test with no walk-forward at all.** It now falls
 through to the serial path rather than reporting nothing; `failed_periods` is tracked, and a
 missing curve gives `sharpe = None`, never `0.0` (which reads as a measured flat window).
+
+### Sensitivity runs its shifts in PARALLEL
+
+🔴 **The phase replayed 60 full-history backtests ONE AT A TIME on a 12-core box, while
+`backtest/optimizer.run_sweep` had been fanning optimizer grids across every core the whole time.**
+Aaron asked why it was slow when the bars are cached — and the cache was never the bottleneck.
+MEASURED: **69s per child, 65–71s across children.** That tightness is the tell — it is compute
+(an engine replay stepping ~165k bars in Python), not I/O.
+
+⚠ **The obvious fix does not work, and it would have looked like it did.** Wrapping the loop in
+`asyncio.gather` with a semaphore is the natural move, but `python_runner.start_backtest` runs each
+backtest on a THREAD and the replay is pure-Python bar-by-bar, i.e. **GIL-bound** — N threads buy
+almost nothing while appearing to be a fix. It needs PROCESSES.
+
+`_run_shifts_pooled` submits the whole shift set as ONE sweep job. Rules that hold it together:
+
+- **It goes through `runner_dispatch` → `python_runner`, never `run_sweep` directly**, because
+  `_cost_profile` lives there. A second caller building its own cost profile is precisely how the
+  children came to be measured on a free book in the first place. `python_runner` gained a
+  `param_sets` passthrough for it — sensitivity is ONE-PARAM-AT-A-TIME, and `expand_grid` would
+  return the CARTESIAN PRODUCT of the same shifts, a different and far larger experiment.
+- **Python only, and that is not a limitation to lift.** NT8 and MT5 each drive one physical
+  terminal; there is nothing to parallelise on, and firing concurrent jobs at a single Strategy
+  Tester would be actively harmful. They keep `_run_shifts_serial`.
+- ⚠ **Rows are matched back by `(param, value)`, NEVER by index.** `run_sweep` ends with
+  `[r for r in results if r is not None]` — it COMPACTS on cancellation — so a cancelled sweep
+  returns fewer rows than combos and index-matching would hand one shift's profit factor to a
+  different parameter, silently. `sensitivity_plan` dedupes values per param, so the pair is unique.
+- ⚠ **A shift the sweep did not return is FAILED, never a complete row with zero KPIs** — a zero
+  scores as "this parameter does nothing", the most reassuring answer available for a measurement
+  that never happened.
+- ⚠ **Pooled children carry KPIs but no equity curve or daily P&L**, because a sweep worker returns
+  KPIs only. Nothing reads a sensitivity child's curve (scoring uses profit factor and net P&L, and
+  the UI never navigates to one), so the paths are NULL rather than pointing at files that do not
+  exist, and no canonical Sharpe is computed — there is no daily series to compute one from.
+
+✅ **PROVEN, and the correctness check mattered more than the speed one.** The same shift
+(`sens_aplus_window_+25%`) was run through the pool and then re-run down the single-run path:
+**161 trades, PF 3.268, $12,184,685.53 — identical to the cent both ways.** A 4x speedup that
+quietly moves a number is worse than the slow version.
+
+**MEASURED end to end: 46 shifts in 841s (14 min) against ~3,174s (53 min) serial — 3.8x.** ⚠ **Not
+the ~10x the core count suggests, and the gap is worth knowing**: `default_workers` deliberately
+leaves a core free (this runs inside the backend serving the UI that reports its progress), and the
+~165k-row frame is pickled to each worker at pool start.
+
+**`_estimate_sens_duration_min` was recalibrated in the same pass and was wrong twice over.** It
+used a flat `_mins_per_job` of 0.2 min for python — true for a short backtest, 6x optimistic for a
+6.6-year replay — and it summed serially. It now takes the SOURCE RUN's own measured duration (the
+same reasoning the optimizer modal's estimate uses; a per-job constant is wrong by construction
+because the cost scales with the window) and divides by the worker count. Quoted 13 min for the run
+that took 14, against the old code's 12 for a 53-minute job. ⚠ **`started_at`/`completed_at` are
+read `is not None`, never truthily** — a timestamp of 0 is a value, and `if started` silently
+dropped it back to the constant. A test caught that, not review.
 
 ### Sensitivity: what was NOT tested is part of the answer
 
