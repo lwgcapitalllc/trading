@@ -86,7 +86,7 @@ backend/
 │   │                      date for an (instrument, timeframe, runner); `validate_window()` raises ValueError
 │   │                      which routers turn into a 400. PYTHON RUNNER ONLY — NT8/MT5 read history from their
 │   │                      own terminals, so a Vantage floor must never be imposed on them (see "History floors")
-│   ├── calendar_service.py  live News Calendar tab — calls engines/news/ TradingViewSource.fetch_window() (never a 2nd impl), 60s in-memory cache keyed on (from,to,countries), computes beat/miss "surprise" server-side via _LOWER_IS_BETTER. Read-only: does NOT touch the shared EventStore cache. Returns the whole week; the frontend filters client-side (see "Live calendar tab")
+│   ├── calendar_service.py  live News Calendar tab — calls engines/news/ TradingViewSource.fetch_window() (never a 2nd impl), 60s in-memory cache keyed on (from,to,countries) and BOUNDED at 64 entries under one lock, computes beat/miss "surprise" server-side via _LOWER_IS_BETTER. Read-only: does NOT touch the shared EventStore cache. Returns the whole week; the frontend filters client-side. ⚠ Every upstream failure is normalised to RuntimeError in `_fetch` — a JSONDecodeError IS a ValueError and used to surface as a 400. See "The calendar's polarity list" below
 │   ├── agent_supervisor.py  keeps the SSH tunnel + both VPS agents up — one 60s loop, identical on
 │   │                      every pass, so a cold start and a wake-from-sleep are the same code path.
 │   │                      Owns `restart_tunnel()` / `schtasks_run()` (moved out of routers/system.py,
@@ -570,6 +570,59 @@ same reason.
 **Tests:** `tests/test_agent_supervisor.py` (19) + `tests/test_system_health.py` (12). Most of them
 are about what the supervisor REFUSES to do — the dangerous failure of a supervisor is not a missed
 repair, it is a repair at the wrong moment.
+
+## The calendar's polarity list was written for the wrong provider
+
+🔴 **Fixed 2026-08-05.** `calendar_service._LOWER_IS_BETTER` decides which way a released `actual`
+is coloured — green when a LOWER print is the good one (inflation, unemployment), red otherwise. It
+was a flat lowercase-substring list, and **it had been written against Forex Factory's naming while
+this tab reads TradingView.**
+
+**MEASURED against the live feed, 811 distinct real titles over ~275 days: six of its eleven keys
+matched ZERO of them** — `initial claims`, `continuing claims`, `crude oil inventories`,
+`gasoline inventories`, `natural gas storage`, `producer prices`. TradingView calls those
+*Initial Jobless Claims*, *EIA Crude Oil Stocks Change*, *EIA Natural Gas Stocks Change* and *PPI*.
+
+⚠ **A dead key costs nothing visible, and that is what makes it dangerous — the damage is what it
+leaves UNCOVERED.** The worst case was **`Core PCE Price Index MoM` — HIGH impact, USD, the Fed's
+own preferred gauge** — which matched nothing and fell through to the default higher-is-better. So
+a 0.4% actual against a 0.3% forecast printed **green "beat" on PCE and red "miss" on CPI**, rows
+apart in one table, answering one question. Pinned now by
+`test_the_two_inflation_prints_agree_with_each_other`.
+
+**The fix that matters is not the added keys, it is the guard.** `tests/test_calendar.py`
+parametrises over `_LOWER_IS_BETTER` and **fails the build on any key that matches nothing** in
+`tests/fixtures/tradingview_titles.txt` (the harvested corpus). The list is a CLAIM about one
+provider's vocabulary, and a claim nothing checks is this repo's most-repeated defect — here in its
+quietest form, because a wrong polarity renders a confident colour rather than an error. ⚠ **If
+that test fails, the feed renamed an event: find what it calls it now, do not delete the key.**
+
+⚠ **Keys are matched at a word boundary on the LEFT and openly on the RIGHT.** The left boundary
+stops `ppi` matching *Shipping* / *Shopping* (theory rather than a live bug — zero real titles hit
+it — but the next key added may not be so lucky). The open right end is what lets one key cover a
+family: `inflation` alone covers *Inflation Rate*, *Core Inflation Rate*, *Michigan Inflation
+Expectations*, *Food Inflation* and *TD-MI Inflation Gauge*.
+
+⚠ **Every key in the shipped list matches real titles today** — candidates that read well but match
+nothing (`unemployment change`, `bankruptcies`, `foreclosure`) were written, measured, and removed
+rather than left in as aspiration. That is what keeps the dead-key test meaningful.
+
+Two smaller fixes in the same pass:
+
+- **Upstream failures are classified at one seam** (`_fetch`, blanket `except Exception` →
+  `RuntimeError` → the router's 502). The source only converts `HTTPError`/`URLError`, so a non-JSON
+  body raised **`json.JSONDecodeError` — a subclass of ValueError — which the router maps to 400**,
+  reporting somebody else's outage as a malformed request; and a read timeout raised `TimeoutError`
+  (an OSError, not a URLError), which escaped both handlers and became a bare 500. Neither is
+  visible to the reader, which is why both survived. **`ValueError` out of this module must mean
+  "the caller asked for something impossible", and nothing upstream can be that.**
+- **The cache is bounded (64) and locked.** The key is the exact `(from, to, countries)` triple, so
+  every week a reader pages to minted an entry nothing ever removed; and two readers landing on one
+  uncached week each hit TradingView, since the endpoint runs in FastAPI's threadpool.
+
+✅ `_MAX_SPAN_MS` (60 days) was checked rather than assumed: a 60-day window returns ~1,495 events,
+inside the provider's ~2,000 cap, so no window the router accepts can be silently truncated. (105
+days returns exactly 2,000 — truncated — which is what the guard is for.)
 
 ## Readiness — the checks whose failure mode is silence
 

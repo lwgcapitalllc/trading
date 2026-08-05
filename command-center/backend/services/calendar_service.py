@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,29 +40,78 @@ from news.sources.tradingview import DEFAULT_COUNTRIES  # noqa: E402
 from news.types import NewsEvent  # noqa: E402
 
 # Titles where a LOWER actual than forecast is the "good" print (green). Everything else is
-# higher-is-better by default. Matched as a lowercase substring of the event title. Start small;
-# grow as we spot mis-coloured rows. (Balance of Trade is intentionally absent — a higher/less-
-# negative balance is better, which the default higher-is-better already handles.)
+# higher-is-better by default. (Balance of Trade is intentionally absent — a higher/less-negative
+# balance is better, which the default already handles.)
+#
+# ⚠ THIS LIST IS A CLAIM ABOUT ONE PROVIDER'S VOCABULARY, and until 2026-08-05 nothing checked it.
+# It had been written against Forex Factory's naming while the tab reads TRADINGVIEW, so six of its
+# eleven keys ("initial claims", "continuing claims", "crude oil inventories", "gasoline
+# inventories", "natural gas storage", "producer prices") matched ZERO titles in 811 real ones —
+# TradingView calls them "Initial Jobless Claims", "EIA Crude Oil Stocks Change" and "PPI". A dead
+# key costs nothing visible; the DAMAGE is what it leaves uncovered, and the worst case was
+# `Core PCE Price Index MoM` — HIGH impact, USD, the Fed's own preferred gauge — falling through to
+# higher-is-better, so a hot PCE printed GREEN two rows under a hot CPI printing RED.
+#
+# `tests/test_calendar.py` now fails the build on a key that matches nothing in
+# `tests/fixtures/tradingview_titles.txt`, so the list cannot silently rot against the feed again.
+#
+# Keys are matched at a WORD BOUNDARY on the left and openly on the right (see `_lower_is_better`):
+# the left boundary is what stops "ppi" matching "Shipping"/"Shopping", and leaving the right end
+# open is what lets one key cover a family ("inflation" → Inflation Rate / Core Inflation Rate /
+# Inflation Expectations / Food Inflation / TD-MI Inflation Gauge).
 _LOWER_IS_BETTER: Tuple[str, ...] = (
-    "unemployment rate",
-    "jobless claims",          # initial + continuing
-    "initial claims",
-    "continuing claims",
-    "crude oil inventories",
-    "gasoline inventories",
-    "natural gas storage",
-    "inflation rate",          # regime call: lower inflation prints read risk-on / gold-positive
+    # ── Inflation. The regime call (unchanged): a cooler print reads risk-on / gold-positive. ──
+    "inflation",               # Inflation Rate, Core Inflation Rate, *Inflation Expectations, …
     "cpi",
     "ppi",
-    "producer prices",
+    "pce",                     # PCE Price Index MoM/YoY, Core PCE Prices QoQ — the HIGH-impact gap
+    "import prices",           # Import Prices, Producer & Import Prices (an inflation INPUT)
+    "raw materials prices",
+    "prices paid",             # Philly Fed / regional Fed price gauges
+    "ism manufacturing prices",
+    "ism services prices",
+    "price expectations",      # Selling Price Expectations, DMP Output Price Expectations
+    # ── Wage inflation. Read as a rates print, which is the lens the whole column uses. ──
+    "employment cost",
+    "labour cost",             # Labour Cost Index, Labour Costs Index, Unit Labour Costs
+    "wage price index",
+    # ── Labour market slack. ──
+    "unemployment rate",
+    "jobless claims",          # Initial / Continuing / 4-week Average
+    # ── Inventories & energy stocks: a BUILD is the weak print, a DRAW the strong one. ──
+    "stocks change",           # every EIA row (crude, Cushing, gasoline, distillate, natural gas)
+    "inventories",             # Business / Wholesale / Retail Inventories
+    # ── Balance-sheet stress. ──
+    "debt to gdp",
+    "household debt",
 )
+
+# Compiled once. Left boundary only — see the note above.
+_LOWER_RE = re.compile("|".join(r"\b" + re.escape(k) for k in _LOWER_IS_BETTER))
+
+
+def _lower_is_better(title: str) -> bool:
+    """True when a LOWER actual than forecast is the 'good' (green) print for this event."""
+    return _LOWER_RE.search(title.lower()) is not None
 
 # ── In-memory fetch cache (per window+countries, ~60s) ──────────────────────────
 
 _CACHE_TTL = 60.0  # seconds
+# ⚠ BOUNDED, and it must stay bounded: the key is the exact (from, to, countries) triple, so every
+# week a reader pages to mints a new entry that nothing ever removed. A dashboard left open and
+# scrolled through a year of weeks grew this without limit. 64 entries ≈ a year of paging either
+# way, and eviction is oldest-fetched-first.
+_CACHE_MAX = 64
 _cache: dict[Tuple[int, int, Tuple[str, ...]], Tuple[float, List[NewsEvent]]] = {}
+# One lock for the whole cache, not one per key. Two readers landing on the same uncached week
+# would otherwise each hit TradingView for the same payload; the endpoint runs in FastAPI's
+# threadpool, so this is real concurrency, not a theoretical one.
+_cache_lock = threading.Lock()
 
 # Guardrail: refuse absurd windows (the endpoint caps ~2000 events/query anyway).
+# MEASURED 2026-08-05 against the live feed: a 60-day window returns ~1,495 events, so the guard
+# sits comfortably inside the provider's cap and no request the router accepts can be silently
+# truncated. (105 days DOES return exactly 2,000, i.e. truncated — which is why the guard exists.)
 _MAX_SPAN_MS = 60 * 86_400_000  # 60 days
 
 
@@ -79,15 +129,47 @@ def iso_to_ms(s: str) -> int:
 
 
 def _fetch_window_cached(from_ms: int, to_ms: int, countries: Sequence[str]) -> List[NewsEvent]:
+    """Fetch a window, memoised for `_CACHE_TTL`. Raises RuntimeError on ANY upstream failure —
+    see `_fetch` for why that blanket conversion is the point rather than sloppiness."""
     key = (from_ms, to_ms, tuple(countries))
     now = time.time()
-    hit = _cache.get(key)
-    if hit is not None and (now - hit[0]) < _CACHE_TTL:
-        return hit[1]
-    result = TradingViewSource(countries=countries).fetch_window(from_ms, to_ms)
-    events = result.events
-    _cache[key] = (now, events)
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is not None and (now - hit[0]) < _CACHE_TTL:
+            return hit[1]
+
+    events = _fetch(from_ms, to_ms, countries)
+
+    with _cache_lock:
+        _cache[key] = (time.time(), events)
+        while len(_cache) > _CACHE_MAX:
+            _cache.pop(min(_cache, key=lambda k: _cache[k][0]))
     return events
+
+
+def _fetch(from_ms: int, to_ms: int, countries: Sequence[str]) -> List[NewsEvent]:
+    """The one impure call, with every failure normalised to RuntimeError → the router's 502.
+
+    ⚠ The blanket `except Exception` is deliberate and is a FIX, not laziness. The source only
+    converts `HTTPError`/`URLError` itself, so two real failure modes escaped it and were reported
+    as the wrong kind of problem entirely:
+
+      * a non-JSON body (TradingView serving an HTML error page or a Cloudflare interstitial)
+        raises `json.JSONDecodeError`, which **is a subclass of ValueError** — and the router maps
+        ValueError to **400**, so an upstream outage came back as "your request was malformed",
+        with `Expecting value: line 1 column 1` as the detail;
+      * a read timeout raises `TimeoutError`, which is an OSError but NOT a URLError, so it escaped
+        both handlers and became a bare **500**.
+
+    Neither is visible to the reader (the page renders "the feed did not answer" for any failure),
+    which is exactly why they survived — the only person either one misleads is whoever is trying
+    to work out why the calendar is empty. `ValueError` from this module must mean "the CALLER
+    asked for something impossible", and nothing the upstream does can be that.
+    """
+    try:
+        return TradingViewSource(countries=countries).fetch_window(from_ms, to_ms).events
+    except Exception as exc:  # noqa: BLE001 — see the docstring; this is the seam that classifies
+        raise RuntimeError(f"economic calendar feed unavailable: {exc}") from exc
 
 
 def _num(s: Optional[str]) -> Optional[float]:
@@ -108,8 +190,7 @@ def _surprise(title: str, actual: Optional[str], forecast: Optional[str]) -> Opt
         return None
     if a == f:
         return "inline"
-    lower_is_better = any(k in title.lower() for k in _LOWER_IS_BETTER)
-    better = (a < f) if lower_is_better else (a > f)
+    better = (a < f) if _lower_is_better(title) else (a > f)
     return "beat" if better else "miss"
 
 

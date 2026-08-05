@@ -1,0 +1,815 @@
+# Real TradingView economic-calendar event titles, harvested 2026-08-05 over ~275 days
+# (5 x 55d back + 50d forward, the nine DEFAULT_COUNTRIES).
+# Format: <highest impact seen>\t<a currency it was seen on>\t<title>
+# This is the vocabulary _LOWER_IS_BETTER is matched against. See test_calendar.py.
+LOW	NZD	1-Year Bill Auction
+LOW	CAD	10-Year Bond Auction
+LOW	JPY	10-Year Climate Transition JGB Auction
+LOW	JPY	10-Year Index-Linked JGB Auction
+LOW	JPY	10-Year JGB Auction
+LOW	USD	10-Year Note Auction
+LOW	USD	10-Year TIPS Auction
+LOW	EUR	12-Month Bill Auction
+LOW	USD	15-Year Mortgage Rate
+LOW	USD	17-Week Bill Auction
+LOW	CAD	2-Year Bond Auction
+LOW	USD	2-Year FRN Auction
+LOW	JPY	2-Year JGB Auction
+LOW	USD	2-Year Note Auction
+LOW	USD	20-Year Bond Auction
+LOW	JPY	20-Year JGB Auction
+LOW	CAD	2025/26 Federal Budget
+MEDIUM	AUD	2026-27 Federal Budget
+LOW	EUR	2028 EU-Bonds Auction
+LOW	EUR	2029 EU-Bonds Auction
+LOW	CHF	2030 Bond Auction
+LOW	EUR	2030 EU-Bonds Auction
+LOW	CHF	2031 Bond Auction
+LOW	EUR	2031 EU-Bond Auction
+LOW	EUR	2031 EU-Bonds Auction
+LOW	CHF	2032 Bond Auction
+LOW	EUR	2032 EU-Bonds Auction
+LOW	EUR	2033 EU-Bonds Auction
+LOW	CHF	2034 Bond Auction
+LOW	EUR	2034 EU-Bonds Auction
+LOW	EUR	2035 EU-Bond Auction
+LOW	EUR	2035 EU-Bonds Auction
+LOW	CHF	2036 Bond Auction
+LOW	EUR	2036 EU-Bonds Auction
+LOW	CHF	2037 Bond Auction
+LOW	EUR	2037 EU-Bonds Auction
+LOW	CHF	2038 Bond Auction
+LOW	EUR	2038 EU-Bonds Auction
+LOW	CHF	2040 Bond Auction
+LOW	EUR	2040 EU-Bonds Auction
+LOW	CHF	2041 Bond Auction
+LOW	EUR	2041 EU-Bonds Auction
+LOW	CHF	2042 Bond Auction
+LOW	CHF	2043 Bond Auction
+LOW	EUR	2043 EU-Bonds Auction
+LOW	EUR	2044 EU-Bonds Auction
+LOW	CHF	2047 Bond Auction
+LOW	EUR	2051 EU-Bonds Auction
+LOW	EUR	2054 EU-Bond Auction
+LOW	CHF	2055 Bond Auction
+LOW	JPY	3-Month Bill Auction
+LOW	USD	3-Year Note Auction
+LOW	USD	30-Year Bond Auction
+LOW	JPY	30-Year JGB Auction
+LOW	USD	30-Year Mortgage Rate
+LOW	USD	30-Year TIPS Auction
+LOW	USD	4-Week Bill Auction
+LOW	JPY	40-Year JGB Auction
+LOW	CAD	5-Year Bond Auction
+LOW	JPY	5-Year Climate Transition JGB Auction
+LOW	JPY	5-Year JGB Auction
+LOW	USD	5-Year Note Auction
+LOW	USD	5-Year TIPS Auction
+LOW	JPY	52-Week Bill Auction
+LOW	USD	6-Month Bill Auction
+LOW	USD	6-Week Bill Auction
+LOW	USD	7-Year Note Auction
+LOW	USD	8-Week Bill Auction
+MEDIUM	USD	ADP Employment Change
+MEDIUM	USD	ADP Employment Change Weekly
+MEDIUM	NZD	ANZ Business Confidence
+LOW	NZD	ANZ Roy Morgan Consumer Confidence
+LOW	AUD	ANZ-Indeed Job Ads MoM
+LOW	AUD	ANZAC Day
+MEDIUM	USD	API Crude Oil Stock Change
+LOW	AUD	Ai Group Construction Index
+MEDIUM	AUD	Ai Group Industry Index
+LOW	AUD	Ai Group Manufacturing Index
+LOW	CHF	Ascension Day
+LOW	AUD	Australia Day
+HIGH	GBP	Autumn Budget 2025
+LOW	JPY	Average Cash Earnings YoY
+LOW	GBP	Average Earnings excl. Bonus (3Mo/Yr)
+MEDIUM	GBP	Average Earnings incl. Bonus (3Mo/Yr)
+MEDIUM	USD	Average Hourly Earnings MoM
+MEDIUM	USD	Average Hourly Earnings YoY
+LOW	CAD	Average Hourly Wages YoY
+LOW	CAD	Average Weekly Earnings YoY
+LOW	USD	Average Weekly Hours
+LOW	GBP	BBA Mortgage Rate
+MEDIUM	GBP	BOE Gov Bailey Speech
+LOW	GBP	BOE Kroszner Speech
+MEDIUM	JPY	BOJ Gov Ueda Speech
+LOW	JPY	BOJ Himino Speech
+MEDIUM	JPY	BOJ Tamura Speech
+MEDIUM	GBP	BRC Retail Sales Monitor YoY
+LOW	GBP	BRC Shop Price Inflation
+LOW	JPY	BSI Large Manufacturing QoQ
+LOW	USD	Baker Hughes Oil Rig Count
+LOW	USD	Baker Hughes Total Rigs Count
+HIGH	JPY	Balance of Trade
+LOW	CNY	Balance of Trade Yuan
+LOW	JPY	Bank Holiday
+LOW	JPY	Bank Lending YoY
+MEDIUM	CAD	BoC Business Outlook Survey
+MEDIUM	CAD	BoC Financial Stability Report
+MEDIUM	CAD	BoC Gov Macklem Speech
+HIGH	CAD	BoC Interest Rate Decision
+LOW	CAD	BoC Kozicki Speech
+MEDIUM	CAD	BoC Macklem Speech
+MEDIUM	CAD	BoC Market Participants Survey
+HIGH	CAD	BoC Monetary Policy Report
+MEDIUM	CAD	BoC Press Conference
+MEDIUM	CAD	BoC Rogers Speech
+MEDIUM	CAD	BoC Summary of Deliberations
+MEDIUM	CAD	BoC Survey of Consumer Expectations
+MEDIUM	CAD	BoC Vincent Speech
+LOW	GBP	BoE  Taylor Speech
+MEDIUM	GBP	BoE Bailey Speech
+MEDIUM	GBP	BoE Breeden Speech
+MEDIUM	GBP	BoE Consumer Credit
+LOW	GBP	BoE Credit Conditions Survey
+LOW	GBP	BoE Dhingra Speech
+LOW	GBP	BoE Evans Speech
+LOW	GBP	BoE FPC Meeting Minutes
+LOW	GBP	BoE Financial Stability Report
+MEDIUM	GBP	BoE Gov Bailey Speech
+MEDIUM	GBP	BoE Greene Speech
+HIGH	GBP	BoE Interest Rate Decision
+LOW	GBP	BoE Jackson Speech
+LOW	GBP	BoE Khan Speech
+MEDIUM	GBP	BoE L Mann Speech
+MEDIUM	GBP	BoE MPC Vote Cut
+MEDIUM	GBP	BoE MPC Vote Hike
+MEDIUM	GBP	BoE MPC Vote Unchanged
+LOW	GBP	BoE Mann Speech
+MEDIUM	GBP	BoE Monetary Policy Report
+MEDIUM	GBP	BoE Pill Speech
+LOW	GBP	BoE Ramsden Speech
+LOW	GBP	BoE Talbot Speech
+LOW	GBP	BoE Taylor Speech
+LOW	GBP	BoE White Speech
+MEDIUM	GBP	BoE Woods Speech
+MEDIUM	JPY	BoJ Gov Ueda Speech
+MEDIUM	JPY	BoJ Himino Speech
+HIGH	JPY	BoJ Interest Rate Decision
+LOW	JPY	BoJ JGB Purchase
+MEDIUM	JPY	BoJ Koeda Speech
+MEDIUM	JPY	BoJ Masu Speech
+MEDIUM	JPY	BoJ Monetary Policy Meeting Minutes
+MEDIUM	JPY	BoJ Nakagawa Speech
+MEDIUM	JPY	BoJ Noguchi Speech
+MEDIUM	JPY	BoJ Quarterly Outlook Report
+MEDIUM	JPY	BoJ Summary of Opinions
+MEDIUM	JPY	BoJ Takata Speech
+LOW	JPY	BoJ Tamura Speech
+LOW	AUD	Boxing Day
+MEDIUM	NZD	Budget 2026
+LOW	CAD	Budget Balance
+LOW	AUD	Building Capital Expenditure QoQ
+LOW	USD	Building Permits Final
+LOW	CAD	Building Permits MoM
+LOW	USD	Building Permits MoM Final
+MEDIUM	USD	Building Permits MoM Prel
+HIGH	USD	Building Permits Prel
+LOW	AUD	Building Permits YoY Final
+LOW	AUD	Building Permits YoY Prel
+LOW	NZD	Business Inflation Expectations
+MEDIUM	USD	Business Inventories MoM
+LOW	AUD	Business Inventories QoQ
+LOW	GBP	Business Investment QoQ Final
+MEDIUM	GBP	Business Investment QoQ Prel
+LOW	GBP	Business Investment YoY Final
+LOW	GBP	Business Investment YoY Prel
+MEDIUM	NZD	Business NZ PMI
+MEDIUM	USD	CB Consumer Confidence
+LOW	USD	CB Leading Index MoM
+MEDIUM	GBP	CBI Business Optimism Index
+MEDIUM	GBP	CBI Distributive Trades
+MEDIUM	GBP	CBI Industrial Trends Orders
+LOW	CAD	CFIB Business Barometer
+MEDIUM	USD	CPI
+LOW	CAD	CPI Common YoY
+LOW	EUR	CPI Final
+LOW	EUR	CPI Flash
+LOW	CAD	CPI Median YoY
+LOW	CAD	CPI Trimmed-Mean YoY
+MEDIUM	USD	CPI s.a
+LOW	CAD	Canada Day
+LOW	USD	Capacity Utilization
+LOW	JPY	Capacity Utilization MoM
+MEDIUM	JPY	Capital Spending YoY
+LOW	GBP	Car Production YoY
+LOW	USD	Challenger Job Cuts
+MEDIUM	GBP	Chancellor Reeves Mansion House Speech
+MEDIUM	USD	Chicago Fed National Activity Index
+MEDIUM	USD	Chicago PMI
+LOW	CNY	Chinese People's Political Consultative Conference
+LOW	AUD	Christmas
+LOW	CHF	Christmas Day
+LOW	CHF	Christmas Eve
+LOW	CAD	Civic Holiday
+LOW	GBP	Claimant Count Change
+LOW	JPY	Coincident Index Final
+LOW	JPY	Coincident Index Prel
+LOW	JPY	Coming of Age Day
+LOW	AUD	Commodity Prices YoY
+MEDIUM	AUD	Company Gross Profits QoQ
+LOW	NZD	Composite NZ PCI
+LOW	JPY	Constitution Memorial Day
+LOW	JPY	Construction Orders YoY
+LOW	GBP	Construction Output YoY
+LOW	USD	Construction Spending MoM
+MEDIUM	AUD	Construction Work Done QoQ
+HIGH	JPY	Consumer Confidence
+LOW	EUR	Consumer Confidence Final
+MEDIUM	EUR	Consumer Confidence Flash
+LOW	USD	Consumer Credit Change
+LOW	EUR	Consumer Inflation Expectations
+LOW	USD	Continuing Jobless Claims
+HIGH	USD	Core Inflation Rate MoM
+HIGH	USD	Core Inflation Rate YoY
+LOW	EUR	Core Inflation Rate YoY Final
+MEDIUM	EUR	Core Inflation Rate YoY Flash
+HIGH	USD	Core PCE Price Index MoM
+LOW	USD	Core PCE Price Index YoY
+LOW	USD	Core PCE Prices QoQ
+LOW	USD	Core PCE Prices QoQ 2nd Est
+LOW	USD	Core PCE Prices QoQ Adv
+LOW	USD	Core PCE Prices QoQ Final
+MEDIUM	USD	Core PPI MoM
+LOW	USD	Core PPI YoY
+MEDIUM	USD	Corporate Profits QoQ
+LOW	USD	Corporate Profits QoQ Final
+MEDIUM	USD	Corporate Profits QoQ Prel
+LOW	AUD	Cotality Dwelling Prices MoM
+LOW	NZD	Credit Card Spending YoY
+MEDIUM	NZD	Current Account
+LOW	CNY	Current Account Final
+MEDIUM	CNY	Current Account Prel
+LOW	EUR	Current Account s.a
+LOW	GBP	DMP 1Y CPI Expectations
+LOW	GBP	DMP 3M Output Price Expectations
+MEDIUM	USD	Dallas Fed Manufacturing Index
+LOW	USD	Dallas Fed Services Index
+LOW	USD	Dallas Fed Services Revenues Index
+LOW	NZD	Day after New Year’s Day
+HIGH	EUR	Deposit Facility Rate
+LOW	CNY	Duanwu Festival
+MEDIUM	USD	Durable Goods Orders Ex Transp MoM
+HIGH	USD	Durable Goods Orders MoM
+LOW	USD	Durable Goods Orders ex Defense MoM
+MEDIUM	EUR	ECB Annual Report
+LOW	EUR	ECB Bank Lending Survey
+MEDIUM	EUR	ECB Buch Speech
+LOW	EUR	ECB Bulletin
+MEDIUM	EUR	ECB Cipollone Speech
+LOW	EUR	ECB Consumer Inflation Expectations
+MEDIUM	EUR	ECB Donnery Speech
+MEDIUM	EUR	ECB Economic Bulletin
+MEDIUM	EUR	ECB Elderson Speech
+LOW	EUR	ECB Escrivá Speech
+MEDIUM	EUR	ECB Financial Stability Review
+MEDIUM	EUR	ECB Forum on Central Banking
+MEDIUM	EUR	ECB General Council Meeting
+LOW	EUR	ECB Guindos Speech
+HIGH	EUR	ECB Interest Rate Decision
+MEDIUM	EUR	ECB Lane Speech
+LOW	EUR	ECB Machado Speech
+MEDIUM	EUR	ECB Monetary Policy Meeting Accounts
+LOW	EUR	ECB Montagner Speech
+MEDIUM	EUR	ECB Non-Monetary Policy Meeting
+MEDIUM	EUR	ECB President Lagarde Speech
+HIGH	EUR	ECB Press Conference
+LOW	EUR	ECB Rehn Speech
+MEDIUM	EUR	ECB Schnabel Speech
+MEDIUM	EUR	ECB Staff Macroeconomic Projections
+MEDIUM	EUR	ECB Survey of Monetary Analysts
+MEDIUM	EUR	ECB Survey of Professional Forecasters
+LOW	EUR	ECB Tuominen Speech
+LOW	EUR	ECB Vujčić Speech
+LOW	EUR	ECB Wage Tracker
+MEDIUM	EUR	ECB de Guindos Speech
+MEDIUM	EUR	ECOFIN Meeting
+LOW	USD	EIA Crude Oil Imports Change
+MEDIUM	USD	EIA Crude Oil Stocks Change
+LOW	USD	EIA Cushing Crude Oil Stocks Change
+LOW	USD	EIA Distillate Fuel Production Change
+LOW	USD	EIA Distillate Stocks Change
+LOW	USD	EIA Gasoline Production Change
+MEDIUM	USD	EIA Gasoline Stocks Change
+LOW	USD	EIA Heating Oil Stocks Change
+LOW	USD	EIA Natural Gas Stocks Change
+LOW	USD	EIA Refinery Crude Runs Change
+MEDIUM	USD	EIA Short-Term Energy Outlook
+LOW	EUR	EU-Bonds Auction
+LOW	CAD	Early Close Bond Market
+LOW	AUD	Easter Monday
+LOW	JPY	Eco Watchers Survey Current
+LOW	JPY	Eco Watchers Survey Outlook
+MEDIUM	EUR	Economic Sentiment
+LOW	CHF	Economic Sentiment Index
+LOW	NZD	Electronic Retail Card Spending MoM
+LOW	NZD	Electronic Retail Card Spending YoY
+MEDIUM	GBP	Employment Change
+MEDIUM	NZD	Employment Change QoQ
+LOW	EUR	Employment Change QoQ Final
+MEDIUM	EUR	Employment Change QoQ Prel
+LOW	EUR	Employment Change YoY Final
+MEDIUM	EUR	Employment Change YoY Prel
+MEDIUM	USD	Employment Cost - Benefits QoQ
+MEDIUM	USD	Employment Cost - Wages QoQ
+MEDIUM	USD	Employment Cost Index QoQ
+MEDIUM	EUR	Eurogroup Meeting
+MEDIUM	EUR	European Commission Autumn Forecasts
+MEDIUM	EUR	European Commission Spring Forecasts
+LOW	EUR	European Council
+MEDIUM	EUR	European Council Meeting
+HIGH	USD	Existing Home Sales
+MEDIUM	USD	Existing Home Sales MoM
+MEDIUM	USD	Export Prices MoM
+LOW	AUD	Export Prices QoQ
+LOW	USD	Export Prices YoY
+MEDIUM	USD	Exports
+LOW	AUD	Exports MoM
+HIGH	CNY	Exports YoY
+MEDIUM	CNY	FDI (YTD) YoY
+HIGH	USD	FOMC Economic Projections
+HIGH	USD	FOMC Minutes
+MEDIUM	USD	Factory Orders MoM
+LOW	USD	Factory Orders ex Transportation
+LOW	USD	Fed Balance Sheet
+MEDIUM	USD	Fed Bank Stress Test Results
+MEDIUM	USD	Fed Barkin Speech
+MEDIUM	USD	Fed Barr Speech
+LOW	USD	Fed Beige Book
+MEDIUM	USD	Fed Bostic Speech
+MEDIUM	USD	Fed Bowman Speech
+MEDIUM	USD	Fed Chair Nominee Kevin Warsh Confirmation Hearing
+MEDIUM	USD	Fed Chair Powell Speech
+HIGH	USD	Fed Chair Warsh Speech
+HIGH	USD	Fed Chair Warsh Testimony
+MEDIUM	USD	Fed Collins Speech
+MEDIUM	USD	Fed Cook Speech
+MEDIUM	USD	Fed Daly Speech
+MEDIUM	USD	Fed Golsbee Speech
+MEDIUM	USD	Fed Goolsbee Speech
+MEDIUM	USD	Fed Hammack Speech
+HIGH	USD	Fed Interest Rate Decision
+MEDIUM	USD	Fed Jefferson Speech
+MEDIUM	USD	Fed Kashkari Speech
+MEDIUM	USD	Fed Logan Speech
+MEDIUM	USD	Fed Miran Speech
+MEDIUM	USD	Fed Musalem Speech
+MEDIUM	USD	Fed Paulson Speech
+MEDIUM	USD	Fed Powell Speech
+HIGH	USD	Fed Press Conference
+MEDIUM	USD	Fed Schmid Speech
+MEDIUM	USD	Fed Venable Speech
+MEDIUM	USD	Fed Waller Speech
+MEDIUM	USD	Fed Williams Speech
+LOW	CHF	Financial Stability Report
+MEDIUM	CNY	Fixed Asset Investment (YTD) YoY
+LOW	NZD	Food Inflation YoY
+LOW	JPY	Foreign Bond Investment
+LOW	JPY	Foreign Exchange Reserves
+LOW	CAD	Foreign Securities Purchases
+LOW	CAD	Foreign Securities Purchases by Canadians
+MEDIUM	AUD	Full Time Employment Chg
+MEDIUM	GBP	GDP 3-Month Avg
+LOW	AUD	GDP Capital Expenditure QoQ
+LOW	JPY	GDP Capital Expenditure QoQ Final
+LOW	JPY	GDP Capital Expenditure QoQ Prel
+LOW	AUD	GDP Chain Price Index QoQ
+LOW	JPY	GDP External Demand QoQ Final
+LOW	JPY	GDP External Demand QoQ Prel
+LOW	AUD	GDP Final Consumption QoQ
+MEDIUM	JPY	GDP Growth Annualized Final
+MEDIUM	JPY	GDP Growth Annualized Prel
+HIGH	CAD	GDP Growth Rate Annualized
+HIGH	CAD	GDP Growth Rate QoQ
+HIGH	USD	GDP Growth Rate QoQ 2nd Est
+LOW	EUR	GDP Growth Rate QoQ 3rd Est
+HIGH	USD	GDP Growth Rate QoQ Adv
+HIGH	USD	GDP Growth Rate QoQ Final
+HIGH	EUR	GDP Growth Rate QoQ Flash
+HIGH	GBP	GDP Growth Rate QoQ Prel
+HIGH	CNY	GDP Growth Rate YoY
+LOW	EUR	GDP Growth Rate YoY 2nd Est
+LOW	EUR	GDP Growth Rate YoY 3rd Est
+LOW	GBP	GDP Growth Rate YoY Final
+HIGH	EUR	GDP Growth Rate YoY Flash
+HIGH	GBP	GDP Growth Rate YoY Prel
+LOW	CAD	GDP Implicit Price QoQ
+HIGH	GBP	GDP MoM
+MEDIUM	CAD	GDP MoM Prel
+MEDIUM	USD	GDP Price Index QoQ
+MEDIUM	USD	GDP Price Index QoQ 2nd Est
+MEDIUM	USD	GDP Price Index QoQ Adv
+MEDIUM	USD	GDP Price Index QoQ Final
+LOW	JPY	GDP Price Index YoY Final
+LOW	JPY	GDP Price Index YoY Prel
+LOW	JPY	GDP Private Consumption QoQ Final
+LOW	JPY	GDP Private Consumption QoQ Prel
+LOW	USD	GDP Sales QoQ
+LOW	USD	GDP Sales QoQ 2nd Est
+LOW	USD	GDP Sales QoQ Adv
+LOW	USD	GDP Sales QoQ Final
+LOW	GBP	GDP YoY
+MEDIUM	GBP	GfK Consumer Confidence
+MEDIUM	GBP	Gfk Consumer Confidence
+LOW	NZD	Global Dairy Trade Price Index
+LOW	AUD	Good Friday
+MEDIUM	GBP	Goods Trade Balance
+MEDIUM	USD	Goods Trade Balance Adv
+MEDIUM	GBP	Goods Trade Balance Non-EU
+MEDIUM	EUR	Government Budget to GDP
+MEDIUM	EUR	Government Debt to GDP
+LOW	USD	Government Payrolls
+LOW	GBP	Green Gilt 2037 Auction
+LOW	JPY	Greenery Day
+LOW	EUR	HCOB Composite PMI Final
+MEDIUM	EUR	HCOB Composite PMI Flash
+LOW	EUR	HCOB Construction PMI
+LOW	EUR	HCOB Manufacturing PMI Final
+MEDIUM	EUR	HCOB Manufacturing PMI Flash
+LOW	EUR	HCOB Services PMI Final
+MEDIUM	EUR	HCOB Services PMI Flash
+LOW	GBP	HMRC Payrolls Change
+MEDIUM	NZD	Half Year Economic and Fiscal Update
+MEDIUM	GBP	Halifax House Price Index MoM
+MEDIUM	GBP	Halifax House Price Index YoY
+MEDIUM	AUD	Home Loans QoQ
+LOW	USD	House Price Index
+LOW	USD	House Price Index MoM
+MEDIUM	CNY	House Price Index YoY
+MEDIUM	JPY	Household Spending MoM
+MEDIUM	JPY	Household Spending YoY
+LOW	AUD	Housing Credit MoM
+HIGH	USD	Housing Starts
+MEDIUM	USD	Housing Starts MoM
+MEDIUM	JPY	Housing Starts YoY
+MEDIUM	USD	ISM Manufacturing Employment
+LOW	USD	ISM Manufacturing New Orders
+HIGH	USD	ISM Manufacturing PMI
+LOW	USD	ISM Manufacturing Prices
+LOW	USD	ISM Services Business Activity
+LOW	USD	ISM Services Employment
+LOW	USD	ISM Services New Orders
+HIGH	USD	ISM Services PMI
+LOW	USD	ISM Services Prices
+MEDIUM	USD	Import Prices MoM
+LOW	AUD	Import Prices QoQ
+LOW	USD	Import Prices YoY
+MEDIUM	USD	Imports
+LOW	AUD	Imports MoM
+HIGH	CNY	Imports YoY
+LOW	USD	Independence Day
+LOW	GBP	Index-Linked Gilt 2031 Auction
+LOW	GBP	Index-linked Treasury Gilt 2031 Auction
+LOW	GBP	Index-linked Treasury Gilt 2035 Auction
+LOW	GBP	Index-linked Treasury Gilt 2038 Auction
+LOW	GBP	Index-linked Treasury Gilt 2049 Auction
+LOW	CNY	Industrial Capacity Utilization
+MEDIUM	GBP	Industrial Production MoM
+LOW	JPY	Industrial Production MoM Final
+MEDIUM	JPY	Industrial Production MoM Prel
+HIGH	CNY	Industrial Production YoY
+LOW	JPY	Industrial Production YoY Final
+LOW	JPY	Industrial Production YoY Prel
+LOW	CNY	Industrial Profits (YTD) YoY
+LOW	EUR	Industrial Sentiment
+LOW	JPY	Inflation Rate Ex-Food and Energy YoY
+HIGH	USD	Inflation Rate MoM
+LOW	EUR	Inflation Rate MoM Final
+MEDIUM	EUR	Inflation Rate MoM Flash
+MEDIUM	NZD	Inflation Rate QoQ
+HIGH	GBP	Inflation Rate YoY
+LOW	EUR	Inflation Rate YoY Final
+HIGH	EUR	Inflation Rate YoY Flash
+MEDIUM	USD	Initial Jobless Claims
+LOW	USD	Interest Rate Projection - 1st Yr
+LOW	USD	Interest Rate Projection - 2nd Yr
+LOW	USD	Interest Rate Projection - 3rd Yr
+LOW	USD	Interest Rate Projection - Current
+LOW	USD	Interest Rate Projection - Longer
+LOW	JPY	International Children’s Day
+LOW	USD	International Monetary Market (IMM) Date
+MEDIUM	AUD	Investment Lending for Homes
+HIGH	CAD	Ivey PMI s.a
+HIGH	USD	JOLTs Job Openings
+LOW	USD	JOLTs Job Quits
+MEDIUM	USD	Jackson Hole Symposium
+LOW	USD	Jobless Claims 4-week Average
+LOW	JPY	Jobs/applications ratio
+LOW	USD	Juneteenth National Independence Day
+MEDIUM	CHF	KOF Leading Indicators
+LOW	USD	Kansas Fed Composite Index
+LOW	USD	Kansas Fed Manufacturing Index
+LOW	NZD	King’s Birthday
+LOW	USD	LMI Logistics Managers Index
+LOW	CAD	Labor Productivity QoQ
+LOW	JPY	Labor Thanksgiving Day
+LOW	EUR	Labour Cost Index YoY
+LOW	EUR	Labour Cost Index YoY Final
+LOW	EUR	Labour Cost Index YoY Flash
+LOW	NZD	Labour Costs Index QoQ
+LOW	NZD	Labour Costs Index YoY
+LOW	GBP	Labour Productivity QoQ
+LOW	GBP	Late Summer Bank Holiday
+LOW	JPY	Leading Economic Index Final
+LOW	JPY	Leading Economic Index Prel
+MEDIUM	GBP	Lloyds House Price Index MoM
+MEDIUM	GBP	Lloyds House Price Index YoY
+LOW	USD	Loan Officer Survey
+MEDIUM	CNY	Loan Prime Rate 1Y
+MEDIUM	CNY	Loan Prime Rate 5Y
+LOW	EUR	Loans to Companies YoY
+LOW	EUR	Loans to Households YoY
+HIGH	GBP	Local Elections
+LOW	CNY	M2 Money Supply YoY
+LOW	EUR	M3 Money Supply YoY
+LOW	GBP	M4 Money Supply MoM
+MEDIUM	USD	MBA 30-Year Mortgage Rate
+LOW	USD	MBA Mortgage Applications
+LOW	USD	MBA Mortgage Market Index
+LOW	USD	MBA Mortgage Refinance Index
+LOW	USD	MBA Purchase Index
+MEDIUM	GBP	MPC Meeting Minutes
+LOW	JPY	Machine Tool Orders YoY
+MEDIUM	JPY	Machinery Orders MoM
+MEDIUM	JPY	Machinery Orders YoY
+LOW	USD	Manufacturing Payrolls
+MEDIUM	GBP	Manufacturing Production MoM
+LOW	GBP	Manufacturing Production YoY
+LOW	CAD	Manufacturing Sales MoM Final
+LOW	CAD	Manufacturing Sales MoM Prel
+LOW	NZD	Manufacturing Sales YoY
+LOW	EUR	Marginal Lending Rate
+LOW	JPY	Marine Day
+LOW	USD	Martin Luther King, Jr. Day
+LOW	CNY	May Day
+LOW	GBP	May Day Bank Holiday
+LOW	USD	Memorial Day
+LOW	USD	Michigan 5 Year Inflation Expectations Final
+LOW	USD	Michigan 5 Year Inflation Expectations Prel
+LOW	USD	Michigan Consumer Expectations Final
+LOW	USD	Michigan Consumer Expectations Prel
+MEDIUM	USD	Michigan Consumer Sentiment Final
+HIGH	USD	Michigan Consumer Sentiment Prel
+LOW	USD	Michigan Current Conditions Final
+LOW	USD	Michigan Current Conditions Prel
+LOW	USD	Michigan Inflation Expectations Final
+LOW	USD	Michigan Inflation Expectations Prel
+LOW	JPY	Monetary Base YoY
+LOW	USD	Money Supply
+MEDIUM	USD	Monthly Budget Statement
+MEDIUM	GBP	Mortgage Approvals
+MEDIUM	GBP	Mortgage Lending
+LOW	JPY	Mountain Day
+HIGH	AUD	NAB Business Confidence
+MEDIUM	USD	NAHB Housing Market Index
+LOW	CNY	NBS General PMI
+HIGH	CNY	NBS Manufacturing PMI
+MEDIUM	CNY	NBS Non Manufacturing PMI
+LOW	USD	NFIB Business Optimism Index
+LOW	GBP	NIESR Monthly GDP Tracker
+LOW	USD	NOPA Crush Report
+MEDIUM	CNY	NPC Standing Committee Meeting
+MEDIUM	USD	NY Empire State Manufacturing Index
+LOW	USD	NY Fed Bill Purchases 1 to 4 months
+LOW	USD	NY Fed Bill Purchases 4 to 12 months
+LOW	USD	NY Fed Services Activity Index
+LOW	USD	NY Fed Treasury Purchases 10 to 22.5 yrs
+LOW	NZD	NZIER Business Confidence
+LOW	NZD	NZIER Capacity Utilization
+LOW	JPY	National Foundation Day
+MEDIUM	CNY	National People's Congress Standing Committee
+LOW	CNY	National People’s Congress
+MEDIUM	GBP	Nationwide Housing Prices MoM
+MEDIUM	GBP	Nationwide Housing Prices YoY
+MEDIUM	EUR	Negotiated Wage Growth
+LOW	AUD	Net Exports Contribution to GDP
+LOW	GBP	Net Lending to Individuals MoM
+MEDIUM	USD	Net Long-term TIC Flows
+MEDIUM	EUR	New Car Registrations YoY
+LOW	GBP	New Car Sales YoY
+MEDIUM	USD	New Home Sales
+MEDIUM	USD	New Home Sales MoM
+MEDIUM	CAD	New Housing Price Index MoM
+LOW	CAD	New Motor Vehicle Sales
+LOW	GBP	New Year's Eve
+LOW	AUD	New Year’s Day
+LOW	JPY	New Year’s Eve
+LOW	CNY	New Year’s Holiday
+MEDIUM	CNY	New Yuan Loans
+LOW	USD	Non Defense Goods Orders Ex Air
+HIGH	USD	Non Farm Payrolls
+HIGH	USD	Non Farm Payrolls Annual Revision Prel
+LOW	USD	Nonfarm Payrolls Private
+LOW	USD	Nonfarm Productivity QoQ Final
+MEDIUM	USD	Nonfarm Productivity QoQ Prel
+LOW	CNY	Outstanding Loan Growth YoY
+LOW	USD	Overall Net Capital Flows
+LOW	JPY	Overtime Pay YoY
+MEDIUM	USD	PCE Price Index MoM
+MEDIUM	USD	PCE Price Index YoY
+LOW	USD	PCE Prices QoQ
+LOW	USD	PCE Prices QoQ 2nd Est
+LOW	USD	PCE Prices QoQ Adv
+LOW	USD	PCE Prices QoQ Final
+LOW	USD	PPI
+LOW	GBP	PPI Core Output MoM
+LOW	GBP	PPI Core Output YoY
+LOW	USD	PPI Ex Food, Energy and Trade MoM
+LOW	USD	PPI Ex Food, Energy and Trade YoY
+LOW	GBP	PPI Input MoM
+LOW	NZD	PPI Input QoQ
+LOW	GBP	PPI Input YoY
+HIGH	USD	PPI MoM
+LOW	GBP	PPI Output MoM
+LOW	NZD	PPI Output QoQ
+LOW	GBP	PPI Output YoY
+MEDIUM	AUD	PPI QoQ
+MEDIUM	CNY	PPI YoY
+MEDIUM	CAD	Part Time Employment Chg
+MEDIUM	USD	Participation Rate
+MEDIUM	USD	Pending Home Sales MoM
+MEDIUM	USD	Pending Home Sales YoY
+LOW	CHF	Pentecost Monday
+HIGH	USD	Personal Income MoM
+HIGH	USD	Personal Spending MoM
+MEDIUM	USD	Philadelphia Fed Manufacturing Index
+LOW	USD	Philly Fed Business Conditions
+LOW	USD	Philly Fed CAPEX Index
+LOW	USD	Philly Fed Employment
+LOW	USD	Philly Fed New Orders
+LOW	USD	Philly Fed Prices Paid
+LOW	AUD	Plant Machinery Capital Expenditure QoQ
+HIGH	CNY	Politburo Meeting
+HIGH	USD	President Trump State of the Union Speech
+HIGH	CNY	President Trump and President Xi Summit
+MEDIUM	GBP	Prime Minister Starmer Speech
+LOW	AUD	Private Capital Expenditure QoQ
+LOW	AUD	Private House Approvals MoM Final
+LOW	AUD	Private House Approvals MoM Prel
+LOW	AUD	Private Sector Credit MoM
+LOW	AUD	Private Sector Credit YoY
+LOW	CHF	Producer & Import Prices MoM
+LOW	CHF	Producer & Import Prices YoY
+LOW	USD	Prospective Plantings - Corn
+LOW	USD	Prospective Plantings - Cotton
+LOW	USD	Prospective Plantings - Soy
+LOW	USD	Prospective Plantings - Wheat
+LOW	GBP	Public Sector Net Borrowing Ex Banks
+LOW	CNY	Qingming Festival
+LOW	USD	Quarterly Grain Stocks - Corn
+LOW	USD	Quarterly Grain Stocks - Soy
+LOW	USD	Quarterly Grain Stocks - Wheat
+LOW	AUD	Quarterly Inflation Rate QoQ
+LOW	AUD	Quarterly Inflation Rate YoY
+MEDIUM	AUD	Quarterly RBA Trimmed Mean CPI QoQ
+MEDIUM	AUD	Quarterly RBA Trimmed Mean CPI YoY
+MEDIUM	AUD	RBA Bulletin
+MEDIUM	AUD	RBA Bullock Speech
+LOW	AUD	RBA Chart Pack
+MEDIUM	AUD	RBA Connolly Speech
+MEDIUM	AUD	RBA Gov Bullock Speech
+LOW	AUD	RBA Harper Speech
+MEDIUM	AUD	RBA Hauser Speech
+LOW	AUD	RBA Hewson Speech
+MEDIUM	AUD	RBA Hunter Speech
+HIGH	AUD	RBA Interest Rate Decision
+MEDIUM	AUD	RBA Jones Speech
+MEDIUM	AUD	RBA Kent Speech
+MEDIUM	AUD	RBA McPhee Speech
+HIGH	AUD	RBA Meeting Minutes
+LOW	AUD	RBA Payments System Board Meeting
+MEDIUM	AUD	RBA Press Conference
+MEDIUM	AUD	RBA Smith Speech
+MEDIUM	AUD	RBA Trimmed Mean CPI MoM
+MEDIUM	AUD	RBA Trimmed Mean CPI YoY
+LOW	AUD	RBA Weighted Median CPI MoM
+LOW	AUD	RBA Weighted Median CPI YoY
+MEDIUM	NZD	RBNZ Financial Stability Report
+MEDIUM	NZD	RBNZ Gov Breman Speech
+MEDIUM	NZD	RBNZ Interest Rate Decision
+MEDIUM	NZD	RBNZ Press Conference
+LOW	USD	RCM/TIPP Economic Optimism Index
+MEDIUM	GBP	RICS House Price Balance
+LOW	CNY	RatingDog Composite PMI
+HIGH	CNY	RatingDog Manufacturing PMI
+MEDIUM	CNY	RatingDog Services PMI
+LOW	CAD	Raw Materials Prices MoM
+LOW	CAD	Raw Materials Prices YoY
+LOW	USD	Real Consumer Spending QoQ
+LOW	USD	Real Consumer Spending QoQ 2nd Est
+LOW	USD	Real Consumer Spending QoQ Adv
+LOW	USD	Real Consumer Spending QoQ Final
+LOW	USD	Real Personal Spending MoM
+LOW	USD	Redbook YoY
+LOW	CAD	Remembrance Day
+LOW	USD	Retail Inventories Ex Autos MoM
+MEDIUM	USD	Retail Inventories Ex Autos MoM Adv
+LOW	GBP	Retail Price Index MoM
+LOW	GBP	Retail Price Index YoY
+MEDIUM	USD	Retail Sales Control Group MoM
+MEDIUM	USD	Retail Sales Ex Autos MoM
+LOW	USD	Retail Sales Ex Gas/Autos MoM
+HIGH	USD	Retail Sales MoM
+MEDIUM	CAD	Retail Sales MoM Final
+MEDIUM	CAD	Retail Sales MoM Prel
+LOW	NZD	Retail Sales QoQ
+HIGH	CNY	Retail Sales YoY
+LOW	GBP	Retail Sales ex Fuel MoM
+LOW	GBP	Retail Sales ex Fuel YoY
+LOW	JPY	Reuters Tankan Index
+LOW	USD	Richmond Fed Manufacturing Index
+LOW	USD	Richmond Fed Manufacturing Shipments Index
+LOW	USD	Richmond Fed Services Revenues Index
+LOW	CAD	S&P Global Composite PMI
+LOW	AUD	S&P Global Composite PMI Final
+MEDIUM	EUR	S&P Global Composite PMI Flash
+MEDIUM	GBP	S&P Global Construction PMI
+MEDIUM	CAD	S&P Global Manufacturing PMI
+LOW	AUD	S&P Global Manufacturing PMI Final
+HIGH	GBP	S&P Global Manufacturing PMI Flash
+LOW	CAD	S&P Global Services PMI
+LOW	AUD	S&P Global Services PMI Final
+HIGH	GBP	S&P Global Services PMI Flash
+LOW	USD	S&P/Case-Shiller Home Price MoM
+MEDIUM	USD	S&P/Case-Shiller Home Price YoY
+MEDIUM	CHF	SECO Economic Forecasts
+LOW	CHF	SNB 2025 Annual Report
+MEDIUM	CHF	SNB Interest Rate Decision
+MEDIUM	CHF	SNB Monetary Policy Meeting Minutes
+LOW	CHF	SNB Quarterly Bulletin
+MEDIUM	CHF	SNB Schlegel Speech
+LOW	EUR	Selling Price Expectations
+MEDIUM	CAD	Senior Loan Officer Survey
+LOW	NZD	Services NZ PSI
+LOW	EUR	Services Sentiment
+LOW	JPY	Showa Day
+MEDIUM	JPY	Snap General Election
+LOW	GBP	Spring Bank Holiday
+MEDIUM	GBP	Spring Economic Statement
+LOW	CNY	Spring Festival Golden Week Holiday
+LOW	CHF	St. Berchtold
+LOW	JPY	Stock Investment by Foreigners
+LOW	CHF	Swiss National Day
+LOW	AUD	TD-MI Inflation Gauge MoM
+LOW	JPY	Tankan Large All Industry Capex
+HIGH	JPY	Tankan Large Manufacturers Index
+LOW	JPY	Tankan Large Manufacturing Outlook
+LOW	JPY	Tankan Large Non-Manufacturing Index
+LOW	JPY	Tankan Non-Manufacturing Outlook
+LOW	JPY	Tankan Small Manufacturers Index
+LOW	NZD	Terms of Trade QoQ
+LOW	JPY	Tertiary Industry Index MoM
+LOW	USD	Thanksgiving Day
+LOW	JPY	The Emperor’s Birthday
+LOW	JPY	Tokyo CPI Ex Food and Energy YoY
+LOW	JPY	Tokyo CPI YoY
+LOW	JPY	Tokyo Core CPI YoY
+LOW	USD	Total Household Debt
+LOW	CNY	Total Social Financing
+LOW	USD	Total Vehicle Sales
+LOW	GBP	Treasury Gilt 2028 Tender
+LOW	GBP	Treasury Gilt 2029 Auction
+LOW	GBP	Treasury Gilt 2030 Auction
+LOW	GBP	Treasury Gilt 2030 Tender
+LOW	GBP	Treasury Gilt 2031 Auction
+LOW	GBP	Treasury Gilt 2032 Auctions
+LOW	GBP	Treasury Gilt 2033 Auction
+LOW	GBP	Treasury Gilt 2035 Auction
+LOW	GBP	Treasury Gilt 2036 Auction
+LOW	GBP	Treasury Gilt 2039 Auction
+LOW	GBP	Treasury Gilt 2040 Tender
+LOW	GBP	Treasury Gilt 2049 Tender
+LOW	GBP	Treasury Gilt 2063 Tender
+LOW	USD	Treasury Refunding Announcement
+LOW	USD	Treasury Refunding Financing Estimates
+LOW	USD	U-6 Unemployment Rate
+HIGH	USD	US President Trump Speech
+HIGH	GBP	Unemployment Rate
+LOW	USD	Unit Labour Costs QoQ Final
+MEDIUM	USD	Unit Labour Costs QoQ Prel
+LOW	USD	Used Car Prices MoM
+LOW	USD	Used Car Prices YoY
+LOW	CNY	Vehicle Sales YoY
+LOW	JPY	Vernal Equinox Day
+LOW	USD	Veterans Day
+LOW	CAD	Victoria Day
+LOW	NZD	Visitor Arrivals YoY
+LOW	USD	WASDE Report
+LOW	EUR	Wage Growth YoY
+LOW	AUD	Wage Price Index QoQ
+LOW	AUD	Wage Price Index YoY
+LOW	NZD	Waitangi Day
+LOW	USD	Washington’s Birthday
+LOW	NZD	Westpac Consumer Confidence
+HIGH	AUD	Westpac Consumer Confidence Change
+MEDIUM	AUD	Westpac Consumer Confidence Index
+LOW	AUD	Westpac Leading Index MoM
+LOW	USD	Wholesale Inventories MoM
+MEDIUM	USD	Wholesale Inventories MoM Adv
+LOW	CAD	Wholesale Sales MoM Final
+LOW	CAD	Wholesale Sales MoM Prel
+LOW	CHF	World Economic Forum Annual Meeting
+MEDIUM	EUR	ZEW Economic Sentiment Index
+MEDIUM	CHF	procure.ch Manufacturing PMI
