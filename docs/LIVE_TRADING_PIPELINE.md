@@ -800,6 +800,35 @@ broker's own 20-point `SYMBOL_TRADE_STOPS_LEVEL` rejects a degenerate stop at th
 wire — which is where `qty = risk / stop_distance` is computed, and therefore the only one that can
 stop the position being SIZED off a collapsed stop in the first place.
 
+**WHAT IT COSTS — MEASURED 2026-08-05, and the answer is NOTHING.** Aaron's question, and the right
+one to ask of any filter switched on live. Two replays of `mpc_sos_fade` over the SAME 70,867 M15
+bars (2023-08-04 → 2026-08-04), identical but for the guard:
+
+| | trades | total R |
+|---|---|---|
+| `exec_min_stop_mode = "Off"` | 73 | +68.76R |
+| `"% of price"` 0.10 | 73 | +68.76R |
+
+**Zero trades refused, zero gained, the trade lists identical.** Over three years no setup produced
+a stop tighter than 0.10% of price (~$4 on gold at $4,000), so the floor never engaged once.
+
+⚠ **Read this as "it did not fire in three years", NOT as "it cannot fire".** It is the same shape
+as the note above about `exec_sl_level = "0.886"` never detonating across 6.5 years — **evidence of
+absence, not a guarantee** — and the guard exists precisely for the tail it has not yet seen: the
+0.786 measurement was a $0.20 stop, a 39,033 oz position and ~180% of equity gone in one bar. **A
+filter that costs 0.00R and insures against that is free insurance**, which is the only reason it is
+defensible to have switched it on without a prior measurement.
+⚠ **Three years, 73 trades — not the full 7.9-year window.** Chosen deliberately after a full-history
+attempt was abandoned; a longer window would raise the chance of catching a rare tight stop and can
+only make the cost side worse than 0.00R by a small amount. Re-run it over full history if the number
+ever needs to be quoted as a bound rather than as a sanity check.
+⚠ **The tooling lesson is worth more than the number.** The first two attempts at this measurement
+burned ~2h of CPU and produced nothing, because the scratch script walked up from `__file__` looking
+for the repo and lived OUTSIDE it — `Path("/").parent` is `/`, so it spun at the filesystem root
+before printing anything. Rising CPU was read as progress. **A process consuming CPU is evidence it
+is running, never evidence it is working**, and the cheap way to tell them apart is output the
+process emits on its own — which a `| tail` in front of it will hide completely.
+
 ### Step 2 — Secrets out of git (G7) — **DONE 2026-07-30**
 
 `algos/shared/credentials.py` (env → git-ignored `algos/credentials.json`) +
