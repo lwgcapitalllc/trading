@@ -738,6 +738,13 @@ real stress test on a real **charged** 161-trade XAUUSD M15 baseline (`spread`+`
   the field was stripped by the model. This run at 2 windows closes **30**, and the page reads
   `all windows have enough` beside IS 0.90 → OOS 1.70. `walk_forward_feasibility(161, w)` predicted
   it: OK at 2, infeasible at 3 (16 OOS), 5 (10) and 8 (6).
+- **Cancel stops the work, and it was pressed against a real running test rather than a fixture.**
+  A sensitivity phase 16 children deep returned `job_stopped: true` with 1 in-flight child cancelled,
+  then sat at **16 children for 120 seconds** with the status holding at `failed_cancelled` — never
+  overwritten by `complete`, which is what the old code did on the way out. **Both locks released
+  immediately**: `running-lock` `{futures: false, forex: false}` and the python bucket of
+  `running-job` free. Before this, the row said cancelled while the sweep kept every core and the
+  per-platform lock reported the platform idle, so a second job could start on top of it.
 - **Delete removes the files**: `reports/lab` 216 → 192 directories on a real delete, rows gone, and
   a dirs-vs-runs diff afterwards shows **no orphan dated today**. ⚠ **It is not retroactive, and the
   backlog is real: 110 orphaned directories remain, dated June, July and Aug 4** — left by every
