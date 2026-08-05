@@ -168,7 +168,17 @@ def main(argv=None) -> int:
         return 0
 
     local = fetch(args.host, rel, args.dry_run)
-    todo = local if args.dry_run else pending(local)
+    # `pending` is a read-only `git status` query, so it is safe on a dry run and belongs on
+    # one: skipping it made --dry-run report EVERY closed day as "would commit", including days
+    # already committed, so it could never print "up to date" and always overstated the work.
+    # A dry run that cannot say "nothing to do" is not a preview of the real run.
+    #
+    # ⚠ On a dry run the files were never fetched, so this compares what git already has
+    # against the working tree rather than against the VPS. Days already committed are
+    # correctly reported as done; a day whose local copy is somehow STALE would be reported as
+    # done too, and only the real run would catch it. That is the honest limit of previewing a
+    # copy you have not made.
+    todo = pending(local)
     if not todo:
         print(f"  up to date ({len(rel)} closed day(s), all already committed)")
         return 0
