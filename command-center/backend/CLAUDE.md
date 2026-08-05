@@ -762,11 +762,16 @@ real stress test on a real **charged** 161-trade XAUUSD M15 baseline (`spread`+`
   `running-job` free. Before this, the row said cancelled while the sweep kept every core and the
   per-platform lock reported the platform idle, so a second job could start on top of it.
 - **Delete removes the files**: `reports/lab` 216 → 192 directories on a real delete, rows gone, and
-  a dirs-vs-runs diff afterwards shows **no orphan dated today**. ⚠ **It is not retroactive, and the
-  backlog is real: 110 orphaned directories remain, dated June, July and Aug 4** — left by every
-  delete that ran before this fix. They are the "191 directories against 84 live runs" the audit
-  opened with. Clearing them is a separate, destructive housekeeping job on someone else's data and
-  was deliberately NOT done here.
+  a dirs-vs-runs diff afterwards shows **no orphan dated today**.
+- ✅ **The pre-existing backlog was cleared too, at Aaron's request: 109 orphaned directories,
+  7.9 MB** — 92 stress-test children whose parent was deleted before this fix, 13 `opt_*` combos,
+  and 3 sizing-pipeline test fixtures (`t_consistent`, `t_bullet`, `r2`). They are the
+  "191 directories against 84 live runs" the audit opened with. **`reports/lab` is now 82
+  directories and a dirs-vs-rows diff is CLEAN in the orphan direction (0).** ⚠ **The orphan set is
+  computed against `backtest_runs` UNION `stress_tests`** — a test's own directory holds its
+  `equity_paths.json` and is referenced by no run row, so diffing against runs alone would delete
+  live data. ⚠ **Three ROWS legitimately have no directory** (`equity_curve_path` empty, never
+  written); that is the opposite condition and is left alone.
 - **Sensitivity skips what it cannot reach**: 3 of 17 numeric non-foundational params on this run
   are behind a switch it has off, so 12 backtests that could only reproduce the baseline are not
   run, and the coverage says so.
@@ -787,6 +792,13 @@ said what that test had been asked to do.** The second time, after the fix, the 
 the difference is the whole point: a record written at the END does not survive the failures it
 exists to describe. ⚠ **Do not edit backend source while a stress test is running** — a `.md` edit
 is safe (uvicorn's reloader watches `*.py` only), a docstring is not.
+
+⚠ **What this audit did NOT verify live, stated so it is not mistaken for measured: the NATIVE
+walk-forward path (optimizer-derived, profit-factor based), the MT5 and NT8 runners, and the worker
+pool's peak memory.** Everything driven here was the **python** runner, which is Aaron's stated
+focus for this feature (2026-08-05) — so the native paths keep their unit tests and are deliberately
+not on the critical path. The memory figure is simply missing: the sample was taken after the pool
+had already torn down, which measures nothing. **Do not read any of the four as checked.**
 
 ### A child run must be measured on the BASELINE's physics
 
