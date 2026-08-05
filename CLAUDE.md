@@ -157,9 +157,23 @@ so `engines/vwap/engine.py` needs `engines/vwap/CLAUDE.md`, a ChartPanel compone
 satisfy a child: the nearest one is the one somebody reads next.
 
 Exempt: markdown, lock files, images, data (`.csv`, `.db`, `.pkl`), `.gitignore`,
-`.claude/settings.local.json`. Merges, rebases, reverts and `fixup!` commits pass through —
-they carry somebody else's change and would ask for the same paragraph twice. ⚠ `*.meta.json`
-is deliberately NOT exempt: it is a contract the Pine and the lab both read, not data.
+`.claude/settings.local.json`, and **`*/ledger/decisions-*.jsonl`**. Merges, rebases, reverts and
+`fixup!` commits pass through — they carry somebody else's change and would ask for the same
+paragraph twice. ⚠ `*.meta.json` is deliberately NOT exempt: it is a contract the Pine and the lab
+both read, not data.
+
+🔴 **The ledger exemption was added 2026-08-05 because the hook had QUIETLY DISABLED THE ONE BACKUP
+THAT MATTERS.** `algos/tools/ledger_sync.py` commits the live bot's decision record unattended —
+that record is the only copy of what the bot decided, including every setup it refused, and no
+broker statement contains it. The hook classified the `.jsonl` as code and demanded a paragraph in
+`algos/CLAUDE.md` for a data file, so **every automated sync failed and a closed day sat on the VPS
+alone.** Measured: the sync refused with 2026-08-04 outstanding, and it went through the moment the
+exemption landed. ⚠ **It is a PATH, not `*.jsonl`** — the extension is generic, and a future
+`.jsonl` carrying a contract would be waved through the way `*.meta.json` explicitly is not, while
+`*/ledger/decisions-*.jsonl` can only ever be this. **The standing lesson is about guardrails, not
+about this file: a rule that fires on a robot's commit has no human to read its message, so it does
+not nag — it silently stops the job.** When you add a check, ask what it does to the things that
+commit without a person watching.
 
 When a change genuinely needs no doc update, say so **in the message** — the reason is
 required and is recorded where the other person can read it:

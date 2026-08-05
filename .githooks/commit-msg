@@ -64,6 +64,13 @@ is_exempt() {
     *.png|*.jpg|*.jpeg|*.gif|*.ico|*.pdf|*.webp)    return 0 ;;
     *.csv|*.parquet|*.db|*.sqlite|*.sqlite3|*.pkl)  return 0 ;;
     .claude/settings.local.json)                    return 0 ;;  # per-machine
+    # A live bot's decision record. It is RECORDED broker data — the same character as the
+    # .csv above — and `algos/tools/ledger_sync.py` commits it unattended, so without this
+    # the backup of the one artefact that must survive the VPS could never be committed at
+    # all (measured 2026-08-05: the sync refused with a day outstanding). Deliberately a
+    # PATH, not `*.jsonl`: the extension is generic and a future .jsonl holding a contract
+    # would be waved through, while `*/ledger/decisions-*.jsonl` can only ever be this.
+    */ledger/decisions-*.jsonl)                     return 0 ;;
   esac
   return 1
 }
