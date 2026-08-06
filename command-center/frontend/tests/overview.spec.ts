@@ -50,6 +50,20 @@ const eventRows = (page: Page) => page.getByRole('button').filter({ hasText: /^\
 
 test.describe('Overview — the live box', () => {
   test('a DISABLED job never wears the "scheduled" pill, and a STOPPED one still does', async ({ page }) => {
+    // ⚠ THE DISABLED STATE IS MOCKED, and it has to be. This test named `P&L Tracker` and
+    // `Reporter` until 2026-08-06 — the two jobs that were DELETED on 2026-08-05 for carrying an
+    // empty bot registry — so it had been asserting on a subject that no longer exists, and it
+    // failed for that reason rather than for the defect. Nothing on the live box is DISABLED
+    // today and nothing should have to be: a rendering rule must not be coupled to which jobs
+    // the fleet happens to contain, or deleting a job silently deletes the guard with it.
+    await mockSnapshot(page, s => {
+      expect(s.scheduled_jobs.length, 'need two jobs to compare').toBeGreaterThan(1)
+      s.scheduled_jobs[0].status = 'DISABLED'
+      s.scheduled_jobs[1].status = 'STOPPED'
+    })
+    const live = await liveSnapshot()
+    const [offJob, onJob] = live.scheduled_jobs
+
     await page.goto('/')
     await page.waitForLoadState('networkidle')
 
@@ -59,15 +73,14 @@ test.describe('Overview — the live box', () => {
     const byName = Object.fromEntries(pills.map(p => [p.text, p]))
 
     // A task that will never fire must not read as covered. This is the whole defect.
-    for (const disabled of ['P&L Tracker', 'Reporter']) {
-      expect(byName[disabled], `${disabled} should be reported`).toBeDefined()
-      expect(byName[disabled].title).toMatch(/^Disabled/)
-      expect(byName[disabled].cls).not.toContain('text-gold-text')
-    }
+    expect(byName[offJob.name], `${offJob.name} should be reported`).toBeDefined()
+    expect(byName[offJob.name].title).toMatch(/^Disabled/)
+    expect(byName[offJob.name].cls).not.toContain('text-gold-text')
+
     // ⚠ STOPPED is NOT the same claim — a scheduled task that is not executing right this second
     // is healthy, and painting it grey would be the same bug in reverse.
-    expect(byName['Monitor'].title).toMatch(/^Scheduled/)
-    expect(byName['Monitor'].cls).toContain('text-gold-text')
+    expect(byName[onJob.name].title).toMatch(/^Scheduled/)
+    expect(byName[onJob.name].cls).toContain('text-gold-text')
   })
 
   test('a calendar row lands on that event\'s own day, not the bare week', async ({ page }) => {

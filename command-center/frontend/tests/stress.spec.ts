@@ -96,8 +96,15 @@ test('the grade reasons are rendered — they were computed, stored, and shown n
 
 test('a completed test with no letter says NOT GRADED, not nothing', async ({ page }) => {
   // It rendered a card with no letter and no explanation, which reads as a broken page.
+  //
+  // ⚠ `exact` is load-bearing and was added 2026-08-06. The subject here is the BADGE on the grade
+  // card, and a bare `getByText('not graded')` is a substring match that also catches the reasons
+  // panel's heading ("Why this test is not graded") and the reason line itself ("Not graded — …").
+  // It passed while the lab held one row whose reasons were empty, and became a strict-mode
+  // violation the moment a real ungraded row carried them — i.e. it was coupled to the DATA in the
+  // lab, not to the rule. The reasons panel has its own test directly above.
   await openMutated(page, d => { d.status = 'complete'; d.grade = null })
-  await expect(page.getByText('not graded')).toBeVisible()
+  await expect(page.getByText('not graded', { exact: true })).toBeVisible()
 })
 
 test('a phase that ran and FAILED says so', async ({ page }) => {

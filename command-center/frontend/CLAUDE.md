@@ -1219,6 +1219,18 @@ run detail. ⚠ **Scope table locators to `.first()`**: the per-regime table fur
 also a `tbody` of rows whose second cell is a number, and an unscoped `td:nth-child(2)` silently
 picks up three extra rows.
 
+🔴 **Two of these tests broke on the DATA rather than on the code, and both were coupled to the lab
+in a way a rendering test must not be (repaired 2026-08-06).** The Overview's disabled-job check
+named `P&L Tracker` and `Reporter` — **the two scheduled jobs deleted on 2026-08-05** — so it was
+asserting on a subject that no longer exists and failed for that reason rather than for the defect;
+it now MUTATES the snapshot to force one job `DISABLED` and one `STOPPED`, so the rule survives the
+fleet changing shape. The Stress Tests `not graded` check was a bare substring match that also
+caught the reasons panel's heading and the reason line; it passed only while the lab held one row
+whose reasons were empty, and became a strict-mode violation the moment a real ungraded row carried
+them — `{ exact: true }` now scopes it to the badge. **A test that asserts on which rows happen to
+be in the database is a test that will fail on a day nothing is wrong**, and the failure is
+indistinguishable from a regression until somebody reads it. Mock the state; never name the data.
+
 ⚠ **It runs against the RUNNING app** (`./start.sh` first — backend on `:8000`, dev server on
 `:5173`), and `playwright.config.ts` deliberately has **no `webServer` block**. The backend here
 talks to a live VPS and a live MT5 terminal, so a runner that boots it on demand is a runner that
