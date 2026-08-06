@@ -22,6 +22,25 @@ one real replay per row. The short version:
 - **Swap costs 6.60R — bigger than the gap between account types.** Nobody publishes whether it
   varies by tier. That is why question 3 matters more than questions 1 and 2.
 
+🔴 **AND "SWAP IS THE SAME ACROSS A BROKER'S TIERS" WAS TESTED AND FAILS ON THIS BROKER'S OWN
+PRODUCTS.** It was written here as a named assumption and disproved the same day with
+`algos/tools/broker_facts.py --symbols`:
+
+| on ONE account | swap long | swap short | spread | trade mode |
+|---|---|---|---|---|
+| `XAUUSD.s` | **−79.60** | **+30.25** | 0.320 (1,915,768 ticks) | FULL |
+| `XAUUSD.crp` | **−9.35** | **+0.04** | 0.130 (708,565 ticks) | **DISABLED** |
+
+Same market — median M15 close difference **$0.08** over 200 shared bars — quoted twice, **8.5x
+apart on the long swap, with the short CREDIT gone entirely.** So swap is emphatically not safe to
+assume shared, and the raw tiers now REFUSE it as well as the spread.
+
+⚠ **`XAUUSD.crp` is DISABLED and is therefore not a cheaper way to trade** — it is the evidence,
+not an opportunity. ⚠ **The terminal cannot answer the tier question either way**: the suffix
+scheme across all 1,015 symbols is `.s` / `.24H` / `.crp` / no-suffix, i.e. product lines rather
+than tiers. **Only a second account can measure Prime or ECN** — which is what makes question 3 the
+one to press.
+
 ⚠ **Only the $0.32 is ours.** It is measured off the live terminal (1,893,438 ticks,
 `algos/tools/broker_facts.py`) on a **Standard** demo. Every Prime and ECN figure below came off a
 marketing page, and **the published sources contradict each other** — PU Prime's own account-types
@@ -74,7 +93,7 @@ does mean **the numbers in the questions below are the ones to get confirmed, no
 | **1** | One tier is genuinely tighter on gold | Take that one and **ignore the commission difference entirely**. It is worth ~1R over 6.5 years. |
 | **1** | A raw tier is quoted **wider than ~$0.22** on gold | Re-run the replay before deciding — past $0.22 the fill loss starts to bite (6 setups at $0.22, 8 at $0.32). |
 | **2** | Either $1.00 or $3.50 | **Does not change the recommendation.** Measured at 0.48R vs 1.67R over 6.5 years. |
-| **3** | Swap is identical across tiers | Closed — the account choice really is just the spread. |
+| **3** | Swap is identical across tiers | Put the confirmation in `fills.py` and replace `UNMEASURED_SWAP` on those tiers. Until then they REFUSE — see below. |
 | **3** | **Swap differs by tier** | 🔴 **This outranks everything else on the page.** Swap is 6.60R against a ~10R total gap between tiers. Re-run the replay with the per-tier rates before choosing. |
 | **4** | Admin fee is below ~$50/lot/night equivalent | Worth pricing properly — but ⚠ **gold's short swap is a CREDIT we currently collect**, so swap-free removes income as well as cost. The 6.60R figure is already net of that credit. Do not treat swap-free as a free 6.60R. |
 | **5** | Min stop is wider than **$3.20** on gold | Matters. Our own `exec_min_stop_mode` floor of 0.08% binds at ~$3.20 on $4,000 gold, so the broker's 20-point ($0.20) limit currently never bites. A tier with a much wider limit would start refusing our orders instead. |

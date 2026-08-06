@@ -1045,7 +1045,14 @@ through `AccountProfile.spread_or_refuse()`, so the refusal fires wherever the p
 rather than only on the lab's path. ⚠ **It refuses the SPREAD, not the tier** — a raw tier's
 commission and swap are known and still chargeable. ⚠ **`0.0` and "unmeasured" must never
 collapse**: 0.0 charges nothing on purpose, and the sentinel is NEGATIVE, so passing it through
-would PAY the trader half a spread on every fill. **Which tier to actually trade is measured and
+would PAY the trader half a spread on every fill. 🔴 **The SWAP on those tiers refuses too, and that
+assumption was checked rather than argued**: `XAUUSD.s` and `XAUUSD.crp` are the SAME market on ONE
+PU Prime account (median M15 close difference $0.08 over 200 shared bars) carrying **swaps 8.5x
+apart — long −79.60 vs −9.35 — with the short CREDIT gone entirely (+30.25 vs +0.04)**. This bot
+trades both sides and its whole swap arithmetic rests on that credit nearly cancelling the long
+charge, so borrowing another product's swap is not a small approximation. ⚠ **`swap=None` still
+means "charge no swap" and stays silent** — only an UNREAD swap refuses. **Which tier to actually
+trade is measured and
 answered in `docs/BROKER_QUESTIONS.md` — a RAW tier, not Standard, because on this strategy the
 spread costs ~20x what the commission does and it costs by killing FILLS** (8 setups of 159 never
 fill at $0.32, 3 at $0.08; commission is 0.48R at $1.00/side and 1.67R at $3.50/side over 6.5

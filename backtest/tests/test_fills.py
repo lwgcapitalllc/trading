@@ -65,8 +65,13 @@ def test_negative_commission_rejected():
 
 def test_puprime_standard_is_commission_free():
     """Source: puprime.com/account-types (checked 2026-07-16) — Standard $0, Prime $3.5/side/lot,
-    ECN $1/side/lot. Corroborated by the live demo's FIXED $0.33 gold spread, which is how a
-    commission-free tier is priced (raw tiers quote a variable spread near zero)."""
+    ECN $1/side/lot. Corroborated by the live demo's FIXED $0.32 gold spread, which is how a
+    commission-free tier is priced (raw tiers quote a variable spread near zero).
+
+    ⚠ These commission figures are the broker's PUBLISHED ones and the sources contradict each
+    other on which tier carries $1.00 and which $3.50 — see `docs/BROKER_QUESTIONS.md`. They are
+    kept because commission is the one of the three costs a page can state unambiguously per lot;
+    the spread and swap on those tiers refuse instead."""
     assert PROFILES["puprime_standard"].commission_per_side_per_lot == 0.00
     assert PROFILES["puprime_prime"].commission_per_side_per_lot == 3.50
     assert PROFILES["puprime_ecn"].commission_per_side_per_lot == 1.00
@@ -346,13 +351,65 @@ def test_modelling_fills_on_an_unmeasured_spread_is_refused_at_construction():
     assert "never been measured" in str(exc.value)
 
 
-def test_an_unmeasured_spread_still_builds_a_profile_for_its_other_costs():
-    """The refusal is at the point of CHARGING, not construction — a raw tier's commission and swap
-    are known and chargeable, and it is only the spread that nobody has read. Refusing to build the
-    profile at all would make the honest half unusable."""
+def test_an_unmeasured_tier_still_builds_a_profile_for_the_cost_it_does_know():
+    """The refusal is at the point of CHARGING, not construction. Commission is the one of the
+    three costs that is stated per lot and unambiguous, so a raw tier can still be charged it.
+    Refusing to build the profile at all would make the honest part unusable."""
     ecn = PROFILES["puprime_ecn"]
     assert ecn.commission(100) == pytest.approx(1.00)
-    assert ecn.swap is not None
+
+
+# ── swap is NOT tier-invariant, and that was measured rather than assumed ─────
+
+def test_the_raw_puprime_tiers_refuse_their_swap_too():
+    """🔴 The assumption this replaces was written down on 2026-08-06 and overturned the same day.
+
+    Every tier borrowed Standard's swap on the reasoning that overnight financing is a fact about
+    the SYMBOL. **Measured on PU Prime's own terminal, that fails on the broker's own products:**
+    `XAUUSD.s` and `XAUUSD.crp` are the same market quoted twice on ONE account (median M15 close
+    difference $0.08 over 200 shared bars) and carry swaps 8.5x apart — long -79.60 vs -9.35 —
+    with the short CREDIT gone entirely, +30.25 vs +0.04.
+
+    That credit is what makes this strategy's swap arithmetic work at all (it trades both sides and
+    the short credit nearly cancels the long charge), so borrowing another product's swap is not a
+    small approximation. A tier is measured or it refuses.
+    """
+    assert PROFILES["puprime_standard"].swap.unmeasured is False
+    for tier in ("puprime_prime", "puprime_ecn", "puprime_cent"):
+        assert PROFILES[tier].swap.unmeasured is True, tier
+
+
+def test_charging_an_unmeasured_swap_refuses_rather_than_borrowing():
+    """Both the per-night rate and the full charge refuse — `charge()` routes through
+    `per_lot_per_night`, so one guard covers the two entry points a caller might reach for."""
+    swap = PROFILES["puprime_ecn"].swap
+    with pytest.raises(CostsNotConfigured):
+        swap.per_lot_per_night(1)
+    with pytest.raises(CostsNotConfigured) as exc:
+        swap.charge(1, 1.0, datetime.date(2026, 8, 6))
+    assert "never been read" in str(exc.value)
+
+
+def test_the_profile_level_swap_charge_refuses_too():
+    """`AccountProfile.swap_charge` is the seam both real consumers use (`execution.py` and
+    `reprice.py`), so the refusal has to survive that hop rather than only living on the model."""
+    with pytest.raises(CostsNotConfigured):
+        PROFILES["puprime_ecn"].swap_charge(1, 100.0, datetime.date(2026, 8, 6))
+
+
+def test_an_unmeasured_swap_is_NOT_the_same_as_charging_no_swap():
+    """The distinction the whole sentinel exists for. `swap = None` means *deliberately charge no
+    swap* and must stay silent; an unmeasured swap must refuse. Collapsing them would run a raw-tier
+    backtest with the single largest cost on this strategy quietly set to zero."""
+    free = AccountProfile("free", 0.00, swap=None)
+    assert free.swap_charge(1, 100.0, datetime.date(2026, 8, 6)) == 0.0
+
+
+def test_a_measured_swap_still_charges_normally():
+    """The other direction of the rule, stated on purpose — a guard that refuses everything is not
+    a guard. -79.60 * 100 * 10^-2 = -$79.60 per lot per night, one night."""
+    charged = PROFILES["puprime_standard"].swap_charge(1, 100.0, datetime.date(2026, 8, 6))
+    assert charged == pytest.approx(-79.60)
 
 
 def test_bid_ask_fills_refuses_to_run_with_no_spread():

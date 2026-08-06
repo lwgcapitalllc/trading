@@ -360,10 +360,35 @@ pre-existing `spread <= 0` guard already raised — saying *"spread is 0 — the
 bid"*, a confident FALSE DIAGNOSIS, since the spread is not zero but unknown. **A nearby guard
 that happens to fire is not the same as the right guard firing.**
 
-⚠ **Swap is assumed tier-invariant and that assumption is NAMED, not measured** (`_XAUUSD_SWAP` is
-Standard's). It is deliberately not sentinelled: the spread differs between tiers by CONSTRUCTION —
-it is how a tier is priced — where swap is normally a fact about the symbol and merely unconfirmed
-here. **If question 3 comes back saying it varies, that outranks this whole comparison.**
+🔴 **THE SWAP ASSUMPTION WAS CHECKED THE SAME DAY AND IT IS WRONG — SWAP REFUSES TOO.** The first
+pass left `_XAUUSD_SWAP` on every tier and NAMED the assumption (*swap is a fact about the SYMBOL,
+so it is the same across a broker's tiers*) as a ⚠ caveat. ✅ **MEASURED with the new
+`algos/tools/broker_facts.py --symbols`, one command against the live terminal:**
+
+| on ONE account | swap long | swap short | spread | trade mode |
+|---|---|---|---|---|
+| `XAUUSD.s` | **−79.60** | **+30.25** | 0.320 (1,915,768 ticks) | FULL |
+| `XAUUSD.crp` | **−9.35** | **+0.04** | 0.130 (708,565 ticks) | **DISABLED** |
+
+They are the **same market** — median M15 close difference **$0.08** over 200 shared bars — quoted
+twice, **8.5x apart on the long swap with the short CREDIT gone entirely.** This strategy trades
+both sides and its whole swap arithmetic rests on that credit nearly cancelling the long charge, so
+borrowing another product's swap is not a small approximation. The raw tiers now carry
+`UNMEASURED_SWAP` and refuse.
+
+⚠ **`XAUUSD.crp` is DISABLED, so it is EVIDENCE, not an opportunity** — the first reading of that
+table was *"there is a far cheaper gold sitting on this account"*, which is why the tool now prints
+`trade_mode` in the same row as the tempting numbers.
+
+⚠ **The terminal cannot answer the ACCOUNT-TIER question in either direction.** The suffix scheme
+across all 1,015 symbols is `.s` / `.24H` / `.crp` / no-suffix — **product lines, not tiers** — so
+this account sees only its own products. **A second account is the only way to measure Prime or
+ECN**, and question 3 in `docs/BROKER_QUESTIONS.md` is what turns the sentinel off.
+
+**The standing lesson is about how an assumption survives.** This one was testable in one command
+the whole time, and it lasted because no command existed. Writing it down as ⚠ NAMED rather than
+measured felt like diligence and was still just a comment. **When you name an assumption, ask what
+it would cost to test — here it was ten minutes and a read-only script.**
 
 **Still open — see the broker questions in `docs/BROKER_QUESTIONS.md`.** The one number that would
 change this answer is not in any table above: **swap costs 6.60R, larger than the entire gap between

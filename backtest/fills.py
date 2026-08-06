@@ -57,7 +57,7 @@ from typing import Dict, List, Optional, Protocol, Sequence
 
 __all__ = ["AccountProfile", "PROFILES", "CostsNotConfigured", "PathResolver", "BarPathResolver",
            "TickPathResolver", "Bar", "Fill", "Level", "SwapModel", "SENTINEL",
-           "SPREAD_UNMEASURED"]
+           "SPREAD_UNMEASURED", "UNMEASURED_SWAP"]
 
 # An un-set cost. Not 0.0: zero is a legitimate value (PU Prime Standard genuinely charges no
 # commission), so zero must be a thing you can deliberately SAY, distinct from never having said
@@ -133,8 +133,15 @@ class SwapModel:
     contract_size: float = 100.0
     digits: int = 2
     triple_weekday: int = 2          # Wednesday, per PU Prime's swap-rates table
+    # An account whose swap NOBODY HAS READ. Distinct from `AccountProfile.swap = None`, which
+    # means "do not charge swap" on purpose. The point values stay at SENTINEL, which is the
+    # honest record — they are literally unset — and every read refuses rather than returning one.
+    # See `UNMEASURED_SWAP` below for why this is not paranoia.
+    unmeasured: bool = False
 
     def __post_init__(self) -> None:
+        if self.unmeasured:
+            return          # nothing to validate: every read refuses instead
         for name, v in (("swap_long_points", self.swap_long_points),
                         ("swap_short_points", self.swap_short_points)):
             if v == SENTINEL:
@@ -144,8 +151,21 @@ class SwapModel:
                     f"charge, a positive one is a credit."
                 )
 
+    def _refuse(self) -> None:
+        raise CostsNotConfigured(
+            "this account's overnight swap has never been read, so it cannot be charged. It is "
+            "deliberately NOT defaulted to a sibling account's figure — MEASURED on PU Prime's own "
+            "terminal, two products on ONE account carry swaps 8.5x apart (XAUUSD.s long -79.60 vs "
+            "XAUUSD.crp -9.35) and the short CREDIT vanishes entirely (+30.25 vs +0.04), so "
+            "'swap is a fact about the symbol' is not safe to assume. Read it off the symbol's "
+            "Specification window on an account of this type (`algos/tools/broker_facts.py`), or "
+            "run without the swap layer."
+        )
+
     def per_lot_per_night(self, direction: int) -> float:
         """Account-currency swap for one lot, one night. Negative = charged, positive = credited."""
+        if self.unmeasured:
+            self._refuse()
         pts = self.swap_long_points if direction > 0 else self.swap_short_points
         return pts * self.contract_size * (10 ** -self.digits)
 
@@ -158,12 +178,32 @@ class SwapModel:
         return self.per_lot_per_night(direction) * abs(lots) * self.nights_charged(roll_date)
 
 
+# A swap NOBODY HAS READ on this account. ⚠ **Not `AccountProfile.swap = None`**, which means
+# "charge no swap" deliberately and is a legitimate thing to say.
+#
+# 🔴 It exists because the tier-invariance assumption was checked and does NOT hold. Until
+# 2026-08-06 every PU Prime tier here carried Standard's swap on the reasoning that overnight
+# financing is a fact about the SYMBOL and so the same across a broker's tiers. **MEASURED on PU
+# Prime's own live terminal, that reasoning fails on the broker's own products:** `XAUUSD.s` and
+# `XAUUSD.crp` are the SAME market quoted twice (median M15 close difference $0.08 over 200 shared
+# bars) on ONE account, and they carry
+#
+#     XAUUSD.s     swap long -79.60   short +30.25   spread 0.320 (1,915,768 ticks)
+#     XAUUSD.crp   swap long  -9.35   short  +0.04   spread 0.130 (708,565 ticks)
+#
+# — 8.5x apart on the long side, with the short CREDIT gone entirely. A strategy that trades both
+# sides has its whole swap arithmetic decided by that credit, so borrowing one product's swap for
+# another is not a small approximation. ⚠ `XAUUSD.crp` is `trade_mode: DISABLED` on this account,
+# so it is NOT an opportunity — it is the EVIDENCE, and it is the reason this sentinel exists.
+UNMEASURED_SWAP = SwapModel(unmeasured=True)
+
+
 @dataclass(frozen=True)
 class AccountProfile:
     """What a specific BROKER ACCOUNT costs to trade — the cost model's real owner.
 
     **Why the account, not the symbol.** The same XAUUSD.s costs different amounts depending on which
-    tier the account is: PU Prime Standard is $0 commission with a marked-up (~$0.33) spread, while
+    tier the account is: PU Prime Standard is $0 commission with a marked-up ~$0.32 spread, while
     Prime is $3.50/side/lot against a raw spread near zero. Burying a commission constant in code
     means it silently lies the day the account changes. Naming the profile makes the assumption
     switchable in one line, and every KPI moves with it.
@@ -185,7 +225,8 @@ class AccountProfile:
 
     `spread` is the same shape as `slippage_ticks` — **BAR MODE ONLY**, 0.0 meaning "not priced" —
     but for the opposite reason. It is not unknowable; it is MEASURED and stable (gold on both
-    brokers below reads a fixed $0.33). Tick mode has the real bid and ask on every tick, so it
+    brokers below reads a FIXED spread — PU Prime Standard $0.32, Vantage $0.22, and quoting one
+    for the other is a 45% error). Tick mode has the real bid and ask on every tick, so it
     pays the spread by construction and ignores this field; bar mode gets one price per bar and
     has to be told. **It is a fact about the SYMBOL as much as the account**, and the value here is
     XAUUSD's — the same is already true of `swap`, so a profile in this module is read as "this
@@ -341,22 +382,20 @@ _XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.9
 _SPREAD_XAUUSD_PUPRIME_STANDARD = 0.32
 _SPREAD_XAUUSD_VANTAGE = 0.22
 
-# ⚠ **SWAP IS ASSUMED TIER-INVARIANT, and that assumption is NAMED rather than measured.** These
-# values were read off the Standard demo. Overnight financing is normally a fact about the SYMBOL
-# and the same across a broker's tiers — but nobody has confirmed it here, and swap is the largest
-# re-priceable cost on this strategy (6.60R vs a ~10R total gap between tiers), so if it does vary
-# it outranks everything the tier comparison measured. It is question 3 in
-# `docs/BROKER_QUESTIONS.md`. It is deliberately NOT sentinelled: the spread is different by
-# CONSTRUCTION (it is how a tier is priced) where this is merely unconfirmed, and refusing every
-# raw-tier run over an assumption that is probably true would cost more than it buys.
+# 🔴 **SWAP IS NOT ASSUMED TIER-INVARIANT ANY MORE, AND THE ASSUMPTION WAS CHECKED RATHER THAN
+# ARGUED (2026-08-06).** These values were read off the STANDARD demo, and until this date every
+# tier borrowed them on the reasoning that swap is a fact about the symbol. That reasoning fails on
+# this broker's own products — see `UNMEASURED_SWAP` for the measurement. The raw tiers therefore
+# refuse BOTH costs nobody has read on them. **A tier is measured, or it refuses; there is no third
+# state and no borrowing.** Question 3 in `docs/BROKER_QUESTIONS.md` is what turns one back on.
 PROFILES = {
     "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP,
                                        spread=_SPREAD_XAUUSD_PUPRIME_STANDARD),
-    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP,
+    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=UNMEASURED_SWAP,
                                        spread=SPREAD_UNMEASURED),
-    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP,
+    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=UNMEASURED_SWAP,
                                        spread=SPREAD_UNMEASURED),
-    "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=_XAUUSD_SWAP,
+    "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=UNMEASURED_SWAP,
                                        spread=SPREAD_UNMEASURED),
     "vantage_demo":     AccountProfile("vantage_demo",     0.00, swap=_XAUUSD_SWAP_VANTAGE,
                                        spread=_SPREAD_XAUUSD_VANTAGE),

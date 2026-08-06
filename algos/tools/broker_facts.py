@@ -234,9 +234,54 @@ def history_spread(mt5, symbol: str, days: int, point: float) -> dict:
     return out
 
 
+_TRADE_MODE = {0: "DISABLED", 1: "LONG ONLY", 2: "SHORT ONLY", 3: "CLOSE ONLY", 4: "FULL"}
+
+
+def sibling_symbols(mt5, symbol: str) -> list:
+    """Every symbol on this terminal sharing this one's ROOT — i.e. the same market, quoted again.
+
+    **Why this exists, and it is not curiosity.** `backtest/fills.py` used to give every PU Prime
+    account tier one swap, on the reasoning that overnight financing is a fact about the SYMBOL and
+    therefore the same across a broker's tiers. Nobody could check it, so it survived as an
+    assumption for weeks.
+
+    🔴 **Running this is what disproved it.** On the live PU Prime demo, `XAUUSD.s` and
+    `XAUUSD.crp` are the SAME market (median M15 close difference $0.08 over 200 shared bars) on
+    ONE account, and carry swaps 8.5x apart — long -79.60 vs -9.35 — with the short CREDIT gone
+    entirely, +30.25 vs +0.04. A strategy trading both sides has its whole swap arithmetic decided
+    by that credit.
+
+    ⚠ **Read `trade_mode` before drawing any conclusion.** `XAUUSD.crp` looks like a far cheaper
+    product and is `DISABLED` on this account, so it is evidence rather than an opportunity — which
+    is exactly the mistake this column exists to stop somebody making.
+    """
+    root = symbol.split(".", 1)[0].upper()
+    out = []
+    for s in (mt5.symbols_get() or []):
+        if s.name.split(".", 1)[0].upper() != root:
+            continue
+        mt5.symbol_select(s.name, True)      # market watch only — changes no order state
+        f = mt5.symbol_info(s.name) or s
+        tick = mt5.symbol_info_tick(s.name)
+        out.append({
+            "symbol": f.name, "path": f.path,
+            "trade_mode": _TRADE_MODE.get(f.trade_mode, f.trade_mode),
+            "contract_size": f.trade_contract_size, "digits": f.digits,
+            "swap_long": f.swap_long, "swap_short": f.swap_short,
+            "spread_points": f.spread,
+            "live_spread": (round(tick.ask - tick.bid, 5)
+                            if tick and tick.ask and tick.bid else None),
+        })
+    return sorted(out, key=lambda r: r["symbol"])
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Measure a live broker's symbol costs. Read-only.")
     ap.add_argument("--bot", required=True)
+    ap.add_argument("--symbols", action="store_true",
+                    help="ALSO list every symbol on this terminal sharing this one's root, with "
+                         "its trade mode, swap and spread. This is how you check whether a cost "
+                         "you are about to assume is shared actually is — see sibling_symbols().")
     ap.add_argument("--sample", type=int, default=120,
                     help="seconds of live ticks to sample for the spread distribution (0 = skip)")
     ap.add_argument("--history-days", type=int, default=0,
@@ -275,6 +320,26 @@ def main(argv=None) -> int:
               f"exec_min_stop_mode")
         print(f"  swap long / short    {s['swap_long']} / {s['swap_short']} - a POSITIVE value is "
               f"a credit paid TO you, and gold's short swap normally is one")
+
+        if args.symbols:
+            sibs = sibling_symbols(mt5, symbol)
+            print()
+            print(f"SIBLING SYMBOLS - same market, quoted again on this terminal ({len(sibs)})")
+            print(f"  {'symbol':<16} {'trade_mode':<11} {'swap_long':>10} {'swap_short':>11} "
+                  f"{'spread':>8}  path")
+            for r in sibs:
+                sp = "-" if r["live_spread"] is None else f"{r['live_spread']:.3f}"
+                print(f"  {r['symbol']:<16} {r['trade_mode']:<11} {r['swap_long']:>10.2f} "
+                      f"{r['swap_short']:>11.2f} {sp:>8}  {r['path']}")
+            pairs = {(r["swap_long"], r["swap_short"]) for r in sibs}
+            if len(sibs) > 1 and len(pairs) > 1:
+                print(f"  -> {len(pairs)} DISTINCT swap pairs across {len(sibs)} quotes of one "
+                      f"market. A cost is NOT safe to assume shared - measure the one you trade.")
+            elif len(sibs) > 1:
+                print("  -> every sibling carries the same swap on THIS account. That is a fact "
+                      "about these symbols, and still says nothing about another ACCOUNT TIER.")
+            else:
+                print("  -> one quote only, so this terminal cannot speak for any other tier.")
 
         if args.sample > 0:
             print()
