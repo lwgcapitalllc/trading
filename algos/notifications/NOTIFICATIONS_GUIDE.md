@@ -36,10 +36,21 @@ unset — and it must not crash at 2am for it either.
 
 ## Telegram Delivery Model
 
-All notifications — scheduled alerts, command replies, and the startup ping — go to the
-**LWG Capital Algos Notifications** group chat (`telegram_chat_id`) **by default**. A live bot
-can override both the destination and the sender identity in its own instance config; see
-*Routing is per bot* below.
+**There are TWO rooms, and which one a message lands in is decided by what the message IS**
+(2026-08-05). `telegram_chat_id` carries TRADES — the entry alert and the exit that replies to
+it, sent by `live/bridge.py` and by nothing else. `telegram_health_chat` carries everything
+else: starts, stops, crashes, link outages, re-warms, refused config, the bridge HALT, the
+watchdog's alerts, the log reviewer's findings and the command center's buttons.
+
+Before that split, all of it went to one chat — **32 messages, 2 of them trades** — which is how
+a fill alert stops being read. Unset `telegram_health_chat` and health falls back to the trades
+group and says so; trades never fall back the other way. Full rules and the enforcement test:
+`algos/CLAUDE.md` → *Two rooms — every message declares its KIND*.
+
+Command REPLIES are not routed by kind at all — they go back to whichever chat asked.
+
+A live bot can override both destinations and the sender identity in its own instance config;
+see *Routing is per bot* below.
 
 `telegram_admin_chat_id` is loaded by every notifier as a fallback definition but is no longer
 the send destination for any message.
@@ -67,9 +78,10 @@ Bot status notifications are event-driven, not polling-based:
 
 `shared/notify.py` is the single Telegram helper for VPS-side components. **The token half of the 2026-07-06 refactor note is DONE (2026-07-30)** — no script holds a token any more; every script here resolves its own through `shared/credentials.py`. Mac-side Telegram calls go through the command-center bots router, which delegates to `services/notify.py`.
 
-**Routing is per bot, and the default is shared.** `send_telegram(text, chat_id="", token_key="")`:
+**Routing is per bot, and the default is shared.** `send_telegram(text, kind, chat_id="", token_key="")`:
 
-- `chat_id` — where this message goes. Empty = the shared group above. A live bot passes its own `telegram_chat_id` from its instance config, so a demo gold bot and a funded FX bot need not share one feed.
+- `kind` — `notify.TRADE` or `notify.HEALTH`. **Required, with no default**, because a default routes silently and "the wrong room, quietly" is the failure the split exists to end. A forgotten one is caught by `algos/tests/test_notification_routing.py`, which greps every call site rather than waiting for the `TypeError` to surface at 3am inside the alert that was trying to warn you.
+- `chat_id` — where this message goes. Empty = the shared destination for that KIND. A live bot passes its own `telegram_chat_id` / `telegram_health_chat` from its instance config, so a demo gold bot and a funded FX bot need not share one feed.
 - `token_key` — which Telegram bot it appears to come from. It NAMES a key in `credentials.json` (`telegram_token_bleg`), never the token, so an instance config never holds a secret. Empty = the shared bot.
 
 A named token that is missing falls back to the default one and prints the key once. That is deliberate: the wrong sender identity is recoverable, a silently dropped trade alert is not. Expect the send to then fail at Telegram anyway — **a bot can only post to a chat it has been added to** — but it fails loudly with the reason printed, which is the point.
