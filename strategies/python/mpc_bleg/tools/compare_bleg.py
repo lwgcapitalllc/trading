@@ -45,6 +45,8 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
 from mpc_bleg import BLegConfig, MpcBLegStrategy  # noqa: E402
 from mpc_sos_fade.tools.compare_strategy import (  # noqa: E402
     config_from_export as _config_from_export,
+    engine_config_from_export as _engine_config_from_export,
+    EqExemptUnknown,
     load_export,
 )
 
@@ -248,12 +250,18 @@ def compare(df: pd.DataFrame, decisions, bleg_states, warmup: int = 0,
 
 
 def run_parity(path, warmup: int = 0, price_tol: float = 0.01, r_tol: float = 0.02,
-               base_config: Optional[BLegConfig] = None) -> List[str]:
+               base_config: Optional[BLegConfig] = None,
+               eq_exempt: Optional[bool] = None) -> List[str]:
     """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
     df = load_export(path)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
-    strat = MpcBLegStrategy(cfg).run(bars, warmup=0)   # keep all bars aligned to CSV rows
+    # The EQ/FVG coupling comes off the export, not off this fork's pin — the two Pines genuinely
+    # disagree about it (A+ ships it on, this fork off), so reading it is what makes the agreement
+    # measured rather than two defaults that happen to line up. Shared decoder, same as cfg_*.
+    eng = _engine_config_from_export(df, MpcBLegStrategy.engine_config(), eq_exempt)
+    # keep all bars aligned to CSV rows
+    strat = MpcBLegStrategy(cfg).run(bars, engine_config=eng, warmup=0)
     return compare(df, strat.decisions, strat.bleg_states, warmup, price_tol, r_tol)
 
 
@@ -263,8 +271,17 @@ def main() -> int:
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)")
     ap.add_argument("--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)")
     ap.add_argument("--r-tol", type=float, default=0.02, help="R match tolerance")
+    ap.add_argument("--eq-exempt", choices=("on", "off"), default=None,
+                    help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
+                         "surviving the FVG cap). Only needed for an export with no "
+                         "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
     a = ap.parse_args()
-    msgs = run_parity(Path(a.csv), a.warmup, a.price_tol, a.r_tol)
+    eq = None if a.eq_exempt is None else (a.eq_exempt == "on")
+    try:
+        msgs = run_parity(Path(a.csv), a.warmup, a.price_tol, a.r_tol, eq_exempt=eq)
+    except EqExemptUnknown as exc:
+        print(f"CANNOT DIFF — {exc}")
+        return 2
     if not msgs:
         print(f"PARITY OK — Python == Pine on every bar from {a.warmup} on.")
         return 0

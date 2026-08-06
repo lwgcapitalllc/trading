@@ -47,9 +47,37 @@ def test_engine_config_pins_every_input_the_pine_moved_off_its_default():
     pinned at all, and the bot only worked because `EngineConfig` happened to default to 0.1.
     That default was itself stale relative to the engine, so "tidying" it up would have
     silently moved this bot. Pinned now — an assertion here is what makes the shared default
-    free to change. Lock all four."""
+    free to change. Lock all five.
+
+    `eq_exempt_fvg` is the fifth and the most expensive so far (found 2026-08-06): a gap sitting
+    on an active EQH/EQL survives the FVG cap, `mpc_strategy.pine` has defaulted it ON since
+    2026-08-03, and NOTHING on the Python side modelled the coupling at all — no EQ engine reached
+    the FVG engine. So the two sides evicted different gaps and `compare_strategy.py` went red for
+    three days at one bar, reporting a gap-SET difference as an entry-RULE mismatch. It differs
+    from the four above in one way that matters: it is a Pine INPUT rather than a constant, so it
+    also gets a `cfg_eq_exempt` export column and the harness configures the bot FROM the export.
+    This assertion pins the LIVE default; the column is what makes any other value checkable."""
     ec = MpcSosFadeStrategy.engine_config()
     assert ec.fvg_max_count == 7           # Pine fvgMaxCount (engine default 8)
     assert ec.fvg_require_close is True    # Pine hardcodes close[1] past the gap
     assert ec.show_internal is False       # Pine "Show Internal Structure" defaults OFF
     assert ec.fvg_threshold_pct == 0.1     # Pine fvgThreshHTF at 15m (engine default 0.0)
+    assert ec.eq_exempt_fvg is True        # Pine eqExemptFvg, ON since 2026-08-03
+
+
+def test_the_eq_coupling_actually_reaches_the_fvg_engine():
+    """Pinning the flag is not the same as WIRING it, and the flag alone would test nothing.
+
+    The bug was never a wrong value — it was that `backtest/replay/EngineStack` built no EQ engine
+    and passed no levels, so the FVG cap could not see liquidity even in principle. A test that
+    only asserted the pin would have gone green throughout. This one asserts the stack actually
+    holds an EQ engine when the flag is on, and holds NONE when it is off (the off path must stay
+    a plain FIFO, byte-identical to every replay that predates the coupling).
+    """
+    import dataclasses
+    from backtest.replay import EngineStack
+
+    ec = MpcSosFadeStrategy.engine_config()
+    assert EngineStack(ec).eq is not None, "the coupling is pinned on but nothing feeds the cap"
+    off = EngineStack(dataclasses.replace(ec, eq_exempt_fvg=False))
+    assert off.eq is None, "exemption off must build no EQ engine — that path has to stay free"

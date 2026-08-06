@@ -121,9 +121,19 @@ if barstate.isconfirmed and bar_index >= 2
         array.push(fvgIsBull, false)
         array.push(fvgBorn, bar_index)
         fvgFormed := fvgFormed + 1
-    // Cap: drop the OLDEST gap not exempt by the EQ coupling (mpc byte-for-byte). A gap behind an
-    // EQH/EQL is kept when eqExemptFvg is on; if every gap is exempt, none are dropped.
-    while array.size(fvgTops) > fvgMaxCount
+    // Cap: `fvgMaxCount` bounds the ORDINARY gaps only, and an EQ-exempt gap rides ON TOP of them
+    // (mpc byte-for-byte since 2026-08-03). If every gap is exempt, none are dropped.
+    // ⚠ THE COUNT MUST EXCLUDE THE EXEMPT GAPS. This harness counted `array.size(fvgTops)` — every
+    // gap — until 2026-08-06 while the drop scan below skipped the exempt ones, which is the
+    // self-cancelling SWAP the indicator fixed three days earlier. It had gone stale relative to
+    // BOTH the Pine it mirrors and the Python engine it validates, so the next export would have
+    // put `compare_fvg.py` red against a correct engine.
+    int _nonEq = 0
+    if array.size(fvgTops) > 0
+        for _di = 0 to array.size(fvgTops) - 1
+            if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
+                _nonEq += 1
+    while _nonEq > fvgMaxCount
         int _dropIdx = -1
         for _di = 0 to array.size(fvgTops) - 1
             if not (eqExemptFvg and f_fvgNearEq(array.get(fvgTops, _di), array.get(fvgBots, _di), eqTol))
@@ -135,6 +145,7 @@ if barstate.isconfirmed and bar_index >= 2
         array.remove(fvgBots, _dropIdx)
         array.remove(fvgIsBull, _dropIdx)
         array.remove(fvgBorn, _dropIdx)
+        _nonEq -= 1
 
 // ── Mitigate: a candle CLOSES fully past the far edge (bull close <= bottom, bear
 //    close >= top). A wick into the gap no longer removes it. Skipped on creation bar. ──

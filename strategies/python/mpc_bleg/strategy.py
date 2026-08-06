@@ -56,6 +56,21 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
         # trade. Without it a mismatch says "a trade differs" and nothing about why.
         self.bleg_states: List = []
 
+    @staticmethod
+    def engine_config():
+        """The parent's pins, with the EQ/FVG coupling FORCED OFF — this fork's Pine keeps it off.
+
+        `eqExemptFvg` defaults **true** in `mpc_strategy.pine` and **false** in
+        `mpc_b_leg_strategy.pine`, so inheriting the parent's pin would replay this bot against a
+        gap set its own Pine never held and put `compare_bleg.py` red. Same shape as the
+        `exec_min_stop_mode = "Off"` pin in `config.py`: the two forks genuinely disagree, and the
+        disagreement has to be written down on this side or it is silently resolved the wrong way.
+        Re-check it against `mpc_b_leg_strategy.pine`'s own default before changing it — a fork
+        that has caught up is a config change here, not a reason to delete the override.
+        """
+        import dataclasses
+        return dataclasses.replace(MpcSosFadeStrategy.engine_config(), eq_exempt_fvg=False)
+
     def step(self, bar_state) -> Decision:
         if self.tracker is None:
             self.tracker = BLegTracker(self.config)

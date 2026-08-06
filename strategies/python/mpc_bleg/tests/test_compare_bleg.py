@@ -65,7 +65,11 @@ def _encode_cfg(cfg: BLegConfig) -> dict:
             "cfg_trail_step": cfg.exec_trail_step,
             "cfg_tp1_pct": cfg.exec_tp1_pct, "cfg_tp2_pct": cfg.exec_tp2_pct,
             "cfg_be_buf": cfg.exec_be_buf_tk, "cfg_sl_buf": cfg.exec_sl_buf_tk,
-            "cfg_scratch_r": cfg.exec_scratch_r, "cfg_bleg_days": cfg.bleg_max_days}
+            "cfg_scratch_r": cfg.exec_scratch_r, "cfg_bleg_days": cfg.bleg_max_days,
+            # Read off this fork's OWN engine_config(), which pins the coupling OFF where the
+            # A+ pins it on. Hardcoding a 0 here would pass just as well today and would stop
+            # catching the day the fork's Pine catches up.
+            "cfg_eq_exempt": int(MpcBLegStrategy.engine_config().eq_exempt_fvg)}
 
 
 def _pack_bar(dec, bleg) -> dict:

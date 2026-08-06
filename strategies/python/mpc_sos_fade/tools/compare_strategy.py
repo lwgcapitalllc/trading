@@ -223,6 +223,48 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
     return cls(**vals)
 
 
+class EqExemptUnknown(RuntimeError):
+    """The export cannot say whether the EQ/FVG coupling was on, and neither can we."""
+
+
+def engine_config_from_export(df: pd.DataFrame, base, eq_exempt: Optional[bool] = None):
+    """Overlay the export's ENGINE settings onto the bot's pins.
+
+    Everything in `engine_config()` mirrors a Pine CONSTANT and so is pinned rather than exported —
+    except `eqExemptFvg`, which is an INPUT, and which decides whether a gap sitting on an EQH/EQL
+    survives the FVG cap. That changes which gaps exist, hence which entries fire, so a run
+    configured off the wrong value is diffing two different strategies.
+
+    🔴 It had no column until 2026-08-06 and that is what made the failure unreadable: the Pine
+    defaulted it ON on 2026-08-03, the Python side wired no EQ engine into the FVG engine at all,
+    and the harness reported the resulting gap-SET difference as an entry-RULE mismatch at one bar.
+
+    ⚠ AN ABSENT COLUMN IS REFUSED, NOT DEFAULTED, AND THAT IS THE WHOLE POINT OF THIS FUNCTION.
+    Every other "absent ⇒ Off" decoder in this file is honest because the INPUT and its COLUMN
+    landed together, so a column-less export provably ran the lever off. Not here: the input
+    shipped on 2026-08-01 and defaulted ON on 2026-08-03, three days before the column, so an
+    export from that window ran it ON while an older one ran it OFF and **the file cannot tell you
+    which**. Guessing either way produces a confident green over two different strategies — the
+    exact failure this column exists to end. Re-export, or state it with `--eq-exempt`.
+    """
+    import dataclasses
+    col = "cfg_eq_exempt"
+    if eq_exempt is None:
+        if col not in df.columns:
+            raise EqExemptUnknown(
+                "This export has no `cfg_eq_exempt` column, so it cannot say whether "
+                "`eqExemptFvg` (a gap on an EQ level surviving the FVG cap) was on — and that "
+                "input decides WHICH GAPS EXIST, so it decides which entries fire.\n"
+                "  It defaulted ON in mpc_strategy.pine on 2026-08-03 and the column landed "
+                "2026-08-06, so exports from that window ran it ON and older ones ran it OFF.\n"
+                "  Re-export off the current export Pine, or state what the chart ran with "
+                "`--eq-exempt on|off`."
+            )
+        s = df[col].dropna()
+        eq_exempt = bool(s.iloc[0]) if len(s) else False
+    return dataclasses.replace(base, eq_exempt_fvg=eq_exempt)
+
+
 def _expand_packed(df: pd.DataFrame) -> pd.DataFrame:
     """Unpack the export's packed decision columns into the flat px_* names the compare
     loop reads. cfg_* are handled separately in config_from_export."""
@@ -371,12 +413,15 @@ def _num_match(a: Optional[float], b: Optional[float], tol: float) -> bool:
 
 
 def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
-               r_tol: float = 0.02, base_config: Optional[SosFadeConfig] = None) -> List[str]:
+               r_tol: float = 0.02, base_config: Optional[SosFadeConfig] = None,
+               eq_exempt: Optional[bool] = None) -> List[str]:
     """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
     df = load_export(path)
     cfg = config_from_export(df, base_config)
     bars = df[["open", "high", "low", "close"]].copy()
-    strat = MpcSosFadeStrategy(cfg).run(bars, warmup=0)   # keep all bars aligned to CSV rows
+    eng = engine_config_from_export(df, MpcSosFadeStrategy.engine_config(), eq_exempt)
+    # keep all bars aligned to CSV rows
+    strat = MpcSosFadeStrategy(cfg).run(bars, engine_config=eng, warmup=0)
     return compare(df, strat.decisions, warmup, price_tol, r_tol)
 
 
@@ -508,6 +553,10 @@ def main(argv=None) -> int:
     ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)")
     ap.add_argument("--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)")
     ap.add_argument("--r-tol", type=float, default=0.02, help="R match tolerance")
+    ap.add_argument("--eq-exempt", choices=("on", "off"), default=None,
+                    help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
+                         "surviving the FVG cap). Only needed for an export with no "
+                         "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
     ap.add_argument("--debug-arm", action="store_true",
                     help="diff the A+ arming INPUTS (recentSSL / session-gap / arm-state) "
                          "against the export's dbg_* columns, to locate an arming gap")
@@ -549,7 +598,12 @@ def main(argv=None) -> int:
         print("\n".join(msgs))
         return 1
 
-    msgs = run_parity(args.csv, args.warmup, args.price_tol, args.r_tol)
+    eq = None if args.eq_exempt is None else (args.eq_exempt == "on")
+    try:
+        msgs = run_parity(args.csv, args.warmup, args.price_tol, args.r_tol, eq_exempt=eq)
+    except EqExemptUnknown as exc:
+        print(f"CANNOT DIFF — {exc}")
+        return 2
     if not msgs:
         print(f"PARITY OK — Python == Pine on every bar from {args.warmup} on.")
         return 0

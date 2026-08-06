@@ -4903,3 +4903,14 @@ plot(bLegMaxDays,          "cfg_bleg_days",   _BINV, editable = false)
 // An export with NO cfg_time_stop column predates this and ran the lever OFF.
 plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _BINV, editable = false)
 plot(execTimeStopHrs,      "cfg_time_stop_hrs", _BINV, editable = false)
+
+// EQ/FVG COUPLING (2026-08-06) — `eqExemptFvg`, a gap on an active EQH/EQL surviving the FVG
+// cap. It decides WHICH GAPS EXIST, so it decides which entries fire.
+// ⚠ It defaults **false** in this fork and **true** in `mpc_strategy.pine`, and that fork is
+// real, not drift — which is exactly why the column has to exist HERE too. `mpc_bleg` pins the
+// Python side off to match, so today both sides read 0; the column is what makes that a
+// MEASURED agreement rather than two defaults that happen to line up. The A+ pair went red for
+// three days on this input precisely because nothing carried it.
+//   cfg_eq_exempt = 0 (off) : 1 (on)
+// An export with NO cfg_eq_exempt column predates this and ran it OFF.
+plot(eqExemptFvg ? 1 : 0,  "cfg_eq_exempt", _BINV, editable = false)

@@ -55,7 +55,7 @@ resets them to defaults on every chart he has the script on.
 **Open question — sample size, NOT correctness:** the validated 365d 15m run is only 22 trades (2yr:
 40), and the runners alone make >100% of the net in both windows. Read `## The 2026-07-16 year run`
 below before trusting any tuning done against it.
-**Last reviewed:** 2026-08-06 — 🔴 **THE MINIMUM-STOP GUARD IS ON BY DEFAULT NOW — `"% of price"` 0.08 — AND THE SHIPPED BASELINE MOVED WITH IT.** Aaron's call, and it changes the number every other line in this file is measured against: **183 trades / +134.75R → 181 / +136.75R** over 7.9 years. `exec_min_stop_mode` had been `"Off"` since it was ported precisely so no historical result moved; **that protection is now spent, deliberately.** A run replayed at defaults from today refuses setups an older run took, so every A+ figure measured at `"Off"` describes a different configuration — **pin the mode explicitly when reproducing one.** **MEASURED: 23 configs over 186,220 M15 bars (2018-09-13 → 2026-08-04), ONE REAL REPLAY EACH.** `% of price` 0.05 → 183 tr / +134.75R (refuses nothing) · **0.08 → 181 / +136.75R (+2.00)** · 0.10 → 176 / +132.92R (−1.84) · 0.15 → 165 / +109.47R (−25.28) · 0.30 → 130 / +87.10R (−47.65) · 0.50 → 93 / +35.84R (−98.92); `Fixed $` 1.25 → 180 / +137.75R (+3.00), $5 → −25.34R, $25 → −114.00R; `x ATR(14)` 0.30/0.35 → +0.00, 0.50 → −4.72R, 1.0 → −9.29R. ⚠ **Every row is a REPLAY, not the baseline with rows deleted** — one position slot means a refused setup frees the slot and the trade list reshuffles downstream (the queue effect Run 12 measured), so no arithmetic over a finished trade list can produce these. The naive "delete the refused trades" answer for 0.10 is **+1.84R**; the real one is **−1.84R**, i.e. the right sign is the opposite of the cheap estimate. ⚠ **A small floor GAINS R, mechanically rather than luckily: the three tightest stops in 7.9 years — $1.03, $1.06, $1.18 — were all full −1.00R losers.** Fixed $1.25 refuses exactly those three and gains exactly +3.00R. The distribution says why they are outliers: median stop distance is **$8.88**, 25th percentile $4.59, and the tightest ever is 0.0581% of price. ⚠ **DO NOT read +2R as an edge.** `backtest/tools/jitter_audit.py` measured this strategy's run-to-run spread at **sd 15.06R**, so 0.05 through 0.08 are statistically indistinguishable from zero and from each other. **0.08 is chosen as the HIGHEST value that does not start costing — the most protection for nothing. A SAFETY choice, not a profit one**, which is the same standing this guard has had since Run 7. ⚠ 🔴 **`"x ATR(14)"` IS THE WRONG TOOL FOR THIS HAZARD, and it was measured rather than assumed — this overturns the intuitive answer.** ATR looked best on cost alone (three free rungs where the other modes had one) and it adapts to volatility, which sounds right. But at 0.35 and 0.40 **it never refuses the $1.03 stop at all**, because that bar was quiet and $1.03 was not tight *relative to ATR*. The hazard is `qty = risk / stop_distance` — **pure price units, with volatility nowhere in it** — so ATR blocks a different set of trades from the one at risk. It buys cheapness, not safety. ⚠ **Parity is proven with the filter FIRING but at 0.30, not at 0.08**: `compare_strategy.py` is exit 0 at warmups 100 / 500 / 1000 / 2000 on a 21,899-bar export where block code 7 was raised **213 times** (49 long, 164 short). Same code path, same `px * val / 100` floor, same refusal, same code — only the constant differs. **State it that way; do not claim 0.08 was itself diffed.** ⚠ **The FIRST export that day was also green and proved nothing** — it ran `"Fixed $"` 0.10 (a ten-cent floor on a $4,000 instrument) and raised code 7 **zero times in 21,897 bars**. **A green parity run cannot say anything about a branch neither side entered; before trusting a gate on a feature, check the feature was EXERCISED** — here a one-line block-code histogram over the export. Changed in lockstep: `config.py`, `indicators/mpc_strategy.pine` + its export mirror (defaults AND tooltips), `mpc_sos_fade.meta.json` (desc stays byte-identical to the tooltip), `algos/live/instance.template.json`, and the live bot's own instance config. `mpc_bleg` PINS `"Off"` and is unmoved — `compare_bleg.py` exit 0 confirms it. 157 strategy + 297 backtest tests green. Earlier: 2026-08-04 — 🔴 **RULE 3 IS A KNIFE EDGE, AND THE FIRST LIVE SHADOW DIFF MEASURED IT: FOUR CENTS OF FEED DIFFERENCE MOVED A RESTING ENTRY BY $10.12.** `exec_fib_nearest` rests on whichever of the two bracketing fib levels is NEARER the floating gap edge. That is a **discontinuous** choice, and until today nothing had measured how sharp the discontinuity is. `algos/tools/shadow_diff.py` compared the live bot's decision stream to a lab replay of the same 148 bars, and found `long_edge` diverging by **$10.08 on 25 consecutive bars** (2026-07-31 14:30-20:30, one leg). ✅ **The cause was ISOLATED, not inferred: both prices are rungs on the SAME ladder.** At that bar the ladder reads 0.618 = **4041.958** and 0.702 = **4031.841**, with identical anchors (ash 4116.39 / asl 3995.95) and an identical stage on both sides. The live bot rested at 0.618; the lab rested at 0.702. Same leg, same geometry, **different rung** — the two feeds differ by 4-5 cents (Vantage above PU Prime, systematically), and that was enough to flip which level was 'nearer'. ⚠ **It is a different TRADE, not a different price.** With the stop at 0.886 (4009.68) the two entries are a **$32.28 stop and a $22.16 stop — 46% apart**. The nominal 1R is identical, so nothing in an R-denominated backtest moves; **position SIZE, fill probability and the distance price has to travel all move materially.** **The consequence to carry: this bot's backtested FILL RATE is not transferable across brokers at the margin, and this is the mechanism.** Every number in this file was measured on Vantage; the live account is PU Prime. ⚠ **A CONSTANT price offset cannot cause this** — every level and every gap shifts together, so the geometry is unchanged. It is the small VARIATION in the offset (0.04 on some bars, 0.05 on others) that moves a gap edge against a fixed rung. **So do not test it by shifting the series; test it by jittering it.** ⚠ **How OFTEN the rung flips is UNMEASURED.** One leg in a 148-bar sample proves the mechanism and says nothing about the frequency. The honest test is a jitter replay over the full 6.5 years counting how many trades change; until that runs, treat the trade LIST as broker-specific even though the R is not. ✅ **Nothing was affected in the observed window** — no trade was taken, `l_stage` never exceeded 1 on either side, no stop was ever set. This is a measured sensitivity, not an incident, and rule 3 is not being questioned: it was measured at **165 trades / +126.68R → 161 / +135.94R** and that stands. ⚠ **This does not contradict the parity gates.** `compare_strategy.py` feeds ONE price series to both implementations, so it can never see this — it proves Pine and Python agree, which they do. **A green parity run says the two implementations agree, never that the result is robust to the data.** That is a third face of this repo's standing lesson. Earlier: **this bot can be charged the SPREAD and the OVERNIGHT SWAP now**,
+**Last reviewed:** 2026-08-06 — ✅ **THE A+ PARITY GATE IS GREEN AGAIN, AND THE THREE-DAY RED WAS NEVER THE ENTRY RULE.** `compare_strategy.py` failed at bar 11031 with Python resting at fib 0.702 (4990.02) and Pine on a gap edge (4965.73) — which reads exactly like the two sides taking different branches of the entry model. 🔴 **`_fib_snap` is line-for-line identical on both sides; the gap Pine rested on did not exist in Python at all.** Dumping the live gap list found Pine holding a sixth gap, bearish `[4965.73, 5060.25]` born 143 bars earlier, which Python had FIFO-evicted and Pine had kept because it sits on an active EQH/EQL. 🔴 **The cause is `eqExemptFvg`, which DEFAULTED ON in `mpc_strategy.pine` on 2026-08-03 (`b1b461b`) while `backtest/replay/EngineStack` built no EQ engine and passed no levels to the FVG engine at all** — the coupling could not fire on the Python side even in principle. 🔴 **And no `cfg_` column carried the input, so the gate diffed two different strategies and blamed whichever code the symptom landed in.** The Pine's own comment block eight lines above the input still read *"THE EXEMPTION DEFAULTS OFF HERE"* and warned that neither the port nor the export modelled it: the default was flipped and the warning was not. **Fixed in four places in one commit** — the stack builds an `EqualHighsLowsEngine` and feeds its levels to the FVG cap; the FVG engine's cap now counts ORDINARY gaps only (it was still on the self-cancelling SWAP rule the Pine fixed on 2026-08-03); this bot pins `eq_exempt_fvg=True` and `mpc_bleg` pins it False; and both export Pines plot **`cfg_eq_exempt`**, which the harnesses configure from. ✅ **GREEN at warmups 100 / 500 / 1000 / 2000, and NON-VACUOUSLY** — that export ran the live `exec_min_stop_val = 0.08` and the time stop at **4 hours**, which closed **12 of its 26 trades**, so the clock lever is parity-validated too; `--eq-exempt off` reproduces the original bar-11031 mismatch exactly, so the fix masks nothing. `compare_bleg.py` exit 0 at 100 / 800 / 2000. ⚠ **The previous diagnosis in this file was WRONG and is kept, labelled wrong**: it blamed `cfg_min_stop_val` going 0.30 → 0.08. The 0.30 export really is green and every 0.08 export really is red, but that is export TIMING — **two changes landed days apart and the visible one got the blame.** Forcing the Python floor across 0.0 / 0.05 / 0.08 / 0.10 never moved the diverging bar, which should have been read as *the floor is not involved*. ✅ **The coupling is heavily EXERCISED and changes no trade, and both halves had to be measured:** over 155,531 M15 bars, 155,145 hold an active EQ level, **92,984 hold an EXEMPT gap and 20,546 hold MORE than the cap of 7** (max 12 at once — the same maximum the Pine commit measured independently), yet A/B gives **159 trades / +142.18R / maxDD 5.61R either way with an identical entry set**. It moves the RESTING LIMIT on **463 bars (0.30%)**, sometimes creating an edge where there was none, and not one became a different fill. ⚠ **Do not restate that as "it does nothing"** — the exercise counts are what make it a measurement rather than an unentered branch, and it is one window on one instrument. ✅ **The time-stop sweep was RE-RUN and the table is corrected** — it was stale twice over (the one-bar force-close fix and this coupling) and **neither moved it**: every row shifted by ≤0.05R, trade counts, cut counts and the 24h–40h plateau unchanged, so 36h stands. ✅ 6 new tests **watched RED against the un-wired stack, the un-pinned bot, the old swap cap rule and the dropped B-LEG override**; a 7th pins the harness REFUSAL and is labelled as unfailable-before-the-fix (the refusal did not exist to fail). 197 strategy + FVG-engine tests green. **The standing lesson is this repo's own in its sharpest form yet: a trade-affecting input with no export column is invisible to the parity gate BY CONSTRUCTION — and the gate does not go quiet, it goes WRONG, accusing whichever code the symptom happens to land in.** `execRunnerTrail` (2026-07-26) and `cfg_min_stop` (2026-07-30) were the same shape and cost nothing because they were caught immediately. This one cost three days and a misdiagnosis, and the missing column was for an input somebody had ALREADY written the warning about. **A comment saying "this defaults OFF" is not a guard; the column is the guard.** Earlier: 2026-08-06 — 🔴 **THE MINIMUM-STOP GUARD IS ON BY DEFAULT NOW — `"% of price"` 0.08 — AND THE SHIPPED BASELINE MOVED WITH IT.** Aaron's call, and it changes the number every other line in this file is measured against: **183 trades / +134.75R → 181 / +136.75R** over 7.9 years. `exec_min_stop_mode` had been `"Off"` since it was ported precisely so no historical result moved; **that protection is now spent, deliberately.** A run replayed at defaults from today refuses setups an older run took, so every A+ figure measured at `"Off"` describes a different configuration — **pin the mode explicitly when reproducing one.** **MEASURED: 23 configs over 186,220 M15 bars (2018-09-13 → 2026-08-04), ONE REAL REPLAY EACH.** `% of price` 0.05 → 183 tr / +134.75R (refuses nothing) · **0.08 → 181 / +136.75R (+2.00)** · 0.10 → 176 / +132.92R (−1.84) · 0.15 → 165 / +109.47R (−25.28) · 0.30 → 130 / +87.10R (−47.65) · 0.50 → 93 / +35.84R (−98.92); `Fixed $` 1.25 → 180 / +137.75R (+3.00), $5 → −25.34R, $25 → −114.00R; `x ATR(14)` 0.30/0.35 → +0.00, 0.50 → −4.72R, 1.0 → −9.29R. ⚠ **Every row is a REPLAY, not the baseline with rows deleted** — one position slot means a refused setup frees the slot and the trade list reshuffles downstream (the queue effect Run 12 measured), so no arithmetic over a finished trade list can produce these. The naive "delete the refused trades" answer for 0.10 is **+1.84R**; the real one is **−1.84R**, i.e. the right sign is the opposite of the cheap estimate. ⚠ **A small floor GAINS R, mechanically rather than luckily: the three tightest stops in 7.9 years — $1.03, $1.06, $1.18 — were all full −1.00R losers.** Fixed $1.25 refuses exactly those three and gains exactly +3.00R. The distribution says why they are outliers: median stop distance is **$8.88**, 25th percentile $4.59, and the tightest ever is 0.0581% of price. ⚠ **DO NOT read +2R as an edge.** `backtest/tools/jitter_audit.py` measured this strategy's run-to-run spread at **sd 15.06R**, so 0.05 through 0.08 are statistically indistinguishable from zero and from each other. **0.08 is chosen as the HIGHEST value that does not start costing — the most protection for nothing. A SAFETY choice, not a profit one**, which is the same standing this guard has had since Run 7. ⚠ 🔴 **`"x ATR(14)"` IS THE WRONG TOOL FOR THIS HAZARD, and it was measured rather than assumed — this overturns the intuitive answer.** ATR looked best on cost alone (three free rungs where the other modes had one) and it adapts to volatility, which sounds right. But at 0.35 and 0.40 **it never refuses the $1.03 stop at all**, because that bar was quiet and $1.03 was not tight *relative to ATR*. The hazard is `qty = risk / stop_distance` — **pure price units, with volatility nowhere in it** — so ATR blocks a different set of trades from the one at risk. It buys cheapness, not safety. ⚠ **Parity is proven with the filter FIRING but at 0.30, not at 0.08**: `compare_strategy.py` is exit 0 at warmups 100 / 500 / 1000 / 2000 on a 21,899-bar export where block code 7 was raised **213 times** (49 long, 164 short). Same code path, same `px * val / 100` floor, same refusal, same code — only the constant differs. **State it that way; do not claim 0.08 was itself diffed.** ⚠ **The FIRST export that day was also green and proved nothing** — it ran `"Fixed $"` 0.10 (a ten-cent floor on a $4,000 instrument) and raised code 7 **zero times in 21,897 bars**. **A green parity run cannot say anything about a branch neither side entered; before trusting a gate on a feature, check the feature was EXERCISED** — here a one-line block-code histogram over the export. Changed in lockstep: `config.py`, `indicators/mpc_strategy.pine` + its export mirror (defaults AND tooltips), `mpc_sos_fade.meta.json` (desc stays byte-identical to the tooltip), `algos/live/instance.template.json`, and the live bot's own instance config. `mpc_bleg` PINS `"Off"` and is unmoved — `compare_bleg.py` exit 0 confirms it. 157 strategy + 297 backtest tests green. Earlier: 2026-08-04 — 🔴 **RULE 3 IS A KNIFE EDGE, AND THE FIRST LIVE SHADOW DIFF MEASURED IT: FOUR CENTS OF FEED DIFFERENCE MOVED A RESTING ENTRY BY $10.12.** `exec_fib_nearest` rests on whichever of the two bracketing fib levels is NEARER the floating gap edge. That is a **discontinuous** choice, and until today nothing had measured how sharp the discontinuity is. `algos/tools/shadow_diff.py` compared the live bot's decision stream to a lab replay of the same 148 bars, and found `long_edge` diverging by **$10.08 on 25 consecutive bars** (2026-07-31 14:30-20:30, one leg). ✅ **The cause was ISOLATED, not inferred: both prices are rungs on the SAME ladder.** At that bar the ladder reads 0.618 = **4041.958** and 0.702 = **4031.841**, with identical anchors (ash 4116.39 / asl 3995.95) and an identical stage on both sides. The live bot rested at 0.618; the lab rested at 0.702. Same leg, same geometry, **different rung** — the two feeds differ by 4-5 cents (Vantage above PU Prime, systematically), and that was enough to flip which level was 'nearer'. ⚠ **It is a different TRADE, not a different price.** With the stop at 0.886 (4009.68) the two entries are a **$32.28 stop and a $22.16 stop — 46% apart**. The nominal 1R is identical, so nothing in an R-denominated backtest moves; **position SIZE, fill probability and the distance price has to travel all move materially.** **The consequence to carry: this bot's backtested FILL RATE is not transferable across brokers at the margin, and this is the mechanism.** Every number in this file was measured on Vantage; the live account is PU Prime. ⚠ **A CONSTANT price offset cannot cause this** — every level and every gap shifts together, so the geometry is unchanged. It is the small VARIATION in the offset (0.04 on some bars, 0.05 on others) that moves a gap edge against a fixed rung. **So do not test it by shifting the series; test it by jittering it.** ⚠ **How OFTEN the rung flips is UNMEASURED.** One leg in a 148-bar sample proves the mechanism and says nothing about the frequency. The honest test is a jitter replay over the full 6.5 years counting how many trades change; until that runs, treat the trade LIST as broker-specific even though the R is not. ✅ **Nothing was affected in the observed window** — no trade was taken, `l_stage` never exceeded 1 on either side, no stop was ever set. This is a measured sensitivity, not an incident, and rule 3 is not being questioned: it was measured at **165 trades / +126.68R → 161 / +135.94R** and that stands. ⚠ **This does not contradict the parity gates.** `compare_strategy.py` feeds ONE price series to both implementations, so it can never see this — it proves Pine and Python agree, which they do. **A green parity run says the two implementations agree, never that the result is robust to the data.** That is a third face of this repo's standing lesson. Earlier: **this bot can be charged the SPREAD and the OVERNIGHT SWAP now**,
 which are the two costs bar mode always knew and never billed, and it matters here more than on most
 strategies because this runner is DESIGNED to hold overnight (deviation 1). Both come from a broker
 profile rather than a typed number, behind layers that are **ALL OFF by default** — the baseline run
@@ -617,12 +617,18 @@ baseline is **159 trades / +137.94R**, not the 161 / +135.94R of the pre-guard r
 | cut at | mode | trades | total R | max DD (R) | cut by the clock |
 |---|---|---|---|---|---|
 | — | **Off (shipped)** | 159 | **+137.94** | **7.99** | 0 |
-| 24h | Before TP1 only | 159 | +140.21 | 5.55 | 10 |
-| 30h | Before TP1 only | 159 | +142.03 | **5.38** | 7 |
-| **36h** | **Before TP1 only** | 159 | **+142.17** | 5.62 | 6 |
-| 40h | Before TP1 only | 159 | +142.58 | 5.61 | 6 |
-| 48h | Before TP1 only | 159 | +140.09 | 7.35 | 4 |
-| 36h | **Always** | 159 | **+97.32** | 5.92 | 26 |
+| 24h | Before TP1 only | 159 | +140.22 | 5.54 | 10 |
+| 30h | Before TP1 only | 159 | +142.05 | **5.37** | 7 |
+| **36h** | **Before TP1 only** | 159 | **+142.18** | 5.61 | 6 |
+| 40h | Before TP1 only | 159 | +142.59 | 5.60 | 6 |
+| 48h | Before TP1 only | 159 | +140.10 | 7.34 | 4 |
+| 36h | **Always** | 159 | **+97.27** | 5.91 | 26 |
+
+✅ **RE-RUN 2026-08-06 and this table is the corrected one.** It was measured twice over: once
+before the one-bar force-close fix, and once before `eq_exempt_fvg` reached the Python side. Both
+were real reasons to distrust it and **neither moved it** — every row shifted by ≤0.05R and the
+trade counts, the cut counts and the plateau are unchanged. Recorded because "we re-measured and
+nothing moved" is a result; a table nobody re-ran after two known-relevant fixes is not.
 
 **24h–40h is a PLATEAU, not a peak, and that is the only reason 36 is defensible.** Roughly the
 same R and the same drawdown across a 16-hour band describes the trade population rather than
@@ -728,47 +734,83 @@ broken counter is indistinguishable from a zero from an unexercised branch. Read
 directly so a rename raises; never `getattr` with a default in a check whose whole job is to
 notice absence.
 
-🔴 **THE MEASURED SWEEP ABOVE IS NOW STALE BY ONE BAR AND MUST BE RE-RUN.** Every row in it was
-replayed with the force-close landing on the deciding bar's CLOSE, which is the bug fixed here. The
-cut trades are the same trades and the shape of the result will not move — the exits shift by one
-bar, on ~6 trades in 6.5 years — but the R and drawdown figures are no longer exact. Re-run the
-7-config replay and correct the table before quoting these numbers anywhere.
+✅ **THE SWEEP WAS RE-RUN 2026-08-06 AND THE TABLE ABOVE IS CORRECTED** — every row shifted by
+≤0.05R, the trade counts and the plateau are unchanged. It had been stale twice over (the one-bar
+force-close fix here, and `eq_exempt_fvg` reaching the Python side the same day) and neither moved
+it. Quote the table freely now.
 
 ⚠ **Re-export at 4 hours after any change to this lever.** 36 is the shipped value and is
 untestable on a normal chart; 4 is the same code path and exercises it dozens of times.
 
-### 🔴 OPEN — A+ Pine↔Python parity is RED at the shipped minimum-stop floor (2026-08-06)
+### ✅ CLOSED — the A+ parity failure was the EQ/FVG coupling, not the entry rule (2026-08-06)
 
-**Not caused by the time stop, and it predates it.** `compare_strategy.py` fails on a fresh
-21,999-bar `VANTAGE_XAUUSD, 15m` export at every warmup 100 / 500 / 1000 / 2000:
+**The symptom**, on a 21,999-bar `VANTAGE_XAUUSD, 15m` export, at every warmup 100 / 500 / 1000 /
+2000:
 
 ```
 bar 11031  2026-02-18 14:30  px_edge:  py=4990.02  pine=4965.73
 ```
 
-Same fib leg on both sides (`dbg_fib_ash` 5052.77 / `dbg_fib_asl` 4842.20, identical), same stage,
-same `px_dec_bits`. Python rests at **fib 0.702 exactly**; the Pine rests at **0.5866 of the leg**,
-which is not a rung — so it is resting at a GAP EDGE. The two sides took different entry-rule
-branches for one setup.
+Same fib leg on both sides (`dbg_fib_ash` 5052.77 / `dbg_fib_asl` 4842.20), same stage, same
+`px_dec_bits`. Python rested at **fib 0.702 exactly**; Pine at **0.5866 of the leg**, which is not
+a rung, so Pine was resting on a GAP EDGE. It reads exactly like the two sides taking different
+branches of the entry model.
 
-**Proven not to be the time stop**, three ways: the mode was `Off` in the first export and the
-failure is identical; a clean worktree at HEAD, carrying none of the time-stop code, fails at the
-same bar; and `lTimeUp` is guarded by `execTimeStopMode != "Off"` before anything else.
+🔴 **They were not. `_fib_snap` is line-for-line identical on both sides, and the gap Pine rested
+on did not exist in Python at all.** Dumping the live gap list at that bar found Python holding
+five gaps and Pine holding a sixth — a bearish gap `[4965.73, 5060.25]` born 143 bars earlier,
+which Python had FIFO-evicted and Pine had kept because it sits on an active EQH/EQL.
 
-🔴 **What it actually is: `cfg_min_stop_val` went 0.30 → 0.08.** Commit `4e97565` (2026-08-05)
-changed that default. The 2026-08-04 export ran **0.30** and is green; every export since runs
-**0.08** and is red. Forcing the Python floor across 0.0 / 0.05 / 0.08 / 0.10 does not move the
-diverging bar or either price — **so the floor is not causing the disagreement, it is REVEALING
-it.** At 0.30 the branch where the two disagree was never entered.
+🔴 **The cause is `eqExemptFvg`, and the shape of it is the lesson.** That input exempts a gap
+behind resting liquidity from the FVG cap. It **defaulted ON in `mpc_strategy.pine` on 2026-08-03**
+(`b1b461b`), while on the Python side `backtest/replay/EngineStack` **built no EQ engine and passed
+no levels to the FVG engine at all** — so the coupling could not fire even in principle. The two
+implementations were evicting different gaps for three days.
 
-⚠ **So the green parity run that shipped the guard proved nothing about the value that shipped.**
-`0.08` is live on the bot and had never been parity-checked until this export. This is the repo's
-own "green on a branch neither side entered" trap for the third time in a week, and the most
-expensive instance yet, because the untested branch is the DEFAULT.
+🔴 **And no `cfg_` column carried the input, so the gate could not see it — it diffed two different
+strategies and blamed the entry rule.** The Pine's own comment block, eight lines above the input,
+still said *"THE EXEMPTION DEFAULTS OFF HERE"* and warned that neither the port nor the export
+modelled it. The default was flipped and the warning was not.
 
-**Not yet known:** whether it is one bar or many, and which side is right. Do not read the Python
-as correct merely because it lands on a clean fib — the entry model deliberately rests at gap edges
-under rules 1-3, so a non-fib price is not itself evidence of a bug.
+**Fixed in four places, all in one commit:** `EngineStack` builds an `EqualHighsLowsEngine` and
+feeds its levels to the FVG cap; the FVG engine's cap counts **ordinary gaps only** (it was still
+on the self-cancelling SWAP rule the Pine fixed on 2026-08-03); `mpc_sos_fade` pins
+`eq_exempt_fvg=True` and `mpc_bleg` pins it False (that fork's Pine keeps it off); and both export
+Pines plot **`cfg_eq_exempt`**, which the harnesses now configure from.
+
+✅ **GREEN at warmups 100 / 500 / 1000 / 2000**, and non-vacuously so — that export ran the live
+`exec_min_stop_val = 0.08` and the time stop at **4 hours**, which closed **12 of its 26 trades**.
+`--eq-exempt off` reproduces the original mismatch at bar 11031 exactly, so the fix is not masking
+anything. `compare_bleg.py` exit 0 at 100 / 800 / 2000.
+
+⚠ **The previous diagnosis in this file was WRONG and is recorded as wrong.** It read the failure
+as `cfg_min_stop_val` going 0.30 → 0.08 "revealing" a pre-existing entry-rule disagreement. The
+0.30 export really is green and every 0.08 export really is red, but that is export TIMING — the
+0.30 export was taken before the Pine's default flipped. **Two changes landed within days of each
+other and the visible one got the blame.** Forcing the Python floor across 0.0 / 0.05 / 0.08 / 0.10
+never moved the diverging bar, which should have been read as *the floor is not involved* rather
+than as *the floor is revealing something*.
+
+✅ **MEASURED, and this is the counter-intuitive half: the coupling is heavily exercised and
+changes no trade.** Over 155,531 M15 bars (2020-01-01 → 2026-08-03), **155,145 bars hold an active
+EQ level, 92,984 hold at least one EXEMPT gap, and 20,546 hold MORE than the cap of 7** (max 12 at
+once — the same maximum the Pine commit measured independently). Yet A/B over that window gives
+**159 trades / +142.18R / maxDD 5.61R either way, with an identical entry set.** It moves the
+RESTING LIMIT on **463 bars (0.30%)** — sometimes creating an edge where there was none — and not
+one of those 463 ever became a different fill.
+
+⚠ **So the honest summary is: the feature is real, it is exercised constantly, it changes where the
+limit rests, and over 6.5 years it has never changed a trade.** Do not restate that as "it does
+nothing" — the exercise counts are what make the second half a measurement rather than an
+unentered branch, and this is one window on one instrument.
+
+**The standing lesson is one this repo keeps meeting from new directions, and this is its sharpest
+form: a trade-affecting input with no export column is invisible to the parity gate BY
+CONSTRUCTION — and the gate does not go quiet, it goes WRONG, accusing whichever code the symptom
+happens to land in.** `execRunnerTrail` (2026-07-26) and `cfg_min_stop` (2026-07-30) were the same
+shape and were both caught before they cost anything. This one was caught after three days and a
+misdiagnosis, because the missing column was for an input somebody else had already written a
+warning about. **A comment saying "this defaults OFF" is not a guard; the column is the guard.**
 
 ### The Custom stop level (`exec_sl_custom`, 2026-08-02)
 

@@ -108,10 +108,20 @@ class FairValueGapEngine:
             if h0 < l2 and (not self._require_close or c1 < l2) and (l2 - h0) / l2 * 100 > self._threshold_pct:
                 self._form(top=l2, bottom=h0, is_bullish=False, born=bar_index, events=events)
 
-            # FIFO cap: drop the OLDEST gap not exempt by the EQ coupling, beyond the limit (Pine
-            # `while size > fvgMaxCount:` scanning for the oldest non-EQ gap). With no eq_levels the
-            # first gap is never exempt, so this is a plain drop-oldest — identical to before.
-            while len(self._active) > self._max_count:
+            # FIFO cap: `max_count` bounds the ORDINARY gaps only, and an EQ-exempt gap rides ON TOP
+            # of them (Pine `while _nonEq > fvgMaxCount:`, mpc 2026-08-03). With no eq_levels every
+            # gap counts, so this is a plain drop-oldest — identical to the standalone behaviour.
+            #
+            # ⚠ THE COUNT MUST EXCLUDE THE EXEMPT GAPS, AND COUNTING THEM MAKES THE EXEMPTION
+            # SELF-CANCELLING. This engine counted every gap until 2026-08-06 while the drop scan
+            # skipped the exempt ones, so an exempt gap still held a slot: keeping it evicted the
+            # newest ORDINARY gap in its place — a swap, not an addition. Measured in Pine over
+            # 40,000 M15 bars, that cost the A+ bot 2 setups and gained it none, because the gaps
+            # it protected cost it the gaps it would have traded. The live total is therefore
+            # UNBOUNDED by `max_count`; it is bounded by the EQ engine instead (`max_levels` per
+            # side, each dying on a close through it).
+            non_eq = sum(1 for gap in self._active if not self._near_eq(gap))
+            while non_eq > self._max_count:
                 drop_idx = None
                 for idx, gap in enumerate(self._active):
                     if not self._near_eq(gap):
@@ -120,6 +130,7 @@ class FairValueGapEngine:
                 if drop_idx is None:
                     break                       # every remaining gap is behind liquidity — keep them all
                 events.evicted.append(self._active.pop(drop_idx))
+                non_eq -= 1
 
         # ── Extend/mitigate: a gap dies only when a candle CLOSES fully past its far edge (bull:
         #    close <= bottom; bear: close >= top) — a wick into the gap leaves it alive. Skipped on

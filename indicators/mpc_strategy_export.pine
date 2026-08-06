@@ -5187,6 +5187,29 @@ plot(execMinStopVal,       "cfg_min_stop_val", _INV, editable = false)
 plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _INV, editable = false)
 plot(execTimeStopHrs,      "cfg_time_stop_hrs", _INV, editable = false)
 
+// EQ/FVG COUPLING (2026-08-06) — `eqExemptFvg`. A gap sitting on an active EQH/EQL is exempt
+// from the FVG cap and lives until price mitigates it, so `fvgMaxCount` bounds the ORDINARY
+// gaps only. It decides WHICH GAPS EXIST, so it decides which entries fire.
+//
+// 🔴 THIS COLUMN EXISTS BECAUSE ITS ABSENCE COST THREE DAYS. The input defaulted ON here on
+// 2026-08-03 (b1b461b) while the Python side wired no EQ engine into the FVG engine at all, so
+// the two evicted different gaps — and with nothing carrying the setting, compare_strategy.py
+// diffed two different strategies and reported the difference as an entry-rule bug. It took a
+// bar-by-bar dump of the gap list to find: at bar 11031 of the 21,999-bar export Pine still
+// held a bearish gap born 143 bars earlier and rested at its edge (4965.73) while Python,
+// having FIFO-dropped it, snapped to fib 0.702 (4990.02). Same class as `execRunnerTrail` in
+// 2026-07-26 and `cfg_min_stop` in 2026-07-30: a trade-affecting input with no column is
+// invisible to the gate BY CONSTRUCTION, and the gate stays green while it lies.
+//
+// The detection constants are NOT exported — eqPivotLen / eqAtrMult / eqMax are hardcoded in
+// the Pine (2 / 0.1 / 6) rather than exposed, precisely so the indicator and the strategy
+// cannot draw different levels; the Python engine's defaults are the same three numbers.
+// Export them the day either side makes one an input, and not before.
+//   cfg_eq_exempt = 0 (off) : 1 (on)
+// An export with NO cfg_eq_exempt column predates this. compare_strategy.py configures the
+// bot OFF in that case, which is what those exports RAN — never the Python pin, which is on.
+plot(eqExemptFvg ? 1 : 0,  "cfg_eq_exempt", _INV, editable = false)
+
 // DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot at H4/
 // session boundaries; remove once parity is green). Everything the arming block at
 // ~3718 reads or sets, so Python's reconstructed liquidity can be diffed bar-for-bar.

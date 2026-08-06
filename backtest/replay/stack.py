@@ -39,6 +39,7 @@ from fibonacci import (  # noqa: E402
     StructureSnapshot,
 )
 from fair_value_gaps import FairValueGapEngine, FvgEvents  # noqa: E402
+from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
 from rsi_divergence import RsiDivergenceEngine, RsiDivEvents  # noqa: E402
 from liquidity import LiquidityEngine, LiquidityEvents  # noqa: E402
 from sessions import SessionEngine, SessionEvents  # noqa: E402
@@ -86,6 +87,25 @@ class EngineConfig:
     # hold gaps the Pine never created. Same class of trap as `fvg_max_count`: an engine
     # input the decision stream does not export, so the consumer has to know it.
     fvg_require_close: bool = False
+    # Pine `eqExemptFvg` — an FVG sitting on an active EQH/EQL is exempt from the FVG cap and lives
+    # until price mitigates it. OFF here because it is an input in every Pine that has it, and
+    # because turning it on CHANGES WHICH GAPS EXIST, hence which entries fire. `mpc_strategy.pine`
+    # has defaulted it ON since 2026-08-03 and `mpc_sos_fade` pins it True to match.
+    #
+    # 🔴 This is what put `compare_strategy.py` RED for three days (found 2026-08-06). The Pine
+    # defaulted it on while nothing here wired the EQ engine into the FVG engine at all, so the two
+    # sides evicted different gaps: at bar 11031 of the 21,999-bar export Pine still held a bearish
+    # gap born 143 bars earlier, pinned by liquidity, and rested the limit on its edge at 4965.73
+    # while Python — having FIFO-dropped it — snapped to fib 0.702 at 4990.02. **No `cfg_` column
+    # carried the input, so the harness could not see the difference and blamed the entry rule.**
+    # A trade-affecting Pine input with no export column is invisible to the gate by construction.
+    eq_exempt_fvg: bool = False
+    # equal_highs_lows — LOCKED to mpc's constants (`eqPivotLen` / `eqAtrMult` / `eqMax`), which are
+    # hardcoded in the Pine rather than exposed, so the indicator and the strategy cannot draw
+    # different levels. Only read when `eq_exempt_fvg` is on.
+    eq_pivot_len: int = 2
+    eq_atr_mult: float = 0.1
+    eq_max_levels: int = 6
     # rsi_divergence
     rsi_len: int = 14
     rsi_pivot_len: int = 5
@@ -141,6 +161,11 @@ class EngineStack:
         )
         self.liquidity = LiquidityEngine(htf_rollover_hours=c.htf_rollover_hours)
         self.sessions = SessionEngine()
+        # Only built when the coupling is on: an unused engine still costs a per-bar ATR and a
+        # pivot scan on every replay in the repo, and the flag is off for every consumer but one.
+        self.eq = EqualHighsLowsEngine(
+            pivot_len=c.eq_pivot_len, atr_mult=c.eq_atr_mult, max_levels=c.eq_max_levels,
+        ) if c.eq_exempt_fvg else None
 
     def step(self, bar: ReplayBar) -> BarState:
         """Feed one closed bar through the whole stack in Pine order and return
@@ -169,7 +194,15 @@ class EngineStack:
         macro_ev = self.macro.update(i, h, l, c, snap)
         internal_ev = self.internal.update(i, h, l, snap)
 
-        fvg_ev = self.fvg.update(i, o, h, l, c)
+        # EQ runs BEFORE FVG, the Pine order — the exemption tests this bar's active levels, and
+        # the tolerance is this bar's ATR(50). Passing None/0.0 is the exemption-off path and leaves
+        # the cap a plain FIFO, byte-identical to a stack built without the EQ engine.
+        eq_levels, eq_tol = None, 0.0
+        if self.eq is not None:
+            eq_ev = self.eq.update(i, h, l, c)
+            eq_levels = eq_ev.active_eqh + eq_ev.active_eql
+            eq_tol = eq_ev.tolerance
+        fvg_ev = self.fvg.update(i, o, h, l, c, eq_levels=eq_levels, eq_tol=eq_tol)
         rsi_ev = self.rsi.update(i, h, l, c)
         liq_ev = self.liquidity.update(i, ts, h, l, c)
         sess_ev = self.sessions.update(i, ts, h, l)

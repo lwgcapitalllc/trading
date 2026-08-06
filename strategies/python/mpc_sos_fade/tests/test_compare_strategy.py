@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT))
@@ -33,6 +34,7 @@ _REQ = {v: k for k, v in cs._HTF_REQ.items()}
 _TRAIL = {v: k for k, v in cs._RUNNER_TRAIL.items()}
 _TP2 = {v: k for k, v in cs._TP2_STOP.items()}
 _MINSTOP = {v: k for k, v in cs._MIN_STOP.items()}
+_TIMESTOP = {v: k for k, v in cs._TIME_STOP.items()}
 
 
 def _encode_cfg(cfg: SosFadeConfig) -> dict:
@@ -64,7 +66,15 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             "cfg_be_buf": cfg.exec_be_buf_tk, "cfg_sl_buf": cfg.exec_sl_buf_tk,
             "cfg_scratch_r": cfg.exec_scratch_r,
             "cfg_min_stop": _MINSTOP[cfg.exec_min_stop_mode],
-            "cfg_min_stop_val": cfg.exec_min_stop_val}
+            "cfg_min_stop_val": cfg.exec_min_stop_val,
+            "cfg_time_stop": _TIMESTOP[cfg.exec_time_stop_mode],
+            "cfg_time_stop_hrs": cfg.exec_time_stop_hrs,
+            # An ENGINE setting, not a strategy one — so it is read off the bot's own
+            # engine_config() rather than off `cfg`, which is what stops this encoder and the
+            # pin drifting apart. It is here at all because the Pine plots it: this encoder
+            # mirrors the export's plot block, and a column missing here is a column the
+            # round trip silently never exercises.
+            "cfg_eq_exempt": int(MpcSosFadeStrategy.engine_config().eq_exempt_fvg)}
 
 
 def _pack_decision(drow: dict) -> dict:
@@ -195,3 +205,45 @@ def test_detects_a_planted_mismatch(tmp_path):
     assert msgs
     assert f"bar {target} " in msgs[0]
     assert "px_long_armed" in msgs[0]
+
+
+# ── the EQ/FVG coupling column (2026-08-06) ────────────────────────────────────
+
+def test_an_export_with_no_eq_exempt_column_is_REFUSED_not_guessed():
+    """A column-less export cannot say what `eqExemptFvg` ran at, so the harness must not guess.
+
+    🔴 This is the whole lesson of the three-day red. Every OTHER "absent ⇒ Off" decoder in this
+    tool is honest because the Pine INPUT and its COLUMN landed together, so a column-less export
+    provably ran that lever off. `eqExemptFvg` broke the pattern: the input shipped 2026-08-01,
+    defaulted ON 2026-08-03, and the column landed 2026-08-06 — so an export from that window ran
+    it ON while an older one ran it OFF, and the file cannot tell you which.
+
+    Defaulting either way produces a CONFIDENT GREEN over two different strategies, which is worse
+    than the red it replaces. Refuse, and name the flag that states it.
+    """
+    export = pd.DataFrame([_encode_cfg(SosFadeConfig())]).drop(columns=["cfg_eq_exempt"])
+    with pytest.raises(cs.EqExemptUnknown):
+        cs.engine_config_from_export(export, MpcSosFadeStrategy.engine_config())
+
+
+def test_the_export_column_OVERRIDES_the_bot_pin_in_both_directions():
+    """The point of the column is that it beats the pin — including when it says OFF.
+
+    The bot pins the coupling ON. An archived export taken with it off must replay with it off,
+    or the harness re-configures history to a setting it was never taken at. And the caller's
+    explicit `--eq-exempt` must win over the column's absence, which is what makes an archived
+    export runnable at all.
+    """
+    base = MpcSosFadeStrategy.engine_config()
+    assert base.eq_exempt_fvg is True
+
+    export = pd.DataFrame([{**_encode_cfg(SosFadeConfig()), "cfg_eq_exempt": 0}])
+    assert cs.engine_config_from_export(export, base).eq_exempt_fvg is False
+
+    export_on = pd.DataFrame([{**_encode_cfg(SosFadeConfig()), "cfg_eq_exempt": 1}])
+    assert cs.engine_config_from_export(export_on, base).eq_exempt_fvg is True
+
+    # explicit override, on an export that carries no column at all
+    bare = pd.DataFrame([_encode_cfg(SosFadeConfig())]).drop(columns=["cfg_eq_exempt"])
+    assert cs.engine_config_from_export(bare, base, eq_exempt=True).eq_exempt_fvg is True
+    assert cs.engine_config_from_export(bare, base, eq_exempt=False).eq_exempt_fvg is False

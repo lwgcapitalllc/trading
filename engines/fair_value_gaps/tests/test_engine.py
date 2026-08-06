@@ -231,18 +231,44 @@ def test_custom_threshold_rejects_and_allows():
 
 # ── EQ-exemption coupling (Pine eqExemptFvg) ──
 
-def test_eq_exemption_protects_oldest_gap_from_cap():
-    # cap=2. Ascending staircase (o=100,110,120,...): bars 2,3,4 each form a bull gap. The bar-2 gap
-    # spans [106, 120]; an EQ level at 110 sits inside it. When bar 4's gap pushes over the cap, the
-    # exempt bar-2 gap is KEPT and the next non-exempt (bar 3, span [116,130]) is dropped instead.
-    eng = FairValueGapEngine(max_count=2)
-    eq_behind_first_gap = [110.0]     # inside the bar-2 gap span [106, 120] only
+def _staircase(eng, n=5, eq_levels=None, eq_tol=0.0):
+    """Ascending staircase (o=100,110,120,…) — bars 2..n-1 each form a bull gap."""
     ev = None
-    for k in range(5):
+    for k in range(n):
         o = 100.0 + 10 * k
-        ev = eng.update(k, o, o + 6.0, o, o + 5.0, eq_levels=eq_behind_first_gap, eq_tol=0.0)
+        ev = eng.update(k, o, o + 6.0, o, o + 5.0, eq_levels=eq_levels, eq_tol=eq_tol)
+    return ev
+
+
+def test_eq_exempt_gap_is_held_IN_ADDITION_to_the_cap_not_instead_of_a_gap():
+    """The exempt gap rides ON TOP of the cap — `max_count` bounds the ORDINARY gaps only.
+
+    🔴 This is the regression test for the self-cancelling bug (Pine `b1b461b`, ported here
+    2026-08-06). The engine used to count EVERY gap against the cap while the drop scan skipped
+    the exempt ones, so a protected gap still HELD A SLOT: keeping it evicted the newest ordinary
+    gap in its place. That is a SWAP, not an exemption, and it made the whole feature inert —
+    measured in Pine over 40,000 M15 bars, the old rule never once held more gaps than OFF.
+
+    cap=2, staircase: bars 2/3/4 each form a bull gap. The bar-2 gap spans [106,120] and an EQ
+    level at 110 sits inside it. Non-exempt gaps = bars 3 and 4 = 2 = the cap, so NOTHING is
+    dropped and all three survive. Under the old swap rule this returned [2, 4].
+    """
+    ev = _staircase(FairValueGapEngine(max_count=2), eq_levels=[110.0])
     born = [g.born_index for g in ev.active]
-    assert born == [2, 4], f"exempt bar-2 gap kept, bar-3 dropped instead; got {born}"
+    assert born == [2, 3, 4], f"exempt gap must be held IN ADDITION to the cap; got {born}"
+    assert ev.evicted == [], "nothing may be evicted while the ORDINARY gaps are within the cap"
+
+
+def test_the_cap_still_bites_on_the_ordinary_gaps_while_an_exempt_gap_is_held():
+    """The other half, and without it the test above passes for a cap that stopped working.
+
+    Same EQ level, same cap, but one bar longer: bar 5 forms a fourth gap, so the ORDINARY gaps
+    (3, 4, 5) now exceed the cap of 2 and the OLDEST ordinary one — bar 3 — is dropped. The
+    exempt bar-2 gap is skipped over and survives, which is the exemption doing its job while
+    the cap does its own.
+    """
+    ev = _staircase(FairValueGapEngine(max_count=2), n=6, eq_levels=[110.0])
+    assert [g.born_index for g in ev.active] == [2, 4, 5]
     assert len(ev.evicted) == 1 and ev.evicted[0].born_index == 3
 
 

@@ -109,11 +109,22 @@ class MpcSosFadeStrategy:
         `EngineConfig` carried 0.1 as its own default, which was never a decision. Proven
         load-bearing by removing it: `compare_strategy.py` failed on the first compared bar
         (`px_edge` py=3478.99 vs pine=3475.43). Same class as `fvg_require_close` below.
+        `eqExemptFvg` — a gap sitting on an active EQH/EQL is exempt from the cap above and lives
+        until price mitigates it, so `fvg_max_count` bounds the ORDINARY gaps only. It is an input
+        in `mpc_strategy.pine` and has DEFAULTED ON there since 2026-08-03 (`b1b461b`).
+        🔴 **Left unpinned it put this gate RED for three days**, and nothing could say why: at bar
+        11031 of the 21,999-bar export Pine still held a bearish gap born 143 bars earlier, pinned
+        by liquidity, and rested the limit on its edge at 4965.73, while Python — having FIFO-
+        dropped it — snapped to fib 0.702 at 4990.02. The mismatch reads as an entry-rule
+        disagreement and is not one; `_fib_snap` is line-for-line identical on both sides.
+        ⚠ **This one DOES vary per run** (unlike the four above, which mirror Pine constants), so
+        it is exported as `cfg_eq_exempt` and `compare_strategy.py` configures the bot FROM the
+        export. A run replaying an export that predates that column is configured OFF.
         If a bot ever tunes another engine input off its default, add it here (and export it
         if it must vary per run)."""
         from backtest.replay import EngineConfig
         return EngineConfig(fvg_max_count=7, show_internal=False, fvg_require_close=True,
-                            fvg_threshold_pct=0.1)
+                            fvg_threshold_pct=0.1, eq_exempt_fvg=True)
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "MpcSosFadeStrategy":
         """Replay a canonical bar frame end-to-end. Engines warm on every bar; the
