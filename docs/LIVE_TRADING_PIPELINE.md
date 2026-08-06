@@ -265,6 +265,89 @@ recorded against a real refusal; note our own `exec_min_stop_mode` floor of 0.08
 $4,000 gold) binds ~16x earlier, so the broker's limit should never be the one that bites.
 **Three days is three days** — it covers every hour but no weekend and no major news cycle.
 
+#### G5a — WHICH PU PRIME ACCOUNT TYPE (measured 2026-08-06)
+
+Aaron's question, ahead of funding a live account: PU Prime sell **Standard** (no commission, wide
+spread), **Prime** and **ECN** (both raw-ish spread + a per-lot commission). Minimum deposits are
+not a constraint — he can meet all three. His own framing was the right one and is why this needed
+a replay rather than a fee table: *"I'm more concerned about filling at the right price. The spread
+makes me not get into certain trades."*
+
+🔴 **THE ANSWER IS A RAW TIER, AND THE FIRST INTUITION — INCLUDING THIS ASSISTANT'S — WAS BACKWARDS.**
+The reasoning that fails is seductive: every entry here is a resting LIMIT, a limit fills at its own
+price or not at all, so the spread is dodged and only the commission is unavoidable — therefore pay
+spread, not commission. **The flaw is that dodging is not free.** A limit dodges the spread by NOT
+FILLING, and a setup that never fills is the whole trade lost, not a few cents of it.
+
+**MEASURED — one real replay per row, 155,531 M15 bars, 2020-01-01 → 2026-08-03, shipped defaults.**
+Spread is modelled with `bid_ask_fills` (broker bars are the BID, so a long's entry limit and a
+short's exits sit one spread further away), which is the ONLY cost model here that can move the
+trade list. Swap is PU Prime's own measured rate on every row.
+
+| tier | gold spread | comm/side/lot | trades | total R | setups never filled |
+|---|---|---|---|---|---|
+| free (no costs) | — | — | 159 | +142.18 | — |
+| **Standard** | **$0.32** (MEASURED) | $0.00 | 156 | **+141.87** | **8** |
+| **Prime** | ~$0.08 (published) | $3.50 | 158 | **+150.90** | 3 |
+| **ECN** | ~$0.08 (published) | $1.00 | 158 | **+152.07** | 3 |
+| ECN, if comm is really $3.50 | ~$0.08 | $3.50 | 158 | +150.90 | 3 |
+
+**Standard costs ~10R over 6.5 years against either raw tier.** Which raw tier is close to
+irrelevant — the entire $1.00-vs-$3.50 commission question is worth **1.2R**.
+
+✅ **The two costs were isolated, and they differ by a factor of twenty.**
+
+*Commission alone* (a flat toll, cannot move the trade list): $1.00/side = **0.48R**,
+$3.50/side = **1.67R**, over the whole 6.5 years. This strategy takes ~2 trades a month, so a
+per-lot toll barely registers. ⚠ Commission in R is **size-independent** (`reprice.py`'s own
+reasoning), which is why R is the only honest unit here — the dollar figure is meaningless on a
+compounding account.
+
+*Spread alone* (moves the trade list), and this is the monotonic, mechanical relationship that
+answers the question actually asked:
+
+| spread | setups never filled | total R |
+|---|---|---|
+| $0.05 | 3 | +151.96 |
+| $0.08 | 3 | +152.54 |
+| $0.15 | 6 | +151.82 |
+| $0.22 | 6 | +147.88 |
+| **$0.32 (Standard, measured)** | **8** | +141.87 |
+| $0.50 | 12 | +119.15 |
+
+⚠ **Read the FILL COLUMN as the finding, not the R column.** It is monotonic across every value and
+is a mechanical consequence of a resting limit meeting a wider quote. The R column is directionally
+consistent but a 10R gap sits under this strategy's measured run-to-run spread of **sd 15.06R**
+(`backtest/tools/jitter_audit.py`), so no single R figure here is significant on its own. **What
+makes the conclusion safe is that it does not rest on one figure**: every raw-tier row beats every
+Standard row, and it holds whether ECN's real gold spread is 5c or 15c and whether its commission is
+$1.00 or $3.50.
+
+⚠ **The drawdown column was DISCARDED and that is recorded rather than hidden.** Standard read
+8.36R against ~5.7R for the raw tiers, which looks like a strong second argument — but it is **not
+monotonic in spread** ($0.50 reads 6.77R), so it is one unlucky path rather than a systematic
+effect. It is not part of the case.
+
+⚠ **MEASURED vs PUBLISHED, and only one row is ours.** The $0.32 is a real measurement
+(1,893,438 ticks, `broker_facts.py`); the demo is a Standard account and $0.32 agrees with their
+published "3.0 pips" at the $0.10/pip gold convention, which is what pins the convention. **Every
+Prime and ECN figure is off a marketing page, and the sources contradict each other** — their own
+account-types page (read 2026-07-16) puts ECN at $1.00/side and Prime at $3.50/side; a third-party
+breakdown reverses it and quotes ECN gold at 5-15 cents. The replay covers that whole range on
+purpose, so the conflict changes nothing. **Do not promote any of it to a measurement.**
+
+🔴 **A LATENT DEFECT THIS FOUND, AND IT IS THE SILENT KIND.** `backtest/fills.py::PROFILES` gives
+**all four** PU Prime tiers `_SPREAD_XAUUSD_PUPRIME = 0.32` — a figure measured on the STANDARD
+account. So selecting `puprime_ecn` today charges ECN's commission on top of Standard's spread: a
+combination no real account offers, which overstates the raw tiers' cost and would make Standard
+look better than it is. Nothing errors. The honest fix is a REFUSAL (the `SENTINEL` pattern
+`commission_per_side_per_lot` already uses) rather than typing a published number into code —
+**an unmeasured tier must not be silently priced at a measured one's spread.**
+
+**Still open — see the broker questions in `docs/BROKER_QUESTIONS.md`.** The one number that would
+change this answer is not in any table above: **swap costs 6.60R, larger than the entire gap between
+account types.** If swap differs by tier, it outweighs everything here.
+
 ### G6 — The minimum-stop-distance guard is a live hazard and does not exist in Python — **CLOSED 2026-07-30**
 
 This is the only item on this list that can lose real money quickly.
