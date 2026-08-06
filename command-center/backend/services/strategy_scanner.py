@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 import config as cfg
-from services import lab_db, runner_dispatch
+from services import lab_db, runner_dispatch, strategy_import
 
 _CATEGORY_MAP = {
     "orb": "breakout",
@@ -603,14 +603,15 @@ def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> tuple[Optional[
     kept its STALE param schema, `needs_scan` stayed true for ever, and the scan
     reported success with "0 updated": a silent failure whose only symptom was a
     pill that would not go away. The error string goes into `ScanResult.warnings`.
-    """
-    import importlib
 
-    sys_path_added = str(monorepo_root) not in sys.path
-    if sys_path_added:
-        sys.path.insert(0, str(monorepo_root))
+    ⚠ THE CALLER MUST HAVE PURGED THE CACHED MODULES FIRST. The params below come
+    from the imported MODULE while `_python_source_hash` reads the FILES, so a
+    stale import writes a fresh hash beside stale defaults — which satisfies
+    `needs_rescan` for ever and makes the row uncorrectable by scanning. See
+    `services/strategy_import.py`.
+    """
     try:
-        mod = importlib.import_module(f"strategies.python.{pkg_dir.name}")
+        mod = strategy_import.import_strategy_package(pkg_dir.name, monorepo_root)
     except Exception as exc:
         return None, f"{pkg_dir.name}: import failed — {type(exc).__name__}: {exc}"
     spec = getattr(mod, "LAB_STRATEGY", None)
@@ -756,6 +757,12 @@ def scan_strategies() -> dict:
 
     # ── Python (packages under strategies/python/ declaring LAB_STRATEGY) ──────
     python_dir = strategies_dir / "python"
+    # ONCE, before the loop — never per package. A scan reads the module for its params and the
+    # FILES for its hash, so a cached import writes a fresh hash beside stale defaults and the row
+    # can never be corrected by scanning again. Purging per package would be worse than useless:
+    # mpc_bleg imports mpc_sos_fade and sorts before it, so it would re-import against a still-stale
+    # dependency. See services/strategy_import.py.
+    strategy_import.purge_strategy_modules()
     for pkg_dir in sorted(p for p in python_dir.glob("*") if p.is_dir()) if python_dir.exists() else []:
         if not (pkg_dir / "__init__.py").exists():
             continue

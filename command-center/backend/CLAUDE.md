@@ -45,6 +45,12 @@ backend/
 │   └── settings.py
 ├── services/              business logic, DB access, external clients
 │   ├── lab_db.py          only module that touches lab.db
+│   ├── strategy_import.py   the ONE way a Python strategy package is imported — purge the cached
+│   │                      `strategies.python.*` modules, then import. This backend is long-running,
+│   │                      so `import_module` otherwise pins whatever was on disk at boot; the
+│   │                      scanner then writes a fresh source hash beside stale defaults and the row
+│   │                      becomes UNCORRECTABLE by scanning. See *The scanner read the module and
+│   │                      hashed the files* below
 │   ├── strategy_scanner.py  reads from strategies/ (not algos/); scan is READ-ONLY (add/update + report orphans, never deletes). reconcile_strategies() is the explicit destructive counterpart (DB row + VPS file); remove_strategy() is the shared one-strategy delete.
 │   │                      ⚠ Its tests state the expected roster ONCE, as `EXPECTED_CLASS_NAMES` in
 │   │                      tests/test_strategies.py — added/skipped counts are `len()` of it, never a
@@ -1343,6 +1349,57 @@ Live behavior. NT8 agent endpoints: `GET/POST/DELETE /files/strategies/<filename
 - **Upload limit:** 256 KB, enforced on both agent and backend router.
 - **Lock detection:** agent tries `r+b` open before upload/delete; `IOError` → HTTP 423.
 - **Sync-status:** `GET /strategy-files/sync-status` — **content-aware** (no longer presence-only). It reads the local source **live from disk**, hashes it (md5, same as the scanner via `strategy_scanner.source_hash`), and compares to the recorded deployed/compiled hashes: `needs_deploy = local_hash != deployed_source_hash`, `needs_compile = deployed_source_hash != compiled_source_hash`. `in_sync = file_exists_on_vps AND not needs_deploy`. Also returns `current_version` / `deployed_version` / `compiled_version`. It lazily registers the live hash (`ensure_strategy_version`) so the current version always resolves even before a re-scan. **Since 2026-08-06 an unreachable agent degrades instead of 502-ing** — see *The Strategies page — the 2026-08-06 audit* below.
+
+## The scanner read the MODULE and hashed the FILES — so a stale row could not be fixed by scanning
+
+🔴 **Fixed 2026-08-06.** `exec_time_stop_mode` was flipped `"Off"` → `"Before TP1 only"` in
+`strategies/python/mpc_sos_fade/config.py`, the scan reported success, and the Run modal went on
+offering **Off**. Clearing `source_hash` by hand in sqlite was the only way out.
+
+`_parse_python_package` called `importlib.import_module`, which returns whatever is already in
+`sys.modules`. **The backend is a long-running process, so the FIRST import of a strategy pins its
+config dataclass for the life of that process** — and uvicorn's `--reload` watches `backend/`, not
+`strategies/`, so editing a strategy never restarts it.
+
+⚠ **On its own that is an ordinary staleness bug. What made it dangerous is that it SEALS ITSELF.**
+`_python_source_hash` reads the FILES while `_py_param_schema` reads the cached MODULE, so a scan
+after an edit writes the **new hash beside the old defaults** — and `needs_rescan` compares only the
+hash. The row is satisfied for ever; every later scan skips it. **Nothing reports anything**: the
+"Needs scan" pill clears, the scan says `updated`, and the lab keeps serving a default the strategy
+no longer has. This repo's *no data vs cannot ask* rule, arriving as *this is current vs I last
+looked before you changed it*.
+
+`services/strategy_import.py` is the one seam: `purge_strategy_modules()` then
+`import_strategy_package()`. Both `strategy_scanner.scan_strategies` and `python_runner._resolve`
+go through it.
+
+⚠ **`python_runner._resolve` had the identical bug and it is the worse half** — a backtest replaying
+a strategy the repo no longer contains produces an entirely normal-looking result describing code
+nobody can read. It purges too, once per job.
+
+⚠ **Purge the whole `strategies.python` namespace, never one package.** `mpc_bleg` imports
+`mpc_sos_fade`'s execution module and sorts BEFORE it, so a per-package purge would re-import the
+dependent against a still-cached dependency — the same mixed reading, one level down.
+
+⚠ **The `strategies` ROOT is deliberately left cached** (it is an empty namespace package carrying
+no strategy source). In a test that matters and is called out in the fixture: another test imports
+the real `strategies` first, which pins `__path__` to the monorepo, and a `tmp_path` probe package
+is then never found.
+
+⚠ **Dropping a module from `sys.modules` does not invalidate references anything already holds** —
+an in-flight backtest keeps the classes it was built with and finishes on them. That is what makes
+this safe to call from a request handler.
+
+✅ **Proven against the LIVE backend, not only by test.** With the strategy already cached in the
+running process, `config.py` was edited to `"Always"`, one scan reported `updated: 1`, and
+`GET /strategies` returned `Always`; reverting and re-scanning returned `Before TP1 only`. 5 new
+tests (698 green), **4 of them watched RED with `purge_strategy_modules` neutered** — the fifth is
+kept and LABELLED vacuous, since it pins idempotency and passes either way.
+
+**The standing lesson is narrower than the label-vs-code refrain and worth keeping separate: when
+one fact is derived from two reads, they must be reads of the same thing.** A freshness check whose
+marker is read from disk and whose payload is read from memory does not merely go stale — it
+records that it is up to date, and that record is what stops anyone ever finding out.
 
 ## The Strategies page — the 2026-08-06 audit
 

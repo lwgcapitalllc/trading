@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import config as cfg
+# Stdlib-only, imports nothing from services — safe at module scope despite this module sitting
+# inside the runner_dispatch import cycle.
+from services import strategy_import
 
 _MONOREPO = Path(cfg.MONOREPO_ROOT)
 if str(_MONOREPO) not in sys.path:
@@ -272,19 +275,24 @@ def _resolve(class_name: str) -> Optional[tuple]:
 
     Import failures are skipped rather than raised — the same rule the scanner follows, so one
     half-finished package under strategies/python/ cannot break runs for every other strategy.
-    """
-    import importlib
 
+    ⚠ THE CACHED MODULES ARE DROPPED FIRST, once, before the loop. This backend is long-running, so
+    `import_module` would otherwise pin whatever was on disk when it last booted — and a backtest
+    replaying a strategy the repo no longer contains is a result that looks entirely normal and
+    describes code nobody can read. Purging per package would be worse than not purging: mpc_bleg
+    imports mpc_sos_fade and sorts before it. See `services/strategy_import.py`.
+    """
     if not class_name:
         return None
     pkg_root = _MONOREPO / "strategies" / "python"
     if not pkg_root.is_dir():
         return None
+    strategy_import.purge_strategy_modules()
     for pkg_dir in sorted(pkg_root.iterdir()):
         if not (pkg_dir / "__init__.py").is_file():
             continue
         try:
-            mod = importlib.import_module(f"strategies.python.{pkg_dir.name}")
+            mod = strategy_import.import_strategy_package(pkg_dir.name, _MONOREPO)
         except Exception:
             continue
         spec = getattr(mod, "LAB_STRATEGY", None)
