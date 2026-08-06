@@ -724,6 +724,9 @@ class Execution:
             # deliberate deviation: force-flat before the daily close (real runs only)
             elif self._cfg.flat_by_close and self._in_flat_window(sig):
                 self._close_at(sig, sig.close, "flat-by-close", dec)
+            # optional time stop (Pine execTimeStopMode) — the clock, not the price
+            elif self._time_stop_due(sig):
+                self._close_at(sig, sig.close, "time-stop", dec, tag="TIME")
         elif self._pos_dir == 0:
             self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
         # else: a secondary is open — managed on the 1m stream (step_secondary), not here.
@@ -1438,12 +1441,16 @@ class Execution:
         if self._filled_qty >= self._qty - 1e-9:
             self._finalise_trade(sig, dec)
 
-    def _close_at(self, sig, price, _reason, dec) -> None:
+    def _close_at(self, sig, price, _reason, dec, *, tag: str = "CLOSE") -> None:
+        # `tag` names the exit leg (L-CLOSE / L-TIME / ...). It defaults to CLOSE so the
+        # opposite-SOS and flat-by-close paths keep the leg name every stored run already
+        # carries — a force-close is a force-close, and renaming those retroactively would
+        # make an old run's exit list stop matching its own chart.
         remaining = self._qty - self._filled_qty
         if remaining <= 1e-12:
             return
         prefix = "L" if self._pos_dir > 0 else "S"
-        self._exit_portion(f"{prefix}-CLOSE", price, remaining, sig, dec)
+        self._exit_portion(f"{prefix}-{tag}", price, remaining, sig, dec)
 
     def _finalise_trade(self, sig, dec) -> None:
         # net pnl of the whole trade = equity moved since entry; R against 1R risk
@@ -1784,3 +1791,24 @@ class Execution:
             return False
         mins_left = (close_h - sig.ny_hour) * 60 - (sig.time_ms // 60_000) % 60
         return 0 < mins_left <= cfg.flat_by_close_min
+
+    def _time_stop_due(self, sig) -> bool:
+        """Has this position been open longer than `exec_time_stop_hrs`, and does the mode
+        still care about it?  (Pine `execTimeStopMode` / `execTimeStopHrs`.)
+
+        The clock is CALENDAR hours since the fill, weekends included — the same basis the
+        swap is charged on, and the one a reader can check against a chart without knowing
+        which hours the market was open.
+
+        `_stage == 0` is the "before TP1" test, and it is the existing state rather than a new
+        flag on purpose: stage 1 IS "price touched TP1", the moment the stop staged to
+        breakeven. Deriving it a second way would be a second claim about one event.
+        """
+        cfg = self._cfg
+        if cfg.exec_time_stop_mode == "Off" or self._pos_dir == 0:
+            return False
+        if cfg.exec_time_stop_mode == "Before TP1 only" and self._stage != 0:
+            return False
+        # `>=` so a threshold landing exactly on a bar's close fires on that bar rather than a
+        # bar later — the same convention `_min_stop_floor` uses for its floor.
+        return (sig.time_ms - self._entry_ms) >= cfg.exec_time_stop_hrs * 3_600_000

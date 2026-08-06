@@ -4042,6 +4042,7 @@ var bool  pendIsBLegL = false, var bool pendIsBLegS = false
 var float lSL = na, var float lTP1 = na, var float lTP2 = na
 var float sSL = na, var float sTP1 = na, var float sTP2 = na
 var float lEntry = na, var float sEntry = na   // fill price of the open trade (breakeven anchor)
+var int   lEntryTime = na, var int sEntryTime = na  // fill TIME of the open trade — drives the time stop
 var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
 var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = BE trigger reached (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
 
@@ -4477,6 +4478,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     else
         tradedSosL := pendSosL
     lEntry     := strategy.position_avg_price
+    lEntryTime := time
     lStage     := 0
     lMaxFav    := lEntry
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
@@ -4489,6 +4491,7 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     else
         tradedSosS := pendSosS
     sEntry     := strategy.position_avg_price
+    sEntryTime := time
     sStage     := 0
     sMaxFav    := sEntry
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
@@ -4715,6 +4718,21 @@ float sStage2Floor = execTp2StopMode == "Breakeven" ? sEntry - beBuf : execTp2St
 float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
+// ── The TIME STOP — the one exit lever driven by the clock, not by price ─────────
+// ⚠ These two inputs are declared HERE, next to the block that reads them, rather than
+// up in the GRP_EXEC panel with their siblings. That is deliberate and must not be
+// "tidied up": TradingView keys a chart's saved input values off DECLARATION ORDER
+// within each type, so inserting a string and a float up in the exec panel would shift
+// every later string/float input and silently reset them on every chart running this
+// script. Declaring the pair here shifts nothing. `group = GRP_EXEC` still files them
+// under Strategy Execution — only their position WITHIN that group moves.
+// Ported from `mpc_strategy.pine` in the same commit; both forks share ONE exit ladder.
+string execTimeStopMode = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = GRP_EXEC, tooltip = "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, inherited from the A+ fork where it was measured: there it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R. It has NOT been measured on B legs, which wait for a late retrace by construction, so treat any value here as untested until it is replayed. Off closes nothing.")
+float execTimeStopHrs = input.float(36.0, "   ↳ Time stop (hours)", group = GRP_EXEC, minval = 0.25, step = 0.25, active = execTimeStopMode != "Off", tooltip = "Calendar hours since the fill, weekends included — the same clock the swap is charged on. The 24h-to-40h plateau behind the 36 default was measured on the A+ fork, not on this one. A B leg waits for a LATE retrace by construction, so treat any value here as untested until it is replayed.")
+
+bool lTimeUp = execTimeStopMode != "Off" and strategy.position_size > 0 and not na(lEntryTime) and (execTimeStopMode == "Always" or lStage == 0) and (time - lEntryTime) >= execTimeStopHrs * 3600000
+bool sTimeUp = execTimeStopMode != "Off" and strategy.position_size < 0 and not na(sEntryTime) and (execTimeStopMode == "Always" or sStage == 0) and (time - sEntryTime) >= execTimeStopHrs * 3600000
+
 // ── Manage open long: TP1 / TP2 scale-outs + a runner that only trails ──
 // A rung sized 0% is SKIPPED, never placed. strategy.exit() treats qty_percent = 0 as
 // "unspecified" and falls back to closing the WHOLE position at that limit, so calling it
@@ -4729,6 +4747,8 @@ if strategy.position_size > 0
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
+    else if lTimeUp
+        strategy.close("Long", comment = "time stop")
 
 // ── Manage open short ──
 if strategy.position_size < 0
@@ -4739,6 +4759,10 @@ if strategy.position_size < 0
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
+    else if sTimeUp
+        strategy.close("Short", comment = "time stop")
+
+
 
 //============================================================
 //  PARITY EXPORT — the B-LEG decision stream as plotted columns
@@ -4871,3 +4895,11 @@ plot(execBeBufTk,          "cfg_be_buf",      _BINV, editable = false)
 plot(execSlBufTk,          "cfg_sl_buf",      _BINV, editable = false)
 plot(execBeBandR,          "cfg_scratch_r",   _BINV, editable = false)
 plot(bLegMaxDays,          "cfg_bleg_days",   _BINV, editable = false)
+// TIME STOP (2026-08-05) — the shared exit ladder's clock lever, carried here so
+// `compare_bleg.py` configures the Python side FROM the export rather than from a default.
+// Same encoding as the A+ export, and deliberately NOT folded into cfg_exitmode (that column
+// is the two ladder dropdowns).
+//   cfg_time_stop = Off?0 : Before TP1 only?1 : Always?2
+// An export with NO cfg_time_stop column predates this and ran the lever OFF.
+plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _BINV, editable = false)
+plot(execTimeStopHrs,      "cfg_time_stop_hrs", _BINV, editable = false)

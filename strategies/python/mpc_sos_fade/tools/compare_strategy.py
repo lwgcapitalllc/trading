@@ -53,6 +53,7 @@ _HTF_REQ = {0: "Ignore", 1: "Must agree", 2: "Must not oppose", 3: "Must oppose 
 _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratchet"}
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
+_TIME_STOP = {0: "Off", 1: "Before TP1 only", 2: "Always"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
 _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
@@ -204,6 +205,21 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
     msv = get("cfg_min_stop_val")
     if msv is not None:
         vals["exec_min_stop_val"] = float(msv)
+    # Time stop (added 2026-08-05) — same shape and same reasoning as the minimum-stop guard
+    # directly above: an export with no column predates the lever, and the parent shipped it
+    # "Off" from the day it was added, so "absent ⇒ Off" is a FACT about those exports rather
+    # than a guess. Do NOT fall back on the base config here — the moment the Python default is
+    # anything but Off, that would close positions the exported Pine held to the end, and the
+    # diff would report the harness's own configuration as a logic bug.
+    tsm = get("cfg_time_stop")
+    vals["exec_time_stop_mode"] = "Off" if tsm is None else \
+        _TIME_STOP.get(int(round(tsm)), vals["exec_time_stop_mode"])
+    tsh = get("cfg_time_stop_hrs")
+    if tsh is not None and float(tsh) > 0:
+        # Guarded because the config REFUSES 0 hours behind a live mode (it would close every
+        # position one bar after its fill). A 0 in this column can only come from an export
+        # taken with the lever Off, where the value is never read anyway.
+        vals["exec_time_stop_hrs"] = float(tsh)
     return cls(**vals)
 
 

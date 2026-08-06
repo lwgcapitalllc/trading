@@ -399,6 +399,38 @@
       ]
     },
     {
+      "name": "exec_time_stop_mode",
+      "group": "Exit ladder",
+      "label": "Time stop",
+      "desc": "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, so the baseline moved: measured by real replay over 6.5 years it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R for +4R. Off closes nothing and is what every result measured before that date was taken on.",
+      "choices": [
+        "Off",
+        "Before TP1 only",
+        "Always"
+      ],
+      "guide": [
+        "Off — the clock never closes a trade",
+        "Always — the clock closes winners too"
+      ]
+    },
+    {
+      "name": "exec_time_stop_hrs",
+      "group": "Exit ladder",
+      "label": "Time stop (hours)",
+      "desc": "Calendar hours since the fill, weekends included — the same clock the swap is charged on. Measured over 6.5 years, cutting only trades that never reached TP1: 24h to 40h all give the same answer, so read it as a plateau rather than an optimum. Below 16 hours it starts cutting winners, because losers here die FASTER than winners do.",
+      "step": 0.25,
+      "show_if": {
+        "exec_time_stop_mode": [
+          "Before TP1 only",
+          "Always"
+        ]
+      },
+      "guide": [
+        "Cuts winners as well as losers",
+        "Fires on almost nothing"
+      ]
+    },
+    {
       "name": "exec_close_opp_sos",
       "group": "Exit ladder",
       "widget": "toggle",

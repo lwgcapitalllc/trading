@@ -22,6 +22,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The legal `exec_time_stop_mode` values, named once so `__post_init__`, the parity
+# harness and the meta file cannot drift into three different opinions about them.
+_TIME_STOP_MODES = frozenset({"Off", "Before TP1 only", "Always"})
+
 
 @dataclass(frozen=True)
 class SosFadeConfig:
@@ -208,6 +212,70 @@ class SosFadeConfig:
     #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop
     #   up to TP1; "Breakeven" holds at entry ± the BE buffer (most room); "One trail step behind"
     #   keeps it one `exec_trail_step` under the high-water mark, never below breakeven.
+    exec_time_stop_mode: str = "Before TP1 only"   # "Time stop" (Pine execTimeStopMode)
+    #   ∈ {"Off", "Before TP1 only", "Always"}. Close a position that has been open for
+    #   `exec_time_stop_hrs` CALENDAR hours. An EXIT lever, and the only one here driven by the
+    #   clock rather than by price.
+    #   "Before TP1 only" (the measured shape) fires ONLY while the trade is still at stage 0 —
+    #   TP1 has never been touched, so the stop has never staged to breakeven. Touching TP1 makes
+    #   the trade immune for the rest of its life, whatever the clock says.
+    #   "Always" ignores the stage and closes on the clock alone. Measured DESTRUCTIVE at every
+    #   cutoff tested and kept only so the two can be compared; see the ⚠ below.
+    #   🔴 **Default "Before TP1 only" at 36h since 2026-08-06 (Aaron's call), so THE BASELINE
+    #   MOVED: 159 trades / +137.94R / maxDD 7.99R → 159 / +142.17R / maxDD 5.62R.** It shipped
+    #   "Off" for exactly one day, on the standing rule that a stored run must reproduce at
+    #   defaults; that protection is now spent, deliberately, exactly as the minimum-stop guard
+    #   spent its own the day before. **Pin `exec_time_stop_mode="Off"` explicitly when
+    #   reproducing any run measured before 2026-08-06**, or you are replaying a different bot.
+    #   ⚠ The drawdown is the case for it, not the R. +4.23R is a quarter of one standard
+    #   deviation on this strategy (jitter audit: sd 15.06R), so read the R as flat and the
+    #   30% drawdown cut as the result — bought with 6 trades over 6.5 years.
+    #
+    #   ⚠ **The stage gate is the whole lever, and the data says why.** Over 161 trades
+    #   (2020-01-01 → 2026-08-03, run `75ccc776d10c`) the TP1 line splits the book perfectly:
+    #   **105 trades reached TP1 and not one of them lost; all 56 that never reached it lost.**
+    #   That is structural rather than lucky — touching TP1 stages the stop to breakeven, so a
+    #   trade past that line cannot take a full loss. The clock is therefore only ever asked about
+    #   trades that are still genuinely at risk.
+    #   ⚠ **Do NOT reach for breakeven as the milestone instead. It was measured and it is inert:**
+    #   the entry is a RESTING LIMIT, so price is sitting at the entry when it fills and the very
+    #   next bar's wick crosses back over it — 161 of 161 trades touch breakeven, median 0.25h
+    #   (one bar). By hour 8 the share of losers that have not returned to breakeven is **0%**, so
+    #   a breakeven-gated time stop fires on nothing at any usable cutoff.
+    #   ⚠ **"Always" cuts winners and losers at nearly the same rate below ~16h**, because losers
+    #   die FASTER than winners here (median hold: losers 2.0h, winners 17.8h). The stop is already
+    #   the fast exit; the clock can only ever catch the tail that lingers.
+    exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
+    #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
+    #   the one a reader can check against a chart. Read only when the mode is not "Off".
+    #   **MEASURED BY REAL REPLAY over 155,440 M15 bars (2020-01-01 → 2026-08-03), one full
+    #   replay per row, at today's shipped defaults** (baseline 159 trades / +137.94R — the
+    #   min-stop guard moved it off the 161 / +135.94R of run `75ccc776d10c`):
+    #     Off (shipped)          → 159 tr  +137.94R  maxDD 7.99R
+    #     Before TP1 only  24h   → 159 tr  +140.21R  maxDD 5.55R  (10 cut)
+    #     Before TP1 only  30h   → 159 tr  +142.03R  maxDD 5.38R  ( 7 cut)
+    #     Before TP1 only  36h   → 159 tr  +142.17R  maxDD 5.62R  ( 6 cut)  ← this default
+    #     Before TP1 only  40h   → 159 tr  +142.58R  maxDD 5.61R  ( 6 cut)
+    #     Before TP1 only  48h   → 159 tr  +140.09R  maxDD 7.35R  ( 4 cut)
+    #     Always           36h   → 159 tr   +97.32R  maxDD 5.92R  (26 cut)
+    #   ⚠ **24h-40h is a PLATEAU, not a spike, and that is the only reason 36 is defensible** —
+    #   roughly the same R and drawdown across a 16-hour band describes the trade population
+    #   rather than fitting it. 36 sits mid-plateau deliberately.
+    #   🔴 **The "Always" row is why the stage gate is the lever and the clock is not: same 36
+    #   hours, a THIRD of the edge gone (+137.94R → +97.32R).** It cuts 26 trades where the gated
+    #   version cuts 6, and the 20 extra are the winners.
+    #   ✅ **The queue effect did NOT materialise, and it was CHECKED rather than assumed — the
+    #   trade count is 159 in every row, including the "Always" run that cut 26 trades.** So the
+    #   naive re-pricing and the real replay agree to the cent here. ⚠ **That is a fact about THIS
+    #   window, not a licence to re-price instead of replaying**: A+ takes ~2 trades a month, so a
+    #   slot freed 60 hours early usually contains no setup — whereas an ENTRY-side filter frees
+    #   the slot exactly when a setup exists, which is how the min-stop guard's cheap estimate got
+    #   its sign wrong (+1.84R estimated, −1.84R replayed).
+    #   ⚠ **Do NOT read the +4.23R as edge.** `backtest/tools/jitter_audit.py` measured this
+    #   strategy's run-to-run spread at **sd 15.06R**, so it is a quarter of one standard
+    #   deviation. **The case for this lever is the DRAWDOWN — 7.99R → 5.62R at 36h (30%), 5.38R
+    #   at 30h — bought for R that is indistinguishable from noise, and resting on 6 trades in
+    #   6.5 years.** It is not a profit lever.
     exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
     exec_conf_sz: bool = False         # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
     #   Added to `mpc_strategy.pine` 2026-07-21. NOT PORTED YET — the field exists so the toggle is
@@ -263,7 +331,8 @@ class SosFadeConfig:
     symbol: str = "XAUUSD"                   # Vantage broker symbol for the tick pull (no ".s" suffix)
 
     def __post_init__(self) -> None:
-        """Refuse a Custom SL ratio outside (0, 1.0] — LOUDLY, at construction.
+        """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,
+        at construction.
 
         The alternative was the shape `_sl_anchor` already had for an unrecognised level: fall
         through to fib 1.0. That is the wrong answer for a number a human typed. A silent
@@ -271,10 +340,26 @@ class SosFadeConfig:
         and report it as theirs — the same class of defect as the lab charging costs it never
         applied. Failing the run states the problem instead.
 
-        Validated ONLY when the mode reads the field. The optimizer can sweep `exec_sl_custom`
-        while `exec_sl_level` is a fixed level; every combo is then identical and inert, which
-        is a wasted sweep but not an error, and raising on it would kill an otherwise valid grid.
+        Both are validated ONLY when the mode reads the field. The optimizer can sweep
+        `exec_sl_custom` while `exec_sl_level` is a fixed level, or `exec_time_stop_hrs` while
+        the time stop is Off; every combo is then identical and inert, which is a wasted sweep
+        but not an error, and raising on it would kill an otherwise valid grid.
         """
+        if self.exec_time_stop_mode not in _TIME_STOP_MODES:
+            raise ValueError(
+                f"exec_time_stop_mode must be one of {sorted(_TIME_STOP_MODES)!r}, "
+                f"got {self.exec_time_stop_mode!r}. An unrecognised mode would fall through to "
+                "no time stop at all, which is a different backtest wearing the operator's label."
+            )
+        if self.exec_time_stop_mode != "Off" and not self.exec_time_stop_hrs > 0.0:
+            # 0 hours is not "off" — it would close every position on the bar after its fill.
+            # "Off" is a MODE, deliberately, so that turning the lever off and setting its
+            # threshold to nothing can never be the same keystroke.
+            raise ValueError(
+                f"exec_time_stop_hrs must be > 0 when exec_time_stop_mode is "
+                f"{self.exec_time_stop_mode!r}, got {self.exec_time_stop_hrs!r}. "
+                "Set exec_time_stop_mode='Off' to disable the time stop."
+            )
         if self.exec_sl_level != "Custom":
             return
         v = self.exec_sl_custom

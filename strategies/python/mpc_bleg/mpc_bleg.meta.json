@@ -154,6 +154,38 @@
       ]
     },
     {
+      "name": "exec_time_stop_mode",
+      "group": "Exit ladder",
+      "label": "Time stop",
+      "desc": "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, inherited from the A+ fork where it was measured: there it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R. It has NOT been measured on B legs, which wait for a late retrace by construction, so treat any value here as untested until it is replayed. Off closes nothing.",
+      "choices": [
+        "Off",
+        "Before TP1 only",
+        "Always"
+      ],
+      "guide": [
+        "Off — the clock never closes a trade",
+        "Always — the clock closes winners too"
+      ]
+    },
+    {
+      "name": "exec_time_stop_hrs",
+      "group": "Exit ladder",
+      "label": "Time stop (hours)",
+      "desc": "Calendar hours since the fill, weekends included — the same clock the swap is charged on. The 24h-to-40h plateau behind the 36 default was measured on the A+ fork, not on this one. A B leg waits for a LATE retrace by construction, so treat any value here as untested until it is replayed.",
+      "step": 0.25,
+      "show_if": {
+        "exec_time_stop_mode": [
+          "Before TP1 only",
+          "Always"
+        ]
+      },
+      "guide": [
+        "Cuts winners as well as losers",
+        "Fires on almost nothing"
+      ]
+    },
+    {
       "name": "exec_aplus",
       "group": "Setup",
       "widget": "toggle",

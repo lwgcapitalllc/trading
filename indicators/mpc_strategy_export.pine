@@ -4065,6 +4065,7 @@ var bool  lIsBLeg = false, var bool sIsBLeg = false   // is the OPEN long/short 
 var float lSL = na, var float lTP1 = na, var float lTP2 = na
 var float sSL = na, var float sTP1 = na, var float sTP2 = na
 var float lEntry = na, var float sEntry = na   // fill price of the open trade (breakeven anchor)
+var int   lEntryTime = na, var int sEntryTime = na  // fill TIME of the open trade — drives the time stop
 var float lMaxFav = na, var float sMaxFav = na // high-water mark of the open trade, drives the runner ratchet
 var int   lStage = 0,  var int   sStage = 0    // 0 = full stop, 1 = BE trigger reached (stop->BE), 2 = TP2 hit (stop->TP1, then runner ratchet)
 
@@ -4717,6 +4718,7 @@ if strategy.position_size > 0 and strategy.position_size[1] <= 0
     else
         tradedSosL := pendSosL
     lEntry     := strategy.position_avg_price
+    lEntryTime := time
     lStage     := 0
     lMaxFav    := lEntry
     openRiskUsd := math.abs(strategy.position_size) * (lEntry - lSL)
@@ -4730,6 +4732,7 @@ if strategy.position_size < 0 and strategy.position_size[1] >= 0
     else
         tradedSosS := pendSosS
     sEntry     := strategy.position_avg_price
+    sEntryTime := time
     sStage     := 0
     sMaxFav    := sEntry
     openRiskUsd := math.abs(strategy.position_size) * (sSL - sEntry)
@@ -4956,6 +4959,21 @@ float sStage2Floor = execTp2StopMode == "Breakeven" ? sEntry - beBuf : execTp2St
 float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, lTrail)) : lStage >= 1 ? lEntry + beBuf : lSL
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
+// ── The TIME STOP — the one exit lever driven by the clock, not by price ─────────
+// ⚠ These two inputs are declared HERE, next to the block that reads them, rather than
+// up in the GRP_EXEC panel with their siblings. That is deliberate and must not be
+// "tidied up": TradingView keys a chart's saved input values off DECLARATION ORDER
+// within each type, so inserting a string and a float up at line ~483 would shift every
+// later string/float input and silently reset them on every chart running this script.
+// The last input.float/string/int in this file is execBeBandR (~4050), so declaring the
+// pair here shifts nothing at all. `group = GRP_EXEC` still files them under Strategy
+// Execution in the settings panel — only their position WITHIN that group moves.
+string execTimeStopMode = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = GRP_EXEC, tooltip = "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, so the baseline moved: measured by real replay over 6.5 years it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R for +4R. Off closes nothing and is what every result measured before that date was taken on.")
+float execTimeStopHrs = input.float(36.0, "   ↳ Time stop (hours)", group = GRP_EXEC, minval = 0.25, step = 0.25, active = execTimeStopMode != "Off", tooltip = "Calendar hours since the fill, weekends included — the same clock the swap is charged on. Measured over 6.5 years, cutting only trades that never reached TP1: 24h to 40h all give the same answer, so read it as a plateau rather than an optimum. Below 16 hours it starts cutting winners, because losers here die FASTER than winners do.")
+
+bool lTimeUp = execTimeStopMode != "Off" and strategy.position_size > 0 and not na(lEntryTime) and (execTimeStopMode == "Always" or lStage == 0) and (time - lEntryTime) >= execTimeStopHrs * 3600000
+bool sTimeUp = execTimeStopMode != "Off" and strategy.position_size < 0 and not na(sEntryTime) and (execTimeStopMode == "Always" or sStage == 0) and (time - sEntryTime) >= execTimeStopHrs * 3600000
+
 // ── Manage open long: TP1/TP2 scale-outs + runner, staged stop ──
 // A rung sized 0% is SKIPPED, never placed. strategy.exit() treats qty_percent = 0 as
 // "unspecified" and falls back to closing the WHOLE position at that limit, so calling it
@@ -4970,6 +4988,8 @@ if strategy.position_size > 0
     strategy.exit("L-RUN", from_entry = "Long",                                          stop = lStop)
     if execCloseOppSOS and st.bear_sos
         strategy.close("Long", comment = "opp SOS")
+    else if lTimeUp
+        strategy.close("Long", comment = "time stop")
 
 // ── Manage open short ──
 if strategy.position_size < 0
@@ -4980,6 +5000,8 @@ if strategy.position_size < 0
     strategy.exit("S-RUN", from_entry = "Short",                                          stop = sStop)
     if execCloseOppSOS and st.bull_sos
         strategy.close("Short", comment = "opp SOS")
+    else if sTimeUp
+        strategy.close("Short", comment = "time stop")
 
 
 
@@ -5155,6 +5177,15 @@ plot(execBeBandR,          "cfg_scratch_r",   _INV, editable = false)
 // exist), which is exactly what compare_strategy.py assumes when the column is absent.
 plot((execMinStopMode=="Off"?0:execMinStopMode=="% of price"?1:execMinStopMode=="Fixed $"?2:3), "cfg_min_stop", _INV, editable = false)
 plot(execMinStopVal,       "cfg_min_stop_val", _INV, editable = false)
+// TIME STOP (2026-08-05) — an EXIT lever, but kept out of cfg_exitmode for the same reason
+// the min-stop guard is: that column is the two ladder DROPDOWNS, and a third meaning packed
+// into it would make the decoder guess. The mode is a code, the hours are RAW (a float).
+//   cfg_time_stop = Off?0 : Before TP1 only?1 : Always?2
+// An export with NO cfg_time_stop column predates this and ran the lever OFF (it did not
+// exist), which is exactly what compare_strategy.py assumes when the column is absent —
+// never the Python default, which is also Off today but need not stay that way.
+plot((execTimeStopMode=="Off"?0:execTimeStopMode=="Before TP1 only"?1:2), "cfg_time_stop", _INV, editable = false)
+plot(execTimeStopHrs,      "cfg_time_stop_hrs", _INV, editable = false)
 
 // DIAGNOSTIC (temporary — pins the A+ Stage-1 arming gap vs the Python bot at H4/
 // session boundaries; remove once parity is green). Everything the arming block at
