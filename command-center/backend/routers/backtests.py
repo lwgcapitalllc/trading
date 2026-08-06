@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from models import (
@@ -790,32 +790,45 @@ async def reload_charts(run_id: str) -> dict:
 
 
 @router.get("/runs/{run_id}/chart-spec")
-async def get_chart_spec(run_id: str, refresh: bool = False) -> dict:
+async def get_chart_spec(run_id: str, refresh: bool = False) -> Response:
     """ChartSpec for the price-chart panel — candles + sessions + trades (Phase 7a).
 
     Returns the camelCase contract the frontend ChartPanel reads (the one place the backend
     emits camelCase, since the shape is defined by the chart, not a DB model). Built lazily and
-    cached to the run dir; `refresh=true` rebuilds. Candle fetch is backgrounded (network I/O)."""
+    cached to the run dir; `refresh=true` rebuilds. Candle fetch is backgrounded (network I/O).
+
+    **A warm cache is streamed as BYTES, never as a dict.** Returning a dict makes FastAPI
+    `json.dumps` a structure this function had just `json.loads`ed off disk — MEASURED at 0.089s +
+    0.171s of the endpoint's 0.40s on a real 4 MB spec, for a round trip whose output is
+    byte-equivalent to its input. See `chart_spec.cached_chart_spec_bytes`.
+
+    ⚠ **The 404 must be decided by the DB, not by the cache being absent.** A real run that has
+    simply never had its spec built is the normal first-open case, and answering 404 there would
+    report a healthy run as missing — so a cache miss falls through to the build, which is the only
+    thing that can tell an unbuilt spec from an unknown run."""
+    if not refresh:
+        cached = await asyncio.to_thread(chart_spec.cached_chart_spec_bytes, run_id)
+        if cached is not None:
+            return Response(content=cached, media_type="application/json")
     spec = await asyncio.to_thread(chart_spec.build_chart_spec, run_id, refresh)
     if spec is None:
         raise HTTPException(404, "Run not found")
-    return spec
+    return JSONResponse(content=spec)
 
 
 @router.get("/runs/{run_id}/candles")
-async def get_run_candles(
-    run_id: str, tf: str, from_ms: int, to_ms: int, analysis: bool = False,
-) -> dict:
+async def get_run_candles(run_id: str, tf: str, from_ms: int, to_ms: int) -> dict:
     """Candles for a bounded [from_ms, to_ms] window at an arbitrary timeframe — the chart's
-    drill-down data path (e.g. 1m under a 15m run, to see a trade's exact entry) AND its
-    scroll-left paging path.
+    DRILL-DOWN data path (e.g. 1m under a 15m run, to see a trade's exact entry).
 
     Pulls from the run's OWN feed/runner (same bars the run traded). `available: false` with an
     empty `candles` list means the feed can't serve that window — most often 1m older than the
-    broker's ~35-day 1m history. `analysis=true` additionally returns that window's structure
-    overlays, fair value gaps, blocked and missed setups, which is what keeps those layers drawing
-    when the chart pages back past the shipped window. Backgrounded (network I/O)."""
-    out = await asyncio.to_thread(chart_spec.build_run_candles, run_id, tf, from_ms, to_ms, analysis)
+    broker's ~35-day 1m history. Backgrounded (network I/O).
+
+    ⚠ **The `analysis=true` parameter was DELETED on 2026-08-06 along with the scroll-left paging
+    path it served.** The ChartSpec carries the whole run now, so the panel pages from memory and
+    no window needs its own analysis — see `chart_spec.build_run_candles`."""
+    out = await asyncio.to_thread(chart_spec.build_run_candles, run_id, tf, from_ms, to_ms)
     if out is None:
         raise HTTPException(404, "Run not found")
     return out

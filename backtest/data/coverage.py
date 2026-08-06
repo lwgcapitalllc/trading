@@ -46,6 +46,45 @@ class RangeCoverage:
                 return True
         return False
 
+    def missing(
+        self, symbol: str, tf_name: str, start_date: str, end_date: str
+    ) -> list[tuple[str, str]]:
+        """The sub-ranges of [start_date, end_date] that have NOT been fetched — the
+        complement of `covered`, in the same inclusive ISO-date terms.
+
+        🔴 **This exists because `covered` alone made every near-miss cost a full refetch.**
+        `_load_base` only asked *is the whole window covered*, and on `False` re-pulled the
+        entire window from the broker. `_covered_end` deliberately never marks TODAY as
+        covered (a day still filling is indistinguishable from a complete one), so a run whose
+        window ends today can never be fully covered — and every request re-downloaded the lot.
+        **Measured 2026-08-06 on the live cache: 27.8s to load 155,776 XAUUSD M15 bars for
+        2020-01-01 → today, against 0.39s for the same span ending yesterday. 72x, paid on
+        every chart open, every backtest and every sweep whose window reaches the live edge.**
+
+        Answering with the GAPS instead means that run fetches one day, not six and a half
+        years, and the cache is used for the 99.99% it already holds.
+
+        A fully covered window returns `[]`, which is the caller's fast path and keeps the
+        no-fetch case exactly as it was.
+        """
+        if start_date > end_date:
+            return []
+        gaps: list[tuple[str, str]] = []
+        cursor = start_date
+        for lo, hi in _merge_intervals(self._load(symbol, tf_name)):
+            if hi < cursor:
+                continue            # entirely before what we still need
+            if lo > end_date:
+                break               # intervals are sorted; nothing later can help
+            if lo > cursor:
+                gaps.append((cursor, _day_before(lo)))
+            cursor = max(cursor, _day_after(hi))
+            if cursor > end_date:
+                return gaps
+        if cursor <= end_date:
+            gaps.append((cursor, end_date))
+        return gaps
+
     def reset(self, symbol: str, tf_name: str) -> None:
         """Forget every fetched interval for (symbol, tf).
 
@@ -63,6 +102,14 @@ class RangeCoverage:
         merged = _merge_intervals(intervals)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path(symbol, tf_name).write_text(json.dumps(merged), encoding="utf-8")
+
+
+def _day_after(iso: str) -> str:
+    return (date.fromisoformat(iso) + timedelta(days=1)).isoformat()
+
+
+def _day_before(iso: str) -> str:
+    return (date.fromisoformat(iso) - timedelta(days=1)).isoformat()
 
 
 def _merge_intervals(intervals: list[list[str]]) -> list[list[str]]:

@@ -190,6 +190,78 @@ def test_today_is_never_recorded_as_covered_even_when_bars_reach_it(tmp_path):
     assert not src.coverage.covered("XAUUSD", "M15", today, today)
 
 
+# ── a near-miss must cost a near-miss, not a full refetch ────────────────────────
+# 🔴 Found 2026-08-06. `_covered_end` above deliberately never marks TODAY as covered, so a
+# window ending today is never fully covered — and `_load_base` answered that by re-pulling
+# the ENTIRE window to obtain the one missing day. Measured on the live cache: 27.8s to load
+# 155,776 XAUUSD M15 bars for 2020-01-01 -> today, against 0.39s for the same span ending
+# yesterday. 72x, paid on every chart open, every backtest and every sweep reaching the live
+# edge. The rule above is right; honouring it just has to be cheap.
+
+def test_only_the_missing_tail_is_fetched_not_the_whole_window(tmp_path):
+    src, agent = _source(tmp_path)
+    src.load("XAUUSD", "15", "2024-01-01", "2024-01-10")
+    agent.calls.clear()
+
+    src.load("XAUUSD", "15", "2024-01-01", "2024-01-20")
+    assert len(agent.calls) == 1
+    _, _, asked_from, asked_to = agent.calls[0]
+    assert (asked_from, asked_to) == ("2024-01-11", "2024-01-20"), \
+        "the fetch must start the day after the cached range, not at the window start"
+
+
+def test_a_window_ending_today_refetches_a_day_not_six_years(tmp_path):
+    # The live-edge case, and the one that was costing 27.8s a call. The first load records
+    # coverage up to yesterday (today is never claimed), so the second must ask only for today.
+    import datetime as dt
+    today = str(dt.date.today())
+    src, agent = _source(tmp_path)
+    src.load("XAUUSD", "15", _days_ago(400), today)
+    agent.calls.clear()
+
+    src.load("XAUUSD", "15", _days_ago(400), today)
+    assert len(agent.calls) == 1
+    _, _, asked_from, asked_to = agent.calls[0]
+    assert asked_from == today and asked_to == today, \
+        f"expected a one-day tail fetch, got {asked_from} -> {asked_to}"
+
+
+def test_a_gap_in_the_middle_is_fetched_without_refetching_either_side(tmp_path):
+    src, agent = _source(tmp_path)
+    src.load("XAUUSD", "15", "2024-01-01", "2024-01-05")
+    src.load("XAUUSD", "15", "2024-02-01", "2024-02-05")
+    agent.calls.clear()
+
+    src.load("XAUUSD", "15", "2024-01-01", "2024-02-05")
+    assert [(c[2], c[3]) for c in agent.calls] == [("2024-01-06", "2024-01-31")]
+
+
+def test_a_partial_fetch_never_deletes_the_bars_it_did_not_ask_for(tmp_path):
+    # ⚠ KEPT, and it PASSES against the old code too — it is a guard, not a catch. The old
+    # code refetched everything, so there was never a partial fetch to lose anything. It
+    # pins the property the new code now DEPENDS on: `BarCache.save` merges rather than
+    # overwrites. If that ever changed, a one-day tail pull would truncate the history to
+    # one day and every later run would read the short frame as a clean cache hit.
+    import datetime as dt
+    today = str(dt.date.today())
+    src, _ = _source(tmp_path)
+    first = src.load("XAUUSD", "15", _days_ago(30), today)
+    again = src.load("XAUUSD", "15", _days_ago(30), today)
+    assert len(again) >= len(first)
+    assert str(again.index[0].date()) == _days_ago(30)
+
+
+def test_a_fully_covered_window_still_makes_no_call_at_all(tmp_path):
+    # ⚠ Also passes against the old code (its `covered()` fast path did this), and is kept
+    # for the direction the new code could break: `missing()` returning a spurious gap would
+    # add an agent call to every cached run, which is the regression this change must not buy.
+    src, agent = _source(tmp_path)
+    src.load("XAUUSD", "15", "2024-01-01", "2024-01-10")
+    agent.calls.clear()
+    src.load("XAUUSD", "15", "2024-01-03", "2024-01-08")
+    assert agent.calls == []
+
+
 def test_a_fetch_that_returns_nothing_usable_records_no_coverage_at_all(tmp_path):
     # Requesting a window entirely in the future must not mark it fetched. Without the
     # start<=end guard the clamp would record an inverted interval, which _merge_intervals

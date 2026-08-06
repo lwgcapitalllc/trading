@@ -68,9 +68,23 @@ _BEAR = "#ef5350"        # break DOWN / swing-high labels
 _INT_BULL = "#80cbc4"    # internal, muted
 _INT_BEAR = "#ef9a9a"
 
-# Safety cap per group so a pathological long run can't spawn tens of thousands of overlays.
-# Keeps the most RECENT events (what a trader inspects); older ones are dropped.
-_MAX_PER_GROUP = 1200
+# Backstop per group, so a pathological run cannot produce an unbounded PAYLOAD. Keeps the most
+# RECENT events; older ones are dropped, and the drop is logged.
+#
+# 🔴 **It was 1200 until 2026-08-06, and at that value it was silently deleting most of the run.**
+# MEASURED over the full history of a 6.5-year M15 run: `Swing Point Labels` alone holds **7,056**
+# overlays, so the cap was dropping ~83% of them — and it dropped the OLDEST, which is precisely
+# the half a reader scrolls back to look at. It read as a chart that simply had no structure back
+# there, with the toggle still on: the same failure shape as the per-window analysis hole.
+#
+# ⚠ **The reason for the low value is gone rather than merely relaxed.** 1200 existed to bound what
+# the PANEL would create, because klinecharts lays out every overlay object it holds and the cost is
+# superlinear (MEASURED: 4,017 overlays 561 ms to create, 17,246 overlays 8,025 ms). The panel now
+# creates overlays for the VIEWPORT only, so an overlay in the spec is data, not a live object —
+# 19,538 of them cost 2.4 MB of payload and nothing at all to hold. What remains is a payload
+# guard, so the value is set where it cannot bite a realistic run: the largest group measured over
+# 6.5 years is 7,056, i.e. this leaves headroom of about 17 years at that density.
+_MAX_PER_GROUP = 20_000
 
 
 def _hline(group: str, t0: int, t1: int, price: float, color: str, *, dashed: bool = False, width: float = 1,

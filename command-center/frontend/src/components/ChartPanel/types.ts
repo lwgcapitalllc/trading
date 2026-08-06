@@ -255,20 +255,16 @@ export interface ChartSpec {
   indicators: ChartIndicator[]
 }
 
-/** One page of older history, as `onRequestCandles` returns it.
+/** One fetched window of bars, as `onRequestCandles` returns it — the DRILL-DOWN path only.
  *
- *  `overlays`/`blocks`/`misses`/`missNoise` are the ANALYSIS for that window and are present only
- *  when the caller asked for it (the scroll-left pager does; a drill-down does not). Everything
- *  except the trades is emitted per-window server-side, so without them a layer the user switched
- *  on would go silently empty the moment the chart scrolled past the shipped candles — which reads
- *  as the panel having reset itself. The panel merges them into the spec's own. */
+ *  ⚠ It used to carry that window's ANALYSIS as well (`overlays`/`blocks`/`misses`/`missNoise`),
+ *  because the spec shipped ~17 months of a long run and the panel PAGED the rest in over the
+ *  network, so every layer had to be recomputed per window or it went silently empty past the
+ *  shipped candles. The spec carries the whole run as of 2026-08-06 — analysis included — so
+ *  paging older history is an in-memory slice and those four fields are gone. */
 export interface ChartPage {
   candles: ChartCandle[]
   available: boolean
   dataStartMs: number | null
   hardEdge: boolean
-  overlays?: ChartOverlay[]
-  blocks?: ChartBlock[]
-  misses?: ChartMiss[]
-  missNoise?: string[]
 }

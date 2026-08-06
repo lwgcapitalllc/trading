@@ -11,8 +11,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartOverlay, ChartPage, ChartSpec } from './types'
+import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
+import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartPage, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
 import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, FOCUS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays } from './overlays'
@@ -53,8 +53,16 @@ const TRADE_LOSS_COLOR = theme.neg         // red box — trade hit its stop (pn
 const TRADE_PROFIT_FILL = '#8ef2b8'
 // Blocked setups get their OWN colour, off the win/loss axis entirely — a refused trade is not a
 // loser, and painting it red would read as one. Pink, matching the Pine's `TRADE BLOCKED` tag.
-// One scroll-left page of older history, in BARS — so a page costs the same at every timeframe
-// (~1 MB of JSON) instead of ballooning on a fine one.
+// Candles handed to klinecharts on open — the newest slice of a spec that now carries the whole run.
+//
+// 🔴 **This exists because klinecharts' layout cost is the binding constraint, MEASURED: applying
+// 155,798 bars freezes the main thread for 30.8 seconds; 33,046 bars cost 2.2s.** So the number
+// here is a RENDER budget, and it is deliberately not the payload budget it replaced — holding six
+// years of candles in JS is nothing, laying them out is everything.
+// 12,000 at M15 is ~175 trading days, which is more than a screen and cheap to extend.
+const APPLIED_BARS = 12_000
+// One scroll-left page of older history, in BARS. Since 2026-08-06 a page is a SLICE of the
+// in-memory spec rather than a fetch, so this is a render-cost knob only.
 const PAGE_BARS = 12_000
 // ⚠ A JUMP DELIBERATELY USES THE SAME PAGE SIZE, and bulk-paging it was BUILT, MEASURED AND
 // REVERTED (2026-08-06). The per-bar arithmetic says bulk should win: measured against the live
@@ -65,10 +73,6 @@ const PAGE_BARS = 12_000
 // stepped 3 times instead of ~14, i.e. 25 seconds of stillness between updates instead of 6.
 // A minute-long wait that looks alive beats one that is 6% shorter and looks hung.
 // The real lever is the ANALYSIS, not the page size — see `loadOlder`.
-// Runaway guard on a "go to date" that has to page history in. The loop's REAL terminator is
-// `loadOlder` running dry (no bars once the oldest loaded bar reaches the run's start), so this only
-// binds if a feed keeps answering without ever reaching back — it is not a reach limit.
-const MAX_JUMP_PAGES = 40
 const BLOCK_COLOR = '#ff2e9a'
 // Missed setups sit on the same "the trade that never happened" axis as Blocked, so they take a
 // sibling colour rather than a new one: amber, matching the Pine's orange 2-of-3 callout, and
@@ -262,11 +266,10 @@ function fmtStamp(ms: number): string {
  *
  *  A pure control, like `GoToDate`: it reports a direction and prints where it is. Paging the
  *  history in and centring the bar belong to the host. */
-function MarkerNav({ current, idx, total, busy, onStep }: {
+function MarkerNav({ current, idx, total, onStep }: {
   current: NavMarker | null
   idx: number                 // 0-based position of `current` in the set, or -1 when parked nowhere
   total: number
-  busy: boolean
   onStep: (dir: 1 | -1) => void
 }) {
   // At an end the arrow is dead, and it says so by going dim rather than by doing nothing on click.
@@ -282,7 +285,7 @@ function MarkerNav({ current, idx, total, busy, onStep }: {
     >
       <button
         onClick={() => onStep(-1)}
-        disabled={busy || atStart}
+        disabled={atStart}
         aria-label="Previous marker"
         className={`${btn} text-text-secondary hover:text-text-primary hover:bg-bg-surface`}
       >
@@ -304,7 +307,7 @@ function MarkerNav({ current, idx, total, busy, onStep }: {
       </div>
       <button
         onClick={() => onStep(1)}
-        disabled={busy || atEnd}
+        disabled={atEnd}
         aria-label="Next marker"
         className={`${btn} text-text-secondary hover:text-text-primary hover:bg-bg-surface`}
       >
@@ -357,26 +360,25 @@ const DEBUG_ON_GROUPS: readonly string[] = [
  *  old part of a long run is one entry instead of a long drag.
  *
  *  It is a pure INPUT: it collects a date, clamps it to the range the host says is reachable, and
- *  hands back epoch ms. Everything about how the chart gets there (paging older history in, where
- *  the bar is parked) belongs to the host — the popover just reports `busy` while it happens.
+ *  hands back epoch ms. Everything about how the chart gets there belongs to the host.
+ *
+ *  ⚠ **It carried a `busy` state and a PROGRESS READOUT until 2026-08-06, and both are gone because
+ *  the wait they described is gone.** A jump used to page every window between here and the target
+ *  over the network — 14 round trips and 90 seconds to reach 2020 — so the pill reported the date
+ *  already reached and a bar that filled, which was the right answer to that problem. A jump now
+ *  re-slices an array already in the browser. A progress bar for an instant operation is worse than
+ *  none: it implies a wait, and it flashes.
  *
  *  `lo`/`hi` set the native `min`/`max`, but the clamp is done in code as well: a native bound stops
  *  the calendar widget and nothing else, so a typed or pasted date walks straight past it (the same
  *  lesson `PeriodPicker` learned about the broker's history floor). */
-function GoToDate({ lo, hi, busy, progress, onGo }: {
+function GoToDate({ lo, hi, onGo }: {
   lo: number
   hi: number
-  busy: boolean
-  // Where the jump has REACHED and how far through it is — null when it is not paging.
-  progress: { reachedTs: number; frac: number } | null
   onGo: (ts: number) => void
 }) {
   const [open, setOpen] = useState(false)
   const [value, setValue] = useState('')
-  // The date the last Go was aimed at, so the busy pill can NAME it. A jump back through years of
-  // history is a real wait (it fetches every bar in between), and "loading…" on its own leaves the
-  // reader unsure whether the chart even took the date.
-  const [sent, setSent] = useState('')
   const ref = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -401,7 +403,6 @@ function GoToDate({ lo, hi, busy, progress, onGo }: {
     const ts = dayStartMs(value)
     if (ts == null) return
     const clamped = Math.min(Math.max(ts, lo), hi)
-    setSent(toIsoDay(clamped))
     onGo(clamped)
     setOpen(false)
   }
@@ -411,37 +412,9 @@ function GoToDate({ lo, hi, busy, progress, onGo }: {
       <button
         onClick={() => setOpen(o => !o)}
         title="Go to date"
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium transition-colors ${
-          busy ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
-        }`}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-medium text-text-secondary transition-colors hover:text-text-primary"
       >
         <CalendarSearch className="w-3.5 h-3.5" />
-        {/* The busy readout is the ONLY thing on screen during a jump — the view is still parked at
-            the right edge, so the on-chart loading edge is nowhere near the viewport. It names the
-            DESTINATION and, under it, the date already reached and a bar that fills. The reached
-            date is what proves the wait is moving: a percentage alone still looks like a guess, and
-            the target alone is what this pill already said for ninety seconds at a time. */}
-        {busy && (
-          <span className="flex flex-col items-start gap-[3px] leading-none">
-            <span className="font-mono">
-              loading {sent}
-              {progress && (
-                <span data-testid="jump-reached" className="text-text-tertiary">
-                  {' '}· at {toIsoDay(progress.reachedTs)}
-                </span>
-              )}
-            </span>
-            {progress && (
-              <span className="block h-[2px] w-full min-w-[92px] rounded-full bg-border-subtle overflow-hidden">
-                <span
-                  data-testid="jump-bar"
-                  className="block h-full rounded-full bg-accent transition-[width] duration-300"
-                  style={{ width: `${Math.max(3, Math.round(progress.frac * 100))}%` }}
-                />
-              </span>
-            )}
-          </span>
-        )}
       </button>
       {open && (
         <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface p-2.5 shadow-lg" style={{ zIndex: 50, minWidth: 210 }}>
@@ -573,24 +546,6 @@ function reconcileToggles(
   return same ? prev : next
 }
 
-/** Identity of a generic overlay, for de-duping the spec's own against paged-in ones. Two pages can
- *  legitimately answer with the same overlay: a page is replayed with a warm-up prefix, so a box
- *  opened before its left edge and still alive inside it belongs to both windows. */
-function overlayKey(ov: ChartOverlay): string {
-  return ov.type === 'vline' ? `v:${ov.group}:${ov.t}`
-    : ov.type === 'label' ? `l:${ov.group}:${ov.t}:${ov.price}:${ov.text}`
-    : ov.type === 'hline' ? `h:${ov.group}:${ov.t0}:${ov.t1}:${ov.price}`
-    : `b:${ov.group}:${ov.t0}:${ov.t1}:${ov.top}:${ov.bottom}`
-}
-
-/** Concatenate `extra` onto `base`, dropping anything already present under `key`. Order is
- *  preserved — the render effects walk overlays in list order and de-collide labels left→right. */
-function mergeById<T>(base: T[], extra: T[], key: (item: T) => string): T[] {
-  if (!extra.length) return base
-  const seen = new Set(base.map(key))
-  const add = extra.filter(item => !seen.has(key(item)))
-  return add.length ? [...base, ...add] : base
-}
 
 /** Candle `time` (epoch ms) → klinecharts `timestamp`. Pure field map. */
 function candlesToKLine(candles: ChartCandle[]): KLineData[] {
@@ -647,7 +602,7 @@ export default function ChartPanel({
    * TFs (1m/5m) that pull the visible window live; omitted (e.g. the fixture) → panel behaves as
    * before. `available: false` means the feed can't serve that window (1m older than the broker keeps).
    */
-  onRequestCandles?: (tf: string, fromMs: number, toMs: number, analysis?: boolean) => Promise<ChartPage>
+  onRequestCandles?: (tf: string, fromMs: number, toMs: number) => Promise<ChartPage>
   /**
    * Optional header-bar slots so a host can fold its OWN chrome onto the panel's single top row
    * (rather than stacking a second bar above it). `headerLeading` renders at the far left, before
@@ -718,41 +673,45 @@ export default function ChartPanel({
   const fetchTokenRef = useRef(0)
   const isFetchMode = onRequestCandles != null && selectedMin < baseMin
 
-  // The candles the chart is built from: the spec's shipped window, GROWN by older pages paged in as
-  // you scroll left. The spec deliberately ships only the newest slice of a long run (see
-  // `chart_spec._capped_start`), so this is how the rest of the run's history becomes reachable
-  // without a 15 MB payload on open. Reset whenever the spec changes.
-  const [baseCandles, setBaseCandles] = useState<ChartCandle[]>(spec.candles)
-  useEffect(() => { setBaseCandles(spec.candles) }, [spec.candles])
+  // The candles HANDED TO KLINECHARTS: the newest `APPLIED_BARS` of the spec, grown backwards as you
+  // scroll left. The spec itself carries the WHOLE run (2026-08-06) — this is the window applied to
+  // the chart, not the window we hold.
+  //
+  // 🔴 **The chart must never be handed the whole run, and this was MEASURED after being got wrong.**
+  // Shipping full history and applying all of it froze the main thread for **30.8 seconds** on a
+  // 155,798-bar run, against **2.2s** for the 33k-bar capped spec it replaced — klinecharts lays
+  // every candle out synchronously on `applyNewData`, and the app is dead for the duration.
+  //
+  // ⚠ **A prior measurement said candles were nearly free and it was measuring something else:**
+  // eleven PREPENDS of 12k-bar chunks into an existing chart totalled 682 ms. Prepending into a
+  // built chart and building one from 155k bars are different operations, and only the second is
+  // what "just ship everything" does. Read a per-bar cost off the operation you are about to
+  // perform, not off a neighbouring one.
+  //
+  // What the full spec buys is that growing this window is now a SLICE, not a fetch — see
+  // `loadOlder`. So the reader still reaches every bar of the run, and reaching them costs
+  // milliseconds instead of a 7-second round trip per page.
+  const [baseCandles, setBaseCandles] = useState<ChartCandle[]>(() => spec.candles.slice(-APPLIED_BARS))
+  useEffect(() => { setBaseCandles(spec.candles.slice(-APPLIED_BARS)) }, [spec.candles])
   // Read by the load callback, which is registered once on mount and would otherwise close over the
   // first render's candles forever.
   const baseCandlesRef = useRef(baseCandles)
   useEffect(() => { baseCandlesRef.current = baseCandles }, [baseCandles])
 
-  // The ANALYSIS paged in alongside those bars. Everything on this chart except the TRADES is
-  // emitted per-window — the spec's overlays, blocks and misses all stop at the shipped candles
-  // (`chart_spec._capped_start`) — so without this a Structure, Fair Value Gaps, Blocked or Missed
-  // layer went silently empty the moment you scrolled past that boundary, while its toggle still
-  // read ON. That is indistinguishable from the panel having forgotten the setting, and it is the
-  // bug this state exists to fix. Grows as you page back; reset with the spec, like `baseCandles`.
-  const [pagedAnalysis, setPagedAnalysis] = useState<Required<Pick<ChartPage, 'overlays' | 'blocks' | 'misses' | 'missNoise'>>>(
-    () => ({ overlays: [], blocks: [], misses: [], missNoise: [] }),
-  )
-  // A NEW spec is a different run, so the paged analysis (and the layer toggles it feeds) goes back
-  // to square one. Paging within one run never touches this.
-  useEffect(() => { setPagedAnalysis({ overlays: [], blocks: [], misses: [], missNoise: [] }) }, [spec])
-  const mergePageAnalysis = useCallback((page: ChartPage) => {
-    if (!page.overlays?.length && !page.blocks?.length && !page.misses?.length) return
-    setPagedAnalysis(prev => ({
-      overlays: mergeById(prev.overlays, page.overlays ?? [], overlayKey),
-      blocks: mergeById(prev.blocks, page.blocks ?? [], b => b.id),
-      misses: mergeById(prev.misses, page.misses ?? [], m => m.id),
-      // The emitter's "start these unticked" recommendation, unioned across windows — a reason that
-      // is routine in one stretch of the run is routine everywhere. It only seeds the initial
-      // hidden set; a reason the reader has since ticked back on stays on (see `hiddenMissReasons`).
-      missNoise: Array.from(new Set([...prev.missNoise, ...(page.missNoise ?? [])])),
-    }))
-  }, [])
+  // 🟢 **There is no PAGED ANALYSIS any more, and its absence is the point (2026-08-06).**
+  // Everything on this chart except the trades used to be emitted per-window — the spec's overlays,
+  // blocks and misses all stopped at the shipped candles — so scrolling past that boundary silently
+  // emptied every layer while its toggle still read ON. The 2026-08-02 fix answered that by fetching
+  // each page's analysis and merging it (`pagedAnalysis` / `mergePageAnalysis`, both now deleted).
+  //
+  // The spec now carries the WHOLE run's analysis, built once, so the hole cannot open: there is no
+  // boundary left for a layer to stop at. That also removes the merge's own hazards — a page's
+  // overlays arriving out of order, an id colliding across windows, and the reconcile-vs-re-seed
+  // trap that could switch the reader's layers off mid-scroll.
+  //
+  // ⚠ `reconcileToggles` and `seededNoiseRef` below are KEPT even though only a new spec can move
+  // their rosters now. They encode "keep an answer the reader has already given", which is a rule
+  // about the reader, not about paging.
 
   const displayCandles = useMemo(() => {
     // In drill-down, show the SHIPPED bars until the finer ones land. They arrive in the spec, so
@@ -810,14 +769,21 @@ export default function ChartPanel({
     }
   }
 
-  // ── Paging older history (scroll left) ───────────────────────────────────────
-  // The spec ships only the newest slice of a long run. klinecharts asks for more the moment you
-  // scroll past the left edge, and this answers with one page from the run's own feed. The page is
-  // sized in BARS, not days, so it costs the same at every timeframe.
+  // ── Paging older history (scroll left) — an IN-MEMORY SLICE since 2026-08-06 ─────────────────
+  // klinecharts asks for more the moment you scroll past the left edge. This used to answer with a
+  // network round trip per page; the spec now carries the whole run, so it answers by extending the
+  // applied window backwards over an array that is already in the browser.
   //
-  // It asks for the window's ANALYSIS too (`analysis = true`) and merges it as it lands, so the
-  // layers reach back exactly as far as the bars do. Requested here and NOT in `runFetch`: a
-  // drill-down is a question about fills, and structure is computed on the base timeframe anyway.
+  // ✅ **That is the change the whole pass was for.** MEASURED before: a page cost ~7.2s (of which
+  // ~60% was the server replaying that window's structure and gap engines) and a six-year jump was
+  // 14 pages and **90.3 seconds**. The analysis no longer has to be replayed per window at all,
+  // because the spec was built with all of it once — so the cost of reaching a date collapses to
+  // klinecharts re-laying the bars.
+  //
+  // ⚠ **It keeps the async signature deliberately.** The load callback, the jump loop and the
+  // `LOADING_EDGE` overlay are all written around a page that may take time, and a drill-down TF
+  // still genuinely fetches. Making this synchronous would mean rewriting three call sites for a
+  // function that returns in under a millisecond either way.
   //
   // 🔴 MEASURED 2026-08-06, and it is where a deep jump's minute actually goes: the ANALYSIS is
   // ~60% of a page. On run 211384ddbea4 at M15 a 175d page is 2.61s bare against 6.63s with
@@ -828,23 +794,47 @@ export default function ChartPanel({
   // still ON, which is the defect that fix existed to remove. Doing it safely means backfilling
   // each skipped window's analysis after the jump lands, and that is its own change.
   const loadOlder = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    const all = spec.candles
     const oldest = baseCandlesRef.current[0]?.time
-    const start = spec.historyStartMs
-    // No fetcher, nothing loaded, or already at the run's start ⇒ nothing older is claimed to exist.
-    if (!onRequestCandles || oldest == null || start == null || oldest <= start) {
-      return { bars: [], more: false }
+    // Nothing loaded, or the applied window already starts at the run's first bar.
+    if (oldest == null || !all.length || oldest <= all[0].time) return { bars: [], more: false }
+    // Binary search rather than `findIndex`: this runs per page on a 155k-bar array, and a jump
+    // runs it once per page in a loop.
+    let lo = 0, hi = all.length - 1, idx = all.length
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (all[mid].time < oldest) lo = mid + 1
+      else { idx = mid; hi = mid - 1 }
     }
-    const perDay = (1440 / baseMin) * (5 / 7)          // ~forex: 5 trading days/week, 24h
-    const to = oldest - 1
-    const from = Math.max(start, to - Math.ceil(PAGE_BARS / perDay) * DAY_MS)
-    const res = await onRequestCandles(spec.baseTimeframe.toUpperCase(), from, to, true)
-    mergePageAnalysis(res)
-    // Guard the merge: a feed that returns an overlapping window would otherwise duplicate bars.
-    const bars = res.candles.filter(c => c.time < oldest)
-    return { bars, more: bars.length > 0 && from > start }
-  }, [onRequestCandles, spec.historyStartMs, spec.baseTimeframe, baseMin, mergePageAnalysis])
+    if (idx <= 0) return { bars: [], more: false }
+    const from = Math.max(0, idx - PAGE_BARS)
+    return { bars: all.slice(from, idx), more: from > 0 }
+  }, [spec.candles])
   const loadOlderRef = useRef(loadOlder)
   useEffect(() => { loadOlderRef.current = loadOlder }, [loadOlder])
+
+  // The mirror of `loadOlder`, and it exists BECAUSE a jump re-centres (see `goToDate`). Before the
+  // spec carried the whole run, the applied window always ran to the newest bar, so "newer than what
+  // is loaded" could not happen and klinecharts' Backward branch was answered with nothing. Landing
+  // a jump in 2020 puts the window's RIGHT edge mid-history, and without this the reader hits an
+  // invisible wall scrolling back toward the present.
+  const loadNewer = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    const all = spec.candles
+    const loaded = baseCandlesRef.current
+    const newest = loaded[loaded.length - 1]?.time
+    if (newest == null || !all.length || newest >= all[all.length - 1].time) return { bars: [], more: false }
+    let lo = 0, hi = all.length - 1, idx = all.length
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (all[mid].time <= newest) lo = mid + 1
+      else { idx = mid; hi = mid - 1 }
+    }
+    if (idx >= all.length) return { bars: [], more: false }
+    const to = Math.min(all.length, idx + PAGE_BARS)
+    return { bars: all.slice(idx, to), more: to < all.length }
+  }, [spec.candles])
+  const loadNewerRef = useRef(loadNewer)
+  useEffect(() => { loadNewerRef.current = loadNewer }, [loadNewer])
   // A drill-down TF loads its own full depth in one shot, so paging must not fire there — it would
   // splice base-TF bars into a 1m chart.
   const pagingOffRef = useRef(false)
@@ -861,7 +851,6 @@ export default function ChartPanel({
   // ── Go to date ───────────────────────────────────────────────────────────────
   // True while a jump is pulling older pages in. Shown on the pill, and it parks klinecharts' own
   // scroll-left paging so the two can't both be splicing onto the front of the same array.
-  const [jumping, setJumping] = useState(false)
   const jumpingRef = useRef(false)
   // How far back the jump has actually GOT, so the wait can report itself.
   //
@@ -875,7 +864,6 @@ export default function ChartPanel({
   // run's own start, so the last page is usually short — counting pages would sit at "3 of 4" and
   // then finish, and a page count also cannot be known in advance when the feed decides how far
   // back it can answer.
-  const [jumpAt, setJumpAt] = useState<{ reachedTs: number; frac: number } | null>(null)
   // A jump target waiting for its bars. Set only when the jump had to PAGE — the redraw that follows
   // is what flushes it; a jump inside the loaded window scrolls straight away.
   const pendingJumpRef = useRef<number | null>(null)
@@ -892,60 +880,81 @@ export default function ChartPanel({
     chart.scrollToDataIndex(Math.min(candles.length - 1, idx + half))
   }, [])
 
-  // The reachable span the date box bounds itself to: everything loaded, plus everything paging can
-  // still REACH (back to the run's own start). In drill-down there is no paging, so it is whatever
-  // that timeframe's one-shot fetch brought back.
+  // The reachable span the date box bounds itself to: everything APPLIED, plus everything the
+  // in-memory pager can still reach (the whole spec, back to the run's own start). In drill-down
+  // there is no paging, so it is whatever that timeframe's one-shot fetch brought back.
+  //
+  // ⚠ It used to gate the reachable half on `onRequestCandles` — correct while paging was a network
+  // call through that fetcher, and wrong since paging became a slice of `spec.candles` (2026-08-06).
+  // A host that wires no fetcher can still page the whole run; only the DRILL-DOWN needs one.
   const jumpRange = useMemo(() => {
     if (loadedLoTs == null || loadedHiTs == null) return null
-    const start = !isFetchMode && onRequestCandles && spec.historyStartMs != null ? spec.historyStartMs : null
+    const start = !isFetchMode && spec.historyStartMs != null ? spec.historyStartMs : null
     return { lo: start != null ? Math.min(start, loadedLoTs) : loadedLoTs, hi: loadedHiTs }
-  }, [loadedLoTs, loadedHiTs, isFetchMode, onRequestCandles, spec.historyStartMs])
+  }, [loadedLoTs, loadedHiTs, isFetchMode, spec.historyStartMs])
 
+  // 🟢 **A jump RE-CENTRES the applied window; it does not grow it from the right edge.** That is
+  // the difference between a jump being instant and a jump being the slowest thing on the page.
+  //
+  // MEASURED, and the middle row is the one worth keeping — it is what this looked like after the
+  // spec started carrying the whole run but before the window was re-centred:
+  //
+  //   paging each window over the network, 14 round trips          90.3 s
+  //   paging in memory, but still growing to cover target..now     47.6 s
+  //   re-centring on the target                                    see `tests/chart-paging.spec.ts`
+  //
+  // The 47.6s is entirely one `applyNewData`: growing to cover 2020→now IS the whole run, so the
+  // jump handed klinecharts 155,798 bars and paid the 30-second layout. Slicing around the target
+  // hands it `APPLIED_BARS` instead, and the cost stops depending on how far back you asked to go.
+  //
+  // ⚠ **This is why `loadNewer` had to exist.** Landing mid-history puts the window's right edge in
+  // the past, so scrolling back toward the present now needs a real answer.
   const goToDate = useCallback(async (target: number) => {
     if (!chartRef.current || jumpingRef.current) return
-    // Older than what's loaded ⇒ fetch the gap first. klinecharts' own scroll-left paging can't do
-    // this: it only asks for ONE page, when the viewport actually reaches the left edge. So the jump
-    // asks `loadOlder` directly, advancing the ref each round (that's where it reads its cursor) and
-    // committing ONE state update at the end — a set per page would re-apply and repaint N times.
-    let paged = false
-    if (!pagingOffRef.current && (baseCandlesRef.current[0]?.time ?? Infinity) > target) {
-      jumpingRef.current = true
-      setJumping(true)
-      // The span the jump has to cover, fixed before the first page so the readout cannot go
-      // backwards when a page overshoots the target and lands past it.
-      const from0 = baseCandlesRef.current[0]?.time ?? target
-      const span = Math.max(1, from0 - target)
-      setJumpAt({ reachedTs: from0, frac: 0 })
-      try {
-        for (let i = 0; i < MAX_JUMP_PAGES; i++) {
-          const reached = baseCandlesRef.current[0]?.time ?? Infinity
-          if (reached <= target) break
-          const { bars } = await loadOlderRef.current()
-          if (!bars.length) break                       // at the run's start — go as far as it goes
-          baseCandlesRef.current = [...bars, ...baseCandlesRef.current]
-          paged = true
-          const now = baseCandlesRef.current[0].time
-          setJumpAt({ reachedTs: now, frac: Math.min(1, (from0 - now) / span) })
-        }
-      } catch {
-        // A failed page keeps whatever already landed — the scroll below clamps to it — rather than
-        // discarding good bars over one bad request.
-      } finally {
-        jumpingRef.current = false
-        setJumping(false)
-        setJumpAt(null)
-      }
-    }
-    if (paged) {
-      // NOT `skipApplyRef` — unlike a scroll-left page, klinecharts has never seen these bars, so
-      // the chart must re-apply. That snaps the view to the right edge, which is exactly why the
-      // scroll waits for the redraw instead of running now.
-      pendingJumpRef.current = target
-      setBaseCandles(baseCandlesRef.current)
-    } else {
+    const all = spec.candles
+    const loaded = baseCandlesRef.current
+    const inWindow = loaded.length > 0
+      && target >= loaded[0].time && target <= loaded[loaded.length - 1].time
+    // Already applied, a drill-down TF (which holds its own one-shot fetch), or nothing to slice ⇒
+    // this is a plain scroll.
+    if (inWindow || pagingOffRef.current || !all.length) {
       scrollToTs(target, displayCandles)
+      return
     }
-  }, [displayCandles, scrollToTs])
+    // First bar at or after the target. The target may be a weekend or a holiday, which has no bar
+    // of its own — landing on the next trading bar is what "take me to the 5th" means then.
+    let lo = 0, hi = all.length - 1, idx = all.length - 1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (all[mid].time < target) lo = mid + 1
+      else { idx = mid; hi = mid - 1 }
+    }
+    // Weighted back, not centred: the reader asked to see a date, and what LED to it is the context
+    // that explains it. `scrollToTs` then centres the bar itself within this slice.
+    const from = Math.max(0, idx - Math.floor(APPLIED_BARS * 0.75))
+    const slice = all.slice(from, Math.min(all.length, from + APPLIED_BARS))
+    // `jumpingRef` shuts the load callback while the re-apply and its scroll are in flight, so a
+    // page cannot splice into the same array this is replacing. It is cleared by the scroll flush,
+    // one frame after the view has left the edge the re-apply parked it on.
+    //
+    // ⚠ **An earlier version of this comment claimed the guard was load-bearing against the jump
+    // walking FORWARD off its own target — `applyNewData` snapping to the right edge, klinecharts
+    // asking for a Backward page, `loadNewer` answering — and cited a jump to 2020-06-01 landing on
+    // 2021-01-19. That claim is WITHDRAWN: it does not reproduce.** Removing the guard entirely and
+    // probing the applied window once a second for 12s after the same jump gives a dead-stable
+    // `2020-01-10 .. 2020-07-16` (2026-08-06). The reason is this slice: the target is centred with
+    // ~3,000 bars of window to its right, so the viewport never reaches the newest loaded bar and
+    // the Backward request is never made. The guard stays because a re-apply racing a page is a
+    // real hazard and it costs nothing — but it is defence, not a fix for an observed bug, and
+    // `tests/chart-paging.spec.ts` deliberately does not pretend to cover it.
+    jumpingRef.current = true
+    // NOT `skipApplyRef` — klinecharts has never seen this window, so it must re-apply. The scroll
+    // therefore waits for the redraw instead of running now (`pendingJumpRef`, flushed by the
+    // effect declared after the apply effect).
+    pendingJumpRef.current = target
+    baseCandlesRef.current = slice
+    setBaseCandles(slice)
+  }, [spec.candles, displayCandles, scrollToTs])
 
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
   // anchored by timestamp, so they stay put across timeframe switches. Show on ALL candle days.
@@ -1011,7 +1020,7 @@ export default function ChartPanel({
   // panel down. A stale cache must degrade, never crash.
   // Ids are the record's index in the run's own `blocked_setups.json`, so they are stable across
   // windows and a page that overlaps another cannot double up.
-  const blocks = useMemo<ChartBlock[]>(() => mergeById(spec.blocks ?? [], pagedAnalysis.blocks, b => b.id).map(b => {
+  const blocks = useMemo<ChartBlock[]>(() => (spec.blocks ?? []).map(b => {
     const legacy = b as unknown as { label?: string; reason?: string }
     return {
       ...b,
@@ -1019,7 +1028,7 @@ export default function ChartPanel({
         : legacy.label ? [{ label: legacy.label, reason: legacy.reason ?? '' }]
         : [],
     }
-  }).filter(b => b.reasons.length > 0), [spec.blocks, pagedAnalysis.blocks])
+  }).filter(b => b.reasons.length > 0), [spec.blocks])
   const [blocksOn, setBlocksOn] = useState(false)
   // The hovered marker's card + where to float it. ONE state and one card for BOTH the Blocked and
   // Missed layers — they carry the same shape of answer, so two cards would drift.
@@ -1062,8 +1071,8 @@ export default function ChartPanel({
   // had READY and refused; a miss got partway and died. Default OFF for the same reason Blocked
   // is: a diagnostic view, and there are far more of them than there are trades.
   const misses = useMemo<ChartMiss[]>(
-    () => mergeById(spec.misses ?? [], pagedAnalysis.misses, m => m.id).filter(m => m.reasons?.length > 0),
-    [spec.misses, pagedAnalysis.misses],
+    () => (spec.misses ?? []).filter(m => m.reasons?.length > 0),
+    [spec.misses],
   )
   const [missesOn, setMissesOn] = useState(false)
   const missReasons = useMemo(() => {
@@ -1078,24 +1087,15 @@ export default function ChartPanel({
   // usable the moment you switch it on instead of burying the interesting misses under the routine
   // ones. Re-seeded when the spec changes; a stale label is inert.
   //
-  // A page of older history can carry noise labels the shipped window never had, so the seed has to
-  // stay open — but it seeds each label ONCE (`seededNoiseRef`). Re-applying the whole list on every
-  // page would re-hide a reason the reader had just ticked back on, which is the same class of bug
-  // as clobbering the toggles: a setting the chart undoes by itself.
+  // ⚠ The seed is applied on a NEW SPEC only. It used to also take labels from each page of older
+  // history, because the shipped window could carry a noise list the rest of the run did not — the
+  // spec now covers the whole run, so there is one list and it arrives once.
   const [hiddenMissReasons, setHiddenMissReasons] = useState<Set<string>>(
     () => new Set(spec.missNoise ?? []),
   )
-  const seededNoiseRef = useRef<Set<string>>(new Set(spec.missNoise ?? []))
   useEffect(() => {
-    seededNoiseRef.current = new Set(spec.missNoise ?? [])
     setHiddenMissReasons(new Set(spec.missNoise ?? []))
   }, [spec.missNoise])
-  useEffect(() => {
-    const fresh = pagedAnalysis.missNoise.filter(lb => !seededNoiseRef.current.has(lb))
-    if (!fresh.length) return
-    fresh.forEach(lb => seededNoiseRef.current.add(lb))
-    setHiddenMissReasons(prev => new Set([...prev, ...fresh]))
-  }, [pagedAnalysis.missNoise])
   const toggleMissReason = (label: string) => setHiddenMissReasons(prev => {
     const next = new Set(prev)
     if (next.has(label)) next.delete(label); else next.add(label)
@@ -1246,8 +1246,8 @@ export default function ChartPanel({
   // same set — a group listed off one source and drawn off another is how a toggle ends up claiming
   // to show something that isn't there.
   const allOverlays = useMemo(
-    () => mergeById(spec.overlays, pagedAnalysis.overlays, overlayKey),
-    [spec.overlays, pagedAnalysis.overlays],
+    () => spec.overlays,
+    [spec.overlays],
   )
 
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
@@ -1516,23 +1516,30 @@ export default function ChartPanel({
     defaultBarSpaceRef.current = chart.getBarSpace()          // remembered for "Reset chart view"
     defaultOffsetRef.current = chart.getOffsetRightDistance()
 
-    // Scroll-left paging. Registered ONCE (klinecharts keeps one callback) and delegating through
-    // refs, so it always sees the current candles/timeframe instead of the first render's.
+    // Paging, BOTH directions. Registered ONCE (klinecharts keeps one callback) and delegating
+    // through refs, so it always sees the current candles/timeframe instead of the first render's.
+    // klinecharts names them from the DATA's point of view: Forward = older, Backward = newer.
+    //
+    // ⚠ **A merged page must NOT re-apply** (`skipApplyRef`): klinecharts has already spliced the
+    // bars in AND kept the scroll position, so re-applying throws both away and snaps the view.
+    // This is also what keeps growth cheap — the 30-second freeze is a full `applyNewData`, and
+    // page merges never perform one however far the window grows.
     chart.setLoadDataCallback(({ type, callback }) => {
-      // A jump is already pulling pages onto the front of the same array — two writers would
-      // duplicate or drop bars. Answer "nothing now, more exists" and let the jump finish.
-      if (type !== LoadDataType.Forward || pagingOffRef.current || jumpingRef.current) {
+      // A jump is rewriting the whole applied window — two writers would duplicate or drop bars.
+      if (pagingOffRef.current || jumpingRef.current) {
         callback([], type === LoadDataType.Forward)
         return
       }
-      setPagingOlder(true)
-      void loadOlderRef.current().then(({ bars, more }) => {
+      const older = type === LoadDataType.Forward
+      const load = older ? loadOlderRef.current : loadNewerRef.current
+      if (older) setPagingOlder(true)
+      void load().then(({ bars, more }) => {
         if (bars.length) {
           skipApplyRef.current = true
-          setBaseCandles(prev => [...bars, ...prev])
+          setBaseCandles(prev => (older ? [...bars, ...prev] : [...prev, ...bars]))
         }
         callback(candlesToKLine(bars), more)
-      }).catch(() => callback([], false)).finally(() => setPagingOlder(false))
+      }).catch(() => callback([], false)).finally(() => { if (older) setPagingOlder(false) })
     })
 
     const ro = new ResizeObserver(() => { chart.resize(); measureInset() })
@@ -1565,7 +1572,79 @@ export default function ChartPanel({
     if (ts == null) return
     pendingJumpRef.current = null
     scrollToTs(ts, displayCandles)
+    // Release the paging guard only AFTER the view has left the right edge the re-apply parked it
+    // on — see `goToDate`. Clearing it before the scroll lets klinecharts' pending Backward request
+    // through and the jump walks forward off its own target. A frame's grace, because the request
+    // is queued from the layout the scroll is about to replace.
+    requestAnimationFrame(() => { jumpingRef.current = false })
   }, [displayCandles, scrollToTs])
+
+  // ── The DRAW WINDOW — overlay creation follows the VIEWPORT, not the loaded history ─────────
+  //
+  // 🔴 **Overlays are this chart's entire budget, and the cost is SUPERLINEAR in the count.**
+  // MEASURED in a real browser on the klinecharts build this app ships: 4,017 overlays cost 561 ms
+  // to create and 247 ms to paint; 6,600 cost 1,206 / 400 ms; **17,246 cost 8,025 / 3,504 ms**.
+  // Candles are nearly free beside that — 155,776 of them are 40 MB of heap, and eleven prepends
+  // totalled 682 ms with the viewport held throughout. So the thing to bound is the OVERLAY count,
+  // and bounding the candles (which is what `_capped_start` did) was bounding the cheap half.
+  //
+  // A chart shows ~200 bars at a time however much history it holds, so building an overlay for
+  // every swing in six years is work for something nobody can see — and a layer TOGGLE re-creates
+  // all of them, which is why the 8-second figure above is a figure a reader actually waits for.
+  //
+  // ⚠ **The window is committed in TIMESTAMPS, never in indices.** A page prepends bars and every
+  // index shifts under it; a timestamp range survives that, which is what lets this coexist with
+  // paging without a recompute ordering rule between them.
+  const [drawRange, setDrawRange] = useState<[number, number] | null>(null)
+
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart) return
+    const clampIdx = (i: number, n: number) => Math.max(0, Math.min(n - 1, Math.round(i)))
+    const recompute = () => {
+      const c = displayCandlesRef.current
+      const ch = chartRef.current
+      if (!ch || !c.length) return
+      const r = ch.getVisibleRange()
+      const span = Math.max(1, r.to - r.from)
+      const visLo = c[clampIdx(r.from, c.length)].time
+      const visHi = c[clampIdx(r.to, c.length)].time
+      setDrawRange(prev => {
+        // Already covered? Then do nothing. This is the common case on EVERY FRAME of a drag, and
+        // recommitting here would re-create every overlay 60 times a second — i.e. it would turn
+        // the fix into a worse version of the problem it exists to solve. The margin below is what
+        // makes this branch the usual one.
+        if (prev && visLo >= prev[0] && visHi <= prev[1]) return prev
+        // One screen either side, so an ordinary drag is already drawn before it arrives and the
+        // rebuild lands off-screen rather than under the reader.
+        return [c[clampIdx(r.from - span, c.length)].time, c[clampIdx(r.to + span, c.length)].time]
+      })
+    }
+    // rAF-coalesced: klinecharts fires this action several times per gesture, and the work below
+    // is a `getVisibleRange` read plus a containment test, so one per frame is the right cadence.
+    let raf = 0
+    const onChange = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => { raf = 0; recompute() })
+    }
+    chart.subscribeAction(ActionType.OnVisibleRangeChange, onChange)
+    recompute()   // the first window: nothing has moved yet, so no action has fired
+    return () => {
+      if (raf) cancelAnimationFrame(raf)
+      chart.unsubscribeAction(ActionType.OnVisibleRangeChange, onChange)
+    }
+  }, [displayCandles])
+
+  // The bounds the generic overlay effect actually draws between: the loaded candles intersected
+  // with the draw window. ⚠ `drawRange` null means the window has not been measured yet (the very
+  // first frame, or a chart with no candles) — it falls back to the LOADED range rather than to
+  // nothing, because drawing everything for one frame is a cost and drawing nothing is a missing
+  // layer, and only one of those looks like a bug.
+  const [drawLoTs, drawHiTs] = useMemo<[number | null, number | null]>(() => {
+    if (loadedLoTs == null || loadedHiTs == null) return [null, null]
+    if (!drawRange) return [loadedLoTs, loadedHiTs]
+    return [Math.max(loadedLoTs, drawRange[0]), Math.min(loadedHiTs, drawRange[1])]
+  }, [loadedLoTs, loadedHiTs, drawRange])
 
   // Drill-down: when a sub-base TF is selected, pull its full broker depth; clear on leave.
   useEffect(() => {
@@ -1859,11 +1938,16 @@ export default function ChartPanel({
       // TradingView ones — e.g. swing tags vanish with the structure that owns them, and historic
       // internal content needs "Internal Structure" on as well as its own toggle.
       if (ov.requires?.some(g => groupsOn[g] === false)) continue
-      // Skip any structure overlay outside the loaded candles (no-data region).
-      if (loadedLoTs == null || loadedHiTs == null) break
+      // Skip any structure overlay outside the DRAW WINDOW — the viewport widened by a screen
+      // either side, itself already clipped to the loaded candles (klinecharts clamps an
+      // out-of-range point onto the plot edge, which is what piles old markers into the no-data
+      // region of a drill-down). See the draw-window block above for why this is the viewport and
+      // not the loaded history: overlay cost is superlinear in the count, and a chart shows ~200
+      // bars whatever it holds.
+      if (drawLoTs == null || drawHiTs == null) break
       const oStart = ov.type === 'vline' || ov.type === 'label' ? ov.t : ov.t0
       const oEnd = ov.type === 'vline' || ov.type === 'label' ? ov.t : ov.t1
-      if (oEnd < loadedLoTs || oStart > loadedHiTs) continue
+      if (oEnd < drawLoTs || oStart > drawHiTs) continue
       const style = {
         color: ov.style?.color ?? DEFAULT_OVERLAY_COLOR,
         fillColor: ov.style?.fillColor,
@@ -1905,7 +1989,7 @@ export default function ChartPanel({
     if (labelPoints.length) {
       chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
     }
-  }, [allOverlays, baseCandles, groupsOn, displayCandles, loadedLoTs, loadedHiTs])
+  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {
@@ -1946,27 +2030,27 @@ export default function ChartPanel({
   }, [dataEdge, selectedMin, displayCandles])
 
   // "Loading earlier bars" — the same marker for the opposite state: a dashed line at the oldest
-  // loaded bar with the empty strip behind it shaded, while a page (or a jump's run of pages) is in
-  // flight. Without it, scrolling past the loaded bars is a blank screen that reads as the end of
-  // the data. Rebuilt after every data change like the other vline overlays.
+  // loaded bar with the empty strip behind it shaded, while a page is in flight. Without it,
+  // scrolling past the loaded bars is a blank screen that reads as the end of the data. Rebuilt
+  // after every data change like the other vline overlays.
+  //
+  // ⚠ **It now fires for a fraction of a frame and that is correct, not dead.** A page used to be a
+  // ~6s network round trip; since the spec carries the whole run it is an array slice. The overlay
+  // is kept because the state it reports is still real — and because the drill-down path can still
+  // genuinely wait on a broker. Its JUMP wording is gone with the jump's own progress readout: a
+  // jump no longer pages at all.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
     chart.removeOverlay({ name: LOADING_EDGE })
-    if (!(pagingOlder || jumping) || displayCandles.length === 0) return
-    // During a JUMP the chip names the date already reached, which moves with every page. A single
-    // scroll-left page keeps the bare wording: it is one ~6s step and the bar it sits on IS the
-    // date, right there on the axis the reader is looking at.
-    const label = jumping && jumpAt
-      ? `Loading earlier bars… ${toIsoDay(jumpAt.reachedTs)}`
-      : 'Loading earlier bars…'
+    if (!pagingOlder || displayCandles.length === 0) return
     chart.createOverlay({
       name: LOADING_EDGE,
       lock: true,
       points: [{ timestamp: displayCandles[0].time, value: displayCandles[0].close }],
-      extendData: { color: theme.accent, label },
+      extendData: { color: theme.accent, label: 'Loading earlier bars…' },
     })
-  }, [pagingOlder, jumping, jumpAt, displayCandles])
+  }, [pagingOlder, displayCandles])
 
   // Indicators (shipped series). Created once per spec/visibility; klinecharts re-runs the
   // indicator calc automatically on TF switch, so this does NOT depend on displayCandles.
@@ -2185,7 +2269,16 @@ export default function ChartPanel({
   return (
     // The hover gate for the ← / → step keys covers the WHOLE panel, header included: clicking a
     // step arrow leaves the pointer on the button, and the keys must keep working from there.
+    //
+    // ⚠ `data-applied-lo`/`-hi` are a TEST SEAM and nothing reads them at runtime. klinecharts draws
+    // its time axis into the CANVAS, so which window is applied is unreadable from the DOM — and
+    // that is the one thing `tests/chart-paging.spec.ts` has to assert, because "the jump was fast"
+    // is satisfied by a jump that lands nowhere near the date asked for. Measured before the paging
+    // guard existed: a jump to 2020-06-01 came to rest on 2021-01-19 with a perfectly healthy chart
+    // and no error. They are `displayCandles`' own bounds, reused — never a second derivation.
     <div
+      data-applied-lo={loadedLoTs ?? undefined}
+      data-applied-hi={loadedHiTs ?? undefined}
       onMouseEnter={() => { hoveredRef.current = true }}
       onMouseLeave={() => { hoveredRef.current = false }}
     >
@@ -2239,7 +2332,7 @@ export default function ChartPanel({
           {/* Go to date — sits next to the timeframe because it answers the other half of "what am I
               looking at": the TF picks the bar size, this picks WHERE. Bounded by the span the chart
               can actually reach, and hidden until there are candles to reach into. */}
-          {jumpRange && <GoToDate lo={jumpRange.lo} hi={jumpRange.hi} busy={jumping} progress={jumpAt} onGo={goToDate} />}
+          {jumpRange && <GoToDate lo={jumpRange.lo} hi={jumpRange.hi} onGo={goToDate} />}
 
           {/* Step — the other way of answering "WHERE": Go to date takes a calendar date, this walks
               the markers themselves, so reading a run's losers back to back costs two keys instead
@@ -2250,7 +2343,6 @@ export default function ChartPanel({
               current={navIdx >= 0 ? navMarkers[navIdx] : null}
               idx={navIdx}
               total={navMarkers.length}
-              busy={jumping}
               onStep={stepMarker}
             />
           )}

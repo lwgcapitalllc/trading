@@ -320,20 +320,18 @@ export function useRefreshChartSpec() {
 }
 
 // One bounded window of a run's bars: an imperative fetcher (not a query) the ChartPanel calls for
-// BOTH of its data paths — a finer-than-base drill-down TF (1m/5m) over the visible window, and a
-// scroll-left PAGE of older history at the run's own TF. `available: false` = the feed can't serve
-// that window (1m older than the broker's ~35-day 1m history).
+// its DRILL-DOWN path — a finer-than-base TF (1m/5m) over the visible window. `available: false` =
+// the feed can't serve that window (1m older than the broker's ~35-day 1m history).
 //
-// `analysis` asks for that window's structure overlays / fair value gaps / blocked / missed setups
-// as well. The pager sets it and the drill-down does not: everything except the trades is emitted
-// per-window server-side, so without it a layer stops drawing the moment the chart scrolls past the
-// shipped candles — see `ChartPage`.
+// ⚠ **It used to serve the scroll-left pager too, with an `analysis` flag asking for that window's
+// structure overlays / gaps / blocked / missed setups (deleted 2026-08-06).** The ChartSpec carries
+// the whole run now, so paging older history is an in-memory slice in `ChartPanel` and no window
+// needs a round trip.
 export function useRunCandles(runId: string | null) {
   return useCallback(
-    async (tf: string, fromMs: number, toMs: number, analysis = false): Promise<ChartPage> => {
+    async (tf: string, fromMs: number, toMs: number): Promise<ChartPage> => {
       if (!runId) return { candles: [], available: false, dataStartMs: null, hardEdge: false }
       const q = `tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
-        + (analysis ? '&analysis=true' : '')
       const res = await api.get<ChartPage & { data_start_ms: number | null; hard_edge: boolean }>(
         `/backtests/runs/${runId}/candles?${q}`,
       )
@@ -342,10 +340,6 @@ export function useRunCandles(runId: string | null) {
         available: !!res.available,
         dataStartMs: res.data_start_ms ?? null,
         hardEdge: !!res.hard_edge,
-        overlays: res.overlays,
-        blocks: res.blocks,
-        misses: res.misses,
-        missNoise: res.missNoise,
       }
     },
     [runId],

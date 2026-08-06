@@ -63,7 +63,27 @@
       "Bash(git -C /Users/alwg/trading status --short)",
       "Bash(echo \"EXIT=$?\")",
       "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python nofvg_extra.py)",
-      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python nofvg_tiered.py)"
+      "Bash(/Users/alwg/trading/command-center/backend/.venv/bin/python nofvg_tiered.py)",
+      "Bash(curl -s -o /dev/null -w \"warm %{size_download}B %{time_total}s\\\\n\" \"http://localhost:8000/backtests/runs/997c14cc53bc/chart-spec\")",
+      "Bash(cp /private/tmp/claude-501/-Users-alwg-trading/00fc2533-2093-4e51-b682-994486e0f4cc/scratchpad/measure_block.mjs ./_b.mjs)",
+      "Bash(curl -s -m 8 http://127.0.0.1:8766/health)",
+      "Bash(curl -s -m 10 http://127.0.0.1:8766/status)",
+      "Bash(cp /private/tmp/claude-501/-Users-alwg-trading/00fc2533-2093-4e51-b682-994486e0f4cc/scratchpad/measure_jump.mjs ./_j.mjs)",
+      "Bash(grep -rn \"analysis=true\\\\|analysis: true\\\\|analysis=\\\\${\" frontend/src frontend/tests)",
+      "Bash(curl -s -o /dev/null -w \"backend %{http_code}\\\\n\" http://localhost:8000/health)",
+      "Bash(curl -s -o /dev/null -w \"frontend %{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(npx playwright *)",
+      "Bash(curl -s -m 5 http://localhost:8766/health)",
+      "Bash(awk -F, 'NR>1{print substr\\($1,1,7\\)}' backtest/cache/XAUUSD__M15.csv)",
+      "Bash(awk '$2>=\"2022-03\" && $2<=\"2023-10\"')",
+      "Bash(cp /tmp/cp.bak src/components/ChartPanel/index.tsx && sed -n '1540,1562p' src/components/ChartPanel/index.tsx)",
+      "Bash(curl -s -m 10 http://127.0.0.1:8766/health)",
+      "Bash(curl -s -m 15 http://127.0.0.1:8766/status)",
+      "Bash(cp /tmp/cp.bak src/components/ChartPanel/index.tsx && echo restored && sed -n '925,945p' src/components/ChartPanel/index.tsx)",
+      "Bash(git rm *)"
+    ],
+    "additionalDirectories": [
+      "/private/tmp"
     ]
   }
 }

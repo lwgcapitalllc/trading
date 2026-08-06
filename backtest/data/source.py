@@ -66,24 +66,36 @@ class BarSource:
     def _load_base(
         self, symbol: str, base_tf: str, start_date: str, end_date: str
     ) -> pd.DataFrame:
-        """Cache-first base-bar load. Refetches [start, end] from the agent when
-        that window isn't already recorded as fetched, then merges and persists.
+        """Cache-first base-bar load. Fetches only the sub-ranges of [start, end] that are not
+        already recorded as fetched, merges them into the cache, and returns the whole file.
 
         A stale FEED_VERSION forces a refetch and DROPS the recorded coverage. Both halves are
         required: `cache.load` already refuses to read a stale file, so honouring the old coverage
         would return an empty frame forever instead of re-pulling — the coverage says "we have
         this" while the cache says "not in a form you can use", and the caller gets nothing.
+
+        🔴 **This asked `covered()` and refetched the WHOLE window on False until 2026-08-06,
+        and that turned the deliberate never-mark-today rule into a 72x tax.** `_covered_end`
+        will not mark today as covered, on purpose — a day still filling looks exactly like a
+        complete one — so a window ending today is *never* fully covered, and every single
+        request re-pulled the entire history to obtain the one missing day. **Measured on the
+        live cache: 27.8s for 2020-01-01 → today against 0.39s for the same span ending
+        yesterday, on every chart open, backtest and sweep reaching the live edge.**
+
+        Asking for the GAPS keeps the rule and drops the tax. Note the two are not alternatives:
+        the clamp is what keeps the recent edge honest, and this is what makes honouring it cheap.
         """
         if self.cache.is_stale(symbol, base_tf):
             self.coverage.reset(symbol, base_tf)
-        if self.coverage.covered(symbol, base_tf, start_date, end_date):
-            return self.cache.load(symbol, base_tf)
-        fetched = self.agent.bars(symbol, base_tf, start_date, end_date)
-        self.cache.save(symbol, base_tf, fetched)
-        # Record what CAME BACK, never what was asked for — see `_covered_end`.
-        covered_to = _covered_end(fetched, end_date)
-        if covered_to >= start_date:
-            self.coverage.record(symbol, base_tf, start_date, covered_to)
+        for gap_start, gap_end in self.coverage.missing(symbol, base_tf, start_date, end_date):
+            fetched = self.agent.bars(symbol, base_tf, gap_start, gap_end)
+            # MERGES, never overwrites (`BarCache.save`) — which is what makes a partial fetch
+            # safe. Overwriting would let a one-day tail pull delete six years of cached bars.
+            self.cache.save(symbol, base_tf, fetched)
+            # Record what CAME BACK, never what was asked for — see `_covered_end`.
+            covered_to = _covered_end(fetched, gap_end)
+            if covered_to >= gap_start:
+                self.coverage.record(symbol, base_tf, gap_start, covered_to)
         return self.cache.load(symbol, base_tf)
 
 

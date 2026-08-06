@@ -3,7 +3,9 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-06 — 🔴 **A DEEP "GO TO DATE" JUMP IS A REAL NINETY SECONDS, AND THE ONLY
+**Last reviewed:** 2026-08-06 (latest) — 🟢 **THE PANEL HOLDS THE WHOLE RUN AND APPLIES A WINDOW OF IT, WHICH IS WHAT MAKES A SIX-YEAR JUMP 2.0s INSTEAD OF 90.3s.** The spec now carries every candle and every overlay of the run (see `../../../backend/CLAUDE.md`), and the panel's job changed with it: `spec.candles` is the SOURCE and `baseCandles` is a **window** of it, `APPLIED_BARS` (12,000) wide. 🔴 **Handing klinecharts the lot is a 30.8-SECOND main-thread freeze** — `applyNewData` lays every candle out synchronously; 155,798 bars measured at 30,828 ms against 2,199 ms for the old 33k spec. With the window it is **508 ms**. ⚠ **This is why `PAGE_BARS` paging survived the spec growing**: the constraint was never the network, it is klinecharts' layout, and `loadOlder` is now a binary search and an `Array.slice` with no fetch at all. **`loadNewer` is new and had to be** — landing mid-history puts the window's right edge in the past, so scrolling toward the present needs a real answer. 🔴 **`goToDate` RE-CENTRES the window; growing it from the right edge gives the right answer in 47.6s**, because target→present is the whole run. It slices `[idx − 0.75·APPLIED_BARS, +APPLIED_BARS]` — weighted BACK, because the reader asked to see a date and what led to it is the context that explains it. ✅ **Overlay creation follows the VIEWPORT, not the loaded history** (`drawRange` off `ActionType.OnVisibleRangeChange`, rAF-coalesced, widened one screen either side so ordinary scrolling never rebuilds; `drawLoTs`/`drawHiTs` intersect it with the loaded bounds and every overlay effect clips to them). That is what lets the spec carry 19,538 overlays — a layer toggle while scrolled back went **133 ms → 67 ms** — and the backend's per-group caps were raised 1,200 → 20,000 on the strength of it, which fixed a silent loss of ~83% of a full run's swing labels, oldest first. ✅ **The per-window ANALYSIS fetch is DELETED**, and with it the `pagedAnalysis` state, `mergePageAnalysis`, `overlayKey`, `mergeById` and `seededNoiseRef` — the spec carries every window's overlays, blocks and misses, so `allOverlays` reads `spec.*` directly. The 2026-08-02 guarantee (a layer reaches exactly as far back as the bars do) is now structural rather than maintained by a merge. ✅ **`reconcileToggles` STAYS and is still load-bearing**: the roster no longer changes as you page, but it must still survive a spec swap without re-seeding the reader's answers. ⚠ **The jump-progress readout is GONE** (`jumping`, `jumpAt`, `MAX_JUMP_PAGES`, the pill's `busy`/`progress`) — it existed because the wait was ninety seconds, and reporting progress on a two-second operation is chrome that flashes. The `LOADING_EDGE` shading remains for a genuine drill-down fetch. ⚠ **`data-applied-lo`/`-hi` on the root are a TEST SEAM with no runtime reader** — the time axis is canvas, so the applied window is otherwise invisible to a browser check, and "the jump was fast" is satisfied by a jump that lands nowhere near the target. ⚠ **A comment here claimed `jumpingRef` was load-bearing against the jump walking forward off its own target, citing a landing on 2021-01-19 — that claim is WITHDRAWN and does not reproduce.** Removing the guard and probing the applied window for 12s gives a dead-stable `2020-01-10 .. 2020-07-16`: the target is centred with ~3,000 bars to its right, so the viewport never reaches the newest loaded bar and no Backward page is ever requested. The guard stays as cheap defence against a re-apply racing a page; the test that pretended to cover it was deleted for failing mutation. **The standing lesson is about reusing a measurement: "browser candles are nearly free" was measured on PREPENDING 12k chunks and applied to one 155k `applyNewData`, and the gap between those two operations is thirty seconds of frozen UI.**
+
+**Earlier the same day:** 🔴 **A DEEP "GO TO DATE" JUMP IS A REAL NINETY SECONDS, AND THE ONLY
 SIGN OF LIFE WAS A LABEL THAT NEVER CHANGED.** Aaron: *"if I'm trying to load back to six years ago,
 there's no intuitive indicator that something isn't broken."* **MEASURED end to end in a real
 browser on run `211384ddbea4` at M15: 90.3s and 14 pages to reach 2020-02-03.** The pill said
@@ -200,18 +202,26 @@ here**, so the chart shows exactly what the strategy saw.
   the same source `@/themes/chart` uses for Recharts). No raw hex in components. Grid is off.
 - **klinecharts data shape.** Spec candles use `time`; klinecharts wants `timestamp`. The
   `candlesToKLine` mapper in `index.tsx` is the single conversion point.
-- **The spec ships the run's OWN timeframe, and the chart opens on it with NO fetch** (2026-07-27,
-  Aaron's call). The bars are in the payload, so the chart paints on the first frame — no loading
-  text, no placeholder, no swap under you. Volume is capped by trimming the **window**, never by
-  coarsening the bars: `chart_spec._capped_start` ships the newest slice that fits `_CANDLE_CAP`
-  (measured on the real 2020→2026 M15 run: 33,041 candles / 3.1 MB / 17 months).
-  - **Why not coarsen.** The previous design stepped a long run's bars UP (that same run shipped H4).
-    It could show the whole span and still be useless: H4 is a timeframe the run's trades and blocked
-    setups line up with nowhere. Covering the span was the wrong thing to buy with the payload budget.
-  - **Older history is PAGED IN on scroll-left**, so trimming the window costs reach, not access.
-    `spec.historyStartMs` is the run's start; the panel pages from the oldest loaded bar back toward
-    it, one `PAGE_BARS` (12,000) chunk at a time — sized in BARS so a page costs the same at every
-    timeframe (measured: 175d / 11,255 candles / ~1.0 MB / ~1.5s at M15). See *Paging* below.
+- **The spec ships the run's OWN timeframe and the WHOLE run, and the chart opens with NO fetch**
+  (2026-07-27 for the timeframe, 2026-08-06 for the whole run). The bars are in the payload, so the
+  chart paints on the first frame — no loading text, no placeholder, no swap under you. **The spec
+  is no longer trimmed at all**: `_capped_start` / `_CANDLE_CAP` shipped the newest ~35k bars and
+  everything older was fetched per window, which measured **7x more expensive than building the run
+  once** (~7.2s a page against 17.8s for a full build that then serves in 0.004s).
+  - **Why not coarsen.** An even earlier design stepped a long run's bars UP (that same run shipped
+    H4). It could show the whole span and still be useless: H4 is a timeframe the run's trades and
+    blocked setups line up with nowhere. Covering the span was the wrong thing to buy with the
+    payload budget — and the payload turned out not to be the binding cost at all.
+  - 🔴 **The whole run is HELD, never APPLIED.** `spec.candles` is the source; `baseCandles` is a
+    window of it, `APPLIED_BARS` (12,000) wide. Handing klinecharts all 155,798 bars is a **MEASURED
+    30,828 ms main-thread freeze** — `applyNewData` lays every candle out synchronously — against
+    508 ms with the window. **This is the constraint to design against in this folder**, and it is
+    not the network and not the payload.
+  - **Older history is PAGED IN on scroll-left from MEMORY** — a binary search and an `Array.slice`,
+    no fetch. `spec.historyStartMs` is the run's start; the panel extends from the oldest applied bar
+    back toward it, one `PAGE_BARS` (12,000) chunk at a time. `loadNewer` is its mirror, and it has
+    to exist: after a jump the window's right edge is in the past, so scrolling toward the present
+    needs a real answer. See *Paging* below.
   - `runTimeframe` still exists on the contract and still drives `openMin`, because a CACHED spec from
     the coarsening era carries a stepped-up `baseTimeframe` with the run's real TF here. On a fresh
     spec the two are equal, so the auto-drill-down path is inert.
@@ -253,31 +263,24 @@ here**, so the chart shows exactly what the strategy saw.
     into a 1m chart. The drill-down loads its own full depth in one shot instead.
   - **Overlap guard.** A page is filtered to bars strictly older than the current oldest, so a feed
     that answers with an overlapping window can't duplicate bars.
-  - **A page carries its own ANALYSIS, and it has to** (`analysis=true`, 2026-08-02). Everything on
-    this chart except the TRADES is emitted per-window server-side — `spec.overlays`, `spec.blocks`
-    and `spec.misses` all stop at the shipped candles — so before this the Structure, Fair Value
-    Gaps, Blocked and Missed layers went silently empty the moment you scrolled past that boundary,
-    while their toggles still read ON. There is no way to tell that apart from the panel resetting
-    itself, which is exactly how it was reported. `loadOlder` asks for the window's overlays /
-    blocks / misses / missNoise and merges them into `pagedAnalysis`; `allOverlays` (= spec's +
-    paged, deduped by `overlayKey`) then feeds the group roster, the counts AND the render effect,
-    so a group can never be listed off one source and drawn off another. `runFetch` does NOT ask —
-    a drill-down is a question about fills, and structure is computed on the base timeframe.
-    - **Ids are what make the merge safe.** A block/miss id is its index in the run's own
-      `blocked_setups.json` / `missed_setups.json`, so it is stable across windows and an
-      overlapping page cannot double-draw a marker. Overlays have no id, hence `overlayKey`.
-    - ⚠ **The roster effects had to become RECONCILERS.** `groupsOn` was rebuilt from
-      `overlayGroups` on every change — harmless only while that list never changed. The moment a
-      page could rebuild it, re-seeding with the defaults would switch the reader's layers off
-      mid-scroll: the very bug, reintroduced from the other side. `reconcileToggles(prev, roster)`
-      keeps an answer already given and defaults only genuinely new keys, returning `prev`
-      unchanged when nothing moved so the effect cannot loop. Defaults return only on a new SPEC.
-      The miss-noise seed follows the same rule via `seededNoiseRef` — each label is seeded ONCE,
-      because re-applying the list per page would re-hide a reason just ticked back on.
-    - ⚠ **Cost: ~+2s and ~+230 KB per page** (a structure + FVG replay over the window plus
-      `_PAGE_WARMUP_BARS` of older bars). A multi-page `goToDate` jump pays it per page.
-  Raising `_CANDLE_CAP` to ship everything instead is the wrong lever: 6.5 years of M15 is ~160k
-  candles and a ~15 MB `chart_spec.json` on every chart open.
+  - **The ANALYSIS comes with the spec, and a page fetches nothing** (2026-08-06). Everything on
+    this chart except the TRADES used to be emitted per-window server-side, so a page had to ask for
+    its own overlays / blocks / misses / missNoise (`analysis=true` → `chart_spec._page_analysis`)
+    or the Structure, Fair Value Gaps, Blocked and Missed layers went silently empty the moment you
+    scrolled past the shipped candles, with their toggles still reading ON. **That whole path is
+    deleted on both sides** — the spec carries every window's analysis, so `allOverlays` reads
+    `spec.*` directly and the 2026-08-02 guarantee (a layer reaches exactly as far back as the bars
+    do) is now structural rather than maintained by a merge. `pagedAnalysis`, `mergePageAnalysis`,
+    `overlayKey`, `mergeById` and `seededNoiseRef` went with it.
+    - ⚠ **`reconcileToggles` STAYS, and it is still load-bearing.** `groupsOn` was rebuilt from
+      `overlayGroups` on every change — harmless only while that list never changed. The roster no
+      longer changes as you page, but it must still survive a SPEC swap without re-seeding, and
+      re-seeding with the defaults is what would switch the reader's layers off under them.
+      `reconcileToggles(prev, roster)` keeps an answer already given, defaults only genuinely new
+      keys, and returns `prev` unchanged when nothing moved so the effect cannot loop.
+    - ⚠ **Do not reintroduce a per-window fetch to "save payload".** It was measured at ~7.2s a
+      page against 17.8s to build the entire run once and 0.004s to serve it thereafter, and a deep
+      `goToDate` paid it fourteen times over — 90.3s for one jump.
   - **A page in flight is drawn, not silent** (`LOADING_EDGE`, 2026-07-30). Scrolling past the loaded
     bars gave a blank strip with nothing on it — indistinguishable from the end of the run's data, so
     a ~1.5s page read as "there is nothing back here". While `pagingOlder` (or a jump's `jumping`) is

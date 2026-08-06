@@ -11,6 +11,14 @@ from services.backtest_runner import read_progress, clear_progress
 
 app = FastAPI(title="LWG Capital Command Center API", version="1.0.0")
 
+# ⚠ THERE IS DELIBERATELY NO GZipMiddleware HERE, and it was added, MEASURED and REMOVED on
+# 2026-08-06 rather than never considered. This app is one machine talking to itself — the browser
+# is on :5173, this is on :8000 — so loopback runs at ~1 GB/s and there is no transfer to save.
+# Measured on the 4 MB ChartSpec, serving the cached bytes: identity **0.004s**, gzip level 1
+# **0.037s**, level 9 **1.05s**. Compression is a 9x LOSS at its cheapest setting. The saving that
+# looked like gzip's was really the endpoint parsing a cached JSON file into Python only to
+# re-serialize it — see `chart_spec.cached_chart_spec_bytes`. Add gzip the day something reads this
+# API over a network, and not before.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

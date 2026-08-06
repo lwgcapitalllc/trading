@@ -80,9 +80,13 @@ _FILL = "rgba(230,81,0,0.06)"
 _EDGE = "#E65100"
 _LABEL = "OB"
 
-# Safety cap so a pathological run can't spawn tens of thousands of boxes. Keeps the most RECENT
-# blocks; a truncation is LOGGED, never silent.
-_MAX_BOXES = 1500
+# Payload backstop. Keeps the most RECENT blocks; a truncation is LOGGED, never silent.
+#
+# Raised from 1500 on 2026-08-06 alongside the fair-value-gap cap and for the same reason: the spec
+# now carries the whole run (2,468 anchored blocks over 6.5 years, measured), the panel creates
+# overlays for the viewport rather than for the loaded history, so the render-cost argument for a
+# low cap is gone and only the payload bound remains. See `structure_overlays._MAX_PER_GROUP`.
+_MAX_BOXES = 20_000
 
 
 def _anchor_bars(times: list[int], anchors_ms: Iterable[int]) -> set[int]:

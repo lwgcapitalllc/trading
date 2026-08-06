@@ -86,9 +86,14 @@ MPC_EQ_EXEMPT = True         # eqExemptFvg — a gap behind an EQH/EQL survives 
 # green/red "FVG" caption, and drawing a border here instead would be a shape the chart doesn't have.
 _FILL = "rgba(148,163,184,0.16)"     # slate, ~80% transparent — the Pine's grey body
 
-# Safety cap so a pathological run can't spawn tens of thousands of boxes. Keeps the most RECENT
-# gaps; a truncation is LOGGED, never silent.
-_MAX_BOXES = 1500
+# Payload backstop. Keeps the most RECENT gaps; a truncation is LOGGED, never silent.
+#
+# Raised from 1500 on 2026-08-06 with `_capped_start`'s retirement: the spec now carries the whole
+# run, and the full history of a 6.5-year M15 run holds **2,822** anchored gaps — so the old value
+# dropped the oldest ~47% of them, which is the half a reader scrolls back to. The render-cost
+# reason for a low cap is gone (the panel creates overlays for the viewport, not for the loaded
+# history); this is now purely a bound on the payload. See `structure_overlays._MAX_PER_GROUP`.
+_MAX_BOXES = 20_000
 
 _TF_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
 
