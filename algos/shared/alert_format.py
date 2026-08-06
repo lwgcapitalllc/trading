@@ -101,7 +101,13 @@ def when(ts, tz: str = LOCAL_TZ) -> str:
             ts = ts.astimezone(timezone.utc)
     else:                               # pragma: no cover
         ts = ts.astimezone(timezone.utc)
-    stamp = ts.strftime("%-I:%M %p") if hasattr(ts, "strftime") else str(ts)
+    # ⚠ NOT `%-I`. That is a glibc extension: it strips the leading zero on Linux and macOS and
+    # raises `ValueError: Invalid format string` on Windows, where the equivalent is `%#I`. This
+    # code runs on BOTH — the tests on a Mac, the scheduled tasks on the VPS — so it formats with
+    # the portable `%I` and strips the zero itself. Found by running `log_review.py` on the box
+    # after a green suite on the Mac, which is the second time in two days that a Windows-only
+    # crash reached a scheduled task through a passing test run.
+    stamp = ts.strftime("%I:%M %p").lstrip("0")
     return f"{stamp} {ts.strftime('%Z')}"
 
 

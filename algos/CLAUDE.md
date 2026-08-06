@@ -743,6 +743,14 @@ question nobody asks; `Entry 3,290.00 · Stop 3,280.00` says the same thing in t
 and the tests compare against the value; the label is what a human reads. Merging them would make a
 wording change a behaviour change.
 
+🔴 **`when()` shipped with `%-I` and crashed `log_review.py` on its first run on the VPS**, against a
+fully green suite on the Mac. `%-I` strips the leading zero on glibc and macOS; on Windows it raises
+`ValueError: Invalid format string` (the equivalent there is `%#I`). It formats with the portable
+`%I` and strips the zero in Python now. ⚠ **This is the SECOND Windows-only crash in two days to
+reach a scheduled task through a passing test run**, the first being cp1252 in this same module — so
+the rule is now general: **anything that runs on the VPS is running on a platform the tests are not,
+and `strftime`, console encoding and path separators are where that shows up.** Run it on the box.
+
 ⚠ **`command-center/backend/services/alert_format.py` is a MIRROR**, for the same boundary reason as
 the routing table. `algos/tests/test_alert_format.py` loads it BY PATH and asserts both that the
 contract strings match and that the two render byte-identical output on the cases where hand-written

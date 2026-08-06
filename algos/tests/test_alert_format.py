@@ -89,6 +89,16 @@ def test_a_past_moment_is_rendered_in_the_local_clock_with_the_zone_named():
     assert "C" in out.split()[-1]           # CDT or CST depending on the date
 
 
+def test_the_hour_has_no_leading_zero_and_the_format_string_is_portable():
+    """🔴 It was `%-I` — a glibc extension that works on a Mac and raises
+    `ValueError: Invalid format string` on Windows, where the equivalent is `%#I`. The suite was
+    green here and `log_review.py` crashed on the VPS on its first run. The stripping is done in
+    Python so one string works on both."""
+    assert af.when(datetime(2026, 8, 5, 6, 6, tzinfo=timezone.utc)).startswith("1:06")
+    assert af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc)).startswith("1:06")
+    assert af.when(datetime(2026, 8, 5, 15, 6, tzinfo=timezone.utc)).startswith("10:06")
+
+
 def test_a_naive_timestamp_is_read_as_utc():
     """Every timestamp in the ledger is UTC. Reading a naive one as local would shift the same
     event by hours depending on which machine rendered it."""
