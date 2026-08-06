@@ -608,7 +608,8 @@ export interface BacktestRunRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
-  cost_layers?: CostLayer[]
+  // `null` = this runner has no layered-cost contract (NT8/MT5). `[]` = charge nothing.
+  cost_layers?: CostLayer[] | null
   broker_profile?: string
   evaluate_rulesets: string[]
   source_run_id?: string | null

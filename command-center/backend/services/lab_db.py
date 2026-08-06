@@ -1600,6 +1600,7 @@ def list_runs(
     strategy_id: Optional[str] = None,
     ruleset_id: Optional[str] = None,
     status: Optional[str] = None,
+    source_run_id: Optional[str] = None,
 ) -> list[dict]:
     base_clauses: list[str] = []
     params: list[Any] = []
@@ -1627,6 +1628,16 @@ def list_runs(
     elif status:
         base_clauses.append("r.status = ?")
         params.append(status)
+    # The runs DERIVED from one run. Exists so the run page can count its tuning iterations
+    # without pulling the whole lab: the unfiltered list is ~1.7 KB per run and is polled while
+    # anything runs, which is a lot of payload for a badge.
+    # ⚠ It does NOT filter to tuning iterations — a sweep and an optimization launched from a run
+    # stamp `source_run_id` too, and telling them apart is the caller's job (they carry
+    # `sweep_id` / `optimization_id`). Narrowing it here would make the same field mean two
+    # different things depending on which query you asked.
+    if source_run_id:
+        base_clauses.append("r.source_run_id = ?")
+        params.append(source_run_id)
 
     base_clauses.append("r.stress_test_id IS NULL")
     base_clauses.append("r.stack_id IS NULL")
@@ -1673,10 +1684,19 @@ def insert_run(data: dict) -> None:
             data.get("source_run_id"),
             data.get("sizing_mode", "consistent"),
             data.get("manual_risk_pct"),
-            # Always written, even when empty — '[]' is "charge nothing", NULL is "this row
-            # predates layers", and `python_runner._cost_profile` treats them differently on
-            # purpose. A new run must never land in the legacy branch.
-            json.dumps(data.get("cost_layers") or []),
+            # '[]' is "charge nothing", NULL is "no layered-cost contract on this row", and
+            # `python_runner._cost_profile` treats them differently on purpose — NULL falls back
+            # to the legacy commission/slippage branch.
+            #
+            # ⚠ The KEY BEING ABSENT and the key being explicitly None are different requests.
+            # Absent (sweeps, stacks, every caller that has no opinion) → '[]', so a new python
+            # run can never land in the legacy branch by omission. Explicitly None → NULL, which
+            # is what an NT8/MT5 run is: those runners have no layer switches at all, and storing
+            # '[]' for them made the detail page report a tester that charged commission and
+            # slippage as "deliberately frictionless".
+            (None
+             if "cost_layers" in data and data["cost_layers"] is None
+             else json.dumps(data.get("cost_layers") or [])),
             data.get("broker_profile") or "vantage_demo",
         ))
 
@@ -1858,6 +1878,35 @@ def get_run_verdict_summary(run_id: str) -> list[dict]:
             "SELECT ruleset_id, verdict, notes FROM evaluations WHERE run_id = ?", (run_id,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_run_verdict_summaries(run_ids: list[str]) -> dict[str, list[dict]]:
+    """Every listed run's verdict chips in ONE query, keyed by run_id.
+
+    The runs list called `get_run_verdict_summary` per row, and each call opens a fresh
+    connection and runs two PRAGMAs — so drawing the Runs tab cost one connection per run, on a
+    list that is polled every 3s while anything is running and subscribed by more than one page.
+
+    ⚠ Every requested id is keyed, even with no evaluations. A missing key and an empty list are
+    different answers, and the caller renders the second as "not graded" rather than crashing on
+    the first — the same rule `get_evaluations_for_runs` states.
+    """
+    if not run_ids:
+        return {}
+    out: dict[str, list[dict]] = {rid: [] for rid in run_ids}
+    with _connect() as conn:
+        # SQLite's default host-parameter ceiling is 999; chunk rather than assume the list is
+        # short, because an unfiltered Runs tab grows without bound.
+        for i in range(0, len(run_ids), 500):
+            chunk = run_ids[i:i + 500]
+            ph = ",".join("?" * len(chunk))
+            for r in conn.execute(
+                f"SELECT run_id, ruleset_id, verdict, notes FROM evaluations "
+                f"WHERE run_id IN ({ph})", chunk
+            ).fetchall():
+                row = dict(r)
+                out[row.pop("run_id")].append(row)
+    return out
 
 
 # ── Evaluations ───────────────────────────────────────────────────────────────

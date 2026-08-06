@@ -40,7 +40,27 @@ if str(_MONOREPO) not in sys.path:
 _JOBS: Dict[str, dict] = {}
 _LOCK = threading.Lock()
 
+# How many FINISHED jobs keep their full payload. Nothing ever removed an entry here, so every
+# python backtest and every optimizer grid held its whole `results` / `combos` structure in the
+# backend process until somebody restarted it — a day of tuning is hundreds of megabytes retained
+# for data no caller can still ask for (`_handle_complete` fetches results exactly once).
+#
+# ⚠ The eviction drops the heavy payloads and KEEPS the status metadata, rather than deleting the
+# entry. `job_status` answers "unknown python job" with `failed_error` for a missing id, so a
+# straight delete would turn "this finished an hour ago" into "this failed" for any late poller.
+# A shed job's `job_results` still raises, which is correct: the data is genuinely gone.
+_MAX_FINISHED_PAYLOADS = 12
+
 _TF_MINUTES = {"D1": 1440, "H4": 240, "H1": 60, "M30": 30, "M15": 15, "M5": 5, "M1": 1}
+
+# The balance every python backtest starts from. It is a CONSTANT, and it was a bare `10_000`
+# behind a `spec.get("deposit")` that nothing in this app has ever set — so the number read as
+# configurable while being fixed. It is named here because the run page needs to agree with it:
+# a self-sizing strategy compounds off this balance, so it is the only honest denominator for a
+# percentage drawdown, and the page must read it back off the run's own equity curve rather than
+# off the evaluated ruleset's `account_size` (which is a different account entirely).
+# ⚠ Changing it re-scales the dollars of every future run. R is unaffected.
+_DEFAULT_CAPITAL = 10_000.0
 
 
 # The cost layers a run may switch on, in the order the UI shows them. Every one is OFF by
@@ -148,6 +168,23 @@ def _set(job_id: str, **fields) -> None:
             job.update(fields, updated_at=time.time())
 
 
+def _shed_old_payloads_locked() -> None:
+    """Drop `results`/`combos` from all but the newest `_MAX_FINISHED_PAYLOADS` finished jobs.
+
+    Caller must hold `_LOCK`. Running jobs are never touched — a job still working needs its
+    accumulators, and its payload is the one thing that cannot be recomputed.
+    """
+    finished = [j for j in _JOBS.values()
+                if j["status"] != "running" and (j.get("results") or j.get("combos"))]
+    if len(finished) <= _MAX_FINISHED_PAYLOADS:
+        return
+    finished.sort(key=lambda j: j["updated_at"], reverse=True)
+    for job in finished[_MAX_FINISHED_PAYLOADS:]:
+        job["results"] = None
+        job["combos"] = None
+        job["payload_shed"] = True
+
+
 def start_backtest(job_spec: dict) -> dict:
     """Submit a Python backtest. Returns {job_id, status} immediately; the work runs on a thread."""
     job_id = job_spec.get("job_id") or f"py_{int(time.time() * 1000)}"
@@ -157,6 +194,7 @@ def start_backtest(job_spec: dict) -> dict:
             "message": "starting…", "created_at": time.time(), "updated_at": time.time(),
             "results": None, "error": None, "cancelled": False, "log": [],
         }
+        _shed_old_payloads_locked()
     t = threading.Thread(target=_run, args=(job_id, job_spec), daemon=True)
     t.start()
     return {"job_id": job_id, "status": "running"}
@@ -199,7 +237,7 @@ def _execute(job_id: str, spec: dict) -> None:
                          f"[{spec['start_date']}, {spec['end_date']}]")
 
     config = _build_config(entry["config"], spec.get("params") or {}, symbol)
-    capital = float(spec.get("deposit") or 10_000)
+    capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
     strategy = build_strategy(entry["strategy"], config, initial_capital=capital,
                               cost_profile=_cost_profile(spec))
 
@@ -365,6 +403,11 @@ def job_results(job_id: str) -> dict:
         job = _JOBS.get(job_id)
     if job is None:
         raise RuntimeError(f"unknown python job {job_id}")
+    if job.get("payload_shed"):
+        raise RuntimeError(
+            f"python job {job_id} finished but its results have been shed to free memory "
+            f"({_MAX_FINISHED_PAYLOADS} newer jobs have run since). Re-run it."
+        )
     if job["status"] != "complete" or job["results"] is None:
         raise RuntimeError(f"python job {job_id} has no results (status={job['status']})")
     return job["results"]
@@ -412,6 +455,7 @@ def start_native_optimization(opt_spec: dict) -> dict:
             "results": None, "error": None, "cancelled": False, "log": [],
             "combos": None, "completed_count": 0, "total_count": 0,
         }
+        _shed_old_payloads_locked()
     threading.Thread(target=_run_opt, args=(job_id, opt_spec), daemon=True).start()
     return {"job_id": job_id, "status": "running"}
 
@@ -468,7 +512,7 @@ def _execute_opt(job_id: str, spec: dict) -> None:
                          f"[{spec['start_date']}, {spec['end_date']}]")
 
     fixed = spec.get("fixed_params") or {}
-    capital = float(spec.get("deposit") or 10_000)
+    capital = float(spec.get("deposit") or _DEFAULT_CAPITAL)
     combos = [Combo(params=ps, config=_build_config(entry["config"], {**fixed, **ps}, symbol))
               for ps in param_sets]
 
@@ -495,6 +539,11 @@ def native_opt_results(job_id: str) -> dict:
         job = _JOBS.get(job_id)
     if job is None:
         raise RuntimeError(f"unknown python job {job_id}")
+    if job.get("payload_shed"):
+        raise RuntimeError(
+            f"python opt {job_id} finished but its grid has been shed to free memory "
+            f"({_MAX_FINISHED_PAYLOADS} newer jobs have run since). Re-run it."
+        )
     if job["status"] != "complete" or job["combos"] is None:
         raise RuntimeError(f"python opt {job_id} has no combos (status={job['status']})")
     return {"combos": job["combos"]}

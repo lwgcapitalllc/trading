@@ -288,8 +288,15 @@ function computeRecoveryFactor(
 // points carry — so the original base is irrelevant: NT8 curves start at 0 and MT5 curves
 // start at a deposit, but summing per-trade profit normalizes both to the same P&L series.
 // That makes a 50k NT8 run and a 50k MT5 run with identical trades produce identical scores.
+//
+// ⚠ The series OPENS on `balance` itself, before any trade. That anchor point is not cosmetic: a
+// drawdown is measured from a peak, and the account's first peak is the money it started with.
+// Without it a run whose first trade loses is measured from a peak that is already below the
+// opening balance, so the opening loss is invisible — and `services/metrics.max_drawdown_pct`,
+// which the Runs list renders, DOES prepend it. Two definitions of one number in two places is
+// how the list and the detail page come to disagree about the same run.
 function rebaseEquity(equity: EquityPoint[], balance: number): number[] {
-  const out: number[] = []
+  const out: number[] = [balance]
   let cum = 0
   for (const e of equity) {
     cum += e.profit ?? 0
@@ -1151,7 +1158,7 @@ export function PerformancePanel({
     <CardHero value={value} unit={unit} cls={cls} tip={tip} />
 
   const madeTip = "Total profit and loss in dollars across every closed trade, after whatever commission and slippage the run was priced with. The starting balance is beneath it and the multiple is the first row, so what this grew FROM is on screen. ⚠ Dollars on a compounding account are not comparable between runs — a fixed % risk per trade makes the end figure exponential in the edge, so a small change early shows up as a huge change here. Rank strategies by R or profit factor; read this to know what the run was worth."
-  const riskedTip = "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists."
+  const riskedTip = "Worst peak-to-trough drop as a % of the equity it fell FROM — the drawdown that would actually have ended the account. Measured against the running peak, not the starting balance: on a compounding run the account grows away from its opening capital, so dividing a late dollar drawdown by a static account_size reports a percentage that never happened (this read 1096.7% before 2026-07-30). The bar's gold tick is the selected ruleset's stated limit; the hatched extension past the fill is the worst-1% drawdown the stress test simulated. Each is drawn only when it actually exists. The DENOMINATOR is the Account balance in the params panel — the evaluated ruleset's account size, or the run's own opening balance when it was graded against none — so this figure moves with that slider while the dollars beside it do not."
   const trustedTip = `Annualized return (CAGR) ÷ worst peak-relative drawdown — return earned per unit of pain. Both halves compound, so this DOES move with the Account balance slider; they do not cancel. Above 2 is strong, below 0.5 weak.${d.recoveryFactor != null ? ` Its dollar twin, annualized net P&L ÷ deepest dollar drawdown, is ${d.recoveryFactor.toFixed(2)} (the old Recovery Factor).` : ''} The rows beneath are the reasons to distrust the number above them: profit clustered in one quarter, a soft Sharpe, or streaking that isn't random.`
 
   // Four cards when a verdict joins the row, three otherwise. The verdict is narrower because it
@@ -1210,7 +1217,12 @@ export function PerformancePanel({
               whether a drawdown number is acceptable, and it costs ~40px. */}
           {maxDdPct != null
             ? <DrawdownMeter pct={maxDdPct} limitPct={limitPct} tailPct={tailPct} />
-            : <div className="mt-3.5 text-[11px] text-text-tertiary">Set an account balance to measure drawdown as a percentage.</div>}
+            /* This used to read "Set an account balance to measure drawdown as a percentage" on
+               every run with no evaluated ruleset — an instruction the page gave no way to follow,
+               since the slider only renders once a default exists. The default now falls back to
+               the run's OWN opening balance, so the only case left is a run with no equity curve
+               at all, and the honest wording says that rather than asking for an input. */
+            : <div className="mt-3.5 text-[11px] text-text-tertiary">This run stored no equity curve, so a drawdown percentage cannot be measured.</div>}
           {!collapsed && (
             <div className="text-[10.5px] text-text-tertiary leading-[1.35] mt-1.5">
               {maxDdPct != null && ddAtWorstPct != null && ddPeak != null
@@ -2412,7 +2424,12 @@ function RunningBanner({ pct, message, startedAt, onStop, runId, runner, steps =
 }) {
   const elapsed   = useElapsed(startedAt)
   const activeIdx = steps.reduce((best, step, i) => pct >= step.startPct ? i : best, 0)
-  const { data: logText = '' } = useRunLog(runId, 500, true)
+  // ⚠ 200 lines, the SAME argument `LogsSection` uses. `lines` is part of the query key, so asking
+  // for 500 here made this a second cache entry and a second `/log` request every 2 seconds for
+  // the whole run — two polls of one endpoint on one page. The milestones are parsed out of the
+  // tail, so 200 is ample; if that ever changes, change both call sites together or the duplicate
+  // comes straight back.
+  const { data: logText = '' } = useRunLog(runId, 200, true)
   const milestones = useMemo(() => parseMilestones(logText, runner), [logText, runner])
 
   return (
@@ -2521,7 +2538,10 @@ function getFailureGuidance(status: string, runner: string): string {
 function FailureBanner({ run, onRetry, retrying }: { run: Run; onRetry?: () => void; retrying?: boolean }) {
   const guidance = getFailureGuidance(run.status, run.runner ?? 'ninjatrader')
   return (
-    <div className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4">
+    // `data-testid` so a browser check can scope to THIS banner. Its Retry button and the page
+    // header's are two different controls; a page-wide `Retry` locator matches the header and
+    // passes against a banner that has no button at all.
+    <div data-testid="failure-banner" className="bg-neg-muted border border-neg-text/30 rounded-lg px-4 py-4">
       <div className="flex items-start gap-3">
         <AlertTriangle size={15} className="text-neg-text flex-shrink-0 mt-[1px]" />
         <div className="flex-1 min-w-0">
@@ -3211,6 +3231,15 @@ function RerunModal({ run, busy, onConfirm, onClose }: {
           </p>
         )}
 
+        {/* "Same parameters" is true and reads as a limitation — the modal offers a period and no
+            way to change anything else, which leaves the reader looking for the missing control.
+            There isn't one here by design: editing a param creates a NEW run rather than replacing
+            this one, and that lives in the workbench. Say where, rather than leaving the gap. */}
+        <p className="text-[11px] text-text-tertiary">
+          To change the parameters instead, use <span className="text-text-secondary">Tune</span> —
+          it runs a new backtest and leaves this one intact.
+        </p>
+
         <div className="flex gap-2 pt-2">
           <button
             onClick={() => onConfirm(start, end)}
@@ -3511,7 +3540,17 @@ function useCostFilter(run: Run | undefined) {
     const raw = (run.equity_curve ?? []).filter(p => p.profit != null || p.direction)
     // A trade the server did not price back is a mismatch, not something to pass through at its
     // old value — that would show a partly-charged book as a fully-charged one.
-    if (raw.some(p => !priced.has(p.index))) return null
+    //
+    // ⚠ It returns a NAMED refusal rather than a bare null. A bare null made `active` false, and
+    // `active` false renders as "Charging nothing" with the reader's boxes still ticked — the
+    // identical failure the `isError` fix above exists to have stopped, arriving one branch over.
+    const unpriced = raw.filter(p => !priced.has(p.index)).length
+    if (unpriced) {
+      return {
+        partial: unpriced, total: raw.length,
+        kept: null, curve: null, run: null, netBefore: 0, netAfter: 0,
+      }
+    }
     const kept = raw.map(p => {
       const t = priced.get(p.index)!
       // ⚠ **SIGNED, never `-Math.abs`.** `cost_usd` is positive for a charge and NEGATIVE for a
@@ -3529,21 +3568,43 @@ function useCostFilter(run: Run | undefined) {
       // labelled with their name. Second-order today — no stored run charges anything (all 81 are
       // `cost_layers` NULL or `[]`), and a layer the run DID charge is refused above rather than
       // re-priced on top.
-      return { ...p, profit: t.profit, equity: t.equity, costs_usd: (p.costs_usd ?? 0) - t.cost_usd }
+      // The EXCURSION moves with the charge too. `favorable`/`adverse` are the best and worst
+      // dollar positions the trade ever held, and a cost booked at entry lowers both by the same
+      // amount — leaving them raw made the Equity chart's solid net-result core stick out past
+      // its own translucent favourable halo, which reads as a broken chart. The clamp is what
+      // guarantees `adverse ≤ profit ≤ favorable` survives every rounding path: a halo the result
+      // escapes is the one shape this bar can never be allowed to draw.
+      const fav = p.favorable == null ? undefined : Math.max(p.favorable - t.cost_usd, t.profit, 0)
+      const adv = p.adverse   == null ? undefined : Math.min(p.adverse   - t.cost_usd, t.profit, 0)
+      return {
+        ...p,
+        profit: t.profit,
+        equity: t.equity,
+        costs_usd: (p.costs_usd ?? 0) - t.cost_usd,
+        favorable: fav,
+        adverse: adv,
+      }
     })
     // The two dollar figures the reader will otherwise derive by subtracting, and which are NOT the
     // same number — see `balanceImpact` below. Both are summed off the SAME rows the Net hero sums,
     // so the pill and the card can never disagree about what changed.
     const netBefore = raw.reduce((t, p) => t + (p.profit ?? 0), 0)
     const netAfter = kept.reduce((t, p) => t + (p.profit ?? 0), 0)
-    return { kept, curve: kept, run: buildFilteredRun(run, kept, kept), netBefore, netAfter }
+    return {
+      partial: 0, total: raw.length,
+      kept, curve: kept, run: buildFilteredRun(run, kept, kept), netBefore, netAfter,
+    }
   }, [run, report, chosen])
 
   return {
     enabled, isLoading, report, layers, chosen, toggle,
-    active: chosen.length > 0 && view != null,
+    active: chosen.length > 0 && view?.run != null,
     repricedRun: view?.run ?? null,
     repricedCurve: view?.curve ?? null,
+    // A re-price that came back short. Distinct from `failed` (the server refused and said why)
+    // and from inactive (nothing ticked): here the answer arrived and does not cover the book.
+    partial: view?.partial ?? 0,
+    partialOf: view?.total ?? 0,
     // Everything the pill has to SAY rather than imply. `needsRerun` is the honest answer for a
     // layer this page cannot compute; `notExact` is the honest caption for one it computes to
     // ~0.02%–0.3% rather than to the cent. Rendering either silently is the failure this whole
@@ -3603,8 +3664,11 @@ function useNewsFilter(run: Run | undefined) {
   // `strategy.avoid_news` is still real metadata off the strategy's meta.json; it just no longer
   // decides what you see first. Do not re-wire it here without asking — "the page shows the run"
   // is the property being protected.
-  const [removeNewsChoice, setRemoveNewsChoice] = useState<boolean | null>(null)
-  const removeNews = removeNewsChoice ?? false
+  // A plain boolean. It was `boolean | null` with `?? false`, which existed to mean "the reader has
+  // not chosen, so fall back to the strategy's `avoid_news`" — and that fallback went away when both
+  // rules were defaulted OFF. A three-state that only ever resolves one way is a state nobody can
+  // reach, and it reads as though something still depends on it.
+  const [removeNews, setRemoveNews] = useState(false)
   const [removeHolidays, setRemoveHolidays] = useState(false)
   const [pre, setPre]   = useState(15)                 // block window before an event (minutes)
   const [post, setPost] = useState(30)                 // block window after an event (minutes)
@@ -3621,6 +3685,12 @@ function useNewsFilter(run: Run | undefined) {
   // rule's row shows its price whether or not it is currently ticked, so you can see what turning it
   // on would cost before you turn it on. A trade matching both is counted as a holiday only, so the
   // two counts never double-count the same trade against the total.
+  //
+  // 🔴 COUNTING and REMOVING are separate decisions, and collapsing them was a real bug. This was
+  // one `if / else if` chain, so a trade that was BOTH a holiday and a news window took the holiday
+  // branch and the news rule never saw it — turn News on with Holidays off and that trade stayed in
+  // the result, silently exempt from the rule you had just switched on. The counts still use the
+  // holiday-wins precedence (so they sum to at most the total); the REMOVAL is a plain OR.
   const view = useMemo(() => {
     const tag = new Map<number, NewsTradeTag>()
     for (const t of report?.trades ?? []) if (t.index != null) tag.set(t.index, t)
@@ -3628,8 +3698,11 @@ function useNewsFilter(run: Run | undefined) {
     let holidayCount = 0, newsCount = 0
     for (const p of rawTrades) {
       const tg = tag.get(p.index)
-      if (tg?.in_holiday)   { holidayCount++; if (removeHolidays) continue }
-      else if (tg?.in_news) { newsCount++;    if (removeNews)     continue }
+      const isHoliday = !!tg?.in_holiday
+      const isNews    = !!tg?.in_news
+      if (isHoliday)      holidayCount++          // counted once, holiday takes precedence
+      else if (isNews)    newsCount++
+      if ((isHoliday && removeHolidays) || (isNews && removeNews)) continue
       kept.push(p)
     }
     return { kept, holidayCount, newsCount }
@@ -3665,7 +3738,7 @@ function useNewsFilter(run: Run | undefined) {
 
   return {
     enabled, isLoading, report, pre, setPre, post, setPost,
-    removeNews, setRemoveNewsChoice, removeHolidays, setRemoveHolidays,
+    removeNews, setRemoveNews, removeHolidays, setRemoveHolidays,
     ...view, filteredCurve, filteredRun, hasEntryTimes,
     totalTrades: rawTrades.length,   // the run as traded — the denominator of "N of M counted"
     // How many trades the CURRENT settings take out. Derived from the kept list rather than summed
@@ -3689,7 +3762,7 @@ function useNewsFilter(run: Run | undefined) {
 function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: string | null }) {
   const {
     isLoading, pre, setPre, post, setPost,
-    removeNews, setRemoveNewsChoice, removeHolidays, setRemoveHolidays,
+    removeNews, setRemoveNews, removeHolidays, setRemoveHolidays,
     holidayCount, newsCount, totalTrades, excluded, noData, oldRun, nothingHit, usable,
   } = news
 
@@ -3755,14 +3828,17 @@ function NewsFilterPill({ news, blocked = null }: { news: NewsFilter; blocked?: 
             checked={removeHolidays}
             onChange={setRemoveHolidays}
             label="Bank holidays"
-            note="on by default"
+            /* ⚠ No `note` here. It read "on by default" — left over from when this rule really was
+               hardcoded on, and still on screen for five days after both rules were defaulted OFF
+               on 2026-08-01. A caption is a claim about the state beside it; this one contradicted
+               its own checkbox. If a default changes, the caption changes in the same commit. */
             count={holidayCount}
             tone="holiday"
           />
 
           <ExcludeRule
             checked={removeNews}
-            onChange={setRemoveNewsChoice}
+            onChange={setRemoveNews}
             label="High-impact news"
             count={newsCount}
             tone="news"
@@ -3877,6 +3953,7 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
   const {
     isLoading, layers, toggle, active, totalCost, totalCostR, needsRerun, notExact, derivedBasis,
     approximateLayers, netBefore, netAfter, balanceImpact, alreadyCharged, failed, failReason,
+    partial, partialOf,
   } = costs
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -3901,9 +3978,17 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
   // was wrong; the fees are simply not the balance impact, and a pill has room for one number. R is
   // the one that cannot be misread: it is the true size of the charge, it is what the rows below add
   // up to, and it is comparable between runs. Both dollar figures live in the popover, named.
+  //
+  // ⚠ The `partial` arm is a THIRD state and must not fold into either neighbour. The server
+  // answered, and its answer does not cover every trade — so the honest reading is neither
+  // "can't price this run" (it priced most of it) nor "charging nothing" (the reader ticked
+  // layers and something WAS charged, just not to the whole book). Passing the short answer
+  // through at its old values would have shown a partly-charged book as a fully-charged one,
+  // which is why the view refuses it; saying so is the other half of that refusal.
   const label = blocked ? 'Charging n/a'
     : failed ? 'Can’t price this run'
     : isLoading ? 'Pricing…'
+    : partial ? `${partial} of ${partialOf} unpriced`
     : active ? `Charging ${Math.abs(totalCostR).toFixed(2)}R`
     : 'Charging nothing'
 
@@ -3971,6 +4056,15 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 {failReason || 'This run could not be re-priced.'}
               </p>
             )}
+            {/* The re-price came back short. Saying "charging nothing" here would be the same lie
+                the refusal above exists to have stopped — the server DID price most of the book. */}
+            {partial > 0 && (
+              <p className="text-neg-text">
+                {partial} of {partialOf} trades came back unpriced, so nothing is charged — a
+                partly-charged book shown as a charged one is worse than no charge at all. Re-run
+                the backtest with these costs on to measure them properly.
+              </p>
+            )}
             {needsRerun.length > 0 && (
               <p className="text-gold-text">
                 {needsRerun.join(' and ')} can’t be applied here — {needsRerun.length === 1 ? 'it changes' : 'they change'} which
@@ -4030,7 +4124,7 @@ function CostFilterPill({ costs, blocked = null }: { costs: CostFilter; blocked?
                 )}
               </div>
             )}
-            {!active && !failed && needsRerun.length === 0 && (
+            {!active && !failed && !partial && needsRerun.length === 0 && (
               <p>Nothing charged — these are the run’s own numbers.</p>
             )}
           </div>
@@ -4108,13 +4202,20 @@ export function BacktestDetail() {
   // not a sweep/optimization child). Fetch its baseline to wire up breadcrumbs.
   const isTuneIteration = !!run?.source_run_id && !run?.optimization_id && !run?.sweep_id
   const { data: tuneBaseline } = useBacktestRun(isTuneIteration ? run!.source_run_id : null)
-  // Tuning iterations already run FROM this run. Unfiltered so it shares the Runs list's cache
-  // entry rather than opening a second one. Without this the only way to discover that a run had
-  // ever been tuned was to go back to the Runs list and spot the nested rows.
-  const { data: allRuns } = useBacktestRuns()
+  // Tuning iterations already run FROM this run. Without the badge the only way to discover that a
+  // run had ever been tuned was to go back to the Runs list and spot the nested rows.
+  //
+  // ⚠ Scoped to `source_run_id` rather than fetching the lab. It used to be an UNFILTERED
+  // `useBacktestRuns()` on the argument that it shared the Runs list's cache entry — which was
+  // true while the sidebar held that entry on every page, and stopped being true when the sidebar
+  // moved to `useNavActivity`. So the run page was pulling every run in the lab (~1.7 KB each,
+  // polled every 3s while anything runs) to render one number.
+  // ⚠ `source_run_id` is always set — never fall back to `undefined`, which fetches the whole lab.
+  const { data: derivedRuns } = useBacktestRuns({ source_run_id: runId ?? ' none' })
   const tuneCount = useMemo(
-    () => (allRuns ?? []).filter(r => r.source_run_id === runId && !r.sweep_id && !r.optimization_id).length,
-    [allRuns, runId],
+    // A sweep and an optimization stamp `source_run_id` too — only a standalone child is a tweak.
+    () => (derivedRuns ?? []).filter(r => !r.sweep_id && !r.optimization_id).length,
+    [derivedRuns],
   )
   const { data: strategy } = useStrategy(run?.strategy_id ?? null)
   // Owned here, not in the card, so the main Equity chart can redraw on the kept trades (see
@@ -4202,9 +4303,31 @@ export function BacktestDetail() {
   // primary evaluated ruleset's account_size; the slider is a view-time what-if override only.
   const { data: rulesets } = useRulesets()
   const rulesetBalance = rulesets?.find(r => r.id === run?.evaluations?.[0]?.ruleset_id)?.account_size ?? null
+
+  // The run's OWN opening balance, recovered from the curve's first point — `equity` is
+  // cumulative and anchored on it, so `equity - profit` is exact arithmetic, not a guess.
+  //
+  // 🔴 Without this fallback a run with no evaluated ruleset could never show a drawdown
+  // PERCENTAGE at all: `balance` was null, the Risked hero read `—`, and the card said "Set an
+  // account balance to measure drawdown as a percentage" — while the only control that sets one
+  // renders solely when a ruleset default already exists. It asked the reader to do something
+  // the page gave them no way to do, and the backend had `max_drawdown_pct` stored on the row
+  // the whole time (the Runs list shows it).
+  //
+  // ⚠ It is also the more correct denominator for a SELF-SIZING run, which compounds off its own
+  // deposit and knows nothing about the account_size of a ruleset it was merely graded against.
+  // The ruleset still wins when present, because a prop limit is written against that account.
+  const curveBalance = useMemo(() => {
+    const first = run?.equity_curve?.[0]
+    if (!first) return null
+    const base = (first.equity ?? 0) - (first.profit ?? 0)
+    return base > 0 ? base : null
+  }, [run?.equity_curve])
+
   const [balanceOverride, setBalanceOverride] = useState<number | null>(null)
   useEffect(() => { setBalanceOverride(null) }, [run?.run_id])
-  const balance = balanceOverride ?? rulesetBalance
+  const defaultBalance = rulesetBalance ?? curveBalance
+  const balance = balanceOverride ?? defaultBalance
 
   // The firm whose evaluation is currently shown in the verdict ribbon.
   const selectedEval = (run && run.evaluations.length)
@@ -4272,7 +4395,16 @@ export function BacktestDetail() {
       // Metrics derived from daily P&L: null the persisted primary-firm values so they recompute
       // from THIS firm's sized daily P&L (worst day / streak / Sharpe via `fallback`, profit conc).
       worst_day_pnl: null,
-      worst_losing_streak: null,
+      // ⚠ COMPUTED, not nulled. Every other field here recomputes from the sized daily P&L via
+      // `computeFallbacks` — but a losing STREAK is counted in TRADES, and `FallbackMetrics`
+      // deliberately carries no daily answer for it (a day list cannot answer a trades question).
+      // So nulling it left the Risked card's Worst streak reading `—` on every sized run, for a
+      // number sitting right there in this firm's own equity curve.
+      worst_losing_streak: worstLosingStreakOf(
+        (ev.equity_curve?.length ? ev.equity_curve : run.equity_curve)
+          .filter(p => p.profit != null)
+          .map(p => p.profit as number),
+      ),
       sharpe: null,
       platform_sharpe: null,
       sharpe_low_sample: false,
@@ -4639,7 +4771,7 @@ export function BacktestDetail() {
             collapsed={paramsCollapsed}
             onToggle={toggleParams}
             balance={balance}
-            defaultBalance={rulesetBalance}
+            defaultBalance={defaultBalance}
             onBalanceChange={setBalanceOverride}
             headerH={headerH}
           />
@@ -4647,7 +4779,19 @@ export function BacktestDetail() {
 
           {/* ── Banners ───────────────────────────────────────────────────── */}
           {isRunning && <RunningBanner pct={runPct} message={runMessage} startedAt={runStartedAt} onStop={() => stopBacktest.mutate(run.run_id)} runId={run.run_id} runner={run.runner ?? 'ninjatrader'} steps={scope === 'mt5' ? MT5_RUN_STEPS : scope === 'python' ? PYTHON_RUN_STEPS : NT8_RUN_STEPS} />}
-          {isFailed && <FailureBanner run={run} />}
+          {/* `onRetry` was declared on FailureBanner and never passed, so the banner's Retry button
+              did not exist — on the one banner a reader is looking at because something failed.
+              A standalone run picks its window first (the same RerunModal the header Rerun opens);
+              a sweep child or optimizer combo inherits its set's period and re-fires directly. */}
+          {isFailed && (
+            <FailureBanner
+              run={run}
+              onRetry={ownsPeriod ? () => setShowRerun(true) : runFullBacktest}
+              /* Disabled while THIS platform holds a job too — the backend 409s on a busy
+                 platform, and a button whose only outcome is an error toast is not a button. */
+              retrying={retryBacktest.isPending || jobBusy}
+            />
+          )}
           {/* ── Evaluation + Performance ──────────────────────────────────── */}
           {/* One row of four question cards: Made, Risked, Trusted, Verdict. The evaluation used
               to be a fixed-height COLUMN beside a 6+6 KPI grid, then a full-width ribbon above

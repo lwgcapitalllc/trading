@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import shutil
 import time
@@ -33,6 +34,8 @@ from services.sweep_runner import retry_single_sweep_run
 from services.optimization_runner import retry_single_optimization_run, resolve_opt_eval_rulesets
 from routers._locks import ensure_platform_idle
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
 # Backtest window dates are plain ISO days everywhere (DB, job specs, both agents)
@@ -48,6 +51,20 @@ def _load_json(path: Optional[str]) -> list:
         return json.loads(Path(path).read_text())
     except Exception:
         return []
+
+
+def _clear_run_dir(run_id: str) -> None:
+    """Delete every derived artefact of a run that is about to be re-run.
+
+    A run directory holds nothing but output — the equity curve, the daily P&L, the cached
+    `chart_spec.json`, the blocked/missed setup lists, the regime calendar, and the sizing
+    engine's timeline. All of it describes the attempt that just ended, so all of it has to go
+    before the next one starts; anything left behind is served to the page as the NEW run's
+    result. The directory itself is recreated by `_handle_complete`.
+    """
+    run_dir = Path(LAB_RESULTS_DIR) / run_id
+    if run_dir.exists():
+        shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def _json_list(raw) -> Optional[list]:
@@ -78,7 +95,11 @@ def _worthiness_from_row(row: dict) -> Optional[WorthinessScore]:
     )
 
 
-def _row_to_summary(row: dict) -> BacktestSummary:
+def _row_to_summary(row: dict, verdicts: Optional[list[dict]] = None) -> BacktestSummary:
+    # `verdicts=None` means "fetch it yourself" — kept for the single-row callers. The LIST path
+    # passes them in from one bulk query; see `list_backtest_runs`.
+    if verdicts is None:
+        verdicts = lab_db.get_run_verdict_summary(row["run_id"])
     return BacktestSummary(
         run_id=row["run_id"],
         strategy_id=row["strategy_id"],
@@ -94,7 +115,7 @@ def _row_to_summary(row: dict) -> BacktestSummary:
         profit_factor=row.get("profit_factor"),
         win_rate=row.get("win_rate"),
         trade_count=row.get("trade_count"),
-        verdicts=lab_db.get_run_verdict_summary(row["run_id"]),
+        verdicts=verdicts,
         worthiness=_worthiness_from_row(row),
         sweep_id=row.get("sweep_id"),
         optimization_id=row.get("optimization_id"),
@@ -238,11 +259,30 @@ def _row_to_detail(row: dict, *, include_timeline: bool = True) -> BacktestDetai
 
 @router.get("/running-job", response_model=RunningJobStatus)
 def get_running_job() -> RunningJobStatus:
+    """Which of the three independent lock scopes is busy, and with what.
+
+    🔴 **This endpoint named `nt8` and `mt5` and silently dropped `python` (fixed 2026-08-06).**
+    Every other layer of that scope was built and correct — `lab_db.get_running_job` computes it,
+    `RunningJobStatus` DECLARES it, `lib/runner.ts` resolves it and `runningJobFor` reads it — and
+    the response never carried the field, so Pydantic filled in the declared default,
+    `running=False`. **A python backtest therefore reported its platform free for its entire run.**
+    The GATE was never affected (`ensure_platform_idle` reads `has_running_job`, which was right,
+    and a second run really was refused with a 409) — so nothing could double-run. What broke is
+    every control the UI gates on this: the Runs list's Rerun, the detail page's Retry and Rerun,
+    the Run modal, the Optimize button. All of them stayed enabled through a python run and could
+    only ever produce a 409 toast, which is a button whose single outcome is an error.
+
+    ⚠ **The response is DERIVED from the scope map, never restated field by field.** Naming the
+    keys is what let one go missing, and the default on the model is what made it silent — this is
+    the `entry_ms` / `favorable` / `is_trades` trap arriving from the opposite direction: not a
+    field the model failed to declare, but a declared field the constructor failed to fill, whose
+    default is the most reassuring answer available. A fourth scope added to `_SCOPE_RUNNER_SQL`
+    now reaches the API by construction.
+    """
     jobs = lab_db.get_running_job()
-    return RunningJobStatus(
-        nt8=RunningJobInfo(**jobs["nt8"]),
-        mt5=RunningJobInfo(**jobs["mt5"]),
-    )
+    return RunningJobStatus(**{
+        scope: RunningJobInfo(**info) for scope, info in jobs.items()
+    })
 
 
 @router.get("/broker-profiles", response_model=list[BrokerProfile])
@@ -299,10 +339,14 @@ def list_backtest_runs(
     ruleset_id:  Optional[str] = None,
     firm_id:     Optional[str] = None,  # backward-compat alias
     status:      Optional[str] = None,
+    source_run_id: Optional[str] = None,
 ) -> list[BacktestSummary]:
     effective_ruleset_id = ruleset_id or firm_id
-    rows = lab_db.list_runs(strategy_id=strategy_id, ruleset_id=effective_ruleset_id, status=status)
-    return [_row_to_summary(r) for r in rows]
+    rows = lab_db.list_runs(strategy_id=strategy_id, ruleset_id=effective_ruleset_id,
+                            status=status, source_run_id=source_run_id)
+    # ONE query for every row's verdicts, not one per row — see get_run_verdict_summaries.
+    verdicts = lab_db.get_run_verdict_summaries([r["run_id"] for r in rows])
+    return [_row_to_summary(r, verdicts.get(r["run_id"], [])) for r in rows]
 
 
 @router.get("/runs/{run_id}")
@@ -531,17 +575,36 @@ async def stop_backtest_run(run_id: str) -> dict:
     if row["status"] != "running":
         raise HTTPException(400, f"Run is not running (status: {row['status']})")
 
-    progress = read_progress()
-    job_id   = progress.get("job_id") or run_id
+    # 🔴 The job id IS the run id for every backtest this app starts (see trigger_backtest, which
+    # sets `job_id = run_id`). It used to be read out of `lab_progress.json` — ONE file shared by
+    # every runner — so the id cancelled here was whatever had most recently written progress.
+    # With two platforms busy that is the OTHER platform's job; with a stale file it is a job that
+    # no longer exists. Either way the failure was swallowed, this run was marked cancelled, its
+    # platform lock released, and the real job kept running.
+    job_id = run_id
+    runner = row.get("runner") or "ninjatrader"
 
-    try:
-        await asyncio.to_thread(runner_dispatch.cancel_job, job_id)
-    except Exception:
-        pass  # best-effort — still mark cancelled locally
-
+    # Mark FIRST, cancel second: `backtest_runner.run_backtest_job` reads this row every poll and
+    # stands down when it is no longer `running`. Doing it the other way round leaves a window in
+    # which the job finishes and writes `complete` over the cancellation.
     lab_db.update_run_status(run_id, "failed_cancelled", "Cancelled by user")
-    clear_progress()
-    return {"run_id": run_id, "status": "failed_cancelled"}
+
+    job_stopped = True
+    try:
+        await asyncio.to_thread(runner_dispatch.cancel_job, job_id, runner)
+    except Exception as exc:                        # noqa: BLE001 — the row is cancelled regardless
+        job_stopped = False
+        log.warning("stop %s: could not reach the %s runner to cancel: %s", run_id, runner, exc)
+
+    # Only clear progress if the entry is OURS. The file is shared, and blanking another
+    # platform's live progress would blank the banner of a run nobody asked to stop.
+    if read_progress().get("job_id") == run_id:
+        clear_progress()
+
+    # `job_stopped` is reported separately on purpose: the row is cancelled either way, but
+    # "the runner acknowledged" and "we could not tell it" are different facts, and only the
+    # first means the machine is actually free. Same contract as the optimizer's cancel.
+    return {"run_id": run_id, "status": "failed_cancelled", "job_stopped": job_stopped}
 
 
 @router.post("/runs/{run_id}/retry", status_code=202)
@@ -592,6 +655,7 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
     if row.get("sweep_id"):
         ensure_platform_idle(runner)
         lab_db.reset_run_for_retry(run_id)
+        _clear_run_dir(run_id)
         asyncio.create_task(retry_single_sweep_run(run_id))
         return {"run_id": run_id, "status": "running"}
 
@@ -612,6 +676,7 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
         ensure_platform_idle(runner)
         lab_db.reset_run_for_retry(run_id)
         lab_db.delete_run_evaluations(run_id)
+        _clear_run_dir(run_id)
         asyncio.create_task(retry_single_optimization_run(run_id, evaluate_rulesets=rulesets))
         return {"run_id": run_id, "status": "running"}
 
@@ -633,12 +698,17 @@ async def retry_backtest_run(run_id: str, body: Optional[RetryRunRequest] = None
     lab_db.reset_run_for_retry(run_id)
     lab_db.delete_run_evaluations(run_id)
 
-    # Clear stale report files so the UI starts fresh
-    run_dir = Path(LAB_RESULTS_DIR) / run_id
-    for fname in ("equity_curve.json", "daily_pnl.json"):
-        p = run_dir / fname
-        if p.exists():
-            p.unlink()
+    # Clear stale report files so the UI starts fresh.
+    #
+    # 🔴 This used to delete `equity_curve.json` and `daily_pnl.json` only, and every OTHER
+    # artefact a run produces survived into the next attempt. The consequences were not stale
+    # numbers — they were the PREVIOUS run's data rendered as this one's: `chart_spec.json` is
+    # cached, so the Price tab drew the old candles and the old trades until somebody clicked
+    # Reload charts; `blocked_setups.json` / `missed_setups.json` are written only when non-empty,
+    # so the old refusals stayed on the chart; `regime_timeline.json` described the old window on
+    # a rerun over a new one; and `engine_timeline.json` kept `sized` true on a run that no longer
+    # was. Wipe the directory — everything in it is derived from the run and the run is restarting.
+    _clear_run_dir(run_id)
 
     job_spec = {
         "job_id":            run_id,

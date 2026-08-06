@@ -221,13 +221,16 @@ def get_sweep(sweep_id: str) -> SweepDetail:
         raise HTTPException(404, f"Sweep '{sweep_id}' not found")
 
     first     = rows[0]
-    summaries = [_row_to_summary(r) for r in rows]
+    # One verdict query for the whole sweep — it was two per child run (once for the summary,
+    # once for the ruleset roster below), each opening its own sqlite connection.
+    verdicts  = lab_db.get_run_verdict_summaries([r["run_id"] for r in rows])
+    summaries = [_row_to_summary(r, verdicts.get(r["run_id"], [])) for r in rows]
     completed = sum(1 for r in rows if r["status"] == "complete")
 
     seen_ruleset_ids = list({
         e["ruleset_id"]
-        for r in rows
-        for e in lab_db.get_run_verdict_summary(r["run_id"])
+        for evs in verdicts.values()
+        for e in evs
     })
 
     if any(r["status"] == "running" for r in rows):

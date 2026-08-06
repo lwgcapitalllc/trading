@@ -120,7 +120,14 @@ def parse_trades_csv(csv_text: str) -> tuple[list[dict], list[dict]]:
 
 _POLL_INTERVAL   = 5     # seconds between agent polls
 _STALL_WARN_SEC  = 120   # 2 min — warn but keep polling
-_STALL_KILL_SEC  = 600   # 10 min — cancel job, mark failed_timeout
+_STALL_KILL_SEC  = 600   # 10 min with NO HEARTBEAT — cancel job, mark failed_timeout
+
+# A job that is heartbeating is WORKING, however long it takes. This used to be the same
+# constant as the stall kill, so every backtest carried a hard 10-minute ceiling and a healthy
+# 11-minute run was killed with the message "No heartbeat for 0s" — a false diagnosis pointing
+# at the agent. The longest completed run in the lab is 275s today, so the old ceiling had not
+# yet bitten; a tick-mode run, a wider window or a slower box would have crossed it silently.
+_MAX_RUNTIME_SEC = 6 * 3600
 
 _LAB_PROGRESS_PATH = Path(__file__).parent.parent / "data" / "lab_progress.json"
 _LAB_RESULTS_DIR   = Path(__file__).parent.parent / "reports" / "lab"
@@ -169,6 +176,40 @@ def _fail(run_id: str, job_id: str, status: str, error_msg: str) -> None:
         "updated_at": str(time.time()),
         "heartbeat_age_seconds": 0.0,
     })
+
+
+def _write_or_clear(path: Path, payload: list) -> None:
+    """Write the payload, or DELETE the file when there is nothing to write.
+
+    An optional artefact's absence is what makes its layer vanish from the chart, so leaving a
+    previous attempt's file behind is not a stale number — it is the old run's data rendered as
+    this one's.
+    """
+    if payload:
+        path.write_text(json.dumps(payload, default=str))
+    elif path.exists():
+        path.unlink()
+
+
+def run_was_cancelled(run_id: str) -> bool:
+    """Has something else already ended this run?
+
+    The DB row is the single lock source, so it is also the single place a cancellation is
+    recorded. `POST /runs/{id}/stop` writes `failed_cancelled` and this poller reads it back —
+    without that read the poller kept going, and when the agent eventually finished,
+    `_handle_complete` wrote KPIs and `complete` straight over the cancelled row. The user saw
+    a run they had stopped come back to life with results.
+
+    An unreadable row answers False: the poller carrying on is recoverable, abandoning a live
+    run because sqlite was momentarily busy is not.
+    """
+    try:
+        row = lab_db.get_run(run_id)
+    except Exception:                              # noqa: BLE001 — a poll must not die on a read
+        return False
+    if not row:
+        return False
+    return row.get("status") != "running"
 
 
 # ── Regime classification helper ──────────────────────────────────────────────
@@ -423,6 +464,12 @@ async def _handle_complete(
         _fail(run_id, job_id, "failed_unknown", f"Could not fetch results from agent: {exc}")
         return
 
+    # Re-check AFTER the fetch, not only before it. The poller's own check happens once every
+    # five seconds; this await is where a Stop lands most often, and everything below writes.
+    if await asyncio.to_thread(run_was_cancelled, run_id):
+        log.info("run %s: cancelled while results were being fetched — discarding them", run_id)
+        return
+
     kpis         = result.get("kpis", {})
     equity_curve = result.get("equity_curve", [])
     daily_pnl    = result.get("daily_pnl", [])
@@ -479,15 +526,17 @@ async def _handle_complete(
     # Blocked setups — signals the strategy's own toggles refused, which place no order and
     # so appear in NO trade list. Only runners that report them write the file (Python today);
     # its absence is what makes the chart's Blocked layer vanish for an NT8/MT5 run.
+    #
+    # ⚠ An EMPTY result must REMOVE a stale file, never leave it. `if blocked:` alone meant a
+    # rerun that refused nothing kept the previous attempt's refusals on disk, and the chart
+    # drew them over the new run's candles as though this run had produced them.
     blocked = result.get("blocked_setups") or []
-    if blocked:
-        (run_dir / "blocked_setups.json").write_text(json.dumps(blocked, default=str))
+    _write_or_clear(run_dir / "blocked_setups.json", blocked)
 
     # Missed setups — the companion question: not "which ready trade was refused" but "how far
     # did this setup get before it died". Same optionality, same reason.
     missed = result.get("missed_setups") or []
-    if missed:
-        (run_dir / "missed_setups.json").write_text(json.dumps(missed, default=str))
+    _write_or_clear(run_dir / "missed_setups.json", missed)
 
     # Regime tagging — happens BEFORE DB update so the run stays "running" during tagging,
     # letting the frontend show the Tagging milestone step in the progress bar.
@@ -610,6 +659,13 @@ async def run_backtest_job(
     while True:
         await asyncio.sleep(_POLL_INTERVAL)
 
+        # Stop pressed (or the row ended some other way) — leave the row and the progress file
+        # exactly as the canceller wrote them. Anything written from here would be a report on
+        # a run nobody is waiting for, and `complete` would overwrite `failed_cancelled`.
+        if await asyncio.to_thread(run_was_cancelled, run_id):
+            log.info("run %s: no longer running — poller standing down", run_id)
+            return
+
         try:
             status_data = await asyncio.to_thread(runner_dispatch.job_status, job_id)
         except Exception as exc:
@@ -658,12 +714,24 @@ async def run_backtest_job(
             _fail(run_id, job_id, status, status_data.get("error") or message)
             return
 
-        # kill if stalled too long
-        if heartbeat_age > _STALL_KILL_SEC or (now - started_at) > _STALL_KILL_SEC:
+        # Kill if the agent has gone quiet, or if the job has run past the hard runtime ceiling.
+        # The two are DIFFERENT diagnoses and must not share a message: a stall points at the
+        # agent, a timeout points at the window being too big for the ceiling. They used to
+        # share both the constant and the wording, so a healthy 11-minute run was reported as
+        # having no heartbeat for 0 seconds.
+        elapsed = now - started_at
+        stalled = heartbeat_age > _STALL_KILL_SEC
+        overran = elapsed > _MAX_RUNTIME_SEC
+        if stalled or overran:
             try:
                 await asyncio.to_thread(runner_dispatch.cancel_job, job_id)
             except Exception:
                 pass
-            _fail(run_id, job_id, "failed_timeout",
-                  f"No heartbeat for {int(heartbeat_age)}s — job cancelled")
+            reason = (
+                f"No heartbeat for {int(heartbeat_age)}s — job cancelled" if stalled else
+                f"Still running after {elapsed / 3600:.1f}h (ceiling {_MAX_RUNTIME_SEC // 3600}h)"
+                f" — job cancelled. The agent was alive throughout; this window is too large for"
+                f" the runtime ceiling."
+            )
+            _fail(run_id, job_id, "failed_timeout", reason)
             return

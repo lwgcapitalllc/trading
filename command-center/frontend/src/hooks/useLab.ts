@@ -171,11 +171,16 @@ export function useBacktestRuns(filters?: {
   strategy_id?: string
   ruleset_id?: string
   status?: string
+  // The runs DERIVED from one run — sweeps, optimizations and tuning iterations alike, since
+  // all three stamp `source_run_id`. Used by the run page to count its own iterations without
+  // pulling the whole lab list (~1.7 KB per run, polled while anything is running).
+  source_run_id?: string
 }) {
   const params = new URLSearchParams()
-  if (filters?.strategy_id) params.set('strategy_id', filters.strategy_id)
-  if (filters?.ruleset_id)  params.set('ruleset_id',  filters.ruleset_id)
-  if (filters?.status)      params.set('status',      filters.status)
+  if (filters?.strategy_id)   params.set('strategy_id',   filters.strategy_id)
+  if (filters?.ruleset_id)    params.set('ruleset_id',    filters.ruleset_id)
+  if (filters?.status)        params.set('status',        filters.status)
+  if (filters?.source_run_id) params.set('source_run_id', filters.source_run_id)
   const qs = params.toString()
 
   return useQuery({
@@ -381,14 +386,11 @@ export function useTriggerBacktest() {
       qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
       qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: (e: unknown) => {
-      const detail = (e as { detail?: string })?.detail
-      if (detail?.includes('already running')) {
-        toast.error(detail)
-      } else {
-        toast.error('Failed to start backtest')
-      }
-    },
+    // No onError toast. `api.request` already toasted the server's own message — and the branch
+    // that used to sit here could not fire anyway: it read `.detail` off an `unknown` that only
+    // carries it on an `ApiError`, so every failure took the generic arm and 'Failed to start
+    // backtest' landed SECOND, on top of the real reason. The history floor's 400 names the
+    // earliest date the broker has; that is the message worth reading.
   })
 }
 
@@ -400,7 +402,7 @@ export function useDeleteRun() {
       toast.success('Run deleted')
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
     },
-    onError: () => toast.error('Failed to delete run'),
+    // No onError toast — `api.request` owns the message. See useTriggerBacktest.
   })
 }
 
@@ -428,7 +430,7 @@ export function useStopBacktest() {
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: () => toast.error('Failed to stop backtest'),
+    // No onError toast — `api.request` owns the message. See useTriggerBacktest.
   })
 }
 
@@ -467,10 +469,7 @@ export function useRetryBacktest() {
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
       qc.invalidateQueries({ queryKey: ['lab', 'running-job'] })
     },
-    onError: (e: unknown) => {
-      const msg = (e as { detail?: string })?.detail
-      toast.error(msg ?? 'Failed to start rerun')
-    },
+    // No onError toast — `api.request` owns the message. See useTriggerBacktest.
   })
 }
 
@@ -483,7 +482,7 @@ export function useReloadCharts() {
       toast.success(`Charts loaded — ${data.equity_points} trades, ${data.daily_bars} trading days`)
       qc.invalidateQueries({ queryKey: ['lab', 'run', runId] })
     },
-    onError: () => toast.error('Chart reload failed — check NT8 agent and SA'),
+    // No onError toast — `api.request` owns the message. See useTriggerBacktest.
   })
 }
 

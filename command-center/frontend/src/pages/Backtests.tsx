@@ -48,10 +48,15 @@ function MarketFilterBar({ value, onChange }: { value: MarketFilter; onChange: (
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
+// ⚠ The `M` step is not decoration. With a `k` branch alone, $14,387,475 rendered as
+// `+$14387.5k` — five digits before a thousands suffix, which is harder to read than the raw
+// number it was abbreviating and puts the magnitude one glance further away in a column whose
+// whole job is comparing runs at a glance.
 function fmtMoney(n: number | null): string {
   if (n == null) return '—'
   const abs = Math.abs(n)
   const prefix = n < 0 ? '-' : '+'
+  if (abs >= 1_000_000) return `${prefix}$${(abs / 1_000_000).toFixed(1)}M`
   if (abs >= 1_000) return `${prefix}$${(abs / 1_000).toFixed(1)}k`
   return `${prefix}$${abs.toFixed(0)}`
 }
@@ -235,8 +240,11 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
   const progress  = useLabProgress()
   const deleteRun = useDeleteRun()
 
+  const retryRun  = useRetryBacktest()
+
   const [selectedIds, setSelectedIds]         = useState<Set<string>>(new Set())
   const [deleteRunId, setDeleteRunId]         = useState<string | null>(null)
+  const [rerunRunId, setRerunRunId]           = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting]       = useState(false)
   const [showBulkConfirm, setShowBulkConfirm] = useState(false)
   const [collapsedRuns, setCollapsedRuns]     = useState<Set<string>>(new Set())
@@ -355,6 +363,47 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
     return `This run has ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
   }, [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun])
 
+  // The same warning across a SELECTION. 🔴 The bulk path was the only reachable delete on this
+  // page (nothing ever set `deleteRunId`, so `cascadeMessage` was dead code) — so the one warning
+  // that names what a delete takes with it was the one warning nobody could see, on the path that
+  // deletes the most.
+  const bulkCascadeMessage = useCallback((ids: string[]) => {
+    let opts = 0, sweeps = 0, tunes = 0
+    for (const id of ids) {
+      opts   += (optsBySourceRun.get(id) ?? []).length
+      sweeps += (sweepsBySourceRun.get(id) ?? []).length
+      tunes  += (tuneRunsBySourceRun.get(id) ?? []).length
+    }
+    const parts: string[] = []
+    if (opts)   parts.push(`${opts} optimization${opts !== 1 ? 's' : ''}`)
+    if (sweeps) parts.push(`${sweeps} sweep${sweeps !== 1 ? 's' : ''}`)
+    if (tunes)  parts.push(`${tunes} tuning iteration${tunes !== 1 ? 's' : ''}`)
+    if (!parts.length) return undefined
+    return `These runs have ${parts.join(' and ')} attached — they and all their results will also be permanently deleted.`
+  }, [optsBySourceRun, sweepsBySourceRun, tuneRunsBySourceRun])
+
+  const rerunTarget = useMemo(
+    () => (rerunRunId ? (allRuns ?? []).find(r => r.run_id === rerunRunId) ?? null : null),
+    [rerunRunId, allRuns],
+  )
+
+  const confirmRerun = useCallback(() => {
+    if (!rerunRunId) return
+    retryRun.mutate(rerunRunId, {
+      onSuccess: (data) => {
+        // ⚠ `needs_ruleset` is a 202 that started NOTHING — the backend could not resolve a
+        // ruleset to score an optimizer combo against, and it asks the caller to choose. The
+        // detail page opens a picker; this list has no room for one, so it SAYS so and sends the
+        // reader there rather than closing on a success that did not happen.
+        if (data?.status === 'needs_ruleset') {
+          toast.error('This run needs a ruleset to be scored against — open it and rerun from there')
+          return
+        }
+        setRerunRunId(null)
+      },
+    })
+  }, [rerunRunId, retryRun])
+
   // Don't surface the single-run progress banner here when the running job is a tune
   // iteration — it isn't shown in this list (it lives in the workbench), so a banner
   // with no matching row would just be a confusing orphan indicator.
@@ -395,12 +444,15 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimizations'] })
+      // ⚠ Do not name the CAUSE here. This said "not found" for every failure, and a delete can
+      // fail for reasons that are not that — a foreign-key cascade error, a 409, a dead backend.
+      // `api.delete` has already toasted each real reason; this line is a count, not a diagnosis.
       if (failed === 0) {
         toast.success(`${ids.length} run${ids.length !== 1 ? 's' : ''} deleted`)
       } else if (succeeded > 0) {
-        toast.error(`${succeeded} deleted, ${failed} not found`)
+        toast.error(`${succeeded} deleted, ${failed} failed`)
       } else {
-        toast.error('Delete failed — runs not found')
+        toast.error(`Delete failed — ${failed} run${failed !== 1 ? 's' : ''} not deleted`)
       }
       setSelectedIds(new Set())
       setShowBulkConfirm(false)
@@ -492,6 +544,8 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
                       isCollapsed={isCollapsed}
                       onToggleCollapse={() => toggleCollapse(run.run_id)}
                       hasRunningStress={stressRunIds.has(run.run_id)}
+                      onRerun={() => setRerunRunId(run.run_id)}
+                      onDelete={() => setDeleteRunId(run.run_id)}
                     />
                     {!isCollapsed && childTunes.map(t => (
                       <TuneNestRow
@@ -552,8 +606,68 @@ function RunsTab({ statusFilter, marketFilter }: { statusFilter: string; marketF
           onConfirm={handleBulkDelete}
           onCancel={() => setShowBulkConfirm(false)}
           isPending={bulkDeleting}
+          customMessage={bulkCascadeMessage(Array.from(selectedIds))}
         />
       )}
+
+      {rerunTarget && (
+        <ConfirmRerunModal
+          run={rerunTarget}
+          onConfirm={confirmRerun}
+          onCancel={() => setRerunRunId(null)}
+          isPending={retryRun.isPending}
+        />
+      )}
+    </div>
+  )
+}
+
+// A rerun REPLACES the run it is fired on — same row, same id, its stored result and every
+// derived artefact discarded. That is a destructive action, and it was one unconfirmed click on
+// an icon button inside a row whose own click navigates. The detail page has asked first since
+// the day it existed; this is the same question in the same words.
+function ConfirmRerunModal({ run, onConfirm, onCancel, isPending }: {
+  run: BacktestSummary
+  onConfirm: () => void
+  onCancel: () => void
+  isPending: boolean
+}) {
+  const isFailed = run.status.startsWith('failed')
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onCancel}>
+      <div
+        className="w-full max-w-[420px] rounded-lg border border-border-default bg-bg-surface p-5 space-y-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div>
+          <h3 className="text-[15px] font-semibold text-text-primary">
+            {isFailed ? 'Retry this run?' : 'Rerun this run?'}
+          </h3>
+          <p className="mt-1 text-[12px] text-text-secondary">
+            {run.strategy_name || run.strategy_id} · {run.instrument}
+          </p>
+        </div>
+        <p className="text-[12px] leading-[1.5] text-text-secondary">
+          It runs again with the same parameters and the same period, into the{' '}
+          <span className="text-text-primary">same run</span>
+          {isFailed
+            ? '.'
+            : ' — this run’s current result, charts and evaluations are discarded and replaced.'}
+          {' '}To change the parameters instead, open the run and use{' '}
+          <span className="text-text-primary">Tune</span>, which creates a new run and leaves this one alone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="px-3 py-[6px] rounded-md text-[12px] font-medium border border-border-default text-text-secondary hover:text-text-primary transition-colors"
+          >Cancel</button>
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className="px-3 py-[6px] rounded-md text-[12px] font-medium bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 disabled:opacity-50 transition-colors"
+          >{isPending ? 'Starting…' : isFailed ? 'Retry' : 'Rerun'}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -746,18 +860,26 @@ function RunStatusIcon({ status }: { status: string }) {
 
 function RunRow({
   run, selected, onSelect, onClick, hasChildren, isCollapsed, onToggleCollapse, hasRunningStress,
+  onRerun, onDelete,
 }: {
   run: BacktestSummary
   selected: boolean
   onSelect: () => void
   onClick: () => void
+  // Both are RAISED to the page rather than fired here, because both are destructive and the page
+  // owns the confirmation modals — and the cascade warning in particular can only be computed up
+  // there, where the optimizations and sweeps lists live.
+  onRerun: () => void
+  onDelete: () => void
   hasChildren?: boolean
   isCollapsed?: boolean
   onToggleCollapse?: () => void
   hasRunningStress?: boolean
 }) {
   const navigate = useNavigate()
-  const retry = useRetryBacktest()
+  // No mutation here any more — the row RAISES both destructive actions to the page, which owns
+  // the confirmation modals. A row that can fire a rerun on its own is a row one stray click from
+  // discarding a result.
   const { data: runningJob } = useRunningVpsJob()
   const platformLocked = !!runningJobFor(runningJob, run.runner)?.running
   const pnlClass = run.net_pnl == null ? '' : run.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'
@@ -847,13 +969,29 @@ function RunRow({
       <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">{fmtDuration(run.started_at ?? run.created_at, run.completed_at)}</td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1 justify-end">
+          {/* ⚠ Both of these ASK first. This button used to fire `retry.mutate` on the click — one
+              click, no confirmation, and a rerun RESETS the row in place and replaces its result.
+              It sat inside a row whose own click navigates, at icon size, next to the chevron.
+              The detail page had opened a modal for the same action since the day it existed. */}
           <button
-            onClick={e => { e.stopPropagation(); retry.mutate(run.run_id) }}
-            disabled={retry.isPending || platformLocked}
+            onClick={e => { e.stopPropagation(); onRerun() }}
+            disabled={platformLocked || run.status === 'running'}
             className="p-[5px] rounded text-text-tertiary hover:text-accent hover:bg-accent/10 transition-colors disabled:opacity-40"
-            title={platformLocked ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy — wait for the current job to finish` : run.status.startsWith('failed') ? 'Retry' : 'Rerun'}
+            title={platformLocked ? `${RUNNER_LABEL[runnerScope(run.runner)]} is busy — wait for the current job to finish`
+              : run.status === 'running' ? 'Already running'
+              : run.status.startsWith('failed') ? 'Retry — replaces this run’s result' : 'Rerun — replaces this run’s result'}
           >
             <Play size={13} />
+          </button>
+          {/* There was no per-row delete at all. The only way to remove a run was the bulk
+              checkbox path — which is the ONE path that never showed the cascade warning. */}
+          <button
+            onClick={e => { e.stopPropagation(); onDelete() }}
+            disabled={run.status === 'running'}
+            className="p-[5px] rounded text-text-tertiary hover:text-neg-text hover:bg-neg-text/10 transition-colors disabled:opacity-40"
+            title={run.status === 'running' ? 'Stop the run before deleting it' : 'Delete this run'}
+          >
+            <Trash2 size={13} />
           </button>
           <ChevronRight size={14} className="text-text-tertiary" />
         </div>

@@ -636,7 +636,11 @@ class BacktestRunRequest(BaseModel):
     # Tester, and each cost is switched on deliberately. Known layers live in
     # `services/python_runner.COST_LAYERS`; `broker_profile` names whose MEASURED spread and swap
     # to charge (a key of `backtest.fills.PROFILES`), so neither is ever typed in by hand.
-    cost_layers: list[str] = []
+    # ⚠ Nullable, and the default stays `[]`. A caller that says nothing gets "charge nothing"
+    # (unchanged); a caller that explicitly sends `null` is saying "this runner has no layer
+    # contract" — which is what NT8 and MT5 are. Storing `[]` for them made the run page report
+    # a deliberately frictionless run over a tester that charged commission and slippage.
+    cost_layers: Optional[list[str]] = []
     broker_profile: str = "vantage_demo"
     evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
     evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets

@@ -385,7 +385,12 @@ export function RunBacktestModal({ strategy, onClose, onSuccess }: Props) {
         end_date:            endDate,
         commission_per_side: commPerSide,
         slippage_ticks:      slippageTicks,
-        cost_layers:         isPython ? Array.from(costLayers) : [],
+        // ⚠ `null` for NT8/MT5, NEVER `[]`. The layered-cost switches are python-only, and `[]`
+        // is an explicit "this run deliberately charged nothing" — so an NT8 run stored with `[]`
+        // had the detail page print "This run was deliberately frictionless" over a run whose
+        // tester really did charge the commission and slippage below. `null` is the honest
+        // answer: this run does not use layers, and the two legacy fields say what it charged.
+        cost_layers:         isPython ? Array.from(costLayers) : null,
         broker_profile:      brokerProfile,
         evaluate_rulesets:   Array.from(selectedFirms),
         sizing_mode:         sizingMode,

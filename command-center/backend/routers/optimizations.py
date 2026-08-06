@@ -137,9 +137,12 @@ async def get_optimization(optimization_id: str) -> OptimizationDetail:
     # grid's keys. On a 1,000-combo grid polled every 3s that is most of the response, repeated
     # every three seconds, for columns nothing displays.
     grid_keys = set(opt["param_grid"].keys())
+    # One verdict query for the whole grid, not one per combo — a 1,000-combo optimization is
+    # exactly the case where a per-row query is 1,000 sqlite connections on a 3s poll.
+    verdicts = lab_db.get_run_verdict_summaries([r["run_id"] for r in run_rows])
     summaries = []
     for r in run_rows:
-        s = _row_to_summary(r)
+        s = _row_to_summary(r, verdicts.get(r["run_id"], []))
         if s.params:
             s.params = {k: v for k, v in s.params.items() if k in grid_keys}
         summaries.append(s)
