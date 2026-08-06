@@ -11,3 +11,20 @@
 2026-08-05 18:12:26,120 [INFO] Sizing against account balance $2,000.00
 2026-08-05 18:12:28,590 [INFO] Warmed 5000 bars (2026-05-20 23:30:00+00:00 → 2026-08-05 17:45:00+00:00) in 2.3s
 2026-08-05 18:12:29,418 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-05 18:36:44,706 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash fbf3b94bebf0 | commit f56c661 | frozen | LIVE
+2026-08-05 18:36:44,721 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-05T18:12:25+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-05 18:36:45,253 [INFO] Connected | #700107749 | $2,000.00 | PUPrime-Demo
+2026-08-05 18:36:45,253 [INFO] MT5 connection lock released
+2026-08-05 18:36:45,315 [INFO] Sizing against account balance $2,000.00
+2026-08-05 18:36:48,191 [INFO] Warmed 5000 bars (2026-05-21 00:00:00+00:00 → 2026-08-05 18:15:00+00:00) in 2.8s
+2026-08-05 18:36:49,097 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-05 20:45:59,140 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash fbf3b94bebf0 | commit 983cd32 | frozen | LIVE
+2026-08-05 20:45:59,140 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-05T18:36:44+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-05 20:45:59,672 [INFO] Connected | #700107749 | $2,000.00 | PUPrime-Demo
+2026-08-05 20:45:59,672 [INFO] MT5 connection lock released
+2026-08-05 20:45:59,734 [INFO] Sizing against account balance $2,000.00
+2026-08-05 20:46:02,816 [INFO] Warmed 5000 bars (2026-05-21 02:15:00+00:00 → 2026-08-05 20:30:00+00:00) in 2.9s
+2026-08-05 20:46:03,269 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-05 22:15:07,685 [WARNING] 5 bars missed — re-warming the engines rather than resuming with a hole in the stream.
+2026-08-05 22:15:07,748 [INFO] Sizing against account balance $2,000.00
+2026-08-05 22:15:09,920 [INFO] Warmed 5000 bars (2026-05-21 02:45:00+00:00 → 2026-08-05 22:00:00+00:00) in 2.0s
