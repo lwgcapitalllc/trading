@@ -83,7 +83,12 @@ async function mockCalendar(page: Page, opts: Opts = {}) {
         })
     const body: CalendarResponse = {
       events,
-      server_now_ms: Date.now(),
+      // ⚠ The PAGE's clock, never Node's. `useServerClock` holds the server/browser OFFSET and
+      // trusts the server, so a `Date.now()` evaluated out here — in the Node process, on the real
+      // clock — computes `offset = realNow - fakeNow` and renders the REAL time however the test
+      // installed the clock. That silently defeated `page.clock.install` for every check in this
+      // file, and it only ever showed up on the one assertion that reads the countdown.
+      server_now_ms: await page.evaluate(() => Date.now()),
       from_ms: from.getTime(),
       to_ms: from.getTime() + 7 * 86_400_000,
     }
@@ -127,9 +132,12 @@ test.describe('Calendar — the week window', () => {
     await page.clock.install({ time: new Date(2026, 7, 9, 23, 59, 50) })
     await page.goto('/calendar')
     await page.waitForLoadState('networkidle')
-    await expect(page.getByText(/Aug 3\s*–\s*Aug 9/)).toBeVisible()
+    // ⚠ Scoped to the PILL, which is what this check is named after. A page-wide text match also
+    // hits the "Loading Aug 10 – Aug 16…" banner, so it passed only while the mocked response was
+    // fast enough for the banner to have gone — it was asserting on a race, not on the pill.
+    await expect(page.getByTestId('week-range')).toHaveText(/Aug 3\s*–\s*Aug 9/)
     await page.clock.fastForward('00:30')
-    await expect(page.getByText(/Aug 10\s*–\s*Aug 16/)).toBeVisible()
+    await expect(page.getByTestId('week-range')).toHaveText(/Aug 10\s*–\s*Aug 16/)
   })
 })
 

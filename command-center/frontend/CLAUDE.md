@@ -1050,15 +1050,29 @@ empty on every other day of the real week (pass `?day=` explicitly), and a **`fo
 force a refetch** — the app's global `staleTime: 30_000` skips it, so a poll failure has to be
 driven by fast-forwarding the clock past the 45s interval.
 
-🔴 **One of those 11 is RED as of 2026-08-06 and it is a fixture bug, not a page bug — do not
-"fix" it by loosening the assertion.** *"reads in days for an event days away, not 152h"* builds
-its distant event at a fixed offset and asserts a `Nd Nh` countdown; run late enough in the day and
-the offset lands under 24h, so the page correctly renders `23h 46m` and the check fails. **PROVEN
-pre-existing rather than assumed** — the identical failure reproduces with the Backtests audit's
-source changes stashed. ⚠ **It is this repo's data-dependent-test trap in its CLOCK form**: a test
-whose fixture is measured from `now` is a test whose result depends on when you run it, which is
-the same defect as asserting on the lab's live data. The fix is to build the fixture from a
-distance the assertion actually requires (≥48h), not to widen the regex.
+🔴 **The mock's `server_now_ms` must be the PAGE's clock, never Node's — it silently defeated
+`page.clock.install` for this entire file.** Fixed 2026-08-06. `mockCalendar` served
+`server_now_ms: Date.now()`, and a route handler runs in the NODE process on the REAL clock, so
+`useServerClock` — which holds the server/browser OFFSET and trusts the server, by design —
+computed `offset = realNow − fakeNow` and rendered the real time however the test had set the
+clock. ⚠ **The failure was invisible in ten of the eleven checks**, because they assert on
+requested weeks and rendered rows rather than on a rendered time; only *"reads in days for an event
+days away"* reads the countdown, so only it went red, and it went red on a SCHEDULE — the fixture's
+event is four days past the requested Monday, so the assertion held until the real clock made that
+event less than 24h away. **It reads exactly like a flaky clock-dependent fixture and it was not
+one; the fixture was fine and the clock never arrived.** The mock now serves
+`await page.evaluate(() => Date.now())`. ✅ Proven by mutation: moving the installed clock to 16h
+before the event renders `Now 08:00 PM … in 15h 59m` — the INSTALLED time, which is the evidence
+the fake clock now reaches the page, and a red assertion, which is the evidence the check still
+bites.
+
+⚠ **Two side effects of that fix, both worth carrying.** The `page.evaluate` adds a round trip to
+every mocked response, and that latency exposed a second check asserting on a RACE: *"the
+week-range pill follows it over midnight"* matched `getByText(/Aug 10 – Aug 16/)` page-wide, which
+also matches the `Loading Aug 10 – Aug 16…` banner, so it had only ever passed because the mock was
+fast enough for the banner to have gone. The pill now carries `data-testid="week-range"` and the
+check is scoped to it — **which is what its own name always claimed it did.** **The general
+rule: making a fixture slower is a legitimate way to find assertions that were passing on timing.**
 
 ### The two filters that were applied without being visible
 

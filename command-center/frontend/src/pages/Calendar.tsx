@@ -250,7 +250,7 @@ export function Calendar() {
             className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" title="Previous week">
             <ChevronLeft size={16} />
           </button>
-          <span className="text-sm font-mono tabular-nums text-text-primary min-w-[130px] text-center">{fmtWeekRange(fromMs)}</span>
+          <span data-testid="week-range" className="text-sm font-mono tabular-nums text-text-primary min-w-[130px] text-center">{fmtWeekRange(fromMs)}</span>
           <button onClick={() => patch({ week: String(weekOffset + 1), day: null })}
             className="p-1.5 rounded text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" title="Next week">
             <ChevronRight size={16} />

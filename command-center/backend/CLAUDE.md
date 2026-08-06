@@ -1572,16 +1572,46 @@ runner MOCKED, so it was driven for real before being believed:
   That is the defect's visible consequence — the Price tab can no longer serve the previous
   attempt's candles — rather than just the directory call.
 
-⚠ **The dev server wedged once during this drive and it is recorded as UNEXPLAINED.** The uvicorn
-worker went unresponsive at 0% CPU with the reload supervisor still holding port 8000; the app
-imported cleanly, py-spy needs root on macOS, and **the identical sequence did not reproduce it
-after a restart.** The likeliest cause is this file's own standing warning — `--reload` watches
-`*.py`, two agents were editing backend source, and a reload kills a daemon replay thread
-mid-flight — but that is a hypothesis, not a finding. **Do not read it as diagnosed.**
+🔴 **The dev server wedged once during this drive, was recorded as UNEXPLAINED, and is now
+DIAGNOSED AND FIXED (2026-08-06) — and the hypothesis that stood in for it was wrong.** The
+uvicorn worker went unresponsive at 0% CPU with the reloader still holding port 8000. The stated
+guess was a reload killing a replay thread mid-flight. **It is not that, and it has nothing to do
+with backtests: `touch main.py` on an idle server reproduces it exactly**, /health going from
+`200` in 19 ms to a hard timeout, the same worker PID alive at 0% CPU twenty seconds later.
+
+**The mechanism, measured end to end.** On a reload the reloader asks the worker to stop and then
+JOINS it; the worker's own shutdown waits for open connections to close. **The Vite dev server
+holds a keep-alive POOL to port 8000 — `lsof` counted 19 established sockets from one `node` PID —
+and an idle keep-alive socket is never going to close on its own.** So the worker waits for ever,
+the reloader waits for the worker, and the listening socket stays bound with nobody accepting on
+it, which is why every request HANGS rather than being refused. `/usr/bin/sample` (no root needed,
+unlike py-spy) put the main thread in `uv__io_poll` inside `run_until_complete` — a live event loop
+awaiting a shutdown that cannot finish. Confirmed from the other end too: `kill` on the reloader
+did nothing until the worker was `kill -9`'d, at which point the reloader immediately spawned a
+replacement.
+
+**The fix is one flag in `start.sh`: `--timeout-graceful-shutdown 10`.** ✅ Proven by reproducing
+the same sequence with the pool rebuilt to 14 sockets — `200` in 1.9 ms after the reload, and again
+on a second file — with `Application shutdown complete` / `Started server process` in the log both
+times. 10s is deliberate: it clears the slowest measured request on this app (a cold ChartSpec
+build, 7.6s) so an in-flight request still finishes, and only ever bounds the wait on sockets doing
+nothing. `tests/test_dev_server_flags.py` guards it, **2 of its 4 checks watched RED against the
+old `start.sh`**, and every grep in it asserts it matched something first.
+
+⚠ **The standing lesson is about what an undiagnosed failure costs, and it is uncomfortable: the
+hypothesis was plausible, related, written in the right file — and it sent the next reader at
+`--reload` and replay threads, which is the half of the system that was innocent.** The thing that
+actually cracked it was refusing to reason and running `touch main.py` on an idle box. **A recorded
+guess is not a cheap placeholder for a diagnosis; it is a signpost, and a wrong one costs more than
+no sign at all.** ⚠ **And the failure itself is this repo's silent-failure shape in a new place:
+nothing logged, nothing crashed, the port still answered `LISTEN`, and every symptom pointed at the
+app rather than at its supervisor.**
 
 ### Tests
 
-**21 new (719 green), in `tests/test_backtest_lifecycle.py` and `tests/test_run_list_queries.py`.**
+**25 new (723 green), in `tests/test_backtest_lifecycle.py`, `tests/test_run_list_queries.py` and
+`tests/test_dev_server_flags.py` (the last 4 added with the reload-wedge fix above, 2 of them
+watched red against the old `start.sh`).**
 **17 of the 21 were WATCHED RED against the code at HEAD.** The four that passed there are kept
 and **labelled as such in their own docstrings**: one pins that our own stale progress entry is
 still cleared (the old code did it unconditionally, satisfying this by accident while failing the

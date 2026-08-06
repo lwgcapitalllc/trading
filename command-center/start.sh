@@ -47,7 +47,17 @@ echo "  Tunnel   →  localhost:8765 → VPS:8765 (nt8 agent)"
 echo "  Tunnel   →  localhost:8766 → VPS:8766 (mt5 agent)"
 echo ""
 
-uvicorn main:app --reload --port 8000 &
+# ⚠ `--timeout-graceful-shutdown` is not a tidy-up — without it a reload can leave the app
+# DEAD with the port still bound, and nothing says so. On a reload uvicorn's reloader asks the
+# worker to stop and then waits for it; the worker's own shutdown waits for open connections to
+# close. The Vite dev server keeps a KEEP-ALIVE POOL to this port — measured at 19 idle sockets —
+# and an idle keep-alive socket is never going to close on its own, so the worker waits forever,
+# the reloader never spawns a replacement, and every request hangs against a socket nobody is
+# accepting on. Reproduced by `touch main.py`: /health went from 200 in 19ms to a hard timeout,
+# the same worker PID still alive at 0% CPU 20 seconds later.
+# 10s is above the slowest measured request on this app (a cold ChartSpec build, 7.6s), so an
+# in-flight request still finishes; it only ever bounds the wait on sockets doing nothing.
+uvicorn main:app --reload --port 8000 --timeout-graceful-shutdown 10 &
 BACKEND_PID=$!
 
 # --- Frontend ---
