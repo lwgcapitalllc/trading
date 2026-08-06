@@ -343,4 +343,12 @@ def _get_ohlc_backtest_cache(
     df = BarSource().load(instrument, timeframe, start_date, end_date)
     if df is None or df.empty:
         return pd.DataFrame(columns=["open", "high", "low", "close"])
-    return df[["open", "high", "low", "close"]].sort_index()
+    # `volume` rides along WHEN THE CACHE HAS IT — tick volume, needed by the chart's VWAP layer
+    # and by nothing else today. It is deliberately not required: bars cached before
+    # `cache.FEED_VERSION` 3 carry none, and the layer's answer to that is to not draw, which is
+    # the only honest one. Never widen this to `df` wholesale — an unexpected column would reach
+    # the ChartSpec and the browser without anything having decided it should.
+    cols = ["open", "high", "low", "close"]
+    if "volume" in df.columns:
+        cols.append("volume")
+    return df[cols].sort_index()

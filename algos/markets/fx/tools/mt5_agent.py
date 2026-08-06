@@ -597,16 +597,27 @@ def _rates_to_bars(rates) -> list[dict]:
     `time` is TRUE UTC. MT5's `time` field is broker-server local (EET/EEST, UTC+2/+3), so it
     goes through `broker_clock.to_utc` — stamping it as UTC directly is the bug compare_feeds.py
     caught (every bar 2-3h off, silently wrecking every time-driven engine). See broker_clock.py.
+
+    `volume` is MT5's **tick_volume** — the number of price changes in the bar, NOT contracts
+    traded. That is the honest field for a CFD: `real_volume` is 0 on every broker here because
+    there is no exchange behind the quote, and reading it would hand every consumer a confident
+    zero. Tick volume is also precisely what TradingView plots as `volume` on the same chart,
+    which is the series `engines/vwap/` was validated against at Pine parity — so the line this
+    feeds and the line on Aaron's chart are computed from the same numbers.
+
+    ⚠ Added 2026-08-06, and it is why `cache.FEED_VERSION` went to 3. Bars fetched before this
+    carry no volume at all, so they are re-pulled rather than merged with bars that do.
     """
     bars = []
     for r in rates:
         ts = broker_clock.to_utc(broker_clock.broker_naive_from_epoch(r["time"]))
         bars.append({
-            "time":  ts.isoformat(),
-            "open":  float(r["open"]),
-            "high":  float(r["high"]),
-            "low":   float(r["low"]),
-            "close": float(r["close"]),
+            "time":   ts.isoformat(),
+            "open":   float(r["open"]),
+            "high":   float(r["high"]),
+            "low":    float(r["low"]),
+            "close":  float(r["close"]),
+            "volume": float(r["tick_volume"]),
         })
     return bars
 

@@ -224,6 +224,11 @@ export interface ChartIndicator {
   name: string
   params?: Record<string, unknown>
   pane: 'main' | 'sub'
+  /** Start switched ON? Absent ⇒ true, which is what every indicator predating this field expects
+   *  (the ATR sub-pane has always opened on). An ANALYSIS layer should ship `false` — the chart
+   *  opens on the run, and each extra reading is something the reader asks for, which is the rule
+   *  Fair Value Gaps, Order Blocks and Fibs already follow. */
+  defaultOn?: boolean
   series: Array<{ time: EpochMs; value: number }>
 }
 

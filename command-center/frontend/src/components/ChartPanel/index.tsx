@@ -1373,12 +1373,20 @@ export default function ChartPanel({
   const setAllClockLayers = (on: boolean) => { setAllSessions(on); setDayBreaksOn(on) }
 
   // Indicators (shipped series). One on/off per indicator; sub-pane ids tracked for removal.
-  const [indicatorsOn, setIndicatorsOn] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(spec.indicators.map(i => [i.name, true] as [string, boolean])) as Record<string, boolean>,
+  // Each carries its OWN default (`defaultOn`, absent ⇒ on) — the ATR pane has always opened on,
+  // and an analysis layer like the session VWAP must not.
+  const indicatorRoster = useMemo(
+    () => spec.indicators.map(i => [i.name, i.defaultOn !== false] as [string, boolean]),
+    [spec.indicators],
   )
+  const [indicatorsOn, setIndicatorsOn] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(indicatorRoster) as Record<string, boolean>,
+  )
+  // RECONCILED, never re-seeded — the same rule `groupsOn` follows, and for the same reason: a
+  // plain re-seed on a spec swap silently undoes every toggle the reader has set.
   useEffect(() => {
-    setIndicatorsOn(Object.fromEntries(spec.indicators.map(i => [i.name, true] as [string, boolean])) as Record<string, boolean>)
-  }, [spec.indicators])
+    setIndicatorsOn(prev => reconcileToggles(prev, indicatorRoster))
+  }, [indicatorRoster])
   const toggleIndicator = (name: string) => setIndicatorsOn(v => ({ ...v, [name]: !v[name] }))
   const indicatorPanesRef = useRef<Map<string, string>>(new Map()) // indicator name → pane id
 

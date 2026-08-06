@@ -28,16 +28,22 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
-from .resample import OHLC_COLS
+from .resample import OHLC_COLS, VOLUME_COL
 
 _DEFAULT_DIR = Path(__file__).resolve().parent.parent / "cache"
 
 # 1: original (bars stamped in BROKER-LOCAL time — the pre-2026-07-16 agent bug).
 # 2: bars stamped in TRUE UTC (agent's broker_clock conversion).
-FEED_VERSION = 2
+# 3: bars carry TICK VOLUME (2026-08-06). The agent dropped MT5's `tick_volume` at
+#    `_rates_to_bars`, so every file written under 1 or 2 is price-only. A v2 file is not
+#    WRONG, it is INCOMPLETE — but the distinction cannot survive a merge: fold a v2 span
+#    and a v3 span into one file and the volume column is real for part of the history and
+#    NaN for the rest, which is exactly the shape a VWAP averages straight through. Re-pull.
+FEED_VERSION = 3
 
 
 def _default_cache_dir() -> Path:
@@ -60,8 +66,37 @@ class BarCache:
         return self.dir / f"{_safe(symbol)}__{_safe(tf_name)}.csv"
 
     def meta_path(self, symbol: str, tf_name: str) -> Path:
-        """Sidecar carrying the FEED_VERSION the CSV was written under."""
+        """Sidecar carrying the FEED_VERSION the CSV was written under, and whether the bars that
+        came back actually carried VOLUME."""
         return self.dir / f"{_safe(symbol)}__{_safe(tf_name)}.meta.json"
+
+    def has_volume(self, symbol: str, tf_name: str) -> Optional[bool]:
+        """Did the fetch that wrote this file return tick volume? None = the file predates the
+        question (feed version 1 or 2, or no sidecar at all).
+
+        🔴 **This exists to make ONE otherwise-silent state visible, and it is a deploy-ordering
+        trap rather than a hypothetical.** `FEED_VERSION` went to 3 the moment the cache learned to
+        CARRY volume, but the VPS agent has to be deployed separately before it SENDS any. Fetch in
+        that window and the file is stamped current while holding no volume — so it never re-pulls,
+        and the chart's VWAP layer is permanently and silently absent for that symbol.
+
+        The sidecar records what CAME BACK rather than what the version implies, which is this
+        package's own rule (`_covered_end`: never record what you requested as though it were what
+        you received). `False` here is the marker to re-pull: delete the pair's `.csv` and
+        `.meta.json`, or bump `FEED_VERSION` again.
+
+        ⚠ It is deliberately NOT wired into `is_stale`. Doing so would re-pull the entire history
+        on every single run until the agent ships — loud, but it would make the lab unusable for
+        anyone who pulls this change before deploying, and the honest fix is one deletion.
+        """
+        p = self.meta_path(symbol, tf_name)
+        if not p.is_file():
+            return None
+        try:
+            v = json.loads(p.read_text()).get("has_volume")
+        except (ValueError, OSError, TypeError):
+            return None
+        return bool(v) if isinstance(v, bool) else None
 
     def version_of(self, symbol: str, tf_name: str) -> int:
         """FEED_VERSION the cache file was written under. A cache from before the sidecar
@@ -105,7 +140,11 @@ class BarCache:
         merged = self.merge(existing, bars)
         self.dir.mkdir(parents=True, exist_ok=True)
         merged.reset_index().to_csv(self.path(symbol, tf_name), index=False)
-        self.meta_path(symbol, tf_name).write_text(json.dumps({"feed_version": FEED_VERSION}))
+        # `has_volume` describes the FILE as written, not the version's intent — see `has_volume`.
+        self.meta_path(symbol, tf_name).write_text(json.dumps({
+            "feed_version": FEED_VERSION,
+            "has_volume": VOLUME_COL in merged.columns,
+        }))
 
     @staticmethod
     def merge(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
@@ -126,7 +165,13 @@ def _empty_bars() -> pd.DataFrame:
 
 def _normalize(df: pd.DataFrame) -> pd.DataFrame:
     """Coerce a bar frame to the canonical shape: DatetimeIndex 'time' (sorted,
-    unique) + float OHLC columns."""
+    unique) + float OHLC columns, plus `volume` when the feed supplied one.
+
+    Volume is carried only if it is THERE. A feed with no volume yields a frame with no volume
+    column, never a column of zeros: a zero-volume bar is a real thing MT5 reports on a dead
+    session, so filling the unknown with one would put a measurement where there is none and
+    every consumer downstream would read it as fact.
+    """
     if df.empty and df.index.name == "time":
         return df
     out = df.copy()
@@ -134,8 +179,11 @@ def _normalize(df: pd.DataFrame) -> pd.DataFrame:
         out = out.set_index("time")
     out.index = pd.to_datetime(out.index)
     out.index.name = "time"
-    for c in OHLC_COLS:
+    cols = list(OHLC_COLS)
+    if VOLUME_COL in out.columns:
+        cols.append(VOLUME_COL)
+    for c in cols:
         out[c] = out[c].astype("float64")
-    out = out[OHLC_COLS]
+    out = out[cols]
     out = out[~out.index.duplicated(keep="last")]
     return out.sort_index()

@@ -42,6 +42,7 @@ from services.backtest_runner import LAB_RESULTS_DIR
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.ob_overlays import GROUP_OB, build_ob_overlays
 from services.structure_overlays import build_market_structure_overlays
+from services.vwap_overlays import build_vwap_indicator
 
 log = logging.getLogger("CHARTSPEC")
 
@@ -121,7 +122,7 @@ def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str
     # out left the tz test green, because there was never a case for it to handle. A branch
     # nothing can exercise is not defence, it is untested code.
     times = (df.index.astype("int64") // 1_000_000).tolist()
-    return [
+    rows = [
         {"time": t, "open": o, "high": h, "low": lo, "close": c}
         for t, o, h, lo, c in zip(
             times,
@@ -131,6 +132,26 @@ def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str
             df["close"].astype(float).tolist(),
         )
     ]
+    # Tick volume rides along when the feed has it, for the VWAP layer and nothing else. It is
+    # STRIPPED again before the spec is written (`_strip_volume`) — see the note there.
+    if "volume" in df.columns:
+        for row, v in zip(rows, df["volume"].astype(float).tolist()):
+            row["volume"] = v
+    return rows
+
+
+def _strip_volume(candles: list[dict]) -> None:
+    """Drop `volume` from every candle, in place, once the server-side layers have read it.
+
+    Volume is fetched for `vwap_overlays` and NOTHING in the browser plots it — the VWAP arrives
+    as a computed series, not as bars to re-average. On a full-history run that is ~156k numbers
+    of payload, parse time and heap bought for nobody, so the spec carries the line and not the
+    ingredients. ⚠ `ChartCandle.volume` stays on the frontend contract as optional: the field is
+    genuinely optional, and a chart that one day draws a volume pane should re-add it here
+    deliberately rather than discover it arriving by accident.
+    """
+    for c in candles:
+        c.pop("volume", None)
 
 
 def _leg_label(reason: str) -> str:
@@ -624,6 +645,16 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # source; equally, a drawn block never explains an entry, because the bot reads none.
     overlays = overlays + build_ob_overlays(candles, anchors)
 
+    # Session VWAP — a main-pane line off the canonical engine, default OFF. It is the one layer
+    # here that needs the bar's VOLUME, so it returns None (no toggle) whenever the run's bars
+    # carry none; see vwap_overlays.py for why a missing volume is a refusal rather than a zero.
+    vwap = build_vwap_indicator(candles)
+    if vwap:
+        indicators = indicators + [vwap]
+    # Every server-side layer that wanted volume has now read it. The browser plots none, so it
+    # does not travel — ~156k numbers of payload and parse bought for nobody.
+    _strip_volume(candles)
+
     spec = {
         "instrument": instrument,
         "baseTimeframe": base_tf,
@@ -778,6 +809,9 @@ def build_run_candles(
     end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
     candles = _build_candles(instrument, start_date, end_date, timeframe, runner)
     candles = [c for c in candles if from_ms <= c["time"] <= to_ms]
+    # Drill-down is bars only — no layer is rebuilt here, so nothing reads the volume and it must
+    # not travel. The spec's own builder strips it for the same reason.
+    _strip_volume(candles)
     data_start_ms = candles[0]["time"] if candles else None
     # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
     # weekend/holiday gap), and OUR cap didn't clip the request.
