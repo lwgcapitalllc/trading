@@ -3,7 +3,33 @@
 **Purpose:** A strategy-agnostic candlestick chart for the backtest page, built on klinecharts v9. It renders whatever a `ChartSpec` declares and contains **zero** strategy-specific logic.
 **Scope:** This folder only. The host page is `pages/BacktestDetail.tsx`.
 **Status:** Live — all build steps done. Renders real runs end-to-end: candles, sessions, trades, strategy-structure overlays, the ATR indicator, and the measurement tool.
-**Last reviewed:** 2026-08-03 — **the panel is now WARM-MOUNTED by its host, hidden, before the
+**Last reviewed:** 2026-08-06 — 🔴 **A DEEP "GO TO DATE" JUMP IS A REAL NINETY SECONDS, AND THE ONLY
+SIGN OF LIFE WAS A LABEL THAT NEVER CHANGED.** Aaron: *"if I'm trying to load back to six years ago,
+there's no intuitive indicator that something isn't broken."* **MEASURED end to end in a real
+browser on run `211384ddbea4` at M15: 90.3s and 14 pages to reach 2020-02-03.** The pill said
+`loading 2020-02-03…` for the whole of it — the DESTINATION, which does not move — and the on-chart
+`Loading earlier bars…` edge is no help because the view is still parked at the right edge while the
+jump runs. The jump now publishes `jumpAt` and the pill reports **the date already REACHED plus a
+bar that fills**, verified stepping 11 times over 90s: `2025-03-09 → 2024-09-15 → … → 2020-05-24`.
+⚠ **Progress is measured in TIME COVERED, never in pages done** — a page span is clamped at the run's
+start so the last one is short, and the page count is not knowable in advance anyway. ⚠ **The reached
+DATE is the load-bearing half, not the percentage**: a bar alone still reads as a guess. 🔴 **The
+speed fix was BUILT, MEASURED AND REVERTED, and that is the part worth carrying.** Bulk-paging a jump
+(50,000 bars instead of 12,000) is what the per-bar numbers demand — 175d/11,188 bars costs 6.63s
+(0.59 ms/bar) against 875d/56,632 at 20.23s (0.36 ms/bar) — and driven end to end it bought **6%**
+(89.4s → 83.9s), because the span is fixed and the analysis replay dominates either way. **It also
+cost the very thing the change was for: the readout stepped 3 times instead of 14, i.e. 25 seconds of
+stillness between updates instead of 6.** A minute-long wait that looks alive beats one that is 6%
+shorter and looks hung. ✅ **The real lever is named and deliberately not pulled: `analysis=true` is
+~60% of a page** (175d 2.61s bare vs 6.63s charged; 875d 8.24s vs 20.23s), so a bars-only jump would
+be ~35s — but it trades away the guarantee the 2026-08-02 fix bought, that every layer reaches
+exactly as far back as the bars do, and doing it safely means backfilling each skipped window after
+the jump lands. ✅ **2 new browser checks (`tests/chart-paging.spec.ts`), BOTH watched red against
+HEAD**, driving the real backend rather than a mocked feed — the thing under test is that the readout
+tracks pages actually landing, so a mock would be testing the mock's cadence. ⚠ **One of them nearly
+shipped VACUOUS**: the bar carries a 3% floor so it is visible at the start, so asserting `> 0%`
+would pass against a completely dead progress value — it has to be watched GROW. Earlier:
+2026-08-03 — **the panel is now WARM-MOUNTED by its host, hidden, before the
 reader clicks the Price tab** — 2,453 ms → 167 ms from click to a painted chart, measured on run
 `432aff31f374`. Nothing in this folder changed; what changed is that it can be alive inside a
 `visibility: hidden` container, which is a real constraint on anything added here. See the first

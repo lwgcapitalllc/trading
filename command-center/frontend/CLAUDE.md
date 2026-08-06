@@ -1192,6 +1192,15 @@ real browser", done by hand, which is why the Overview's twelve defects each sur
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
 **66 tests in 5 files**, run with `npm test` from `frontend/`.
 
+**`tests/chart-paging.spec.ts` (2, ~45s) — added 2026-08-06 with the go-to-date progress readout,
+both watched RED against `HEAD`.** ⚠ **It drives the REAL backend rather than intercepting the
+candles route, which is the opposite call from `calendar.spec.ts` and is deliberate**: the thing
+under test is that the readout tracks pages ACTUALLY LANDING, so a mocked feed would be measuring
+the mock's cadence. It keeps the jump short (~1 year, 2 pages) so it costs ~45s instead of the 90s a
+full-history jump takes. ⚠ **The second check nearly shipped vacuous** — the progress bar carries a
+3% floor so it is visible from the first frame, and `> 0%` would therefore pass against a completely
+dead progress value; it asserts the width GROWS. Full detail: `ChartPanel/CLAUDE.md`.
+
 **`tests/strategies.spec.ts` (11, ~38s) — added 2026-08-06 with the Strategies audit.** ⚠ **This is
 the one suite in this folder with NO clean fail-watch, and the reason is recorded rather than
 glossed**: the endpoints it covers changed shape (bare list → envelope) in the same pass, so the

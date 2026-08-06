@@ -56,6 +56,15 @@ const TRADE_PROFIT_FILL = '#8ef2b8'
 // One scroll-left page of older history, in BARS — so a page costs the same at every timeframe
 // (~1 MB of JSON) instead of ballooning on a fine one.
 const PAGE_BARS = 12_000
+// ⚠ A JUMP DELIBERATELY USES THE SAME PAGE SIZE, and bulk-paging it was BUILT, MEASURED AND
+// REVERTED (2026-08-06). The per-bar arithmetic says bulk should win: measured against the live
+// backend on run 211384ddbea4 at M15 with analysis on, a 175d/11,188-bar page costs 6.63s
+// (0.59 ms/bar) against 875d/56,632 bars at 20.23s (0.36 ms/bar). Driven end to end over a real
+// six-year jump it bought **6%** — 89.4s → 83.9s — because the span is fixed and the analysis
+// replay dominates either way, and it cost the thing the change was FOR: the progress readout
+// stepped 3 times instead of ~14, i.e. 25 seconds of stillness between updates instead of 6.
+// A minute-long wait that looks alive beats one that is 6% shorter and looks hung.
+// The real lever is the ANALYSIS, not the page size — see `loadOlder`.
 // Runaway guard on a "go to date" that has to page history in. The loop's REAL terminator is
 // `loadOlder` running dry (no bars once the oldest loaded bar reaches the run's start), so this only
 // binds if a feed keeps answering without ever reaching back — it is not a reach limit.
@@ -354,10 +363,12 @@ const DEBUG_ON_GROUPS: readonly string[] = [
  *  `lo`/`hi` set the native `min`/`max`, but the clamp is done in code as well: a native bound stops
  *  the calendar widget and nothing else, so a typed or pasted date walks straight past it (the same
  *  lesson `PeriodPicker` learned about the broker's history floor). */
-function GoToDate({ lo, hi, busy, onGo }: {
+function GoToDate({ lo, hi, busy, progress, onGo }: {
   lo: number
   hi: number
   busy: boolean
+  // Where the jump has REACHED and how far through it is — null when it is not paging.
+  progress: { reachedTs: number; frac: number } | null
   onGo: (ts: number) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -405,7 +416,32 @@ function GoToDate({ lo, hi, busy, onGo }: {
         }`}
       >
         <CalendarSearch className="w-3.5 h-3.5" />
-        {busy && <span className="font-mono">loading {sent}…</span>}
+        {/* The busy readout is the ONLY thing on screen during a jump — the view is still parked at
+            the right edge, so the on-chart loading edge is nowhere near the viewport. It names the
+            DESTINATION and, under it, the date already reached and a bar that fills. The reached
+            date is what proves the wait is moving: a percentage alone still looks like a guess, and
+            the target alone is what this pill already said for ninety seconds at a time. */}
+        {busy && (
+          <span className="flex flex-col items-start gap-[3px] leading-none">
+            <span className="font-mono">
+              loading {sent}
+              {progress && (
+                <span data-testid="jump-reached" className="text-text-tertiary">
+                  {' '}· at {toIsoDay(progress.reachedTs)}
+                </span>
+              )}
+            </span>
+            {progress && (
+              <span className="block h-[2px] w-full min-w-[92px] rounded-full bg-border-subtle overflow-hidden">
+                <span
+                  data-testid="jump-bar"
+                  className="block h-full rounded-full bg-accent transition-[width] duration-300"
+                  style={{ width: `${Math.max(3, Math.round(progress.frac * 100))}%` }}
+                />
+              </span>
+            )}
+          </span>
+        )}
       </button>
       {open && (
         <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface p-2.5 shadow-lg" style={{ zIndex: 50, minWidth: 210 }}>
@@ -782,6 +818,15 @@ export default function ChartPanel({
   // It asks for the window's ANALYSIS too (`analysis = true`) and merges it as it lands, so the
   // layers reach back exactly as far as the bars do. Requested here and NOT in `runFetch`: a
   // drill-down is a question about fills, and structure is computed on the base timeframe anyway.
+  //
+  // 🔴 MEASURED 2026-08-06, and it is where a deep jump's minute actually goes: the ANALYSIS is
+  // ~60% of a page. On run 211384ddbea4 at M15 a 175d page is 2.61s bare against 6.63s with
+  // `analysis=true`, and an 875d one is 8.24s against 20.23s. So a six-year jump is ~90s today and
+  // would be ~35s if the intermediate pages fetched BARS ONLY. That change is not made here,
+  // because it trades away the guarantee the 2026-08-02 fix bought — every layer reaching exactly
+  // as far back as the bars do — and a page scrolled past would draw no overlays with its toggle
+  // still ON, which is the defect that fix existed to remove. Doing it safely means backfilling
+  // each skipped window's analysis after the jump lands, and that is its own change.
   const loadOlder = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
     const oldest = baseCandlesRef.current[0]?.time
     const start = spec.historyStartMs
@@ -818,6 +863,19 @@ export default function ChartPanel({
   // scroll-left paging so the two can't both be splicing onto the front of the same array.
   const [jumping, setJumping] = useState(false)
   const jumpingRef = useRef(false)
+  // How far back the jump has actually GOT, so the wait can report itself.
+  //
+  // 🔴 A deep jump is a minute of wall clock — MEASURED at 14 pages / ~93s for six years at M15 —
+  // and until this landed the only sign of life was a static `loading 2020-01-05…`. A label that
+  // never changes for 90 seconds is indistinguishable from a hang, which is exactly how it was
+  // reported. The loop knows the answer at every step: it can see where the oldest loaded bar has
+  // reached, and it knows where it was told to stop.
+  //
+  // ⚠ Progress is measured in TIME COVERED, not in pages completed. A page span is clamped at the
+  // run's own start, so the last page is usually short — counting pages would sit at "3 of 4" and
+  // then finish, and a page count also cannot be known in advance when the feed decides how far
+  // back it can answer.
+  const [jumpAt, setJumpAt] = useState<{ reachedTs: number; frac: number } | null>(null)
   // A jump target waiting for its bars. Set only when the jump had to PAGE — the redraw that follows
   // is what flushes it; a jump inside the loaded window scrolls straight away.
   const pendingJumpRef = useRef<number | null>(null)
@@ -853,13 +911,21 @@ export default function ChartPanel({
     if (!pagingOffRef.current && (baseCandlesRef.current[0]?.time ?? Infinity) > target) {
       jumpingRef.current = true
       setJumping(true)
+      // The span the jump has to cover, fixed before the first page so the readout cannot go
+      // backwards when a page overshoots the target and lands past it.
+      const from0 = baseCandlesRef.current[0]?.time ?? target
+      const span = Math.max(1, from0 - target)
+      setJumpAt({ reachedTs: from0, frac: 0 })
       try {
         for (let i = 0; i < MAX_JUMP_PAGES; i++) {
-          if ((baseCandlesRef.current[0]?.time ?? Infinity) <= target) break
+          const reached = baseCandlesRef.current[0]?.time ?? Infinity
+          if (reached <= target) break
           const { bars } = await loadOlderRef.current()
           if (!bars.length) break                       // at the run's start — go as far as it goes
           baseCandlesRef.current = [...bars, ...baseCandlesRef.current]
           paged = true
+          const now = baseCandlesRef.current[0].time
+          setJumpAt({ reachedTs: now, frac: Math.min(1, (from0 - now) / span) })
         }
       } catch {
         // A failed page keeps whatever already landed — the scroll below clamps to it — rather than
@@ -867,6 +933,7 @@ export default function ChartPanel({
       } finally {
         jumpingRef.current = false
         setJumping(false)
+        setJumpAt(null)
       }
     }
     if (paged) {
@@ -1887,13 +1954,19 @@ export default function ChartPanel({
     if (!chart) return
     chart.removeOverlay({ name: LOADING_EDGE })
     if (!(pagingOlder || jumping) || displayCandles.length === 0) return
+    // During a JUMP the chip names the date already reached, which moves with every page. A single
+    // scroll-left page keeps the bare wording: it is one ~6s step and the bar it sits on IS the
+    // date, right there on the axis the reader is looking at.
+    const label = jumping && jumpAt
+      ? `Loading earlier bars… ${toIsoDay(jumpAt.reachedTs)}`
+      : 'Loading earlier bars…'
     chart.createOverlay({
       name: LOADING_EDGE,
       lock: true,
       points: [{ timestamp: displayCandles[0].time, value: displayCandles[0].close }],
-      extendData: { color: theme.accent, label: 'Loading earlier bars…' },
+      extendData: { color: theme.accent, label },
     })
-  }, [pagingOlder, jumping, displayCandles])
+  }, [pagingOlder, jumping, jumpAt, displayCandles])
 
   // Indicators (shipped series). Created once per spec/visibility; klinecharts re-runs the
   // indicator calc automatically on TF switch, so this does NOT depend on displayCandles.
@@ -2166,7 +2239,7 @@ export default function ChartPanel({
           {/* Go to date — sits next to the timeframe because it answers the other half of "what am I
               looking at": the TF picks the bar size, this picks WHERE. Bounded by the span the chart
               can actually reach, and hidden until there are candles to reach into. */}
-          {jumpRange && <GoToDate lo={jumpRange.lo} hi={jumpRange.hi} busy={jumping} onGo={goToDate} />}
+          {jumpRange && <GoToDate lo={jumpRange.lo} hi={jumpRange.hi} busy={jumping} progress={jumpAt} onGo={goToDate} />}
 
           {/* Step — the other way of answering "WHERE": Go to date takes a calendar date, this walks
               the markers themselves, so reading a run's losers back to back costs two keys instead
