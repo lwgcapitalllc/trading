@@ -455,6 +455,12 @@ class Strategy(BaseModel):
     # param schema is stale until re-scanned. Computed live in the router (strategy_scanner.needs_rescan),
     # never stored. The scan-time analog of needs_deploy/needs_compile.
     needs_scan: bool = False
+    # The source file this row was registered from is gone from the repo, so the
+    # strategy exists only in the DB (and possibly still on the VPS). Computed
+    # live beside needs_scan, never stored — it is a fact about disk right now.
+    # It rides on the row so the Reconcile control does not depend on somebody
+    # having pressed Scan in this browser session.
+    is_orphan: bool = False
     # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only).
     edge: Optional[str] = None
     steps: list[dict] = []   # flow: [{label, title, detail}]
@@ -952,8 +958,12 @@ class SystemHealth(BaseModel):
     mt5_connected: Optional[bool] = None
     mt5_server: Optional[str] = None
     mt5_account: Optional[int] = None
-    nt8_running: bool = False
-    nt8_sa_visible: bool = False
+    # ⚠ `None` = the NT8 agent could not be ASKED, which is not the claim
+    # "NinjaTrader is not running". Read `=== false` on the frontend, never
+    # falsy — the same contract `mt5_connected` above carries, and for the same
+    # reason: an unanswered question rendered as a failure invents a measurement.
+    nt8_running: Optional[bool] = None
+    nt8_sa_visible: Optional[bool] = None
     last_compile_ok: bool = False
     last_compile_at: Optional[str] = None
     last_compile_errors: list[str] = []
@@ -1372,10 +1382,17 @@ class StrategyVersion(BaseModel):
 class StrategyFileSyncStatus(BaseModel):
     strategy_id: str
     expected_filename: str
-    file_exists_on_vps: bool
+    # ⚠ `None` = the agent for this platform could not be reached, so whether the
+    # file is on the VPS is UNKNOWN. `False` is the positive claim that it is
+    # missing — a real and alarming state — and collapsing the two would render
+    # an unreachable agent as a deleted deployment (or, as it did before this,
+    # render nothing at all and let a stale green "In sync" stand).
+    file_exists_on_vps: Optional[bool] = None
     file_size_bytes: Optional[int] = None
     file_modified_at: Optional[str] = None
-    in_sync: bool
+    # `None` for the same reason: it is `file_exists_on_vps AND not needs_deploy`,
+    # so it cannot be answered when the first term cannot be.
+    in_sync: Optional[bool] = None
     is_compiled: Optional[bool] = None  # MT5 only: True if .ex5 exists alongside .mq5
     # Version tracking — which content version is local vs deployed vs compiled.
     current_version: Optional[int] = None     # version of the current local source
@@ -1386,6 +1403,34 @@ class StrategyFileSyncStatus(BaseModel):
     compiled_at: Optional[int] = None         # unix seconds
     needs_deploy: bool = False                # local source differs from deployed
     needs_compile: bool = False               # deployed source not yet compiled
+
+
+class StrategyFilesResponse(BaseModel):
+    """The VPS file listing, WITH which platform failed to answer.
+
+    ⚠ An envelope rather than a bare list, because the two failures are not the
+    same fact: an empty `files` with both errors null means the VPS genuinely
+    holds no strategy files, and an empty `files` with `nt8_error` set means
+    nobody asked it. Returning `[]` for both is what let the Deployed tab render
+    "No files deployed — drop a strategy file above" over an unreachable box.
+    """
+    files: list[StrategyFile] = []
+    nt8_error: Optional[str] = None
+    mt5_error: Optional[str] = None
+
+
+class StrategyFileSyncResponse(BaseModel):
+    """Per-strategy sync state, WITH which platform could not be reached.
+
+    The rows are still served when an agent is down: `needs_deploy` and
+    `needs_compile` are computed from the LOCAL source hash and this app's own
+    deploy record, so they remain true and useful. Only the questions that
+    genuinely need the agent (`file_exists_on_vps`, `in_sync`, and MT5's
+    `is_compiled`) go `None`.
+    """
+    statuses: list[StrategyFileSyncStatus] = []
+    nt8_error: Optional[str] = None
+    mt5_error: Optional[str] = None
 
 
 class CompileJobStatus(BaseModel):

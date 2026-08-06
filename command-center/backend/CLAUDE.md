@@ -567,9 +567,43 @@ a laptop whose tunnel happened to be down would rebuild the tunnel and fire two 
 the live VPS. Same class of hazard as `tests/test_integration.py`, and refused by default for the
 same reason.
 
-**Tests:** `tests/test_agent_supervisor.py` (19) + `tests/test_system_health.py` (12). Most of them
+🔴 **And a task that CANNOT start is not the same as a task that failed — that gap left the NT8
+agent dead for two days (fixed 2026-08-06).** An agent process can be **alive with its socket
+dead**: the PID is in the list, nothing is listening on its port. Windows then refuses to launch a
+second instance of a task whose first one is still running (`0x800710E0`, *the operator or
+administrator has refused the request*), so **every fire is a guaranteed no-op** and the loop
+logged `nt8-fired-but-still-down` once a minute, indefinitely, while reporting a real action each
+time. **Measured on the live box: PID 13396 alive since 2026-08-04 02:59 UTC with nothing bound to
+8765.** The sidebar's Start button fires the same task and was equally unable to recover it — so
+this was not a supervisor gap, it was the *only* recovery path in the app being a no-op against
+this failure mode. The loop now kills the corpse and re-fires once: `nt8-wedged-process-killed` →
+`nt8-restarted-after-kill`, or `nt8-still-down-after-kill` when the second fire is honest about
+failing too.
+
+⚠ **`kill_agent_process` is the two-clause `wmic` match and both clauses are load-bearing** — the
+same rule `routers/bots.py::_kill_bot` documents, and the reason `taskkill /f /im python.exe` is
+banned repo-wide. `name='python.exe'` alone would kill every python process on the box **including
+the live trading bot**; the `commandline like '%nt8_agent.py%'` clause alone matches the `cmd.exe`
+/ `wmic.exe` hosting the very command being issued, whose own commandline contains the script name
+— i.e. the kill terminates the process running it. Verified against the live box on 2026-08-06:
+the match resolved to one PID while the trading bot (9620), the MT5 agent (5392) and both Telegram
+processes were untouched.
+
+⚠ **wmic's exit code is not evidence, the OUTPUT is.** It prints `Method execution successful` per
+matched process and `No Instance(s) Available.` when nothing matched, and neither reaches the exit
+code — so `kill_agent_process` returns True only on the success string. **Nothing to kill is a
+DIFFERENT diagnosis and is logged as one** (`fired-but-still-down (no process to clear)`): it means
+the task genuinely never started, which is the stored-password trap or a missing interactive
+session, and a second fire would not fix that either.
+
+⚠ **The kill is safe here and would not be one branch earlier.** It sits after the busy-scope guard
+has already returned, so no job is running in that agent's scope. Killing an agent that is merely
+*too loaded to answer* is precisely the repair-at-the-wrong-moment this module exists to refuse.
+
+**Tests:** `tests/test_agent_supervisor.py` (25) + `tests/test_system_health.py` (12). Most of them
 are about what the supervisor REFUSES to do — the dangerous failure of a supervisor is not a missed
-repair, it is a repair at the wrong moment.
+repair, it is a repair at the wrong moment. The six added with the wedged-agent path are that shape
+too: three are about what the kill must NOT reach.
 
 ## The calendar's polarity list was written for the wrong provider
 
@@ -1308,7 +1342,69 @@ Live behavior. NT8 agent endpoints: `GET/POST/DELETE /files/strategies/<filename
 - **Compile (MT5):** `mt5_agent._run_compile` compiles each `.mq5` explicitly (`metaeditor64.exe /compile:<file> /log`) and confirms success the same way NT8 does — by mtime. It records each `.ex5` mtime before compiling and requires it to advance afterward; MetaEditor's exit code is unreliable and the directory form (`/compile:<dir>`) could silently no-op, reporting a stale `.ex5` as success. A file whose `.ex5` mtime does not move is a hard failure (`status: failed`) with the compiler `.log` lines surfaced in `errors` — never reported as success. **Warnings** are scraped from the same `.log` and returned in `warnings`, but the match requires the `": warning"` token (MQL5 format `file(line,col) : warning 123: msg`), NOT a bare `"warning"` substring — MetaEditor's trailing summary line `Result: 0 errors, 0 warnings, …` contains the word "warning" and a loose check false-positived a clean build as "1 warning". **The MT5 agent is a long-running process** (not respawned per compile like the NT8 runner), so an agent-side change like this is live only after `git pull` on the VPS **and** restarting the `MT5AgentRDP` schtask — never a blanket `taskkill python.exe` (that also kills the NT8 backtest agent).
 - **Upload limit:** 256 KB, enforced on both agent and backend router.
 - **Lock detection:** agent tries `r+b` open before upload/delete; `IOError` → HTTP 423.
-- **Sync-status:** `GET /strategy-files/sync-status` — **content-aware** (no longer presence-only). It reads the local source **live from disk**, hashes it (md5, same as the scanner via `strategy_scanner.source_hash`), and compares to the recorded deployed/compiled hashes: `needs_deploy = local_hash != deployed_source_hash`, `needs_compile = deployed_source_hash != compiled_source_hash`. `in_sync = file_exists_on_vps AND not needs_deploy`. Also returns `current_version` / `deployed_version` / `compiled_version`. It lazily registers the live hash (`ensure_strategy_version`) so the current version always resolves even before a re-scan. A 502 from the NT8 agent still hard-fails the whole call (MT5 agent degrades gracefully).
+- **Sync-status:** `GET /strategy-files/sync-status` — **content-aware** (no longer presence-only). It reads the local source **live from disk**, hashes it (md5, same as the scanner via `strategy_scanner.source_hash`), and compares to the recorded deployed/compiled hashes: `needs_deploy = local_hash != deployed_source_hash`, `needs_compile = deployed_source_hash != compiled_source_hash`. `in_sync = file_exists_on_vps AND not needs_deploy`. Also returns `current_version` / `deployed_version` / `compiled_version`. It lazily registers the live hash (`ensure_strategy_version`) so the current version always resolves even before a re-scan. **Since 2026-08-06 an unreachable agent degrades instead of 502-ing** — see *The Strategies page — the 2026-08-06 audit* below.
+
+## The Strategies page — the 2026-08-06 audit
+
+Aaron asked for a full audit of the page — Strategies tab, Deployed tab, Scan — with one reported
+symptom: *"if the NT8 agent is down I get this annoying error about remote end closed connection
+without response, every couple of seconds."* The toast storm is the shallow half. **The reason it
+was a storm and not a banner is that every one of these endpoints treated an unreachable agent as
+a fatal error rather than as an unanswered question**, and the page polls.
+
+🔴 **A dead NT8 agent blanked the status of every strategy, including MT5 and Python ones.** Both
+`GET /strategy-files` and `GET /strategy-files/sync-status` raised a 502 on any NT8 exception while
+swallowing an MT5 one with a bare `pass`. **The consequence on the page is worse than a missing
+badge: a row with no sync object rendered no status pill and a Run button — so a strategy that
+needed deploying looked ready to run.** Both endpoints now return an envelope
+(`StrategyFilesResponse` / `StrategyFileSyncResponse`) carrying `files`/`statuses` plus `nt8_error`
+and `mt5_error`, and both platforms are caught symmetrically.
+
+⚠ **The split that makes the degraded response worth serving: `needs_deploy` and `needs_compile`
+survive an unreachable agent, and `file_exists_on_vps` / `in_sync` / `is_compiled` go `None`.**
+`needs_deploy` is the LOCAL source hash against this app's own deploy record — it is answerable
+with the VPS switched off — while the other three are claims about the box. Nulling everything
+would have been safe and useless; nulling nothing is the defect above. **Ask of each field whether
+the thing that answers it was reachable, not whether the request succeeded.**
+
+⚠ **`is_compiled` defaulted a missing column to `1`** (`s.get("is_compiled", 1)`) — a fabricated
+COMPILED, this repo's own rule broken in its usual direction. `None` now, and the page renders no
+claim rather than a green one.
+
+🔴 **`nt8_running` and `nt8_sa_visible` initialised to `False` in `_build_health`**, so with the
+agent down the sidebar reported *NinjaTrader is not running* — a measurement nothing took, and it
+was exactly wrong on 2026-08-06: NinjaTrader was open on the VPS the whole time the agent was
+wedged. Both are `Optional[bool] = None` now, the same three-state contract as `mt5_connected`.
+
+**MT5 `needs_compile` was hash-only, so deleting the `.ex5` off the box left the row reading "In
+sync".** MT5 loads the compiled artefact, so its absence is the question — `needs_compile` is now
+also true when the source matches its deploy record and `is_compiled` is `False`.
+
+**`POST /strategies/{id}/deploy` 500'd on a python strategy** — a python strategy is a package
+DIRECTORY, so `read_bytes()` raised `IsADirectoryError`. It is a 400 that says why. Latent (the UI
+never offers the button), which is precisely the kind of endpoint something else calls later; the
+existence check also became `is_file()`. **`GET /strategies/{id}/deploy-status/{job}` served any
+job from any strategy's URL** — it 404s on a mismatch, so the path segment means something.
+`_deploy_jobs` is an `OrderedDict` capped at 50; nothing had ever removed an entry.
+
+**A python package whose import failed was indistinguishable from one that is not a lab strategy** —
+`_parse_python_package` returned a bare `None` for both. The row kept its STALE param schema,
+`needs_scan` stayed true for ever, and the scan reported success with *0 updated*: a silent failure
+whose only symptom was a pill that would not clear. It returns `(row, error)` now and the error
+lands in `ScanResult.warnings`, which the frontend toasts. **A package that simply does not declare
+`LAB_STRATEGY` stays silent — that is the normal state for a helper package, not a fault.**
+
+**`is_orphan` is on the strategy row, not only in a scan result.** The Reconcile button was gated on
+`scan.data?.orphans` — mutation state — so a strategy whose source file had been deleted was
+invisible on a fresh page load until somebody happened to press Scan. `strategy_scanner.is_orphan`
+is the read-only per-row twin of `_detect_orphans`. **A standing fact belongs on the row that states
+it, not in the result of the action that last noticed it.**
+
+**Tests:** 16 new (693 green). ⚠ **A clean fail-watch against `HEAD` was IMPOSSIBLE here and the
+honest note is that it was not done** — the two endpoints changed shape from a bare list to an
+envelope, so the old frontend fails against the new backend for reasons unrelated to any defect.
+Non-vacuity was established by **mutation instead**: each fix was removed in turn and the naming
+test confirmed red. That found a real hole — see `frontend/CLAUDE.md` → *The Strategies page*.
 
 ## Portfolio stacks (smart reuse)
 

@@ -246,6 +246,182 @@ def test_sync_status_skips_python_and_still_reports_the_others(client, tmp_path,
 
     r = client.get("/strategy-files/sync-status")
     assert r.status_code == 200, r.text
-    ids = {row["strategy_id"] for row in r.json()}
+    ids = {row["strategy_id"] for row in r.json()["statuses"]}
     assert "pystrat" not in ids
     assert "orbtest" in ids
+
+
+# ── An unreachable agent is a REPORTED gap, never a dead endpoint ─────────────
+# Before 2026-08-06 any NT8 failure raised a 502 that took every row with it —
+# and a row with no sync object renders no status pill and a Run button, so a
+# strategy that needed deploying looked ready to run.
+
+def _break_nt8(monkeypatch):
+    from services import runner_dispatch
+
+    def boom():
+        raise RuntimeError("VPS agent /files/strategies: Remote end closed connection without response")
+
+    monkeypatch.setattr(runner_dispatch, "list_strategy_files", boom)
+
+
+def test_sync_status_survives_a_dead_nt8_agent_and_names_it(client, tmp_path, monkeypatch):
+    import time
+    from services import lab_db
+
+    lab_db.upsert_strategy({
+        "id": "orbtest", "name": "ORB", "class_name": "ORB",
+        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+    _break_nt8(monkeypatch)
+
+    r = client.get("/strategy-files/sync-status")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["nt8_error"] and "Remote end closed" in body["nt8_error"]
+    rows = {row["strategy_id"]: row for row in body["statuses"]}
+    assert "orbtest" in rows, "the rows must survive — they are what the page renders"
+
+
+def test_an_unreachable_agent_leaves_presence_UNKNOWN_not_false(client, tmp_path, monkeypatch):
+    """`file_exists_on_vps: False` is the positive claim that the deployment is
+    GONE. Reporting it because nobody answered would invent an alarm; reporting
+    `True` would invent a reassurance. It has to be None."""
+    import time
+    from services import lab_db
+
+    lab_db.upsert_strategy({
+        "id": "orbtest", "name": "ORB", "class_name": "ORB",
+        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+    _break_nt8(monkeypatch)
+
+    row = next(r for r in client.get("/strategy-files/sync-status").json()["statuses"]
+               if r["strategy_id"] == "orbtest")
+    assert row["file_exists_on_vps"] is None
+    assert row["in_sync"] is None
+
+
+def test_deploy_state_still_answers_with_the_agent_down(client, tmp_path, monkeypatch):
+    """`needs_deploy` comes from the LOCAL hash and this app's own deploy record,
+    so it is answerable with the box switched off — which is the whole reason the
+    rows are still served. A strategy that needs deploying must not render a Run
+    button just because the VPS is unreachable."""
+    import time
+    from services import lab_db
+
+    lab_db.upsert_strategy({
+        "id": "orbtest", "name": "ORB", "class_name": "ORB",
+        "source_path": "strategies/ninjatrader/ORB.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+    _break_nt8(monkeypatch)
+
+    row = next(r for r in client.get("/strategy-files/sync-status").json()["statuses"]
+               if r["strategy_id"] == "orbtest")
+    # Never deployed through the tracked path → deployed hash is NULL → needs deploy.
+    assert row["needs_deploy"] is True
+
+
+def test_the_file_list_reports_which_platform_failed(client, monkeypatch):
+    _break_nt8(monkeypatch)
+    body = client.get("/strategy-files").json()
+    assert body["nt8_error"]
+    # An empty list with an error is a different fact from an empty list without
+    # one — that distinction is what stopped the Deployed tab claiming "No files
+    # deployed" over an unreachable box.
+    assert body["files"] == [] or all(f["platform"] == "MT5" for f in body["files"])
+
+
+# ── Deploy refuses what it cannot deploy ──────────────────────────────────────
+
+def test_deploying_a_python_strategy_is_a_400_not_a_500(client, tmp_path, monkeypatch):
+    """A python strategy's `source_path` is a PACKAGE DIRECTORY. `read_bytes()` on
+    it raised IsADirectoryError — an unhandled 500 on a request whose honest
+    answer is "that is not a thing this endpoint does". Latent while the UI never
+    offered the button, which is exactly the kind of endpoint something else
+    calls later."""
+    _add_python_strategy(tmp_path, monkeypatch)
+    r = client.post("/strategies/pystrat/deploy")
+    assert r.status_code == 400, r.text
+    assert "not deployed" in r.json()["detail"].lower()
+
+
+def test_a_deploy_job_is_not_readable_from_another_strategys_url(client):
+    """The path names a strategy, so it has to mean one."""
+    r = client.get("/strategies/orbtest/deploy/does-not-exist")
+    assert r.status_code == 404
+
+
+# ── An orphan is a standing fact, not a scan result ───────────────────────────
+
+def test_a_strategy_whose_source_is_gone_is_flagged_on_the_row(client, tmp_path, monkeypatch):
+    """The Reconcile control used to be gated on the last SCAN's output, so an
+    orphan was invisible on a fresh page load until somebody happened to press
+    Scan. Whether a file exists on disk is answerable at any moment."""
+    import time
+    import config as cfg
+    from services import lab_db
+
+    monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
+    lab_db.upsert_strategy({
+        "id": "ghost", "name": "Ghost", "class_name": "Ghost",
+        "source_path": "strategies/ninjatrader/Ghost.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+    rows = {r["id"]: r for r in client.get("/strategies").json()}
+    assert rows["ghost"]["is_orphan"] is True
+
+
+def test_a_strategy_whose_source_exists_is_not_an_orphan(client, tmp_path, monkeypatch):
+    import time
+    import config as cfg
+    from services import lab_db
+
+    src = tmp_path / "strategies" / "ninjatrader"
+    src.mkdir(parents=True)
+    (src / "Real.cs").write_text("// present")
+    monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
+    lab_db.upsert_strategy({
+        "id": "real", "name": "Real", "class_name": "Real",
+        "source_path": "strategies/ninjatrader/Real.cs", "scanned_at": int(time.time()),
+        "runner": "ninjatrader",
+    })
+    rows = {r["id"]: r for r in client.get("/strategies").json()}
+    assert rows["real"]["is_orphan"] is False
+
+
+# ── A package that cannot be imported is REPORTED, never silently skipped ─────
+
+def test_a_broken_python_package_is_named_in_the_scan_warnings(tmp_path, monkeypatch, fresh_db):
+    """Returning a bare None made a broken package indistinguishable from one
+    that simply is not a lab strategy: the row kept its stale param schema,
+    `needs_scan` stayed true for ever, and the scan reported success with
+    "0 updated"."""
+    import config as cfg
+    from services import strategy_scanner
+
+    pkg = tmp_path / "strategies" / "python" / "brokenstrat"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("this is not valid python (((")
+    monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
+
+    result = strategy_scanner.scan_strategies()
+    assert any("brokenstrat" in w for w in result["warnings"]), result["warnings"]
+
+
+def test_a_package_that_is_simply_not_a_strategy_warns_about_nothing(tmp_path, monkeypatch, fresh_db):
+    """A helper package under strategies/python/ is the NORMAL state, not a
+    fault — warning about it would train the reader to ignore the list."""
+    import config as cfg
+    from services import strategy_scanner
+
+    pkg = tmp_path / "strategies" / "python" / "helpers"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("VALUE = 1\n")
+    monkeypatch.setattr(cfg, "MONOREPO_ROOT", tmp_path)
+
+    result = strategy_scanner.scan_strategies()
+    assert result["warnings"] == []

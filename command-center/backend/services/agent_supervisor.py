@@ -43,6 +43,16 @@ FIRING A TASK IS NOT EVIDENCE IT STARTED. `schtasks /run` reports SUCCESS even
 for a task Windows refuses to launch (see algos/CLAUDE.md → the stored-password
 trap), so every fire is followed by a re-probe and the outcome is logged either
 way. Silence after a fire used to read as success.
+
+AND A TASK THAT CANNOT START IS NOT ALWAYS A TASK THAT FAILED. An agent process
+can be ALIVE with its socket dead — in the process list, listening on nothing.
+Windows refuses to start a second instance of a task whose first one is still
+running, so re-firing is a guaranteed no-op and the loop logged
+`fired-but-still-down` once a minute indefinitely. MEASURED on the live box
+2026-08-06: the NT8 agent sat wedged for TWO DAYS and neither this loop nor the
+sidebar's Start button (same task) could recover it, because neither killed the
+corpse. `kill_agent_process` does, scoped so it can only ever reach that one
+agent, and only after the busy-scope guard has already cleared.
 """
 
 from __future__ import annotations
@@ -66,6 +76,12 @@ MT5_PORT = 8766
 # session — see algos/CLAUDE.md; do not "fix" them to a stored password.
 NT8_TASK = "NT8Agent"
 MT5_TASK = "MT5AgentRDP"
+
+# The script each agent runs on the VPS. This is the SECOND clause of every kill
+# match (see kill_agent_process) and the only thing that identifies one agent
+# among the box's python processes.
+NT8_SCRIPT = "nt8_agent.py"
+MT5_SCRIPT = "mt5_agent.py"
 
 INTERVAL_SECONDS = 60      # one pass per minute — cheap, and sleep recovery is a minute at worst
 AGENT_GRACE_SECONDS = 20   # how long an agent gets to answer after its task is fired
@@ -127,6 +143,39 @@ def schtasks_run(task_name: str) -> dict:
     if result.returncode != 0:
         raise SchtaskError(f"schtasks failed: {result.stderr.strip()}", status=502)
     return {"status": "ok", "output": result.stdout.strip()}
+
+
+def kill_agent_process(script_name: str) -> bool:
+    """Terminate a WEDGED agent process on the VPS. Returns True if wmic reported a kill.
+
+    ⚠ THE MATCH IS TWO CLAUSES AND BOTH ARE LOAD-BEARING — the same rule
+    `routers/bots.py::_kill_bot` documents, and the reason `taskkill /f /im
+    python.exe` is banned repo-wide (it takes out the live trading bot, the
+    Telegram bot and the other backtest agent along with the target).
+
+      name='python.exe'   without it the pattern matches the cmd.exe / wmic.exe
+                          hosting THIS very command, whose own commandline
+                          contains the script name — i.e. the kill can terminate
+                          the process issuing it.
+      commandline LIKE    without it every python process on the box matches.
+
+    So `nt8_agent.py` kills exactly the NT8 agent and nothing else. Verified
+    against the live box on 2026-08-06: the match resolved to one PID while the
+    live bot, the MT5 agent and both Telegram processes were untouched.
+    """
+    query = (f"wmic process where \"name='python.exe' and commandline like "
+             f"'%{script_name}%'\" call terminate")
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", cfg.SSH_ALIAS, query],
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception:
+        return False
+    # wmic prints "Method execution successful" per matched process and says
+    # "No Instance(s) Available." when nothing matched. Neither is reflected in
+    # the exit code, so the OUTPUT is the only evidence a process actually died.
+    return "Method execution successful" in (result.stdout or "")
 
 
 # ── Probes ────────────────────────────────────────────────────────────────────
@@ -266,9 +315,9 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
             nt8 = nt8_agent_ok()
             mt5 = mt5_agent_ok()
 
-    for name, ok, task, scopes in (
-        ("nt8", nt8, NT8_TASK, {"nt8"}),
-        ("mt5", mt5, MT5_TASK, {"mt5", "python"}),
+    for name, ok, task, script, scopes in (
+        ("nt8", nt8, NT8_TASK, NT8_SCRIPT, {"nt8"}),
+        ("mt5", mt5, MT5_TASK, MT5_SCRIPT, {"mt5", "python"}),
     ):
         if ok:
             continue
@@ -295,8 +344,49 @@ def supervise_once(sleeper: Callable[[float], None] = time.sleep) -> dict:
             continue
         sleeper(AGENT_GRACE_SECONDS)
         # schtasks lies about success — the re-probe is the only real evidence.
-        came_up = nt8_agent_ok() if name == "nt8" else mt5_agent_ok()
-        actions.append(f"{name}-started" if came_up else f"{name}-fired-but-still-down")
+        probe = nt8_agent_ok if name == "nt8" else mt5_agent_ok
+        came_up = probe()
+
+        if came_up:
+            actions.append(f"{name}-started")
+        else:
+            # 🔴 THE WEDGED-AGENT CASE, and firing the task again can never fix it.
+            #
+            # An agent process can be ALIVE with its Flask socket dead — the
+            # process is in the list, nothing is listening on its port. Windows
+            # then REFUSES to start a second instance of the task (result
+            # 0x800710E0, "the operator or administrator has refused the
+            # request"), so every fire is a no-op and the supervisor logged
+            # `fired-but-still-down` once a minute for ever.
+            #
+            # MEASURED on the live box 2026-08-06: the NT8 agent sat in exactly
+            # this state for TWO DAYS (PID alive since 08-04 02:59, nothing on
+            # 8765). The sidebar's Start button fires the same task and was
+            # equally unable to recover it. The only thing that works is killing
+            # the corpse first, so that is what this does — once, then re-fires.
+            #
+            # It is safe HERE and would not be one branch earlier: the busy-scope
+            # guard above has already returned, so no job is running in this
+            # agent's scope, and the kill is the two-clause match that cannot
+            # reach the live trading bot.
+            killed = kill_agent_process(script)
+            if not killed:
+                # Nothing to kill means the task genuinely did not start — a
+                # different fault (stored-password trap, no interactive session)
+                # and not one a second fire would fix either.
+                actions.append(f"{name}-fired-but-still-down (no process to clear)")
+            else:
+                actions.append(f"{name}-wedged-process-killed")
+                try:
+                    schtasks_run(task)
+                except SchtaskError as exc:
+                    actions.append(f"{name}-refire-failed ({exc})")
+                else:
+                    sleeper(AGENT_GRACE_SECONDS)
+                    came_up = probe()
+                    actions.append(f"{name}-restarted-after-kill" if came_up
+                                   else f"{name}-still-down-after-kill")
+
         if name == "nt8":
             nt8 = came_up
         else:

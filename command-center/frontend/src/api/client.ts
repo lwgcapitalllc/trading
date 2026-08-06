@@ -14,7 +14,21 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit, asText?: boolean): Promise<T> {
+/** Options for a read. `silent` suppresses the failure TOAST — never the error itself.
+ *
+ * ⚠ Use it ONLY where the caller renders the failure somewhere the reader can see
+ * it. A POLLING query is the case it exists for: `request` toasts on every
+ * non-ok response, and a query on a `refetchInterval` fails on every tick — so
+ * one unreachable dependency produced a toast every few seconds for as long as
+ * the page was open (the Strategies page with the NT8 agent down: ~6 a minute,
+ * plus a burst on every window focus). A toast is an EVENT; a dependency that is
+ * down is a STATE, and a state belongs in the layout, not in a queue of
+ * disappearing popups. */
+export interface RequestOpts { silent?: boolean }
+
+async function request<T>(path: string, init?: RequestInit, asText?: boolean,
+                          opts?: RequestOpts): Promise<T> {
+  const shout = (msg: string) => { if (!opts?.silent) toast.error(msg) }
   let res: Response
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -23,14 +37,14 @@ async function request<T>(path: string, init?: RequestInit, asText?: boolean): P
     })
   } catch (err) {
     const msg = `Cannot reach backend — is it running? (${err})`
-    toast.error(msg)
+    shout(msg)
     throw new Error(msg)
   }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     let detail = text
     try { detail = JSON.parse(text).detail ?? text } catch { /* not json */ }
-    toast.error(`${res.status} ${detail}`)
+    shout(`${res.status} ${detail}`)
     throw new ApiError(res.status, String(detail))
   }
   if (asText) return res.text() as Promise<T>
@@ -39,7 +53,7 @@ async function request<T>(path: string, init?: RequestInit, asText?: boolean): P
 }
 
 export const api = {
-  get:     <T>(path: string) => request<T>(path),
+  get:     <T>(path: string, opts?: RequestOpts) => request<T>(path, undefined, false, opts),
   getText: (path: string)    => request<string>(path, undefined, true),
   put:     <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),

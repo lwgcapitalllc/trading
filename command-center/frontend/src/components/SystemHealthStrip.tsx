@@ -24,21 +24,30 @@ function buildDots(h: SystemHealth | undefined): DotDef[] {
   }
 
   // NT8: three-state — agent down → red; agent up but SA not ready → yellow; fully ready → green
+  //
+  // ⚠ `nt8_running` / `nt8_sa_visible` are `boolean | null` and every check is
+  // `=== false`, never falsy — the same rule `mt5_connected` follows below.
+  // BOTH come off the agent's own /nt-health, so when the agent is down they are
+  // `null` (UNASKED), and a falsy check would render "NinjaTrader not running"
+  // for a NinjaTrader nobody asked about. That was exactly wrong on 2026-08-06:
+  // the agent was wedged, NT8 was open on the VPS, and the health payload said
+  // `nt8_running: false`. The agent-down branch answers first anyway, so this is
+  // about the TOOLTIP telling the truth rather than the dot's colour.
   const nt8State: DotState = !h.nt8_agent
     ? 'red'
-    : !h.nt8_running
+    : h.nt8_running === false
     ? 'yellow'
-    : !h.nt8_sa_visible
+    : h.nt8_sa_visible === false
     ? 'yellow'
     : 'green'
 
   const nt8Tip = !h.nt8_agent
     ? h.ssh_tunnel
-      ? 'NT8: agent not running — click to start'
+      ? 'NT8: agent not running — click to start (NinjaTrader’s own state is unknown until it answers)'
       : 'NT8: agent not running — SSH must be up first'
-    : !h.nt8_running
+    : h.nt8_running === false
     ? 'NT8: agent OK — NinjaTrader not running on VPS (open NT8 via RDP)'
-    : !h.nt8_sa_visible
+    : h.nt8_sa_visible === false
     ? 'NT8: agent OK, NinjaTrader running — Strategy Analyzer not open (open it in NT8)'
     : 'NT8: agent OK, NinjaTrader running, Strategy Analyzer open'
 

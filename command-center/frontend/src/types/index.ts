@@ -500,6 +500,11 @@ export interface Strategy {
   // True = the source on disk changed since the last Scan Strategies, so the param schema the
   // Run modal shows is stale. Computed live by the backend; the scan-time twin of needs_deploy.
   needs_scan?: boolean
+  // The source file this row was registered from is gone from the repo, so the
+  // strategy exists only in the DB (and possibly still on the VPS). Computed
+  // live beside needs_scan — it rides on the row so the Reconcile control does
+  // not depend on somebody having pressed Scan in this browser session.
+  is_orphan?: boolean
 }
 
 export interface StrategyStep {
@@ -798,8 +803,11 @@ export interface SystemHealth {
   mt5_connected: boolean | null
   mt5_server: string | null
   mt5_account: number | null
-  nt8_running: boolean
-  nt8_sa_visible: boolean
+  // ⚠ `null` = the NT8 agent could not be ASKED, which is not the claim
+  // "NinjaTrader is not running". Read `=== false`, never falsy — same contract
+  // as `mt5_connected` above.
+  nt8_running: boolean | null
+  nt8_sa_visible: boolean | null
   last_compile_ok: boolean
   last_compile_at: string | null
   last_compile_errors: string[]
@@ -1259,10 +1267,15 @@ export interface StrategyFile {
 export interface StrategyFileSyncStatus {
   strategy_id: string
   expected_filename: string
-  file_exists_on_vps: boolean
+  // ⚠ `null` = the agent for this platform could not be reached, so presence is
+  // UNKNOWN. `false` is the positive claim that the deployed file is GONE.
+  // Read `=== false`, never falsy — the same contract as `mt5_link` and
+  // `mt5_connected`. Rendering an unanswered question as a missing deployment
+  // invents an alarm; rendering it as present invents a reassurance.
+  file_exists_on_vps: boolean | null
   file_size_bytes: number | null
   file_modified_at: string | null
-  in_sync: boolean
+  in_sync: boolean | null
   is_compiled: boolean | null
   // Version tracking — which content version is local vs deployed vs compiled
   current_version: number | null
@@ -1273,6 +1286,29 @@ export interface StrategyFileSyncStatus {
   compiled_at: number | null
   needs_deploy: boolean
   needs_compile: boolean
+}
+
+/** The VPS file listing, WITH which platform failed to answer.
+ *
+ * ⚠ An envelope rather than a bare list, because an empty `files` means two
+ * different things: the box holds no strategy files, or nobody could ask it.
+ * Collapsing them is what let the Deployed tab render "No files deployed — drop
+ * a strategy file above" over an unreachable VPS. */
+export interface StrategyFilesResponse {
+  files: StrategyFile[]
+  nt8_error: string | null
+  mt5_error: string | null
+}
+
+/** Per-strategy sync state, WITH which platform could not be reached.
+ *
+ * The rows are still served when an agent is down — `needs_deploy` and
+ * `needs_compile` come from the local source hash and the backend's own deploy
+ * record — so a strategy that needs deploying still says so with the box off. */
+export interface StrategyFileSyncResponse {
+  statuses: StrategyFileSyncStatus[]
+  nt8_error: string | null
+  mt5_error: string | null
 }
 
 export interface StrategyVersion {

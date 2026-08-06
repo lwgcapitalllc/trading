@@ -13,7 +13,7 @@ import type {
   StackPreviewRequest, StackPreviewResponse,
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
   InstrumentSummary, RunningJobStatus,
-  StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
+  StrategyFile, StrategyFilesResponse, StrategyFileSyncResponse, CompileJobStatus,
 } from '@/types'
 import type { ChartSpec, ChartPage } from '@/components/ChartPanel/types'
 
@@ -52,7 +52,6 @@ export function useUpdateStrategyDescription() {
       qc.setQueryData(['lab', 'strategies', data.id], data)
       qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
     },
-    onError: () => toast.error('Failed to save description'),
   })
 }
 
@@ -68,7 +67,6 @@ export function useDeployStrategy() {
       qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
       qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
     },
-    onError: (err: Error) => toast.error(`Deploy failed: ${err.message}`),
   })
 }
 
@@ -81,9 +79,13 @@ export function useScanStrategies() {
         ? ` · ${data.orphans.length} orphaned (source deleted — use Reconcile)`
         : ''
       toast.success(`Scanned — ${data.added} added, ${data.updated} updated${orphans}`)
+      // ⚠ A package that failed to IMPORT is skipped by the scanner, so without
+      // this the scan reports success with "0 updated", the strategy keeps its
+      // stale param schema, and its "Needs scan" pill never goes away with
+      // nothing anywhere saying why. The backend names it; say it out loud.
+      data.warnings?.forEach(w => toast.error(`Scan: ${w}`))
       qc.invalidateQueries({ queryKey: ['lab', 'strategies'] })
     },
-    onError: () => toast.error('Strategy scan failed'),
   })
 }
 
@@ -98,7 +100,6 @@ export function useReconcileStrategies() {
       qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
       qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
     },
-    onError: () => toast.error('Reconcile failed'),
   })
 }
 
@@ -940,19 +941,29 @@ export function useVpsNtLog(lines = 200) {
 
 // ── Strategy file management ──────────────────────────────────────────────────
 
+// ⚠ BOTH OF THESE POLL AND BOTH ARE `silent` + `retry: false`, deliberately.
+// They reach the VPS through the SSH tunnel, so they are the first thing to fail
+// when an agent is down — and with the default toast + one retry that was ~6
+// error toasts a minute for as long as the Strategies page was open, plus four
+// more on every window focus. The failure is now RENDERED by the page (the
+// `*_error` fields on the envelope, and the banner in `FilesTab`), which is
+// where a persistent state belongs. Nothing is swallowed: `isError` and the
+// envelope both reach the caller.
 export function useStrategyFiles() {
   return useQuery({
     queryKey: ['lab', 'strategy-files'],
-    queryFn: () => api.get<StrategyFile[]>('/strategy-files'),
+    queryFn: () => api.get<StrategyFilesResponse>('/strategy-files', { silent: true }),
     refetchInterval: 30_000,
+    retry: false,
   })
 }
 
 export function useStrategyFileSyncStatus() {
   return useQuery({
     queryKey: ['lab', 'strategy-files', 'sync-status'],
-    queryFn: () => api.get<StrategyFileSyncStatus[]>('/strategy-files/sync-status'),
+    queryFn: () => api.get<StrategyFileSyncResponse>('/strategy-files/sync-status', { silent: true }),
     refetchInterval: 60_000,
+    retry: false,
   })
 }
 
@@ -989,14 +1000,12 @@ export function useDeleteStrategyFile() {
       qc.invalidateQueries({ queryKey: ['lab', 'strategy-files'] })
       qc.invalidateQueries({ queryKey: ['lab', 'strategy-files', 'sync-status'] })
     },
-    onError: () => toast.error('Delete failed'),
   })
 }
 
 export function useTriggerCompile() {
   return useMutation({
     mutationFn: () => api.post<{ compile_job_id: string }>('/strategy-files/compile', {}),
-    onError: () => toast.error('Could not start NT8 compile'),
   })
 }
 
@@ -1015,7 +1024,6 @@ export function useCompileStatus(compileJobId: string | null) {
 export function useTriggerCompileMt5() {
   return useMutation({
     mutationFn: () => api.post<{ compile_job_id: string }>('/strategy-files/compile-mt5', {}),
-    onError: () => toast.error('Could not start MT5 compile'),
   })
 }
 

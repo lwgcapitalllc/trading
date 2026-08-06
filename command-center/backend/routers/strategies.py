@@ -5,6 +5,7 @@ Strategies router — /strategies/*
 from __future__ import annotations
 
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 from fastapi import APIRouter, HTTPException
@@ -17,7 +18,12 @@ class StrategyPatch(BaseModel):
 from services import lab_db, strategy_scanner, runner_dispatch
 import config as cfg
 
-_deploy_jobs: dict[str, dict] = {}
+# Deploy is synchronous (the upload finishes inside the request), so a job here
+# exists only for the status GET the frontend fires straight after. It is capped
+# rather than unbounded: nothing ever removed an entry, so a long-lived backend
+# accumulated one dict per deploy for ever.
+_DEPLOY_JOB_LIMIT = 50
+_deploy_jobs: "OrderedDict[str, dict]" = OrderedDict()
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
@@ -27,6 +33,12 @@ def list_strategies():
     rows = lab_db.list_strategies()
     for r in rows:
         r["needs_scan"] = strategy_scanner.needs_rescan(r)
+        # ⚠ Computed here rather than only inside a scan's RESULT. The Reconcile
+        # button used to be gated on `scan.data?.orphans`, which is mutation
+        # state — so a strategy whose source file had been deleted was invisible
+        # on a fresh page load and stayed invisible until somebody happened to
+        # press Scan. A standing fact belongs on the row that states it.
+        r["is_orphan"] = strategy_scanner.is_orphan(r)
     return rows
 
 
@@ -92,6 +104,7 @@ def get_strategy(strategy_id: str):
     if not row:
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
     row["needs_scan"] = strategy_scanner.needs_rescan(row)
+    row["is_orphan"] = strategy_scanner.is_orphan(row)
     return row
 
 
@@ -119,12 +132,26 @@ def deploy_strategy(strategy_id: str):
     if not strategy:
         raise HTTPException(404, f"Strategy '{strategy_id}' not found")
 
+    # A python strategy is a PACKAGE DIRECTORY that runs in this process — there
+    # is nothing to upload and no VPS folder it belongs in. Without this guard
+    # the read_bytes() below hit a directory and raised IsADirectoryError, i.e.
+    # an unhandled 500 on a request whose honest answer is "that is not a thing
+    # this endpoint does". The UI never offers the button, so it was latent —
+    # which is exactly the kind of endpoint that gets called by something else
+    # later. Same shape as the guards in `sync_status` and `get_param_types`.
+    if strategy.get("runner") == "python":
+        raise HTTPException(
+            400,
+            "Python strategies are not deployed — they run locally in the backend "
+            "process. Nothing to upload to the VPS.",
+        )
+
     source_path = strategy.get("source_path")
     if not source_path:
         raise HTTPException(400, "Strategy has no source_path. Set it first or use the Deployed tab to upload manually.")
 
     file_path = Path(cfg.MONOREPO_ROOT) / source_path
-    if not file_path.exists():
+    if not file_path.is_file():
         raise HTTPException(404, f"Source file not found on disk: {source_path}")
 
     filename = file_path.name
@@ -139,6 +166,8 @@ def deploy_strategy(strategy_id: str):
         "uploaded_size_bytes": None,
         "error": None,
     }
+    while len(_deploy_jobs) > _DEPLOY_JOB_LIMIT:
+        _deploy_jobs.popitem(last=False)
 
     try:
         result = runner_dispatch.upload_strategy_file(filename, content, overwrite=True)
@@ -168,6 +197,10 @@ def get_deploy_status(strategy_id: str, deploy_job_id: str):
     job = _deploy_jobs.get(deploy_job_id)
     if not job:
         raise HTTPException(404, "Deploy job not found")
+    # The path names a strategy, so it has to mean one. Without this any job was
+    # readable from any strategy's URL, which makes the path segment decoration.
+    if job.get("strategy_id") != strategy_id:
+        raise HTTPException(404, "Deploy job not found for this strategy")
     return job
 
 

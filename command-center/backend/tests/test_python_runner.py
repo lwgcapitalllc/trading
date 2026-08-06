@@ -35,7 +35,8 @@ def test_the_scanner_and_the_runner_agree_on_the_name():
     import config as cfg
 
     pkg_dir = Path(cfg.MONOREPO_ROOT) / "strategies" / "python" / "mpc_sos_fade"
-    row = strategy_scanner._parse_python_package(pkg_dir, Path(cfg.MONOREPO_ROOT))
+    row, err = strategy_scanner._parse_python_package(pkg_dir, Path(cfg.MONOREPO_ROOT))
+    assert err is None
     assert row is not None
     assert python_runner._resolve(row["class_name"]) is not None
 

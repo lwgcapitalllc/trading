@@ -68,8 +68,14 @@ def _build_health() -> dict:
     mt5_connected: Optional[bool] = None
     mt5_server: Optional[str] = None
     mt5_account: Optional[int] = None
-    nt8_running = False
-    nt8_sa_visible = False
+    # ⚠ `None` means COULD NOT ASK, and it is not `False`. Both of these are read
+    # off the NT8 agent's /nt-health, so when the agent is down the honest answer
+    # is "unknown" — reporting `False` claims NinjaTrader is not running, which
+    # is a measurement nothing took. It was exactly wrong on 2026-08-06: the
+    # agent was wedged, NinjaTrader was open on the VPS, and this said
+    # `nt8_running: false`. Same three-state contract as `mt5_connected` below.
+    nt8_running: Optional[bool] = None
+    nt8_sa_visible: Optional[bool] = None
     last_compile_ok = False
     last_compile_at = None
     last_compile_errors: list[str] = []

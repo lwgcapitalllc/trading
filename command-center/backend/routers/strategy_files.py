@@ -18,9 +18,11 @@ Endpoints:
 """
 
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from models import StrategyFile, StrategyFileSyncStatus, CompileJobStatus
+from models import (StrategyFile, StrategyFileSyncStatus, CompileJobStatus,
+                    StrategyFilesResponse, StrategyFileSyncResponse)
 from services import runner_dispatch, lab_db, mt5_agent_client, strategy_scanner
 import config as cfg
 
@@ -29,22 +31,37 @@ router = APIRouter(prefix="/strategy-files", tags=["strategy-files"])
 _MAX_UPLOAD_BYTES = 256 * 1024  # 256 KB — matches VPS agent limit
 
 
-@router.get("", response_model=list[StrategyFile])
-def list_strategy_files():
+def _list_platform_files():
+    """Both agents' file listings, plus whichever failed.
+
+    ⚠ NEITHER FAILURE IS FATAL, and that symmetry is the fix. NT8 used to raise
+    a 502 that took the whole response down while an MT5 failure was swallowed
+    with a bare `pass` — so one dead platform blanked the other's status too,
+    and the page could not tell "the box says there are no files" from "nobody
+    asked the box". Both are reported now, and the caller renders the gap.
+    """
     files: list[dict] = []
+    nt8_error: Optional[str] = None
+    mt5_error: Optional[str] = None
     try:
         for f in runner_dispatch.list_strategy_files():
             f["platform"] = "NT8"
             files.append(f)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"NT8 agent: {exc}")
+        nt8_error = str(exc)
     try:
         for f in mt5_agent_client.list_strategy_files():
             f["platform"] = "MT5"
             files.append(f)
-    except Exception:
-        pass  # MT5 agent down — degrade gracefully, show NT8 files only
-    return files
+    except Exception as exc:
+        mt5_error = str(exc)
+    return files, nt8_error, mt5_error
+
+
+@router.get("", response_model=StrategyFilesResponse)
+def list_strategy_files():
+    files, nt8_error, mt5_error = _list_platform_files()
+    return StrategyFilesResponse(files=files, nt8_error=nt8_error, mt5_error=mt5_error)
 
 
 @router.post("/upload", response_model=StrategyFile)
@@ -135,23 +152,32 @@ def get_compile_mt5_status(compile_job_id: str):
     return result
 
 
-@router.get("/sync-status", response_model=list[StrategyFileSyncStatus])
+@router.get("/sync-status", response_model=StrategyFileSyncResponse)
 def sync_status():
     """
     For each strategy in the DB, report whether its source file exists on the VPS.
     NT8 strategies (.cs) are checked against the NT8 agent; MT5 strategies (.mq5)
     are checked against the MT5 agent.
+
+    ⚠ AN UNREACHABLE AGENT NO LONGER TAKES THE WHOLE ENDPOINT DOWN. It used to
+    502 on any NT8 failure, so the page lost every row — and a row with no sync
+    object renders no status pill and a Run button, i.e. a strategy that needs
+    deploying looked ready to run. `needs_deploy`/`needs_compile` come from the
+    LOCAL hash and this app's own deploy record, so they are answerable with the
+    box switched off; only the agent-dependent fields go `None`.
     """
+    nt8_files: dict[str, dict] = {}
+    mt5_files: dict[str, dict] = {}
+    nt8_error: Optional[str] = None
+    mt5_error: Optional[str] = None
     try:
         nt8_files = {f["filename"]: f for f in runner_dispatch.list_strategy_files()}
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not reach VPS agent: {exc}")
-
-    mt5_files: dict[str, dict] = {}
+        nt8_error = str(exc)
     try:
         mt5_files = {f["filename"]: f for f in mt5_agent_client.list_strategy_files()}
-    except Exception:
-        pass  # MT5 agent unreachable — degrade gracefully, MT5 strategies show not-in-sync
+    except Exception as exc:
+        mt5_error = str(exc)
 
     strategies = lab_db.list_strategies()
     monorepo_root = Path(cfg.MONOREPO_ROOT)
@@ -168,11 +194,22 @@ def sync_status():
         strategy_id = s["id"]
         is_mt5 = s.get("runner") == "mt5"
         expected = f"{class_name}.mq5" if is_mt5 else f"{class_name}.cs"
-        vps_file = (mt5_files if is_mt5 else nt8_files).get(expected)
-        if is_mt5:
+        # Did the agent that owns this platform actually answer? Everything below
+        # that reads the file listing is unanswerable when it did not.
+        agent_answered = (mt5_error is None) if is_mt5 else (nt8_error is None)
+        vps_file = (mt5_files if is_mt5 else nt8_files).get(expected) if agent_answered else None
+
+        if not agent_answered:
+            is_compiled = None
+        elif is_mt5:
+            # MT5 runs the compiled .ex5, so its presence IS the question.
             is_compiled = mt5_files.get(f"{class_name}.ex5") is not None
         else:
-            is_compiled = bool(s.get("is_compiled", 1))
+            # ⚠ `None`, never a default of 1. `.get("is_compiled", 1)` defaulted a
+            # missing column to COMPILED — a fabricated healthy answer, and this
+            # repo's own rule against letting an unknown look like a measurement.
+            raw_compiled = s.get("is_compiled")
+            is_compiled = None if raw_compiled is None else bool(raw_compiled)
 
         # Current content hash, read LIVE from disk so a local edit is detected
         # immediately — no re-scan needed. Register the version so it always resolves.
@@ -193,14 +230,19 @@ def sync_status():
         # needs_compile: deployed source hasn't been compiled (only meaningful once deployed).
         needs_deploy = (current_hash is not None) and (current_hash != deployed_hash)
         needs_compile = (deployed_hash is not None) and (deployed_hash != compiled_hash)
+        # MT5 loads the .ex5, so a source that matches its deploy record but has
+        # no compiled sibling still needs compiling. Reading hashes alone missed
+        # that: delete the .ex5 and the row went on reading "In sync".
+        if is_mt5 and is_compiled is False and deployed_hash is not None:
+            needs_compile = True
 
         result.append(StrategyFileSyncStatus(
             strategy_id=strategy_id,
             expected_filename=expected,
-            file_exists_on_vps=vps_file is not None,
+            file_exists_on_vps=(vps_file is not None) if agent_answered else None,
             file_size_bytes=vps_file["size_bytes"] if vps_file else None,
             file_modified_at=vps_file["modified_at"] if vps_file else None,
-            in_sync=(vps_file is not None) and not needs_deploy,
+            in_sync=((vps_file is not None) and not needs_deploy) if agent_answered else None,
             is_compiled=is_compiled,
             current_version=lab_db.version_for_hash(strategy_id, current_hash),
             current_source_hash=current_hash,
@@ -211,4 +253,4 @@ def sync_status():
             needs_deploy=needs_deploy,
             needs_compile=needs_compile,
         ))
-    return result
+    return StrategyFileSyncResponse(statuses=result, nt8_error=nt8_error, mt5_error=mt5_error)

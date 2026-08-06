@@ -1,6 +1,6 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload, CheckCircle2, XCircle, AlertTriangle, Layers } from 'lucide-react'
+import { RefreshCw, Play, ChevronRight, Upload, Trash2, CloudUpload, CheckCircle2, XCircle, AlertTriangle, Layers, WifiOff, X } from 'lucide-react'
 import {
   useStrategies,
   useScanStrategies, useReconcileStrategies,
@@ -20,7 +20,36 @@ import { RunnerBadge } from '@/components/RunnerBadge'
 import { runnerScope, runnerMarket, RUNNER_LABEL } from '@/lib/runner'
 import StickyHeader from '@/components/StickyHeader'
 import { toast } from 'sonner'
-import type { Strategy, StrategyFile, StrategyFileSyncStatus } from '@/types'
+import type { Strategy, StrategyFileSyncStatus } from '@/types'
+
+// ── An unreachable agent is a STATE, and states get rendered ──────────────────
+// Both file endpoints reach the VPS through the SSH tunnel, so they are the
+// first thing to fail when an agent is down. They used to toast on every poll
+// (≈6 a minute, plus a burst on every window focus) and, worse, their failure
+// left the page rendering confident answers: "No files deployed" over an
+// unreachable box, and every strategy row losing its status pill and offering a
+// Run button. Both hooks are `silent` now and the failure is drawn here.
+
+/** One dependency the page could not reach, stated where the reader is looking. */
+function AgentDownBanner({ what, detail, className = '' }: {
+  what: string; detail?: string | null; className?: string
+}) {
+  return (
+    <div className={`flex items-start gap-2.5 px-3.5 py-2.5 rounded-lg border border-warn-text/25 bg-warn-muted ${className}`}>
+      <WifiOff size={14} className="text-warn-text shrink-0 mt-[2px]" />
+      <div className="min-w-0">
+        <p className="text-[12.5px] text-warn-text font-medium">
+          Can’t reach the {what} — showing what this app already knows.
+        </p>
+        <p className="text-[11.5px] text-warn-text/80 leading-[1.45] mt-0.5">
+          Deploy and compile state below come from the local source and this app’s own deploy
+          record, so they are still accurate. What is actually ON the VPS is unknown until the
+          agent answers.{detail ? ` (${detail})` : ''}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
@@ -96,16 +125,31 @@ type MarketFilter = 'all' | 'futures' | 'forex'
 
 const strategyMarket = runnerMarket   // MT5 and Python are both forex; only NT8 is futures
 
+const GRADES = ['A', 'B', 'C', 'D', 'F'] as const
+type Grade = typeof GRADES[number]
+/** Narrow the grades endpoint's bare `string` to the badge's own union. */
+function asGrade(g: string): Grade | null {
+  return (GRADES as readonly string[]).includes(g) ? (g as Grade) : null
+}
+
 function StrategiesTab() {
   const navigate = useNavigate()
   const { data: strategies, isLoading } = useStrategies()
-  const { data: syncStatus, refetch: refetchSync } = useStrategyFileSyncStatus()
+  const { data: sync, refetch: refetchSync, isError: syncFailed } = useStrategyFileSyncStatus()
+  const syncStatus = sync?.statuses
   const { data: strategyGrades } = useStrategyBestGrades()
   useRunningVpsJob()
   const scan = useScanStrategies()
   const reconcile = useReconcileStrategies()
   const [confirmReconcile, setConfirmReconcile] = useState(false)
-  const orphans = scan.data?.orphans ?? []
+  // Orphans come off the STRATEGY ROWS, not off the last scan's result. Reading
+  // `scan.data?.orphans` meant an orphan was invisible on a fresh page load and
+  // stayed invisible until somebody happened to press Scan — whether a source
+  // file exists on disk is answerable at any moment, so it rides on the row.
+  const orphans = useMemo(
+    () => (strategies ?? []).filter(s => s.is_orphan).map(s => s.id),
+    [strategies],
+  )
   const deploy = useDeployStrategy()
   const compileMut = useTriggerCompile()
   const compileMt5Mut = useTriggerCompileMt5()
@@ -113,7 +157,16 @@ function StrategiesTab() {
   const [activeMt5CompileId, setActiveMt5CompileId] = useState<string | null>(null)
   const [runStrategy, setRunStrategy] = useState<Strategy | null>(null)
   const [deployingId, setDeployingId] = useState<string | null>(null)
-  const [marketFilter, setMarketFilter] = useState<MarketFilter>('all')
+  // In the URL, not `useState` — this folder's own rule for page-level filter
+  // state, and it means a refresh or a shared link keeps the view you were on.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const raw = searchParams.get('market')
+  const marketFilter: MarketFilter = raw === 'futures' || raw === 'forex' ? raw : 'all'
+  const setMarketFilter = (m: MarketFilter) => setSearchParams(prev => {
+    const next = new URLSearchParams(prev)
+    if (m === 'all') next.delete('market'); else next.set('market', m)
+    return next
+  }, { replace: true })
   // Portfolio stacking, straight off this list — tick 2+ PYTHON strategies and hand them to the
   // SAME `StackConfigModal` the Backtests → Stacks tab uses, so a stack is configured identically
   // wherever you start it. Stacking is python-only (the runner the stack engine replays), so a
@@ -240,6 +293,19 @@ function StrategiesTab() {
         />
       )}
 
+      {/* Whichever agent could not be reached, named. `syncFailed` is the whole
+          request dying (backend down); `nt8_error`/`mt5_error` are one platform
+          failing while the rows still arrive. */}
+      {(syncFailed || sync?.nt8_error || sync?.mt5_error) && (
+        <AgentDownBanner
+          className="mb-4"
+          what={syncFailed ? 'backend'
+            : sync?.nt8_error && sync?.mt5_error ? 'NT8 or MT5 agent'
+            : sync?.nt8_error ? 'NT8 agent' : 'MT5 agent'}
+          detail={sync?.nt8_error ?? sync?.mt5_error}
+        />
+      )}
+
       {isLoading ? (
         <StrategiesSkeleton />
       ) : !strategies?.length ? (
@@ -343,10 +409,28 @@ function StrategyRow({
   const needsCompile = sync?.needs_compile
   const curVer = sync?.current_version
   const depVer = sync?.deployed_version
-  // What's live on the VPS: the compiled version if compiled, else the deployed one.
-  const liveVer = needsCompile ? sync?.deployed_version : sync?.compiled_version ?? depVer
+  // ⚠ WHAT IS RUNNING IS THE COMPILED VERSION, full stop. NT8 executes
+  // `NinjaTrader.Custom.dll` and MT5 executes the `.ex5`; neither loads a source
+  // file. This used to read `needsCompile ? deployed_version : compiled ?? deployed`,
+  // which is wrong in exactly the branch it exists for — with a compile pending
+  // it named the version you just uploaded as "running v N" while the platform
+  // was still executing the previously compiled one.
+  const liveVer = sync?.compiled_version ?? null
+  // `=== false` — `null` means the agent could not be asked, and rendering that
+  // as a missing deployment invents an alarm.
+  const missingOnVps = sync?.file_exists_on_vps === false
+  const isPython = s.runner === 'python'
   return (
-    <tr onClick={onView} className="hover:bg-bg-hover cursor-pointer transition-colors">
+    <tr
+      onClick={onView}
+      // Reachable by keyboard: the row is the only way into a strategy's page,
+      // and a click handler on a `tr` is invisible to tab navigation.
+      tabIndex={0}
+      role="link"
+      aria-label={`Open ${s.name || s.class_name}`}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onView() } }}
+      className="hover:bg-bg-hover cursor-pointer transition-colors focus:outline-none focus-visible:bg-bg-hover focus-visible:ring-1 focus-visible:ring-accent/50"
+    >
       {stackCol && (
         <td className="w-9 pl-4 py-3" onClick={e => e.stopPropagation()}>
           {onStackToggle && (
@@ -387,18 +471,39 @@ function StrategyRow({
           </button>
         )}
         {sync === undefined ? null : (
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {curVer != null && (
               <span
-                title={`Local v${curVer}${liveVer != null ? ` · running v${liveVer}` : ' · not deployed'}`}
+                title={`Local v${curVer}${liveVer != null ? ` · compiled v${liveVer} is what runs`
+                  : depVer != null ? ' · deployed but never compiled, so nothing of it is running'
+                  : ' · not deployed'}`}
                 className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle"
               >v{curVer}</span>
             )}
+            {/* ⚠ ONE PILL, and the branches are ORDERED WORST-FIRST. The first
+                attempt drew "Missing on VPS" as an extra chip BESIDE the
+                hash-derived one, which put a green "In sync" next to a red
+                "Missing on VPS" on the same row — the contradiction this fix
+                exists to remove, reintroduced one line lower. Caught by
+                `tests/strategies.spec.ts`, not by reading it back. */}
             {needsDeploy ? (
               <span title={depVer != null ? `Deployed v${depVer}, local is v${curVer}` : 'Never deployed'}
                 className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
+            ) : missingOnVps ? (
+              // The deploy record agrees with the local source while the file
+              // itself has been deleted off the box by hand. Every hash-derived
+              // pill would read green over nothing; `file_exists_on_vps` was
+              // computed by the backend for exactly this and rendered NOWHERE
+              // until 2026-08-06.
+              <span title={`${sync.expected_filename} is not in the VPS strategy folder. Deploy it again.`}
+                className="text-[11px] px-1.5 py-[2px] rounded-full bg-neg-muted text-neg-text border border-neg-text/25">● Missing on VPS</span>
             ) : needsCompile ? (
               <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
+            ) : sync.file_exists_on_vps == null ? (
+              // The hashes agree, but nobody could confirm the file is there.
+              // "In sync" would be a claim about a VPS this app cannot see.
+              <span title="The deploy record matches the local source, but the agent could not be reached to confirm the file is on the VPS."
+                className="text-[11px] px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-tertiary border border-border-subtle">● VPS unknown</span>
             ) : (
               <span className="text-[11px] px-1.5 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
             )}
@@ -412,7 +517,10 @@ function StrategyRow({
             title="View best stress test result"
             className="hover:opacity-80 transition-opacity"
           >
-            <RobustnessGradeBadge grade={bestGrade.grade as any} size="sm" />
+            {/* The endpoint types `grade` as a bare string; narrow it rather
+                than `as any` (this folder's no-`any` rule). An unrecognised
+                letter renders nothing instead of an unstyled pill. */}
+            <RobustnessGradeBadge grade={asGrade(bestGrade.grade)} size="sm" />
           </button>
         ) : (
           <span className="text-[11px] text-text-tertiary">—</span>
@@ -420,33 +528,52 @@ function StrategyRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-          {needsDeploy && (
-            <button
-              onClick={onDeploy}
-              disabled={isDeploying}
-              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {isDeploying ? <RefreshCw size={10} className="animate-spin" /> : <CloudUpload size={10} />}
-              Deploy
-            </button>
-          )}
-          {!needsDeploy && needsCompile && (
-            <button
-              onClick={onCompile}
-              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-warn-muted text-warn-text border border-warn-text/30 hover:opacity-80 transition-opacity"
-            >
-              <RefreshCw size={10} />
-              Compile
-            </button>
-          )}
-          {!needsDeploy && !needsCompile && (
-            <button
-              onClick={onRun}
-              className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
-            >
-              <Play size={10} />
-              Run
-            </button>
+          {/* ⚠ A DEPLOYING RUNNER WITH NO SYNC ROW MUST NOT OFFER "Run".
+              `needsDeploy`/`needsCompile` are undefined when the sync request
+              itself failed, and `undefined` is falsy — so this used to fall
+              through to Run for a strategy that had never been deployed, and
+              submit a backtest to an agent that was not there. A python
+              strategy legitimately has no sync row (it runs in-process). */}
+          {isPython || sync !== undefined ? (
+            <>
+              {(needsDeploy || missingOnVps) && (
+                <button
+                  onClick={onDeploy}
+                  disabled={isDeploying}
+                  title={missingOnVps && !needsDeploy
+                    ? 'The deploy record matches, but the file is gone from the VPS — send it again.'
+                    : undefined}
+                  className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent text-bg-base hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {isDeploying ? <RefreshCw size={10} className="animate-spin" /> : <CloudUpload size={10} />}
+                  {missingOnVps && !needsDeploy ? 'Redeploy' : 'Deploy'}
+                </button>
+              )}
+              {!needsDeploy && !missingOnVps && needsCompile && (
+                <button
+                  onClick={onCompile}
+                  title="Compiles EVERY strategy on this platform, not only this one — the platform builds them together."
+                  className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-warn-muted text-warn-text border border-warn-text/30 hover:opacity-80 transition-opacity"
+                >
+                  <RefreshCw size={10} />
+                  Compile all
+                </button>
+              )}
+              {!needsDeploy && !missingOnVps && !needsCompile && (
+                <button
+                  onClick={onRun}
+                  className="flex items-center gap-1 px-[10px] py-[4px] rounded-md text-[11px] font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20 transition-colors"
+                >
+                  <Play size={10} />
+                  Run
+                </button>
+              )}
+            </>
+          ) : (
+            <span
+              title="This strategy's deploy state could not be read, so there is nothing safe to offer here."
+              className="text-[11px] text-text-tertiary"
+            >unknown</span>
           )}
         </div>
       </td>
@@ -479,19 +606,25 @@ function fmtBytes(n: number): string {
 }
 
 
-function FileStatusBadge({ filename, vpsFiles, sync }: {
-  filename: string; vpsFiles: StrategyFile[]; sync?: StrategyFileSyncStatus
-}) {
-  const vpsFile = vpsFiles.find(f => f.filename === filename)
-  if (!vpsFile) return <span className="text-[11px] px-2 py-[2px] rounded-full bg-neg-muted text-neg-text border border-neg-text/20">● Missing</span>
-  const ver = sync?.current_version
+/** Status for one row of the Deployed table.
+ *
+ * ⚠ It takes no `vpsFiles` any more. It used to re-`find` the row's own file in
+ * the listing the row was BUILT from, so the "Missing" branch was unreachable —
+ * and its final `else` rendered a green "In sync" whenever `sync` was undefined,
+ * i.e. it defaulted to healthy for a strategy it knew nothing about. */
+function FileStatusBadge({ sync }: { sync?: StrategyFileSyncStatus }) {
+  if (!sync) {
+    return <span title="This file is on the VPS but matches no registered strategy, so there is nothing to compare it against."
+      className="text-[11px] px-2 py-[2px] rounded-full bg-bg-sunken text-text-tertiary border border-border-subtle">● Unregistered</span>
+  }
+  const ver = sync.current_version
   const chip = ver != null
     ? <span className="text-[11px] font-mono tabular-nums px-1.5 py-[2px] rounded-full bg-bg-sunken text-text-secondary border border-border-subtle">v{ver}</span>
     : null
   // Content-aware, matching the Strategies tab — presence alone is not "in sync".
-  const pill = sync?.needs_deploy
+  const pill = sync.needs_deploy
     ? <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs deploy</span>
-    : sync?.needs_compile
+    : sync.needs_compile
     ? <span className="text-[11px] px-2 py-[2px] rounded-full bg-warn-muted text-warn-text border border-warn-text/20">● Needs compile</span>
     : <span className="text-[11px] px-2 py-[2px] rounded-full bg-pos-muted text-pos-text border border-pos-text/20">● In sync</span>
   return <div className="flex items-center gap-1.5">{chip}{pill}</div>
@@ -538,9 +671,19 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
   compileJobId: string
   onClose: () => void
   title?: string
-  usePollHook: (id: string | null) => { data: import('@/types').CompileJobStatus | undefined }
+  usePollHook: (id: string | null) => {
+    data: import('@/types').CompileJobStatus | undefined
+    isError?: boolean
+    error?: unknown
+  }
 }) {
-  const { data: job } = usePollHook(compileJobId)
+  // ⚠ `isError` IS READ, and that is the whole fix. The poll 502s whenever the
+  // agent is unreachable, which left `job` undefined for ever → `running` true
+  // → the footer holding the ONLY close button never rendered → the modal was
+  // unclosable and the elapsed counter ticked up indefinitely. Page reload was
+  // the only way out. Same class as the Costs pill's swallowed `isError`.
+  const { data: job, isError, error } = usePollHook(compileJobId)
+  const errMsg = error instanceof Error ? error.message : null
 
   // Tick once a second while the compile is running so the elapsed counter advances
   // smoothly. Without this, `elapsed` only recomputes when the poll hook re-fetches,
@@ -548,12 +691,21 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
   // falling back to when this modal mounted.
   const mountedAt = useRef(Date.now() / 1000)
   const [now, setNow] = useState(Date.now() / 1000)
-  const running = !job || job.status === 'running'
+  const running = !isError && (!job || job.status === 'running')
   useEffect(() => {
     if (!running) return
     const id = setInterval(() => setNow(Date.now() / 1000), 1000)
     return () => clearInterval(id)
   }, [running])
+
+  // Escape closes it, like every other dismissible surface in the app. A modal
+  // whose only exit is a conditional footer button is one failed request away
+  // from trapping the reader.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   const startedAt = job?.started_at ?? mountedAt.current
   const endAt = running ? now : (job?.completed_at ?? now)
   const elapsed = Math.max(0, Math.round(endAt - startedAt))
@@ -561,26 +713,49 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
       <div className="bg-bg-surface border border-border-default rounded-2xl w-[640px] max-w-full max-h-[85vh] shadow-2xl flex flex-col overflow-hidden">
-        {/* Header — status icon + title + one-line summary */}
+        {/* Header — status icon + title + one-line summary. The close button is
+            ALWAYS here, whatever the job is doing; the footer's Close is a
+            convenience, not the only exit. */}
         <div className="flex items-start gap-3 p-5 shrink-0 border-b border-border-subtle">
-          <StatusIcon status={job?.status} />
-          <div className="min-w-0">
+          <StatusIcon status={isError ? 'failed' : job?.status} />
+          <div className="min-w-0 flex-1">
             <h3 className="text-text-primary font-semibold text-[15px] leading-tight">{title}</h3>
             <p className="text-[12px] mt-0.5 text-text-tertiary">
-              {(!job || job.status === 'running') && `Compiling… ${elapsed}s elapsed`}
-              {job?.status === 'success' && (
+              {isError && 'Lost contact with the compiler — the compile may still be running on the VPS.'}
+              {!isError && (!job || job.status === 'running') && `Compiling… ${elapsed}s elapsed`}
+              {!isError && job?.status === 'success' && (
                 job.warnings.length > 0
                   ? `Compiled with ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`
                   : 'All strategies compiled successfully'
               )}
-              {job?.status === 'failed' && `Failed — ${job.errors.length} error${job.errors.length === 1 ? '' : 's'}`}
+              {!isError && job?.status === 'failed' && `Failed — ${job.errors.length} error${job.errors.length === 1 ? '' : 's'}`}
             </p>
           </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
+          >
+            <X size={16} />
+          </button>
         </div>
 
         {/* Body — scrollable detail */}
         <div className="px-5 py-4 overflow-y-auto grow min-h-0 space-y-4">
-          {(!job || job.status === 'running') && (
+          {isError && (
+            <div className="space-y-2">
+              <p className="text-[13px] text-text-secondary">
+                The compile was started, but this app can no longer read its status. Nothing here
+                says whether it succeeded — check the NT8 agent, then re-open this from the
+                Deployed tab.
+              </p>
+              {errMsg && (
+                <pre className="text-[11px] leading-relaxed whitespace-pre-wrap break-words font-mono text-neg-text bg-bg-sunken rounded-lg p-2.5 m-0">{errMsg}</pre>
+              )}
+            </div>
+          )}
+
+          {!isError && (!job || job.status === 'running') && (
             <div className="space-y-2.5" aria-label="Compiling">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="flex gap-2 bg-bg-sunken rounded-lg p-2.5">
@@ -615,7 +790,7 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
         </div>
 
         {/* Footer */}
-        {job?.status && job.status !== 'running' && (
+        {(isError || (job?.status && job.status !== 'running')) && (
           <div className="flex justify-end p-4 shrink-0 border-t border-border-subtle">
             <button onClick={onClose} className="px-4 py-2 rounded-lg bg-bg-sunken border border-border-subtle text-text-secondary text-[13px] hover:text-text-primary hover:border-border-default transition-colors">Close</button>
           </div>
@@ -626,8 +801,10 @@ function CompileModal({ compileJobId, onClose, title = 'Compiling NinjaScript', 
 }
 
 function FilesTab() {
-  const { data: files, isLoading, refetch, dataUpdatedAt } = useStrategyFiles()
-  const { data: syncStatus } = useStrategyFileSyncStatus()
+  const { data: listing, isLoading, isError, refetch, dataUpdatedAt } = useStrategyFiles()
+  const files = listing?.files
+  const { data: sync, refetch: refetchSync } = useStrategyFileSyncStatus()
+  const syncStatus = sync?.statuses
   const uploadMut = useUploadStrategyFile()
   const deleteMut = useDeleteStrategyFile()
   const compileMut = useTriggerCompile()
@@ -656,6 +833,9 @@ function FilesTab() {
   )
 
   const hasMt5Files = useMemo(() => ourFiles.some(f => f.platform === 'MT5'), [ourFiles])
+  // Symmetry with the MT5 button: offering "Compile NT8" with no NT8 file on the
+  // box is a control whose only outcome is a wasted pywinauto pass.
+  const hasNt8Files = useMemo(() => ourFiles.some(f => f.platform === 'NT8'), [ourFiles])
 
   const sortedFiles = useMemo(() =>
     [...ourFiles].sort((a, b) =>
@@ -686,8 +866,13 @@ function FilesTab() {
     }
   }
 
-  const handleFiles = (droppedFiles: FileList | null) => {
+  const handleFiles = useCallback((droppedFiles: FileList | null) => {
     if (!droppedFiles?.length) return
+    // One at a time is the contract (the endpoint takes one file), but dropping
+    // three and having two vanish with no message is not — say so.
+    if (droppedFiles.length > 1) {
+      toast.error(`Drop one file at a time — uploading ${droppedFiles[0].name} only.`)
+    }
     const f = droppedFiles[0]
     if (!f.name.endsWith('.cs') && !f.name.endsWith('.mq5')) { toast.error('Only .cs or .mq5 files are allowed'); return }
     const existing = files?.find(vf => vf.filename === f.name)
@@ -696,7 +881,7 @@ function FilesTab() {
     } else {
       uploadMut.mutate({ filename: f.name, file: f, overwrite: false })
     }
-  }
+  }, [files, uploadMut])
 
   const confirmOverwrite = () => {
     if (!overwriteConfirm) return
@@ -708,7 +893,14 @@ function FilesTab() {
     const el = dropRef.current
     if (!el) return
     const onDragOver = (e: DragEvent) => { e.preventDefault(); setDragging(true) }
-    const onDragLeave = () => setDragging(false)
+    // ⚠ `dragleave` fires when the pointer crosses onto a CHILD element, so a
+    // bare handler makes the highlight flicker as you move across the zone's own
+    // text. `relatedTarget` is where the pointer went — only clear when it left
+    // the zone entirely.
+    const onDragLeave = (e: DragEvent) => {
+      const to = e.relatedTarget as Node | null
+      if (!to || !el.contains(to)) setDragging(false)
+    }
     const onDrop = (e: DragEvent) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer?.files ?? null) }
     el.addEventListener('dragover', onDragOver)
     el.addEventListener('dragleave', onDragLeave)
@@ -718,7 +910,7 @@ function FilesTab() {
       el.removeEventListener('dragleave', onDragLeave)
       el.removeEventListener('drop', onDrop)
     }
-  }, [files])
+  }, [handleFiles])
 
   return (
     <div>
@@ -728,14 +920,16 @@ function FilesTab() {
           <button onClick={() => refetch()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary text-[13px]">
             <RefreshCw size={13} /> Refresh
           </button>
-          <button
-            onClick={startCompile}
-            disabled={compileMut.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 text-[13px] disabled:opacity-50"
-          >
-            <RefreshCw size={13} className={compileMut.isPending ? 'animate-spin' : ''} />
-            Compile NT8
-          </button>
+          {hasNt8Files && (
+            <button
+              onClick={startCompile}
+              disabled={compileMut.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 text-[13px] disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={compileMut.isPending ? 'animate-spin' : ''} />
+              Compile NT8
+            </button>
+          )}
           {hasMt5Files && (
             <button
               onClick={startCompileMt5}
@@ -758,7 +952,17 @@ function FilesTab() {
       >
         <Upload size={24} className="mx-auto mb-2 text-text-tertiary" />
         <p className="text-text-secondary text-[13px]">Drop a <span className="font-mono">.cs</span> or <span className="font-mono">.mq5</span> file here to upload, or click to browse</p>
-        <input ref={fileInputRef} type="file" accept=".cs,.mq5" className="hidden" onChange={e => handleFiles(e.target.files)} />
+        {/* ⚠ `value = ''` after handling, or picking the SAME file twice fires no
+            change event at all and the second attempt silently does nothing —
+            which is exactly what happens after a failed upload or a cancelled
+            overwrite, i.e. the times you most want to retry. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".cs,.mq5"
+          className="hidden"
+          onChange={e => { handleFiles(e.target.files); e.target.value = '' }}
+        />
         {uploadMut.isPending && (
           <div className="absolute inset-0 bg-bg-base/60 flex items-center justify-center rounded-lg">
             <span className="text-accent text-[13px]">Uploading…</span>
@@ -766,10 +970,39 @@ function FilesTab() {
         )}
       </div>
 
+      {/* ⚠ AN EMPTY LIST AND AN UNREACHABLE BOX ARE DIFFERENT FACTS. Until
+          2026-08-06 both rendered "No files deployed — drop a strategy file
+          above to deploy it", so a dead NT8 agent read as a VPS with nothing on
+          it. The envelope names which platform failed and the banner says so
+          before the list is drawn. */}
+      {(isError || listing?.nt8_error || listing?.mt5_error) && (
+        <AgentDownBanner
+          className="mb-4"
+          what={isError ? 'backend'
+            : listing?.nt8_error && listing?.mt5_error ? 'NT8 or MT5 agent'
+            : listing?.nt8_error ? 'NT8 agent' : 'MT5 agent'}
+          detail={listing?.nt8_error ?? listing?.mt5_error}
+        />
+      )}
+
       {isLoading ? (
         <div className="text-text-tertiary text-[13px]">Loading files…</div>
+      ) : isError ? (
+        <EmptyState
+          icon={<WifiOff size={24} />}
+          title="Can’t read the VPS strategy folder"
+          description="This is not the same as an empty folder — nothing here says what is or isn’t deployed."
+        />
       ) : !ourFiles.length ? (
-        <EmptyState icon={<Upload size={24} />} title="No files deployed" description="Drop a strategy file above to deploy it." />
+        <EmptyState
+          icon={<Upload size={24} />}
+          title={listing?.nt8_error || listing?.mt5_error
+            ? 'No files from the platform that answered'
+            : 'No files deployed'}
+          description={listing?.nt8_error || listing?.mt5_error
+            ? 'One agent is unreachable, so this list is partial — see the banner above.'
+            : 'Drop a strategy file above to deploy it.'}
+        />
       ) : (
         <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
           <table className="w-full text-[13px]">
@@ -790,17 +1023,15 @@ function FilesTab() {
                   <td className="px-4 py-3"><RunnerBadge runner={f.platform} /></td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{fmtBytes(f.size_bytes)}</td>
                   <td className="px-4 py-3 tabular-nums text-text-secondary">{new Date(f.modified_at).toLocaleString()}</td>
-                  <td className="px-4 py-3"><FileStatusBadge filename={f.filename} vpsFiles={files ?? []} sync={syncByFilename[f.filename]} /></td>
+                  <td className="px-4 py-3"><FileStatusBadge sync={syncByFilename[f.filename]} /></td>
                   <td className="px-4 py-3">
-                    {!f.filename.startsWith('@') && (
-                      <button
-                        onClick={() => setConfirmDelete(f.filename)}
-                        className="p-1 rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors"
-                        title="Delete file from VPS"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setConfirmDelete(f.filename)}
+                      className="p-1 rounded text-text-tertiary hover:text-neg-text hover:bg-neg-muted transition-colors"
+                      title="Delete file from VPS"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -844,10 +1075,13 @@ function FilesTab() {
         </div>
       )}
 
+      {/* A compile changes what is COMPILED on the box, so the sync rows are
+          stale the moment it finishes — the Strategies tab refetched and this
+          one did not, which is one action with two behaviours. */}
       {activeCompileId && (
         <CompileModal
           compileJobId={activeCompileId}
-          onClose={() => setActiveCompileId(null)}
+          onClose={() => { setActiveCompileId(null); refetchSync() }}
           title="Compiling NinjaScript"
           usePollHook={useCompileStatus}
         />
@@ -855,7 +1089,7 @@ function FilesTab() {
       {activeMt5CompileId && (
         <CompileModal
           compileJobId={activeMt5CompileId}
-          onClose={() => setActiveMt5CompileId(null)}
+          onClose={() => { setActiveMt5CompileId(null); refetchSync() }}
           title="Compiling MQL5 (MetaEditor)"
           usePollHook={useCompileStatusMt5}
         />
@@ -871,7 +1105,14 @@ export function Strategies() {
   const [searchParams, setSearchParams] = useSearchParams()
   const rawTab = searchParams.get('tab')
   const tab = (rawTab === 'deployed' ? 'deployed' : 'strategies') as Tab
-  const setTab = (t: Tab) => setSearchParams({ tab: t }, { replace: true })
+  // ⚠ MERGE, never rebuild. `setSearchParams({tab})` replaces the WHOLE query
+  // string, so switching tabs silently dropped `market` — the same defect the
+  // Bots page fixed for its `?bot=` selection.
+  const setTab = (t: Tab) => setSearchParams(prev => {
+    const next = new URLSearchParams(prev)
+    next.set('tab', t)
+    return next
+  }, { replace: true })
 
   // Rulesets moved to their own top-level page — redirect old deep links.
   useEffect(() => {
@@ -879,14 +1120,20 @@ export function Strategies() {
   }, [rawTab, navigate])
 
   const { data: strategies } = useStrategies()
-  const { data: files } = useStrategyFiles()
-  const { data: syncStatus } = useStrategyFileSyncStatus()
+  // ⚠ These two are the DEPLOYED tab's data, and the shell subscribes to them
+  // only to number its badge — two VPS round trips a minute (~0.82s each,
+  // measured) to render one integer. They are deliberately NOT gated on the
+  // active tab: TanStack shares one cache entry per key, so `FilesTab` would
+  // fetch them anyway the moment you switch, and gating here would only add a
+  // spinner on arrival. The cost is real and it is the badge's price.
+  const { data: listing } = useStrategyFiles()
+  const { data: sync } = useStrategyFileSyncStatus()
 
   const deployedCount = useMemo(() => {
-    if (!files || !syncStatus) return undefined
-    const ourFilenames = new Set(syncStatus.map(s => s.expected_filename))
-    return files.filter(f => ourFilenames.has(f.filename)).length
-  }, [files, syncStatus])
+    if (!listing?.files || !sync?.statuses) return undefined
+    const ourFilenames = new Set(sync.statuses.map(s => s.expected_filename))
+    return listing.files.filter(f => ourFilenames.has(f.filename)).length
+  }, [listing, sync])
 
   const counts: Partial<Record<Tab, number>> = {
     strategies: strategies?.length,

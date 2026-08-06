@@ -26,19 +26,46 @@ def rig(monkeypatch):
         # Agents that come up once their task is fired. Anything not listed
         # stays down, which is the schtasks-lied case.
         "recovers": {"nt8", "mt5"},
+        # Scripts kill_agent_process was asked to terminate, in order.
+        "killed": [],
+        # Scripts that have a WEDGED process to find — alive, not serving. These
+        # are the ones a kill can actually clear; anything else means the task
+        # never started and killing finds nothing.
+        "wedged": set(),
+        # Agents that come up on the SECOND fire, i.e. once the corpse is gone.
+        "recovers_after_kill": {"nt8", "mt5"},
     }
 
     def restart_tunnel():
         state["tunnel_restarts"] += 1
         state["ports"] = {sup.NT8_PORT: True, sup.MT5_PORT: True}
 
+    # Resolved with fallbacks so the fixture still builds against a supervisor
+    # that predates the wedged-agent recovery — see the `raising=False` note below.
+    nt8_script = getattr(sup, "NT8_SCRIPT", "nt8_agent.py")
+    mt5_script = getattr(sup, "MT5_SCRIPT", "mt5_agent.py")
+
     def schtasks_run(task):
         state["fired"].append(task)
-        if task == sup.NT8_TASK and "nt8" in state["recovers"]:
-            state["nt8"] = True
-        if task == sup.MT5_TASK and "mt5" in state["recovers"]:
-            state["mt5"] = True
+        name = "nt8" if task == sup.NT8_TASK else "mt5"
+        # A wedged process is why Windows refuses the task, so firing it while
+        # one exists changes nothing — that is the whole defect being modelled.
+        script = nt8_script if name == "nt8" else mt5_script
+        if script in state["wedged"]:
+            return {"status": "ok", "output": ""}
+        if name in state["recovers"]:
+            state[name] = True
         return {"status": "ok", "output": ""}
+
+    def kill_agent_process(script):
+        state["killed"].append(script)
+        if script not in state["wedged"]:
+            return False
+        state["wedged"].discard(script)
+        name = "nt8" if script == nt8_script else "mt5"
+        if name in state["recovers_after_kill"]:
+            state["recovers"].add(name)
+        return True
 
     monkeypatch.setattr(sup, "port_bound", lambda p, timeout=1.0: state["ports"][p])
     monkeypatch.setattr(sup, "nt8_agent_ok", lambda: state["nt8"])
@@ -47,6 +74,13 @@ def rig(monkeypatch):
     monkeypatch.setattr(sup, "busy_scopes", lambda: state["busy"])
     monkeypatch.setattr(sup, "restart_tunnel", restart_tunnel)
     monkeypatch.setattr(sup, "schtasks_run", schtasks_run)
+    # ⚠ `raising=False` so this fixture still builds against a supervisor that has
+    # no `kill_agent_process` — which is what makes the wedged-agent tests below a
+    # MEANINGFUL red rather than a vacuous one. Without it every test in the file
+    # errors at setup on a missing attribute, which proves the attribute is
+    # missing and says nothing about behaviour. With it, the reds are the
+    # assertions themselves: no kill attempted, one fire instead of two.
+    monkeypatch.setattr(sup, "kill_agent_process", kill_agent_process, raising=False)
     return state
 
 
@@ -187,12 +221,17 @@ def test_a_task_that_fires_but_does_not_start_is_reported_as_such(rig):
 
     Without the re-probe the loop would report a healed agent every minute
     forever and the dot would stay red with nothing explaining it.
+
+    With NO wedged process to clear, the kill finds nothing and the loop says so
+    rather than pretending it did something — this is the genuine "the task did
+    not start" case (stored-password trap, no interactive session).
     """
     rig["mt5"] = False
     rig["recovers"] = set()
     result = run(rig)
     assert rig["fired"] == [sup.MT5_TASK]
-    assert "mt5-fired-but-still-down" in result["actions"]
+    assert rig["killed"] == [sup.MT5_SCRIPT]
+    assert "mt5-fired-but-still-down (no process to clear)" in result["actions"]
     assert result["mt5"] is False
 
 
@@ -201,6 +240,80 @@ def test_a_successful_start_is_reported_as_started(rig):
     result = run(rig)
     assert "nt8-started" in result["actions"]
     assert result["nt8"] is True
+    # Nothing to clear when the ordinary fire worked.
+    assert rig["killed"] == []
+
+
+# ── The wedged agent — alive, not serving, and un-restartable by task ─────────
+# MEASURED on the live box 2026-08-06: the NT8 agent sat in this state for two
+# days while both the supervisor and the sidebar's Start button fired the task
+# once a minute and Windows refused every one of them (0x800710E0).
+
+def test_a_wedged_agent_is_killed_and_restarted(rig):
+    rig["nt8"] = False
+    rig["recovers"] = set()               # the first fire cannot work…
+    rig["wedged"] = {sup.NT8_SCRIPT}      # …because a corpse holds the task
+    result = run(rig)
+
+    assert rig["killed"] == [sup.NT8_SCRIPT]
+    # Fired TWICE: once refused, once after the corpse was cleared.
+    assert rig["fired"] == [sup.NT8_TASK, sup.NT8_TASK]
+    assert "nt8-wedged-process-killed" in result["actions"]
+    assert "nt8-restarted-after-kill" in result["actions"]
+    assert result["nt8"] is True
+
+
+def test_the_kill_targets_only_that_agents_own_script(rig):
+    """The second clause of the kill match is the safety property.
+
+    `mt5_agent.py` must never be handed to the NT8 branch — on the real box the
+    match is `name='python.exe' AND commandline LIKE '%<script>%'`, and the
+    script name is the ONLY thing separating one agent from the live trading bot.
+    """
+    rig["mt5"] = False
+    rig["recovers"] = set()
+    rig["wedged"] = {sup.MT5_SCRIPT}
+    run(rig)
+    assert rig["killed"] == [sup.MT5_SCRIPT]
+    assert sup.NT8_SCRIPT not in rig["killed"]
+
+
+def test_a_kill_that_does_not_bring_it_back_says_so(rig):
+    """Clearing the corpse is not a guarantee — and reporting one would be the
+    same lie as trusting schtasks."""
+    rig["nt8"] = False
+    rig["recovers"] = set()
+    rig["recovers_after_kill"] = set()
+    rig["wedged"] = {sup.NT8_SCRIPT}
+    result = run(rig)
+    assert "nt8-still-down-after-kill" in result["actions"]
+    assert result["nt8"] is False
+
+
+def test_a_busy_scope_is_never_killed(rig):
+    """The busy guard runs FIRST, so the kill can never reach an agent whose
+    scope holds a running job. That ordering is the whole reason a kill is safe
+    here at all — 'dead' and 'too loaded to answer /health' are indistinguishable
+    from this side, and the wrong guess would terminate a live run's agent."""
+    rig["nt8"] = False
+    rig["busy"] = {"nt8"}
+    rig["wedged"] = {sup.NT8_SCRIPT}
+    result = run(rig)
+    assert rig["killed"] == []
+    assert rig["fired"] == []
+    assert any("nt8-DOWN-with-a-job-running" in a for a in result["actions"])
+
+
+def test_an_unbound_port_is_never_killed_either(rig):
+    """No tunnel means the /health probe proves nothing about the far end, so a
+    silent agent is not evidence of a wedged one."""
+    rig["nt8"] = False
+    rig["ports"] = {sup.NT8_PORT: False, sup.MT5_PORT: True}
+    rig["wedged"] = {sup.NT8_SCRIPT}
+    rig["vps"] = False        # keep the tunnel branch from rebuilding the port
+    result = run(rig)
+    assert rig["killed"] == []
+    assert "nt8-skipped (no tunnel)" in result["actions"]
 
 
 def test_a_failed_fire_does_not_abort_the_other_agent(rig, monkeypatch):

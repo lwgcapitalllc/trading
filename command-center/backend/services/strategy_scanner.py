@@ -423,6 +423,20 @@ def needs_rescan(row: dict) -> bool:
     return meta_mtime > (row.get("scanned_at") or 0)
 
 
+def is_orphan(row: dict) -> bool:
+    """True when a registered strategy's recorded source_path is gone from disk.
+
+    The read-only twin of `_detect_orphans`, per row, so `GET /strategies` can
+    carry the fact and the Reconcile button does not depend on somebody having
+    pressed Scan first. A strategy with no `source_path` was never tied to a repo
+    file and is therefore not an orphan.
+    """
+    sp = row.get("source_path")
+    if not sp:
+        return False
+    return not (Path(cfg.MONOREPO_ROOT) / sp).exists()
+
+
 def _read_strategy_overview(meta_path: Path) -> dict:
     """Strategy-level narrative from a companion meta.json — UI only.
 
@@ -577,12 +591,18 @@ def _resolve_hint(hint: str):
     return {"bool": bool, "int": int, "float": float, "str": str}.get(hint.strip())
 
 
-def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> Optional[dict]:
-    """Import a Python strategy package and build its strategy row, or None if it doesn't opt in.
+def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> tuple[Optional[dict], Optional[str]]:
+    """Import a Python strategy package → `(row, error)`.
 
-    Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_sos_fade/__init__.py). Import
-    failures are swallowed to None: a half-finished package under strategies/python/ must not be
-    able to take the whole scan down — every other strategy would vanish from the UI.
+    Opting in means declaring LAB_STRATEGY (see strategies/python/mpc_sos_fade/__init__.py).
+
+    ⚠ AN IMPORT FAILURE IS REPORTED, NOT SWALLOWED. It still must not take the
+    whole scan down — a half-finished package would make every other strategy
+    vanish from the UI — but returning a bare `None` made a broken package
+    indistinguishable from one that simply is not a lab strategy. The row then
+    kept its STALE param schema, `needs_scan` stayed true for ever, and the scan
+    reported success with "0 updated": a silent failure whose only symptom was a
+    pill that would not go away. The error string goes into `ScanResult.warnings`.
     """
     import importlib
 
@@ -591,15 +611,17 @@ def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> Optional[dict]:
         sys.path.insert(0, str(monorepo_root))
     try:
         mod = importlib.import_module(f"strategies.python.{pkg_dir.name}")
-    except Exception:
-        return None
+    except Exception as exc:
+        return None, f"{pkg_dir.name}: import failed — {type(exc).__name__}: {exc}"
     spec = getattr(mod, "LAB_STRATEGY", None)
     if not isinstance(spec, dict) or "config" not in spec:
-        return None
+        # Not a lab strategy. Deliberately silent — this is the normal state for
+        # a helper package, not a fault.
+        return None, None
 
     params = _py_param_schema(spec["config"])
     if not params:
-        return None
+        return None, f"{pkg_dir.name}: declares LAB_STRATEGY but its config dataclass has no fields"
     meta_path = pkg_dir / f"{pkg_dir.name}.meta.json"
     params = _apply_param_meta(params, meta_path)
     overview = _read_strategy_overview(meta_path)
@@ -625,7 +647,7 @@ def _parse_python_package(pkg_dir: Path, monorepo_root: Path) -> Optional[dict]:
         # the gated-layer rule forbids them from baking risk management in — so they are always
         # sized by the engine and there is deliberately no meta.json escape hatch for it.
         "self_sizing":          bool(spec.get("self_sizing", False)),
-    }
+    }, None
 
 
 def _python_source_hash(pkg_dir: Path) -> str:
@@ -657,9 +679,11 @@ def scan_strategies() -> dict:
     strategies_dir = monorepo_root / "strategies"
 
     if not strategies_dir.exists():
-        return {"scanned": 0, "added": 0, "updated": 0, "skipped": 0, "warnings": []}
+        return {"scanned": 0, "added": 0, "updated": 0, "skipped": 0,
+                "orphans": [], "warnings": [f"strategies/ not found under {monorepo_root}"]}
 
     added = updated = skipped = strategy_count = 0
+    warnings: list[str] = []
 
     # ── NinjaTrader (.cs) ─────────────────────────────────────────────────────
     for cs_path in strategies_dir.rglob("*.cs"):
@@ -736,9 +760,11 @@ def scan_strategies() -> dict:
         if not (pkg_dir / "__init__.py").exists():
             continue
 
-        data = _parse_python_package(pkg_dir, monorepo_root)
+        data, err = _parse_python_package(pkg_dir, monorepo_root)
+        if err:
+            warnings.append(err)
         if data is None:
-            continue  # doesn't declare LAB_STRATEGY, or failed to import — not a lab strategy
+            continue  # not a lab strategy, or it could not be imported (warned above)
 
         strategy_count += 1
         strategy_id = data["id"]
@@ -769,7 +795,7 @@ def scan_strategies() -> dict:
     orphans = _detect_orphans(monorepo_root)
 
     return {"scanned": strategy_count, "added": added, "updated": updated,
-            "skipped": skipped, "orphans": orphans, "warnings": []}
+            "skipped": skipped, "orphans": orphans, "warnings": warnings}
 
 
 def _detect_orphans(monorepo_root: Optional[Path] = None) -> list[str]:

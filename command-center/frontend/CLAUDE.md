@@ -299,6 +299,8 @@ toast.error('Failed: ...')
 - Every user-initiated state change → success + failure toast
 - Reads don't toast
 - Don't toast on navigation, hover, or query refetches
+- **A mutation's failure toast comes from `api.*` already** — do NOT add an `onError: () => toast.error(...)` beside it. Seven hooks in `useLab.ts` carried one until 2026-08-06 and every failure they covered popped **twice**.
+- **A POLLING query must not toast** — `request()` toasts on every non-ok response, so a query on a `refetchInterval` toasts on every tick, and one unreachable dependency becomes a permanent queue of popups (measured on the Strategies page: ~6/min with the NT8 agent down, plus a burst per window focus). Pass `api.get(path, { silent: true })` with `retry: false` **and render the failure in the layout**. ⚠ `silent` hides the toast, never the error — `isError` and the payload still reach the caller, so using it without rendering the failure turns a loud bug into a silent one.
 
 ---
 
@@ -1188,7 +1190,14 @@ question it had not already thought of.
 **Added 2026-08-05.** This folder had no test runner at all: the convention was "verify it in a
 real browser", done by hand, which is why the Overview's twelve defects each survived until
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
-**55 tests in 4 files**, run with `npm test` from `frontend/`.
+**66 tests in 5 files**, run with `npm test` from `frontend/`.
+
+**`tests/strategies.spec.ts` (11, ~38s) — added 2026-08-06 with the Strategies audit.** ⚠ **This is
+the one suite in this folder with NO clean fail-watch, and the reason is recorded rather than
+glossed**: the endpoints it covers changed shape (bare list → envelope) in the same pass, so the
+page at `HEAD` fails against the new backend for reasons unrelated to any defect. Non-vacuity came
+from **mutation** — remove a fix, confirm the test goes red — and that is what exposed a test of
+mine that passed with the guard it named deleted. Full detail: *The Strategies page* above.
 
 **`tests/stress.spec.ts` (11, ~44s) — added 2026-08-05 with the Stress Tests audit, and every one
 of the 11 was watched to fail against the page at `HEAD`.** ⚠ **Two locator traps live here, and
@@ -1243,6 +1252,66 @@ hand-written fixture drifts from the backend's model and then pins a shape the s
 inside 30s (measured: the mocked route was hit exactly once), and **`page.goto` is a full page
 load** that destroys the query cache entirely. Any test about *stale data still on screen* must
 therefore wait out the real poll — which is why one test is 65s and says so.
+
+## The Strategies page — audited 2026-08-06
+
+Aaron asked for a full audit of the page (Strategies tab, Deployed tab, Scan) with one reported
+symptom: **"if the NT8 agent is down I get this annoying error about remote end closed connection
+without response, every couple of seconds."** He was describing a toast storm, and the storm turned
+out to be the visible edge of a page that could not distinguish *the VPS says no* from *nobody
+asked the VPS*. The backend half is in `backend/CLAUDE.md` → *The Strategies page — the 2026-08-06
+audit*.
+
+🔴 **A toast is an EVENT; a dependency being down is a STATE.** `api.get` toasts on every non-ok
+response, and both strategy-file queries are on a `refetchInterval` — so one unreachable agent
+produced roughly **six error toasts a minute for as long as the page was open**, plus a burst on
+every window focus, each one duplicated by an `onError` handler that toasted the same failure a
+second time. `request()` now takes `RequestOpts { silent }`, both polling hooks pass
+`{ silent: true }` with `retry: false`, seven duplicate `onError` toasts are gone, and the failure
+is **rendered** — `AgentDownBanner` on both tabs, driven by the `nt8_error` / `mt5_error` fields on
+the new envelopes. ⚠ **`silent` suppresses the TOAST, never the error** — `isError` and the payload
+both still reach the caller, and using it anywhere the caller does not render the failure would be
+converting a loud bug into a quiet one.
+
+🔴 **With sync-status down, a strategy that needed deploying offered a Run button.** The endpoint
+502'd, every row lost its `sync` object, and `sync === undefined` fell through every pill and every
+guard to the default action. **An absent answer took the shape of a healthy one.** The action cell
+is now gated — `isPython || sync !== undefined` — and renders a plain `unknown` otherwise.
+
+🔴 **The version chip named the wrong version.** `liveVer` read `needs_compile ? deployed_version :
+(compiled_version ?? deployed_version)`, so on a strategy deployed but not yet compiled it reported
+the DEPLOYED version as what was running — while NT8 and MT5 both execute the **compiled**
+artefact. It is `sync.compiled_version` full stop now, and the tooltip says *compiled vN is what
+runs*.
+
+⚠ **`file_exists_on_vps` was returned by the backend and rendered by nothing**, so a deployment
+whose file had been deleted off the box read green **In sync**. It draws **Missing on VPS** now,
+with the action reading **Redeploy** — and 🔴 **my first fix reintroduced the exact contradiction
+it existed to remove**, adding the red chip BESIDE the hash-derived pill so the row showed green
+*In sync* next to red *Missing on VPS*. **The browser check caught it; reading the diff had not.**
+The status is one ordered-exclusive chain: `Needs deploy → Missing on VPS → Needs compile → VPS
+unknown → In sync`.
+
+**Also:** the compile modal had **no way out while a job ran** (footer Close renders only on
+completion, and a hung poll never completes) — it now has a header X, an Escape handler, and reads
+`isError` so a failed status poll ends the spinner instead of spinning for ever. The Reconcile
+button reads `strategy.is_orphan` off the row rather than `scan.data?.orphans`, so a deleted source
+file is visible on load instead of only after somebody presses Scan. The market filter moved into
+`?market=`, and both `setSearchParams` calls **merge** rather than replace — `setSearchParams({tab})`
+drops every other param, which is how the tab switch would have silently cleared the filter.
+
+**`tests/strategies.spec.ts` — 11 new checks.** ⚠ **A clean fail-watch against `HEAD` was
+impossible and was NOT done**: the two endpoints changed shape from a bare list to an envelope, so
+the old page fails against the new backend for unrelated reasons. Non-vacuity was established by
+**mutation** — each fix removed in turn, the naming test confirmed red. 🔴 **That found a test of
+mine that could not fail on the defect it named**: deleting the Run-button guard left *"a strategy
+that needs deploying still says so with the agent down"* green, because that mock sets
+`needs_deploy: true` and Deploy renders either way. A separate test (*"a whole sync failure never
+leaves a deploying strategy offering Run"*) fails the entire sync request and **does** go red
+without the guard. **A green new test proves nothing until you have seen it red — and "I watched
+the suite go red" is not the same claim as "I watched THIS test go red for THIS reason."**
+⚠ **Locators here key off the platform badge `img`, not the name** — the Name column renders the
+display name (*Opening Range Breakout*), not the class name (*ORB*).
 
 ## Decided 2026-08-05: the Overview does NOT get its own health strip
 
@@ -1742,11 +1811,11 @@ Per-row retry in `FailedRunsTable`: a `RotateCcw` icon button calls `useRetryBac
 
 ## Strategy deployment manager
 
-The "Deployed" sub-tab (`FilesTab`) has a drag/drop zone (`.cs`/`.mq5`), a file list sorted by platform then filename, trash-can delete, and overwrite/delete confirm modals. "Compile NT8" (`useTriggerCompile`) and "Compile MT5" (purple, only when MT5 files present; `useTriggerCompileMt5`) both open the generic `CompileModal` (props: `title` + `usePollHook`). The modal has a status-icon header (`StatusIcon`: spinner / green check / red X) + one-line summary, a body capped at `max-h-[85vh]` that scrolls, and a pinned footer. While running it shows staggered pulse **skeleton rows** (no second spinner) shaped like the result rows that replace them. On completion it renders the real `job.errors` / `job.warnings` **text** — not just counts — via `CompileSection` (color-coded, numbered, monospace lines: red `neg` for errors, amber `warn` for warnings); warnings show even on a successful compile. The elapsed counter ticks every second from a **local `setInterval`** (anchored to `started_at`, freezing at `completed_at` when done) — without it the count only advanced on each poll and visibly jumped. Strategy-file hooks live in `useLab.ts`: `useStrategyFiles`, `useStrategyFileSyncStatus`, `useUploadStrategyFile` (native `fetch()` + `FormData`, not `api.post`), `useDeleteStrategyFile`, `useTriggerCompile`, `useCompileStatus`, `useTriggerCompileMt5`, `useCompileStatusMt5`, `useDeployStrategy`. `useParamTypes(strategyId)` calls `GET /strategies/{id}/param-types` → `Record<string, 'int' | 'double'>` with `staleTime: Infinity`; used by `OptimizerModal` to validate int-param ranges; disabled when `strategyId` is null. Types: `StrategyFile` (+ `platform`), `StrategyFileSyncStatus`, `CompileJobStatus`, `DeployJobStatus`; `ScanResult` carries `orphans: string[]` (DB strategies whose source file is gone) + `warnings: string[]`; `ReconcileResult` carries `removed: string[]` + `warnings: string[]`.
+The "Deployed" sub-tab (`FilesTab`) has a drag/drop zone (`.cs`/`.mq5`), a file list sorted by platform then filename, trash-can delete, and overwrite/delete confirm modals. "Compile NT8" (`useTriggerCompile`) and "Compile MT5" (purple, only when MT5 files present; `useTriggerCompileMt5`) both open the generic `CompileModal` (props: `title` + `usePollHook`). The modal has a status-icon header (`StatusIcon`: spinner / green check / red X) + one-line summary, a body capped at `max-h-[85vh]` that scrolls, and a pinned footer. While running it shows staggered pulse **skeleton rows** (no second spinner) shaped like the result rows that replace them. On completion it renders the real `job.errors` / `job.warnings` **text** — not just counts — via `CompileSection` (color-coded, numbered, monospace lines: red `neg` for errors, amber `warn` for warnings); warnings show even on a successful compile. The elapsed counter ticks every second from a **local `setInterval`** (anchored to `started_at`, freezing at `completed_at` when done) — without it the count only advanced on each poll and visibly jumped. Strategy-file hooks live in `useLab.ts`: `useStrategyFiles`, `useStrategyFileSyncStatus`, `useUploadStrategyFile` (native `fetch()` + `FormData`, not `api.post`), `useDeleteStrategyFile`, `useTriggerCompile`, `useCompileStatus`, `useTriggerCompileMt5`, `useCompileStatusMt5`, `useDeployStrategy`. `useParamTypes(strategyId)` calls `GET /strategies/{id}/param-types` → `Record<string, 'int' | 'double'>` with `staleTime: Infinity`; used by `OptimizerModal` to validate int-param ranges; disabled when `strategyId` is null. Types: `StrategyFile` (+ `platform`), `StrategyFileSyncStatus`, `CompileJobStatus`, `DeployJobStatus`; `ScanResult` carries `orphans: string[]` (DB strategies whose source file is gone) + `warnings: string[]`; `ReconcileResult` carries `removed: string[]` + `warnings: string[]`. **Since 2026-08-06 both file endpoints return an ENVELOPE, not a bare list** — `StrategyFilesResponse { files, nt8_error, mt5_error }` and `StrategyFileSyncResponse { statuses, nt8_error, mt5_error }` — so one unreachable agent degrades the other platform's rows instead of 502-ing the whole call, and the page can say WHICH agent is down. The modal now has a header X and an Escape handler (the footer Close renders only on completion, so a hung poll had no way out) and reads `isError`, so a failed status poll ends the spinner.
 
-**Scan vs Reconcile (bidirectional delete).** Scan is read-only: `useScanStrategies` (`POST /strategies/scan`) adds/updates and its success toast flags the orphan count (`N orphaned (source deleted — use Reconcile)`). Deleting a source file from the repo propagates to the DB row + the deployed VPS file ONLY through an explicit action: `useReconcileStrategies` (`POST /strategies/reconcile`). On the `Strategies.tsx` header, a red **Reconcile (N)** button appears next to Scan **only when the last scan found orphans** (`scan.data?.orphans`), fronted by the shared `ConfirmDeleteModal` (imported from `pages/Backtests`) listing exactly which strategies will be removed. On success it invalidates `['lab','strategies']` + the strategy-files / sync-status keys, and surfaces any per-strategy VPS-delete warnings as error toasts. The per-strategy Delete button uses the same backend `remove_strategy` path. See backend CLAUDE.md "Bidirectional delete (reconcile)".
+**Scan vs Reconcile (bidirectional delete).** Scan is read-only: `useScanStrategies` (`POST /strategies/scan`) adds/updates and its success toast flags the orphan count (`N orphaned (source deleted — use Reconcile)`). Deleting a source file from the repo propagates to the DB row + the deployed VPS file ONLY through an explicit action: `useReconcileStrategies` (`POST /strategies/reconcile`). On the `Strategies.tsx` header, a red **Reconcile (N)** button appears next to Scan whenever any strategy row carries **`is_orphan`** — ⚠ **not `scan.data?.orphans`, which is MUTATION state**: gated on that, an orphan was invisible on a fresh page load and stayed invisible until somebody happened to press Scan (fixed 2026-08-06). It is fronted by the shared `ConfirmDeleteModal` (imported from `pages/Backtests`) listing exactly which strategies will be removed. On success it invalidates `['lab','strategies']` + the strategy-files / sync-status keys, and surfaces any per-strategy VPS-delete warnings as error toasts. The per-strategy Delete button uses the same backend `remove_strategy` path. See backend CLAUDE.md "Bidirectional delete (reconcile)".
 
-Each row in `StrategiesTab` has a Deploy/Compile/Run action driven by the **content-aware** `StrategyFileSyncStatus` (`needs_deploy` / `needs_compile`, not the old presence-only `in_sync`). `StrategyRow` takes the full `sync` object (via `syncByStrategy[s.id]`), and the Status cell shows a version chip `v{current_version}` (title tooltip: "Local vN · running vM") next to the state pill: amber **Needs deploy** (local source differs from what's deployed) → amber **Needs compile** (deployed but not compiled from that content) → green **In sync**. The action button mirrors the pill: `needs_deploy` → Deploy, else `needs_compile` → Compile, else Run. `handleDeploy` tracks `deployingId` and on success invalidates `sync-status`. **First-run:** every strategy shows Needs deploy until deployed once through the tracked path (no deploy-hash recorded yet — see backend CLAUDE.md). `StrategyVersion` type + `GET /strategies/{id}/versions` expose the full version history if a per-strategy view wants it.
+Each row in `StrategiesTab` has a Deploy/Compile/Run action driven by the **content-aware** `StrategyFileSyncStatus` (`needs_deploy` / `needs_compile`, not the old presence-only `in_sync`). `StrategyRow` takes the full `sync` object (via `syncByStrategy[s.id]`), and the Status cell shows a version chip `v{current_version}` next to the state pill. **The pill is ONE ordered-exclusive chain and must stay one** (2026-08-06): amber **Needs deploy** → red **Missing on VPS** (`file_exists_on_vps === false`, previously returned by the backend and rendered by nothing, so a file deleted off the box read green) → amber **Needs compile** → grey **VPS unknown** (`file_exists_on_vps == null`, i.e. the agent could not be asked) → green **In sync**. ⚠ **The first attempt at this added *Missing on VPS* as a chip BESIDE the hash-derived pill, so a row rendered green *In sync* next to red *Missing on VPS*** — the exact contradiction the fix existed to remove, one line lower, caught by a browser check and not by reading the diff. The action mirrors the pill (`Deploy` / `Redeploy` / `Compile` / `Run`), and **the whole action cell is gated on `isPython || sync !== undefined`** — with sync-status down every row lost its `sync` object and fell through to Run, so a strategy that needed deploying offered to run. ⚠ **`liveVer` is `sync.compiled_version`, full stop** — it used to fall back to `deployed_version` when `needs_compile`, which named the deployed source as what was running while NT8 and MT5 both execute the COMPILED artefact. `handleDeploy` tracks `deployingId` and on success invalidates `sync-status`. **First-run:** every strategy shows Needs deploy until deployed once through the tracked path (no deploy-hash recorded yet — see backend CLAUDE.md). `StrategyVersion` type + `GET /strategies/{id}/versions` expose the full version history if a per-strategy view wants it.
 
 **"Needs scan" pill (2026-07-23).** Separate from the deploy/compile sync above — it reads `Strategy.needs_scan` (on the strategy row itself, not `StrategyFileSyncStatus`), which the backend computes live (source hash / meta mtime vs last scan). When true, `StrategyRow`'s Status cell shows a clickable amber **● Needs scan** pill (calls `onScan` → `useScanStrategies().mutate()`, spins while pending) ABOVE the deploy/compile pills. It renders for ALL runners, and for a Python strategy — which has no deploy/compile step, so its Status cell was otherwise empty — it's the only status pill. `RunBacktestModal` shows a matching amber banner when `strategy.needs_scan` ("Parameters may be out of date … click Scan Strategies, then reopen"): the panel form is built from the last-scanned schema, so editing a Python `config.py`/meta without re-scanning silently runs on the OLD params (the bug that ran mpc_sos_fade on stale divergence-armed defaults). This is the Python analog of the MT5/NT8 deploy/compile badges.
 
