@@ -401,9 +401,24 @@ Four rules, each of which fails silently if broken:
   as `Optional[list[str]]` so the page can caption which it is.
 - **`spread` and `swap` are never accepted from the request.** They are measurements, and a field
   the operator can type is a field that can disagree with the broker. Picking `puprime_standard`
-  over the default `vantage_demo` moves the spread 0.22 → 0.33 because those are two different
-  measurements — **the $0.33 this repo had recorded is PU Prime's, and using it for a Vantage
-  backtest overstated the cost by 50%.**
+  over the default `vantage_demo` moves the spread 0.22 → **0.32** because those are two different
+  measurements — **using one broker's figure for the other overstates the cost by 45%.** (This
+  paragraph said 0.33 until 2026-08-06; the figure was re-measured over 1,893,438 ticks and the
+  code has been 0.32 since. The prose was the stale half.)
+- 🔴 **A BROKER PROFILE CAN NOW REFUSE, AND A 500 HERE IS THE FEATURE WORKING (2026-08-06).**
+  `backtest/fills.py` used to give all four PU Prime tiers the SAME spread and swap — both measured
+  on a **Standard** demo, which is the one tier priced by a marked-up spread. So `puprime_ecn`
+  charged ECN's commission on top of Standard's spread and swap: a cost model no real account
+  offers, and **nothing errored**. The three unmeasured tiers now carry `SPREAD_UNMEASURED` /
+  `UNMEASURED_SWAP` and raise `CostsNotConfigured` naming `algos/tools/broker_facts.py`. **So a run
+  requesting `spread`, `bid_ask_fills` or `swap` on `puprime_prime` / `puprime_ecn` / `puprime_cent`
+  now FAILS instead of returning a plausible wrong number.** ⚠ **`commission` on those tiers still
+  works** — it is the one of the three a broker states unambiguously per lot, so the refusal is on
+  the unmeasured COST, not on the tier. ⚠ **The swap half was measured, not assumed:** on ONE PU
+  Prime account `XAUUSD.s` and `XAUUSD.crp` are the same market (median M15 close difference $0.08
+  over 200 shared bars) with swaps **8.5x apart** and the short CREDIT gone entirely. Full record:
+  `backtest/CLAUDE.md` and `docs/BROKER_QUESTIONS.md`. **If a lab run starts 500-ing on a raw tier,
+  do not "fix" it by defaulting the spread — measure that account, or run without the layer.**
 - **`bid_ask_fills` REPLACES the spread cost, never adds to it** (see the strategy's
   `_charge_spread`), and it is the only layer that can change which trades exist.
 - **`GET /backtests/broker-profiles` exists so the Run modal never retypes a spread.** It serves

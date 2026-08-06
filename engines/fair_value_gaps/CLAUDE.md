@@ -7,7 +7,15 @@ signal is the event ("a bull FVG formed at 101–105.5", "a candle closed past i
 No trading decisions, no structure detection (this engine is standalone — it reads price patterns
 directly), no MT5 ops, no UI, no chart rendering (no boxes, no colours, no directional-visibility
 filter — that filter is drawing-only in the Pine and is deliberately not reproduced).
-**Status:** BUILT + **Pine-parity RE-VALIDATED 2026-07-19 (exit 0).** Re-synced 2026-07-18 to a mpc
+**Status:** BUILT. 🔴 **Pine parity is STALE as of 2026-08-06 — the cap rule was REWRITTEN that day
+(swap rule → add rule, see the entry below) and `compare_fvg.py` has NOT run since.** The newest
+export on disk is 2026-07-14 and neither on-disk export can run against the current plot count, so
+the last green (2026-07-19, exit 0) describes code that no longer exists. **Re-export
+`indicators/fvg_export.pine` and re-run the gate before treating this engine as validated.** The
+cap change is currently proven through `compare_strategy.py` (exit 0 at four warmups) and unit
+tests — which is real evidence and is not this engine's own gate. ⚠ A Status line saying VALIDATED
+over rewritten code is the exact "a label is a claim about code somewhere else" defect this repo
+keeps meeting; that is why this line now leads with the staleness rather than burying it below. Re-synced 2026-07-18 to a mpc
 default drift + defaults reconciled: the middle-bar close-cleared check is now the OPTIONAL
 `require_close` flag (Pine `fvgRequireClose`, default False): the gate `(not fvgRequireClose or
 close[1] > high[2])` landed in mpc on 2026-07-17, AFTER the last (07-14) validation, so the engine and
