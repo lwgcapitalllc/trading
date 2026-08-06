@@ -1389,6 +1389,9 @@ export default function ChartPanel({
   }, [indicatorRoster])
   const toggleIndicator = (name: string) => setIndicatorsOn(v => ({ ...v, [name]: !v[name] }))
   const indicatorPanesRef = useRef<Map<string, string>>(new Map()) // indicator name → pane id
+  // Test seam. An indicator draws into the candle pane's CANVAS, so whether a layer is on screen
+  // has no DOM answer; this publishes the names the create pass actually handed to klinecharts.
+  const [drawnIndicatorNames, setDrawnIndicatorNames] = useState<string[]>([])
 
   // Measurement tool: click to anchor, move to preview, click to lock. One at a time.
   // Clicking a locked measurement clears it. Events bubble from the canvas so klinecharts
@@ -2067,8 +2070,10 @@ export default function ChartPanel({
     if (!chart) return
     for (const [name, paneId] of indicatorPanesRef.current) chart.removeIndicator(paneId, name)
     indicatorPanesRef.current.clear()
+    const drawn: string[] = []
     spec.indicators.forEach((ind, i) => {
       if (!indicatorsOn[ind.name]) return
+      drawn.push(ind.name)
       ensureSeriesIndicator(ind.name)
       const create = {
         name: ind.name,
@@ -2084,6 +2089,11 @@ export default function ChartPanel({
         if (paneId) indicatorPanesRef.current.set(ind.name, paneId)
       }
     })
+    // Test seam only — see `data-indicators-on` on the root. Set from the same pass that creates
+    // them, so it cannot claim a layer the chart is not drawing.
+    setDrawnIndicatorNames(prev =>
+      prev.length === drawn.length && prev.every((n, i) => n === drawn[i]) ? prev : drawn,
+    )
   }, [spec.indicators, indicatorsOn])
 
   const measureStats = (rect: MeasureRect) => {
@@ -2284,9 +2294,16 @@ export default function ChartPanel({
     // is satisfied by a jump that lands nowhere near the date asked for. Measured before the paging
     // guard existed: a jump to 2020-06-01 came to rest on 2021-01-19 with a perfectly healthy chart
     // and no error. They are `displayCandles`' own bounds, reused — never a second derivation.
+    //
+    // ⚠ `data-indicators-on` is the same kind of seam for the same kind of reason: an indicator is
+    // drawn INTO the candle pane's canvas, so "is the VWAP line on screen" has no DOM answer, and a
+    // check that settles for "the menu row is ticked" would pass against a panel that draws nothing.
+    // It reports the names actually handed to `createIndicator`, read off the same ref the removal
+    // pass uses — never a second derivation of which layers are live.
     <div
       data-applied-lo={loadedLoTs ?? undefined}
       data-applied-hi={loadedHiTs ?? undefined}
+      data-indicators-on={drawnIndicatorNames.join('|')}
       onMouseEnter={() => { hoveredRef.current = true }}
       onMouseLeave={() => { hoveredRef.current = false }}
     >
