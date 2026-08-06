@@ -208,7 +208,7 @@ def test_the_outage_is_announced_once_not_every_poll(monkeypatch):
 
     assert len(r.alerts) == 1
     assert r.ledger.kinds().count("mt5_link_lost") == 1
-    assert any("not seeing bars" in a for a in r.alerts)
+    assert any("seeing no market" in a for a in r.alerts)
 
 
 def test_reconnecting_is_not_hammered(monkeypatch):

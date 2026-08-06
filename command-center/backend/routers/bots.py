@@ -43,6 +43,7 @@ import config as cfg
 from models import BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
 from services import bot_params, lab_db
 from services import notify
+from services.alert_format import alert
 from services.notify import send_telegram
 
 router = APIRouter(prefix="/bots", tags=["bots"])
@@ -824,7 +825,8 @@ def start_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram("▶️ All bots starting \\[command center\\]")
+    _notify_telegram(alert("▶️", "STARTING", "All bots",
+                          "Requested from the command center."))
     return {"status": "ok", "output": out}
 
 
@@ -839,7 +841,9 @@ def stop_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram("⏹ All bots stopped \\[command center\\]")
+    _notify_telegram(alert("⏹", "STOPPED", "All bots",
+                          "Stopped from the command center. They will not come back on their "
+                          "own."))
     return {"status": "ok", "output": out}
 
 
@@ -856,7 +860,8 @@ def restart_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram("🔄 All bots restarting \\[command center\\]")
+    _notify_telegram(alert("🔄", "RESTARTING", "All bots",
+                          "Requested from the command center."))
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}
 
 
@@ -1136,9 +1141,10 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
         _launch_bot(bot_key)
         restarted = True
     if ok:
-        _notify_telegram(
-            f"📦 *{_KEY_DISPLAY.get(bot_key, bot_key)}* promoted \\[command center\\]"
-        )
+        _notify_telegram(alert(
+            "📦", "PROMOTED", _KEY_DISPLAY.get(bot_key, bot_key),
+            "It is now running the code that was just deployed."
+            + ("" if restarted else " Restart it to pick the new version up.")))
     return BotPromoteResult(ok=ok, output=out, restarted=restarted)
 
 
@@ -1240,8 +1246,9 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     display = _KEY_DISPLAY.get(bot_key, bot_key)
     # Plain text, no Markdown: bot keys and param names are full of underscores, and
     # Telegram drops the WHOLE message on an unbalanced entity rather than escaping it.
-    _notify_telegram(f"{display} runtime updated [command center]\n{changed}\n"
-                     f"Applies at the next bar the bot is flat.")
+    _notify_telegram(alert("⚙️", "SETTINGS CHANGED", display,
+                           changed,
+                           "It will apply at the next bar the bot is flat."))
     return {"status": "ok", "changed": True, "deployed": True, "detail": changed,
             "output": out}
 
@@ -1259,7 +1266,8 @@ def start_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(f"▶️ *{display}* starting \\[command center\\]")
+    _notify_telegram(alert("▶️", "STARTING", display,
+                          "Requested from the command center."))
     return {"status": "ok", "output": out}
 
 
@@ -1275,7 +1283,8 @@ def stop_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(f"⏹ *{display}* stopped \\[command center\\]")
+    _notify_telegram(alert("⏹", "STOPPED", display,
+                          "Stopped from the command center. It will not come back on its own."))
     return {"status": "ok", "output": out}
 
 
@@ -1293,5 +1302,6 @@ def restart_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(f"🔄 *{display}* restarting \\[command center\\]")
+    _notify_telegram(alert("🔄", "RESTARTING", display,
+                          "Requested from the command center."))
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

@@ -49,6 +49,7 @@ if str(_SHARED) not in sys.path:
 
 import alerts        # noqa: E402
 import notify        # noqa: E402  (for the TRADE/HEALTH routing kinds only)
+from alert_format import alert  # noqa: E402
 
 
 class BridgeState(str, Enum):
@@ -260,6 +261,10 @@ class OrderBridge:
             # else, and a strategy without a `cfg` must not be able to stop an exit alert.
             scratch_r=getattr(getattr(self._ex, "cfg", None), "exec_scratch_r", 0.15),
             threaded=self._pos_alert_id is not None,
+            # The SAME reason the ledger records, so the message and the audit trail cannot
+            # disagree. It is what separates a -0.02R scratch from a -1.00R loser on a screen
+            # where both say "exited at a stop", and only one of them is the risk rule working.
+            exit_reason="" if reason == "closed" else reason,
             when=self._bar_time(sig)),
             notify.TRADE, reply_to=self._pos_alert_id)
         self._pos_ticket = None
@@ -305,7 +310,13 @@ class OrderBridge:
         self._pos_alert_id = self._notify(alerts.format_entry(
             strategy=self._strategy_name, symbol=self._mt5.symbol, direction=side,
             entry=p.price_open, stop=p.sl, lots=p.volume,
-            digits=self._digits(), point=self._point(), when=self._bar_time(sig)),
+            digits=self._digits(), point=self._point(),
+            # The dollars already computed above, and the % that produced them. This is the ONLY
+            # message that states the risk — the exit replies to it, so repeating it there is
+            # repeating what is one tap up the thread.
+            risk_usd=self._pos_risk_usd or None,
+            risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
+            when=self._bar_time(sig)),
             notify.TRADE)
 
     def _agrees(self, positions) -> bool:
@@ -437,9 +448,11 @@ class OrderBridge:
         # message here — which is why it must not sit in a room that is only checked when a fill
         # arrives. `log_review.py` raises it AGAIN as a standing chip on the Bots page precisely
         # because one Telegram line, in any room, is not enough for this one.
-        self._notify(f"⛔️ *HALTED* {self._mt5.bot_label}\n{reason}\n\n"
-                     f"No further orders will be placed. Open positions keep their broker stop.",
-                     notify.HEALTH)
+        self._notify(alert(
+            "⛔", "HALTED", self._mt5.bot_label,
+            reason,
+            "Anything open keeps its broker stop. Check the account, then restart it."),
+            notify.HEALTH)
 
     def _moved(self, a: float, b: float) -> bool:
         """Price comparison at the symbol's own precision — a float that differs in the 9th

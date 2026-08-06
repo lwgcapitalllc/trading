@@ -138,7 +138,7 @@ def test_a_fresh_heartbeat_is_not_stale(watch):
 def test_an_old_heartbeat_raises_the_stall_alert(watch):
     out = watch.run({"heartbeat": time.time() - 20 * 60})
     assert len(watch.sent) == 1
-    assert "Loop Stalled" in watch.sent[0]
+    assert "STALLED" in watch.sent[0]
     assert out["stale_alerted"]
 
 
@@ -152,7 +152,7 @@ def test_the_stall_alert_is_sent_once_not_every_minute(watch):
 def test_a_recovered_loop_says_so(watch):
     out = watch.run({"heartbeat": time.time()}, carried={"stale_alerted": True})
     assert len(watch.sent) == 1
-    assert "Recovered" in watch.sent[0]
+    assert "RECOVERED" in watch.sent[0]
     assert not out["stale_alerted"]
 
 
@@ -164,7 +164,7 @@ def test_a_running_bot_that_never_stamped_is_stale_not_silent(watch):
     """
     out = watch.run({"started": time.time() - 20 * 60})
     assert len(watch.sent) == 1
-    assert "Loop Stalled" in watch.sent[0]
+    assert "STALLED" in watch.sent[0]
     assert out["stale_alerted"]
 
 
@@ -206,7 +206,7 @@ def test_a_dead_bot_is_restarted_not_just_reported(down):
     assert down.attempts == ["mpc_sos_fade_demo"]
     assert out["running"] is True
     assert out["restart_tries"] == 0
-    assert any("Restarted" in m for m in down.sent)
+    assert any("RESTARTED" in m for m in down.sent)
 
 
 def test_a_deliberate_stop_is_not_fought(down, monkeypatch):
@@ -242,7 +242,7 @@ def test_a_bot_that_will_not_start_gives_up_and_says_so_once(down):
                    restart_succeeds=False)
     assert down.attempts == []
     assert len(down.sent) == 1
-    assert "Will Not Start" in down.sent[0]
+    assert "WILL NOT START" in down.sent[0]
     assert out["max_retry_alerted"]
 
     down.sent.clear()

@@ -8,11 +8,14 @@ REPLY to that entry, so the two halves of a trade sit together in the thread and
 never separated from the setup it came from. That is why `format_entry` is paired with a stored
 `message_id` in the bridge — the reply link is part of the format, not an extra.
 
-Deliberately plain text, no Markdown. Every one of these messages carries a strategy name, a
-symbol or a broker string, and those are full of underscores (`mpc_sos_fade`, `MT5_FFT`). A lone
-underscore opens a Markdown italic that never closes and Telegram rejects the WHOLE message —
-measured on the first real send. `notify.send_telegram` retries unformatted when that happens, but
-the better answer is not to depend on the rescue: an alert should never need one.
+**These are the only two TRADE-kind messages in the repo.** Everything else — starts, stops,
+halts, link outages, review findings — is HEALTH and goes to a different chat. See
+`algos/CLAUDE.md` → *Two rooms*.
+
+**The house shape and the no-Markdown rule both live in `shared/alert_format.py`** — read its
+docstring before changing any wording here. The short version: plain text always, because a lone
+underscore in `mpc_sos_fade` or `XAUUSD.s` makes Telegram reject the whole message; and no
+timestamp, because Telegram already prints the send time in the reader's own local clock.
 
 One emoji per message, and each one means something: direction on the way in, outcome on the way
 out. They are there so the eye can find a message in a scroll, not for decoration.
@@ -20,39 +23,35 @@ out. They are there so the eye can find a message in a scroll, not for decoratio
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
+
+_SHARED = Path(__file__).resolve().parent.parent / "shared"
+if str(_SHARED) not in sys.path:
+    sys.path.insert(0, str(_SHARED))
+
+from alert_format import alert  # noqa: E402
 
 # Aaron's words, kept verbatim so the message says what he asked to see.
 WIN, LOSE, BREAKEVEN = "WIN", "LOSE", "BREAKEVEN"
 
 _VERDICT_MARK = {WIN: "✅", LOSE: "❌", BREAKEVEN: "➖"}
 
+#: What the reader sees. The VALUE stays `LOSE` because `verdict()` is compared against it by the
+#: bridge, the ledger and the tests; the LABEL is the noun, because the message describes an
+#: outcome rather than issuing an instruction. Splitting the two is what lets the wording be
+#: changed on Aaron's say-so without touching anything that reasons about a trade.
+_VERDICT_LABEL = {WIN: "WIN", LOSE: "LOSS", BREAKEVEN: "BREAKEVEN"}
 
-def pip_size(digits: int, point: float) -> float:
-    """The value of one pip, DERIVED from the symbol rather than hardcoded per instrument.
 
-    MT5's convention: a pip is ten points on the 3- and 5-digit quotes (JPY pairs and the 5-digit
-    majors), and one point everywhere else. On 2-digit gold that makes a pip 0.01, so a $17.25
-    stop reads as 1,725 pips.
-
-    Worth knowing because gold has no settled convention — plenty of desks call 0.10 a pip there
-    and would read the same stop as 172.5. This rule is at least consistent across every symbol
-    the suite might trade, and it changes with the broker's own `digits`, so a 3-digit gold feed
-    would re-derive rather than inherit a wrong constant.
-    """
-    return point * 10 if digits in (3, 5) else point
 
 
 def _price(value: float, digits: int) -> str:
     return f"{value:,.{digits}f}"
 
 
-def _stamp(when: Optional[datetime]) -> str:
-    when = when or datetime.now(timezone.utc)
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return when.astimezone(timezone.utc).strftime("%a %d %b %Y, %H:%M UTC")
 
 
 def verdict(pnl_usd: float, r_multiple: Optional[float] = None,
@@ -79,54 +78,62 @@ def verdict(pnl_usd: float, r_multiple: Optional[float] = None,
 
 def format_entry(*, strategy: str, symbol: str, direction: str, entry: float, stop: float,
                  lots: float, digits: int = 2, point: float = 0.01,
+                 risk_usd: Optional[float] = None, risk_pct: Optional[float] = None,
                  when: Optional[datetime] = None) -> str:
     """The message that opens a trade's thread.
 
-    Ordered the way a trade is read: what it is and which way, then the two prices that define
-    it, then how far away the risk sits, then how big it is. Direction is on the top line because
-    it is the one thing worth seeing without opening the message.
+    Three groups, in the order the questions get asked: what it is and which way, the two prices
+    that define it, then how big it is and what it costs to be wrong.
+
+    ⚠ **The risk is stated HERE and nowhere else** (Aaron, 2026-08-05). The exit posts as a reply
+    to this message, so restating "on $200.00 risked" there is repeating what is one tap above.
+
+    ⚠ **"Risking", not "losing if stopped"** — a gap or a fast market can fill worse than the
+    stop, so the smaller word is the accurate one. `_stamp` is gone: Telegram already prints the
+    send time in the reader's own local clock, and a trade alert is always about now.
     """
     is_long = direction.upper().startswith("L")
-    mark = "📈" if is_long else "📉"
     side = "LONG" if is_long else "SHORT"
-    pips = abs(entry - stop) / pip_size(digits, point)
 
-    return (
-        f"{mark} ENTRY · {side}\n"
-        f"{strategy} — {symbol}\n"
-        f"\n"
-        f"Entry: {_price(entry, digits)}\n"
-        f"Stop: {_price(stop, digits)}\n"
-        f"Stop distance: {pips:,.0f} pips\n"
-        f"Lot size: {lots:g}\n"
-        f"\n"
-        f"{_stamp(when)}"
-    )
+    size = f"Size {lots:g} lots"
+    if risk_usd is not None:
+        pct = f" ({risk_pct:g}%)" if risk_pct is not None else ""
+        size += f" · Risking ${risk_usd:,.2f}{pct}"
+
+    return alert("📈" if is_long else "📉", "ENTRY", f"{side} {symbol}",
+                 f"Entry {_price(entry, digits)} · Stop {_price(stop, digits)}",
+                 size,
+                 strategy)
 
 
 def format_exit(*, strategy: str, symbol: str, exit_price: float, pnl_usd: float,
                 r_multiple: Optional[float] = None, digits: int = 2,
                 currency: str = "USD", scratch_r: float = 0.15,
-                threaded: bool = True, when: Optional[datetime] = None) -> str:
+                threaded: bool = True, exit_reason: str = "",
+                when: Optional[datetime] = None) -> str:
     """The reply that closes a trade's thread.
 
-    Outcome first, money second, price third — the order the questions actually get asked in.
+    Outcome, money, price — and nothing about what was risked, because this message hangs under
+    the entry that already said so.
 
-    `threaded` says whether this will post as a reply to its own entry alert. When it does, the
-    strategy and symbol are left OUT: the entry is one tap away and repeating it is noise. When
-    it does not — the entry alert never sent, so there is no message to reply to — the header
-    carries them, because a bare "WIN" floating in the group names no trade at all.
+    `threaded` says whether this really will post as a reply. When it does not — the entry alert
+    never sent, so there is no message to reply to — the header carries the symbol, because a bare
+    "WIN" floating in the group names no trade at all.
+
+    `exit_reason` is a short parenthetical like `stop` or `stop moved to entry`. It is the
+    difference between reading a number and understanding it: a −0.02R scratch and a −1.00R loser
+    both exited at a stop, and only one of them is the risk rule working.
     """
     v = verdict(pnl_usd, r_multiple, scratch_r)
-    money = f"{pnl_usd:+,.2f} {currency}"
-    r = f"  ({r_multiple:+.2f}R)" if r_multiple is not None else ""
-    head = f"{_VERDICT_MARK[v]} {v}" if threaded else f"{_VERDICT_MARK[v]} {v} — {strategy} · {symbol}"
+    verb = {WIN: "Made", LOSE: "Lost", BREAKEVEN: "Lost"}[v]
+    if v == BREAKEVEN and pnl_usd > 0:
+        verb = "Made"
+    amount = f"{verb} ${abs(pnl_usd):,.2f}"
+    r = f" · {r_multiple:+.2f}R" if r_multiple is not None else ""
+    price = f"Exit {_price(exit_price, digits)}"
+    if exit_reason:
+        price += f" ({exit_reason})"
 
-    return (
-        f"{head}\n"
-        f"\n"
-        f"P&L: {money}{r}\n"
-        f"Exit: {_price(exit_price, digits)}\n"
-        f"\n"
-        f"{_stamp(when)}"
-    )
+    return alert(_VERDICT_MARK[v], _VERDICT_LABEL[v], "" if threaded else symbol,
+                 amount + r,
+                 price)

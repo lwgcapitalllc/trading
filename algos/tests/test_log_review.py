@@ -320,4 +320,4 @@ def test_findings_print_on_a_cp1252_console(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(lr, "STATE_FILE", tmp_path / "state.json")
 
     assert lr.main(["--dry-run"]) == 0
-    assert "needs review" in capsys.readouterr().out
+    assert "REVIEW" in capsys.readouterr().out

@@ -85,6 +85,7 @@ sys.path.insert(0, str(ALGOS_ROOT / "notifications"))
 import bot_state as _bot_state                                     # noqa: E402
 from credentials import telegram_credentials                       # noqa: E402
 from notify import chat_for, HEALTH                                # noqa: E402
+from alert_format import alert, when                               # noqa: E402
 
 # How far back a run looks. Two days so a problem late yesterday is still reported this morning,
 # and so a run that crosses midnight sees the record either side of the roll.
@@ -160,7 +161,26 @@ def health_rows(instance_dir: Path, now: datetime,
 
 
 def _ts(row: dict) -> str:
+    """The RAW timestamp, used to build a finding's dedup key.
+
+    ⚠ Deliberately not the display form. A key carries the timestamp of the thing that happened,
+    so the same halt does not ping every hour and a NEW halt still does — which means changing
+    this function's output re-announces every outstanding finding exactly once. Render with
+    `_at()` instead; the two are separate so the wording can be improved without waking the
+    channel up.
+    """
     return str(row.get("ts", "?"))
+
+
+def _at(row: dict) -> str:
+    """The timestamp a HUMAN reads — the box's local clock, zone named.
+
+    A message about the past is the one case that needs an explicit time (Telegram's own stamp
+    says when the message was SENT, which for an hourly reviewer is a different thing). The zone
+    is named because the ledger and the logs are UTC, and a bare "6:06" would be an hour of
+    guessing away from the record it points at.
+    """
+    return when(row.get("ts", "?"))
 
 
 def _parse_ts(row: dict) -> Optional[datetime]:
@@ -206,26 +226,27 @@ def review_bot(bot_key: str, instance_dir: Path, state: dict,
         findings.append(Finding(
             f"halted:{_ts(row)}", ALERT,
             "Bridge HALTED — the bot is placing nothing",
-            f"At {_ts(row)}: {row.get('reason', 'no reason recorded')}.\n"
-            f"The loop keeps watching the market and will not send an order. The process is "
-            f"alive, so the watchdog and the Bots page both read RUNNING."))
+            f"It stopped placing orders at {_at(row)}: {row.get('reason', 'no reason recorded')}.\n"
+            f"It is still running and still looks healthy everywhere else — the watchdog and "
+            f"the Bots page both read RUNNING. Check the account."))
 
     if pulses and str(pulses[-1].get("bridge_state", "")).lower() == "halted":
         findings.append(Finding(
             f"halted_now:{_ts(pulses[-1])}", ALERT,
             "Bridge is HALTED right now",
-            f"The latest heartbeat at {_ts(pulses[-1])} reports the bridge halted. It is not "
-            f"placing orders and will not until it is restarted and reconciles with the broker."))
+            f"Its latest heartbeat, at {_at(pulses[-1])}, says the order bridge is halted, so it is "
+            f"placing nothing.\n"
+            f"It will not resume until it is restarted and agrees with the broker again."))
 
     # ── refused to start at all ──────────────────────────────────────────────
     for row in _of("startup_failed"):
         findings.append(Finding(f"startup_failed:{_ts(row)}", ALERT,
-                                "Bot failed to start",
-                                f"At {_ts(row)}: {row.get('error', '?')}"))
+                                "It failed to start",
+                                f"At {_at(row)}: {row.get('error', '?')}"))
     for row in _of("version_mismatch"):
         findings.append(Finding(f"version_mismatch:{_ts(row)}", ALERT,
-                                "Refused to start — code is not the promoted version",
-                                f"At {_ts(row)}: {row.get('detail', '?')}"))
+                                "It refused to start — the code is not the promoted version",
+                                f"At {_at(row)}: {row.get('detail', '?')}"))
 
     # ── died without saying so ───────────────────────────────────────────────
     for row in _of("startup"):
@@ -233,16 +254,18 @@ def review_bot(bot_key: str, instance_dir: Path, state: dict,
             findings.append(Finding(
                 f"unclean:{_ts(row)}", WARN,
                 "Previous run ended without shutting down",
-                f"The run before {_ts(row)} was killed, crashed, or the box went down — it "
-                f"wrote no shutdown record. Expected if you restarted it by hand."))
+                f"The run before {_at(row)} was killed, crashed, or the box went down — it wrote no "
+                f"shutdown record.\n"
+                f"Expected if you restarted it yourself."))
 
     starts = _of("startup")
     if len(starts) >= RESTART_LOOP:
         findings.append(Finding(
             f"restart_loop:{_ts(starts[-1])}", ALERT,
             f"Restarted {len(starts)} times",
-            f"{len(starts)} starts since {_ts(starts[0])}. Repeated restarts mean something is "
-            f"killing it or it is failing and being brought back."))
+            f"{len(starts)} starts since {_at(starts[0])}.\n"
+            f"Either something is killing it, or it is failing and being brought back. "
+            f"Expected if you deployed today."))
 
     # ── it stopped seeing the market ─────────────────────────────────────────
     outages = _of("mt5_link_lost")
@@ -252,8 +275,10 @@ def review_bot(bot_key: str, instance_dir: Path, state: dict,
         findings.append(Finding(
             f"mt5_outage:{_ts(outages[-1])}", WARN,
             f"Lost the MT5 link {len(outages)} time(s)",
-            f"Last at {_ts(outages[-1])}; {len(back)} recovery/recoveries recorded, "
-            f"{total // 60} minutes blind in total. While blind the bot sees no bars at all."))
+            f"Last at {_at(outages[-1])}, {len(back)} recovered, {total // 60} minutes blind in "
+            f"total.\n"
+            f"While blind it sees no bars at all. If it keeps happening, check MetaTrader on "
+            f"the VPS."))
 
     # ── the bar stream had holes ─────────────────────────────────────────────
     bar_errors = _of("bar_error")
@@ -261,30 +286,33 @@ def review_bot(bot_key: str, instance_dir: Path, state: dict,
         findings.append(Finding(
             f"bar_error:{_ts(bar_errors[-1])}", WARN,
             f"{len(bar_errors)} bar(s) failed to process",
-            f"Last at {_ts(bar_errors[-1])}: {bar_errors[-1].get('error', '?')}. Each one is a "
-            f"hole in the stream; the bot re-warms rather than carrying on."))
+            f"Last at {_at(bar_errors[-1])}: {bar_errors[-1].get('error', '?')}\n"
+            f"Each one is a hole in the bar stream. It re-warms rather than carrying on, so "
+            f"nothing is silently skipped."))
 
     loop_errors = _of("loop_error")
     if loop_errors:
         findings.append(Finding(
             f"loop_error:{_ts(loop_errors[-1])}", WARN,
             f"{len(loop_errors)} loop error(s)",
-            f"Last at {_ts(loop_errors[-1])}: {loop_errors[-1].get('error', '?')}"))
+            f"Last at {_at(loop_errors[-1])}: {loop_errors[-1].get('error', '?')}"))
 
     rewarms = _of("rewarm")
     if len(rewarms) >= REWARM_STORM:
         findings.append(Finding(
             f"rewarm_storm:{_ts(rewarms[-1])}", WARN,
             f"Re-warmed {len(rewarms)} times",
-            f"Repeated re-warms mean the bar stream keeps breaking. Last at {_ts(rewarms[-1])}."))
+            f"Last at {_at(rewarms[-1])}.\n"
+            f"Repeated re-warms mean the bar stream keeps breaking."))
 
     # ── a settings change did not take ──────────────────────────────────────
     for row in _of("config_change_refused"):
         findings.append(Finding(
             f"config_refused:{_ts(row)}", WARN,
             "A settings change was refused",
-            f"At {_ts(row)}: {row.get('changes', '?')}. The bot is still running the OLD "
-            f"settings — the page may show what you asked for rather than what it is using."))
+            f"At {_at(row)}: {row.get('changes', '?')}\n"
+            f"It is still trading the OLD settings, so the Bots page may show what you asked "
+            f"for rather than what it is using. Restart it to take them."))
 
     # ── it went quiet without stopping ──────────────────────────────────────
     findings.extend(_pulse_gaps(pulses))
@@ -449,8 +477,12 @@ def main(argv=None) -> int:
         print(f"{bot_key}: {len(findings)} finding(s), {len(fresh)} new")
 
         for f in fresh:
+            # The house shape (`shared/alert_format.py`): icon, LABEL, subject, then the facts,
+            # then what to do. The old form put "needs review" on the header and the actual
+            # finding on line two, so every message opened with the same four words and the
+            # thing that differed was below the fold on a lock screen.
             icon = "🔴" if f.level == ALERT else "⚠️"
-            if send(f"{icon} *{name} — needs review*\n*{f.title}*\n{f.detail}", args.dry_run):
+            if send(alert(icon, "REVIEW", name, f.title, f.detail), args.dry_run):
                 total_new += 1
                 if not args.dry_run:
                     seen.append(f.key)

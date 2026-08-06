@@ -695,6 +695,93 @@ That app also refuses to use `TRADE` at all, by test: it has no way to know a tr
 `LWG_TELEGRAM_HEALTH_CHAT` — an env override this repo's own template documented and nothing honoured.
 It goes through `notify.chat_for` now. **A second reader of one credential is a second answer.**
 
+### One shape for every message — `shared/alert_format.py`
+
+**Aaron's brief, 2026-08-05, after picking from rendered samples in the health chat:** concise, but
+never so concise you cannot diagnose it; facts that belong together on one line, facts that do not
+on the next; and it must be obvious what to act on.
+
+    <icon> <LABEL> · <subject>
+    <the facts, grouped>
+    <what to do about it>
+
+Every sender in the repo renders through `alert()` — the runner's twelve, the bridge's three, the
+watchdog's nine, the reviewer's findings, the Telegram bot's ping, and the command center's ten
+through its own mirror. Before this they were five different voices, and each buried the actionable
+part somewhere different.
+
+⚠ **The LABEL is the whole message in two words**, because that is what a lock screen shows. It names
+the STATE, not the event: `WILL NOT START` rather than `CRITICAL`, because the first says what is
+true now. A test caps the header at 45 characters.
+
+⚠ **A health message ends with the consequence, and "Nothing to do" counts as one.** `RECONNECTED …
+Nothing to do` is the difference between a glance and an investigation at 3am. The old messages
+stated a fact and left the reader to work out whether it mattered.
+
+⚠ **NO TIMESTAMP on a message about now.** Telegram already prints the send time in each reader's own
+local clock, directly above the message, and a bot cannot do better — it sends one string to a group
+and cannot know where anyone is reading it. A second clock in UTC beside Telegram's local one invites
+the reader to reconcile two times for one event. **The one exception is a message about the PAST** —
+the hourly reviewer at 21:20 reporting a restart at 18:06 — and `alert_format.when()` renders that in
+the box's clock *with the zone named*, because the ledger and the logs are UTC and a bare "6:06" is an
+hour of arithmetic away from the record it points at.
+
+⚠ **`log_review._ts` and `_at` are deliberately separate.** `_ts` builds the dedup KEY and `_at`
+renders for a human. They were one function, and changing its output would have re-announced every
+outstanding finding exactly once — so the wording can never be improved without waking the channel up
+unless the two are split.
+
+⚠ **The entry states the risk; the exit does not restate it.** The exit posts as a Telegram reply to
+the entry, so "on $200.00 risked" there repeats what is one tap above (Aaron's call). That makes the
+ENTRY the only place it is said, which is what `test_the_entry_states_the_risk_because_the_exit_will_not`
+exists to protect. **"Risking", never "losing if stopped"** — a gap can fill worse than the stop.
+
+⚠ **The stop distance in pips is gone, and `pip_size` with it.** 1,725 pips on gold answered a
+question nobody asks; `Entry 3,290.00 · Stop 3,280.00` says the same thing in the reader's units.
+
+⚠ **`_VERDICT_LABEL` renders `LOSS` while `verdict()` still returns `LOSE`.** The bridge, the ledger
+and the tests compare against the value; the label is what a human reads. Merging them would make a
+wording change a behaviour change.
+
+⚠ **`command-center/backend/services/alert_format.py` is a MIRROR**, for the same boundary reason as
+the routing table. `algos/tests/test_alert_format.py` loads it BY PATH and asserts both that the
+contract strings match and that the two render byte-identical output on the cases where hand-written
+copies diverge first — an absent fact and a whitespace-only one.
+
+### The Telegram bot lost six commands, because none of them could do anything
+
+🔴 **`/restart` and `/stop` asked you to confirm, acted on an EMPTY LIST, and reported success.**
+`BOTS` and `TASK_NAMES` had been `{}` since the four first-attempt bots were deleted on 2026-06-22 —
+the same empty-registry rot that made `pnl_tracker.py` and `reporter.py` deletable. Aaron asked which
+commands were still in use; the answer was that six of them could not have worked.
+
+| gone | why it could not work |
+|---|---|
+| `/restart`, `/stop` | iterated `BOTS` / `TASK_NAMES`, both empty — **and reported success** |
+| `/emergency` | same empty registry |
+| `/trades` | read a per-bot trades file `live/runner.py` has never written; always answered 0 |
+| `/resume`, `/resetweek` | drove `day_locked` and the weekly counters, written by the deleted `pnl_tracker.py` |
+| `/confirm` | nothing can create a pending action once the control commands are gone |
+
+⚠ **`/confirm` is the subtle one.** It works perfectly and can only ever reply "No pending action" —
+which is the same defect as the others, one level quieter. A command that cannot do its job is not
+harmless just because it fails honestly.
+
+⚠ **Control lives in the command center, and that is not an admission of laziness.** The Bots page can
+see how many copies of a bot are running; a phone command cannot. The guard against creating a
+duplicate bot had to live with the PROCESS (`startup_coordinator.py`, 2026-08-04) precisely because a
+confirmation step cannot make an uncounted start safe.
+
+🔴 **`/status` was itself broken and is now wired to something that cannot go stale.** It looped over a
+`BOT_SCRIPTS = {}` literal declared two lines above the loop, so it printed a "Trading Bots" heading
+with nothing under it. It reads `bot_state.read_all()` now — written by the runner every poll — so a
+bot appears by RUNNING. It reports the process, the heartbeat and the MT5 link as THREE facts, because
+a bot can be alive and blind.
+
+🔴 **`telegram_bot.py` was not importable on a Mac at all** (`str | None`, which needs 3.10; the VPS
+runs 3.11). It had no tests, and that is why: **a module nothing imports cannot be tested, and nothing
+says so.** 30 tests now, 27 of them watched RED against HEAD.
+
 **ARMED 2026-08-05** — `telegram_health_chat` is set on the VPS to the "LWG Captial Bot Health"
 group, proven by a `--all` run reporting 2 findings into it. ⚠ **Getting a group's chat id took four
 failed attempts and both causes are worth writing down, because the symptom of each is an EMPTY

@@ -2,32 +2,37 @@
 telegram_bot.py — Telegram Command Handler
 Location: notifications/telegram_bot.py
 
-READ-ONLY COMMANDS:
-  /status          — all bots running/stopped with uptime
-  /balance         — current balance per account
-  /trades          — today's trade summary
-  /help            — command list
+COMMANDS — all read-only:
+  /status    — what is running, and for how long
+  /balance   — account balance and P&L
+  /help      — the command list
+  /users     — who is authorized (admin only)
 
-CONTROL COMMANDS (require /confirm within 30 seconds):
-  /restart         — restart all bots
-  /restart <bot>   — restart specific bot
-  /stop            — stop all bots
-  /stop <bot>      — stop specific bot
-  /emergency       — kill everything immediately
-  /confirm         — confirm pending action
+🔴 **There are no control commands here, deliberately (2026-08-05).** `/restart`, `/stop`,
+`/emergency`, `/trades`, `/resume`, `/resetweek` and `/confirm` were deleted because not one of
+them could do anything: `BOTS` and `TASK_NAMES` had been empty dicts since the June bot deletion,
+and `/restart` and `/stop` therefore asked for a confirmation, acted on an empty list, and
+reported SUCCESS. A control that appears to work is worse than a missing one. See
+`handle_message` for the per-command reasoning.
 
-No bots are registered yet — the TASK_NAMES/BOTS maps below are empty.
+Starting and stopping a bot is done from the command center, which can see how many copies are
+running — the guard that stops a duplicate bot lives with the process, not with the button.
 
 Run via Task Scheduler at startup (runs 24/7).
 Install: pip install requests
 """
+
+# `str | None` needs 3.10 at runtime; the VPS runs 3.11 and the test machine 3.9, so this file
+# was importable on the box and not on a Mac. It had no tests until 2026-08-05, which is the only
+# reason nobody hit it.
+from __future__ import annotations
 
 import json
 import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -44,16 +49,15 @@ ALGOS_ROOT      = Path("C:/trading/algos")
 sys.path.insert(0, str(ALGOS_ROOT / "shared"))
 from credentials import telegram_credentials  # noqa: E402
 from notify import chat_for, HEALTH            # noqa: E402
+from alert_format import alert                 # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 USERS_FILE      = ALGOS_ROOT / "users.json"
 OFFSET_FILE     = ALGOS_ROOT / "telegram_offset.json"
 TELEGRAM_START  = ALGOS_ROOT / "telegram_start.json"
 PID_FILE        = ALGOS_ROOT / "telegram_bot.pid"
-SUPPRESS_FILE   = ALGOS_ROOT / "stop_suppress.json"
 TEXAS           = ZoneInfo("America/Chicago")
 POLL_INTERVAL   = 10
-CONFIRM_TIMEOUT = 30
 
 # Commands allowed per role.
 # ⚠ `/report`, `/demo`, `/live`, `/all` and `/force` were removed 2026-08-05 with
@@ -61,32 +65,17 @@ CONFIRM_TIMEOUT = 30
 # `/force` only to push one out on a weekend — leaving any of them in this set would grant
 # a role a command that no longer dispatches, which reads as a working permission.
 ROLE_COMMANDS = {
-    "admin":    {"/status","/balance","/trades","/help","/restart","/stop",
-                 "/emergency","/confirm","/users","/resume","/resetweek"},
-    "readonly": {"/status","/balance","/trades","/help"},
+    "admin":    {"/status", "/balance", "/help", "/users"},
+    "readonly": {"/status", "/balance", "/help"},
 }
 
 
-TASK_NAMES = {}
 
-BOTS = {}
 
-# Per-user pending actions — keyed by user_id so two users can't overwrite each other's confirm state
-pending_actions: dict = {}
 
 _CRASH_CHECK_INTERVAL = 6   # kept for poll_count modulo — crash alerting is in monitor.py
 
 
-def _suppress_stop_alert(keys: list) -> None:
-    """Mark bot keys as intentionally stopped so monitor.py skips the offline alert."""
-    try:
-        existing = json.loads(SUPPRESS_FILE.read_text()) if SUPPRESS_FILE.exists() else []
-        for k in keys:
-            if k not in existing:
-                existing.append(k)
-        SUPPRESS_FILE.write_text(json.dumps(existing))
-    except Exception:
-        pass
 
 
 # =============================================================================
@@ -187,11 +176,6 @@ def save_offset(offset: int):
 # DATA HELPERS
 # =============================================================================
 
-def load_json(path: Path):
-    if not path.exists():
-        return []
-    with open(path) as f:
-        return json.load(f)
 
 
 def acquire_singleton():
@@ -235,214 +219,26 @@ def is_running(script: str) -> bool:
 
 
 
-def get_uptime(log_path: Path) -> str:
-    """
-    Calculate uptime by finding the MOST RECENT startup line in the log.
-    Uses reversed scan to match algo.py panel behavior so uptimes are consistent.
-    """
-    if not log_path.exists():
-        return "unknown"
-    try:
-        with open(log_path, errors="replace") as f:
-            lines = f.readlines()
-        for line in reversed(lines):
-            if ("STARTING" in line or
-                    ("Balance" in line and "Risk" in line) or
-                    ("Balance" in line and "AI:" in line)):
-                try:
-                    ts    = line.split("|")[0].strip()[:19]
-                    start = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-                    delta = datetime.utcnow() - start
-                    h = int(delta.total_seconds() // 3600)
-                    m = int((delta.total_seconds() % 3600) // 60)
-                    return f"{h}h {m}m"
-                except Exception:
-                    continue
-    except Exception:
-        return "unknown"
-    return "unknown"
 
 
-def get_balance(equity) -> float:
-    records = equity if isinstance(equity, list) else []
-    if not records:
-        return 0.0
-    return float(records[-1].get("balance", records[-1].get("equity", 0)))
 
 
-def get_start_balance(equity) -> float:
-    """First equity record — the account starting balance."""
-    records = equity if isinstance(equity, list) else []
-    if not records:
-        return 0.0
-    return float(records[0].get("balance", records[0].get("equity", 0)))
 
 
-def get_today_trades(trades: list) -> list:
-    today = datetime.now(TEXAS).date().isoformat()
-    return [t for t in trades
-            if t.get("closed_at") and t["closed_at"][:10] == today
-            and t.get("outcome") in ("win", "loss", "breakeven")]
 
 
 # =============================================================================
 # BOT CONTROL
 # =============================================================================
 
-def task_start(task_name: str) -> bool:
-    try:
-        result = subprocess.run(
-            ["schtasks", "/run", "/tn", task_name],
-            capture_output=True, text=True, timeout=15
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
 
 
-def task_stop(task_name: str) -> bool:
-    try:
-        subprocess.run(
-            ["schtasks", "/end", "/tn", task_name],
-            capture_output=True, text=True, timeout=15
-        )
-        return True
-    except Exception:
-        return False
 
 
-def do_restart(bot_keys: list) -> str:
-    """
-    Restart bots using the startup coordinator for sequential startup.
-    This prevents MT5 account mixing by ensuring only one bot connects at a time.
-
-    For individual bot restart: uses direct task start (no coordinator needed).
-    For all bots: uses SYS_STARTUP coordinator which starts bots one by one
-    and waits for each to confirm connection before starting the next.
-    """
-    # Individual bot restart — direct task start is fine
-    if set(bot_keys) != set(BOTS.keys()):
-        _suppress_stop_alert(bot_keys)
-        lines = []
-        for key in bot_keys:
-            task = TASK_NAMES.get(key)
-            if not task:
-                continue
-            task_stop(task)
-            # schtasks /end stops the task entry but does not reliably kill the
-            # Python process. If the process is still alive when schtasks /run is
-            # called, Task Scheduler refuses to start a new instance. Kill it
-            # directly by matching the script name in the command line.
-            script_name = BOTS[key].get("script", "")
-            killed = False
-            if script_name:
-                subprocess.run(
-                    ["wmic", "process", "where",
-                     f"name='python.exe' and commandline like '%{script_name}%'",
-                     "call", "terminate"],
-                    capture_output=True, timeout=10
-                )
-                # Poll until process is gone (max 10s) before re-launching.
-                for _ in range(10):
-                    time.sleep(1)
-                    r = subprocess.run(
-                        ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if script_name not in r.stdout:
-                        killed = True
-                        break
-            else:
-                killed = True
-            started = task_start(task)
-            kill_icon  = "✓" if killed  else "✗"
-            start_icon = "✓" if started else "✗"
-            lines.append(f"*{BOTS[key]['name']}*\n  Killed: {kill_icon}  Started: {start_icon}")
-        return "\n\n".join(lines)
-
-    # Full restart — stop everything then use coordinator
-    _suppress_stop_alert(list(BOTS.keys()))
-    for key in BOTS.keys():
-        task = TASK_NAMES.get(key)
-        if task:
-            task_stop(task)
-
-    # Force-kill any lingering bot Python processes (task_stop does not kill the process)
-    for key in BOTS.keys():
-        script_name = BOTS[key].get("script", "")
-        if script_name:
-            subprocess.run(
-                ["wmic", "process", "where",
-                 f"name='python.exe' and commandline like '%{script_name}%'",
-                 "call", "terminate"],
-                capture_output=True, timeout=10
-            )
-
-    # Wait until all bot processes are gone (max 15s) before starting coordinator
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        r = subprocess.run(
-            ["wmic", "process", "where", "name='python.exe'", "get", "commandline"],
-            capture_output=True, text=True, timeout=5
-        )
-        if not any(BOTS[k].get("script", "") in r.stdout for k in BOTS):
-            break
-        time.sleep(1)
-
-    # Run startup coordinator — starts bots sequentially, waits for each connection
-    ok = task_start("SYS_STARTUP")
-    if ok:
-        return (
-            "Restarting all bots sequentially via startup coordinator.\n"
-            "Each bot waits for MT5 connection before the next starts.\n"
-            "_Check /status in ~2 minutes to confirm all running._"
-        )
-    else:
-        return "Failed to start SYS_STARTUP coordinator. Try restarting manually."
 
 
-def do_stop(bot_keys: list) -> str:
-    _suppress_stop_alert(bot_keys)
-    lines = []
-    for key in bot_keys:
-        task = TASK_NAMES.get(key)
-        if not task:
-            continue
-        ok = task_stop(task)
-        icon = "✓" if ok else "✗"
-        lines.append(f"{icon}  {BOTS[key]['name']}")
-    return "\n".join(lines)
 
 
-def do_emergency_stop() -> str:
-    """Stop every live trading bot, and nothing else.
-
-    **This used to run `taskkill /f /im python.exe`, and it was a live landmine.** `BOTS` and
-    `TASK_NAMES` were emptied when the old suite was deleted, so the loop above iterated
-    nothing and the blanket kill was the entire function. It took down the MT5 backtest agent,
-    the NT8 agent, any in-flight lab run — and THIS PROCESS, so the reply below was never sent
-    and the operator saw an emergency stop that appeared to hang. It was also one of the five
-    paths that killed the live bot on 2026-07-31.
-
-    Matched on `runner.py` in the commandline, which is the entrypoint every live bot shares
-    and nothing else on the box runs. That way it needs no registry to keep in sync — an empty
-    registry silently doing nothing is exactly what went wrong here.
-    """
-    _suppress_stop_alert(list(BOTS.keys()))
-    for key in BOTS:
-        task = TASK_NAMES.get(key)
-        if task:
-            task_stop(task)
-    try:
-        subprocess.run(
-            ["wmic", "process", "where",
-             "name='python.exe' and commandline like '%runner.py%'",
-             "call", "terminate"],
-            capture_output=True, timeout=15,
-        )
-    except Exception:
-        pass
-    return "All trading bots terminated. Agents and alerts left running."
 
 
 # =============================================================================
@@ -450,39 +246,41 @@ def do_emergency_stop() -> str:
 # =============================================================================
 
 def cmd_status() -> str:
-    import time as _time
-    sys.path.insert(0, str(ALGOS_ROOT / "shared"))
-    from bot_state import BOT_NAMES, get_uptime_str
-    now_tx = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
-    lines  = [f"📊 *Bot Status*  _{now_tx}_", ""]
+    """What is running, read off the bots' OWN state files rather than a registry in this file.
 
-    BOT_SCRIPTS = {}
+    🔴 It used to walk a `BOT_SCRIPTS = {}` literal defined two lines above the loop, so it could
+    not list a trading bot at all — it printed a "Trading Bots" heading with nothing under it and
+    then reported on the Telegram bot. `bot_state.read_all()` is written by the live runner every
+    poll, so a bot appears here by RUNNING, which is the only registry that cannot go stale.
 
-    lines.append("*Trading Bots*")
-    for key, script in BOT_SCRIPTS.items():
-        running = is_running(script)
-        uptime  = get_uptime_str(key) if running else "—"
-        dot     = "🟢" if running else "🔴"
-        name    = BOT_NAMES.get(key, key)
-        lines.append(f"{dot} `{name:<16}` {uptime}")
+    ⚠ Three separate facts, never merged: the process exists, the heartbeat is fresh, and the MT5
+    link is up. A bot can be alive and blind — that is exactly what happened on 2026-08-04, when
+    the terminal restarted underneath it and every check in the system still said RUNNING.
+    """
+    from bot_state import read_all, get_uptime_str
 
-    lines.append("")
-    lines.append("*System*")
-    tg_running = is_running("telegram_bot.py")
-    dot        = "🟢" if tg_running else "🔴"
-    tg_uptime  = ""
-    if tg_running and TELEGRAM_START.exists():
-        try:
-            import json as _json
-            data      = _json.loads(TELEGRAM_START.read_text())
-            started   = float(data["started"])
-            delta     = _time.time() - started
-            h = int(delta // 3600)
-            m = int((delta % 3600) // 60)
-            tg_uptime = f"{h}h {m}m"
-        except Exception:
-            tg_uptime = "running"
-    lines.append(f"{dot} `{'Telegram':<16}` {tg_uptime if tg_running else 'Stopped'}")
+    states = read_all()
+    bots = {k: v for k, v in states.items() if isinstance(v, dict) and v.get("name")}
+    lines = []
+
+    if not bots:
+        lines.append("No bot has written a state file. Either none is running, or none can write.")
+    for key, st in sorted(bots.items()):
+        alive = is_running(f"--bot {key}")
+        # `mt5_link` is Optional[bool]: None means the bot never said, which is not the claim
+        # "disconnected". Read `is False`, never falsy — the same rule the Bots page follows.
+        blind = st.get("mt5_link") is False
+        dot = "🔴" if not alive else ("🟠" if blind else "🟢")
+        bits = [st["name"], "stopped" if not alive else get_uptime_str(key)]
+        if alive and blind:
+            bits.append("no MT5 link")
+        bal = st.get("balance")
+        if alive and bal is not None:
+            bits.append(f"${bal:,.2f}")
+        lines.append(f"{dot} " + " · ".join(str(b) for b in bits))
+
+    tg = "🟢 Telegram bot · running" if is_running("telegram_bot.py") else "🔴 Telegram bot · stopped"
+    lines.append(tg)
     return "\n".join(lines)
 
 
@@ -514,24 +312,6 @@ def cmd_balance() -> str:
     return "\n".join(lines)
 
 
-def cmd_trades() -> str:
-    now_tx  = datetime.now(TEXAS).strftime("%b %d  %I:%M %p CT")
-    lines   = [f"📋 *Today's Trades*  _{now_tx}_", ""]
-    total_w = total_l = total_be = total_t = 0
-
-    for _, cfg in BOTS.items():
-        trades = load_json(cfg["trades"])
-        today  = get_today_trades(trades)
-        w  = sum(1 for t in today if t["outcome"] == "win")
-        l  = sum(1 for t in today if t["outcome"] == "loss")
-        be = sum(1 for t in today if t["outcome"] == "breakeven")
-        wr = f"{w/len(today)*100:.0f}%" if today else "—"
-        lines.append(f"`{cfg['name']:<16}` {len(today)} trades  {w}W {l}L {be}BE  WR {wr}")
-        total_w += w; total_l += l; total_be += be; total_t += len(today)
-
-    lines.append("")
-    lines.append(f"`{'Total':<16}` {total_t} trades  {total_w}W {total_l}L {total_be}BE")
-    return "\n".join(lines)
 
 
 def cmd_users(user_id: str) -> str:
@@ -553,67 +333,20 @@ def cmd_users(user_id: str) -> str:
 
 
 def cmd_help() -> str:
+    """Only what exists. A help text is a promise, and the previous one listed nine commands
+    that could not work — which is how you find out at the moment you need one."""
     return (
-        "📖 *LWG Capital — Commands*\n\n"
-        "*Read Only*\n"
-        "`/status`         Running status and uptime\n"
-        "`/balance`        Account balances\n"
-        "`/trades`         Today's trade summary\n"
-        "`/help`           This message\n\n"
-        "*Admin Only*\n"
-        "`/users`          List authorized users\n\n"
-        "*Control*  _type /confirm within 30s_\n"
-        "`/restart`        Restart all bots\n"
-        "`/restart <bot>`  Restart one bot\n"
-        "`/stop`           Stop all bots\n"
-        "`/stop <bot>`     Stop one bot\n"
-        "`/emergency`      Kill everything immediately\n\n"
-        "*Override*  _no confirm needed_\n"
-        "`/resume <bot>`   Resume a locked bot (overrides peak protection)\n"
-        "`/resetweek`      Reset weekly/daily P&L references to current balance\n"
-        "`/resetweek <bot>` Reset one bot only\n\n"
-        "_No bots are registered yet._"
+        "*LWG Capital — Commands*\n\n"
+        "`/status`   what is running, and for how long\n"
+        "`/balance`  account balance and P&L\n"
+        "`/help`     this list\n"
+        "`/users`    who can use this bot (admin)\n\n"
+        "_Starting, stopping and restarting a bot is done from the command center, "
+        "which can see how many copies are actually running._"
     )
 
 
-# =============================================================================
-# CONTROL COMMANDS
-# =============================================================================
 
-def request_confirm(user_id: str, command_fn, label: str) -> str:
-    pending_actions[user_id] = {
-        "command":    command_fn,
-        "label":      label,
-        "expires_at": datetime.utcnow() + timedelta(seconds=CONFIRM_TIMEOUT),
-    }
-    return (
-        f"⚠️ *Confirm Required*\n\n"
-        f"Action: _{label}_\n\n"
-        f"Send /confirm within {CONFIRM_TIMEOUT}s to proceed\\.\n"
-        f"Any other message cancels\\."
-    )
-
-
-def cmd_confirm(user_id: str) -> str:
-    action = pending_actions.get(user_id, {})
-    if not action.get("command"):
-        return "No pending action."
-    if datetime.utcnow() > action["expires_at"]:
-        pending_actions.pop(user_id, None)
-        return "⏰ Confirmation timed out. Action cancelled."
-    fn    = action["command"]
-    label = action["label"]
-    pending_actions.pop(user_id, None)
-    result = fn()
-    return f"✅ *{label}*\n\n{result}"
-
-
-def parse_bot_key(parts: list) -> str | None:
-    if len(parts) >= 2:
-        key = parts[1].lower()
-        if key in BOTS:
-            return key
-    return None
 
 
 # =============================================================================
@@ -624,6 +357,24 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
     """
     chat_id — where to reply (group id or DM id)
     user_id — who sent it (their personal Telegram user id, used for auth)
+
+    🔴 **Six commands were deleted on 2026-08-05 because none of them could do anything, and two
+    of them said they had.** `BOTS` and `TASK_NAMES` had been empty dicts since the four
+    first-attempt bots were deleted in June, so `/restart` and `/stop` asked for a confirmation,
+    acted on an empty list, and reported success — a control that looks like it worked is worse
+    than one that is missing. `/trades` read a per-bot trades file the live runner has never
+    written, so it always answered zero. `/resume` and `/resetweek` drove `day_locked` and the
+    weekly counters, which `pnl_tracker.py` used to write and nothing has written since it was
+    deleted. `/emergency` matched on the same empty registry.
+
+    `/confirm` went with them, and that is the subtle one: with no control command left, nothing
+    can create a pending action, so it could only ever reply "No pending action." Keeping it
+    would have left exactly the defect being removed, one level quieter.
+
+    ⚠ **Control lives in the command center**, where the Bots page can see how many copies of a
+    bot are actually running. That is not a limitation of this file — it is the reason the guard
+    against starting a duplicate had to live in `startup_coordinator.py` too (2026-08-04). A
+    phone command that cannot count processes cannot be made safe by adding a confirmation step.
     """
     parts = text.strip().split()
     cmd   = parts[0].lower() if parts else ""
@@ -633,102 +384,18 @@ def handle_message(text: str, chat_id: str, user_id: str) -> str:
 
     if cmd == "/status":        return cmd_status() if can(user_id, cmd) else denied()
     if cmd == "/balance":       return cmd_balance() if can(user_id, cmd) else denied()
-    if cmd == "/trades":        return cmd_trades() if can(user_id, cmd) else denied()
     if cmd == "/help":          return cmd_help()
     if cmd == "/users":         return cmd_users(user_id) if can(user_id, cmd) else denied()
-    if cmd == "/confirm":       return cmd_confirm(user_id) if can(user_id, cmd) else denied()
 
-    # ⚠ `/force` was removed 2026-08-05 with the reporter. It existed to push a report out
-    # on a weekend, but it ran WHATEVER action was pending — so with reports gone it was an
-    # undocumented second way to fire /restart, /stop and /emergency, and `readonly` held it.
-    # /confirm is the one path, and one path is the point.
+    return f"Unknown command: {cmd}\nSend /help for the list."
 
-    if cmd == "/emergency":
-        if not can(user_id, cmd):
-            return denied()
-        return request_confirm(user_id, do_emergency_stop,
-                               "Emergency Stop — kill all bots")
-
-    if cmd == "/restart":
-        if not can(user_id, cmd):
-            return denied()
-        bot_key = parse_bot_key(parts)
-        if bot_key:
-            name = BOTS[bot_key]["name"]
-            return request_confirm(user_id, lambda k=bot_key: do_restart([k]),
-                                   f"Restart {name}")
-        return request_confirm(user_id, lambda: do_restart(list(BOTS.keys())),
-                               "Restart All Bots")
-
-    if cmd == "/stop":
-        if not can(user_id, cmd):
-            return denied()
-        bot_key = parse_bot_key(parts)
-        if bot_key:
-            name = BOTS[bot_key]["name"]
-            return request_confirm(user_id, lambda k=bot_key: do_stop([k]),
-                                   f"Stop {name}")
-        return request_confirm(user_id, lambda: do_stop(list(BOTS.keys())),
-                               "Stop All Bots")
-
-    if cmd == "/resume":
-        if not can(user_id, cmd):
-            return denied()
-        bot_key = parse_bot_key(parts)
-        if not bot_key:
-            return "Usage: `/resume <bot>`\nNo bots are registered yet."
-        from bot_state import read_bot, write_bot
-        state_key = BOTS[bot_key].get("state_key", bot_key)
-        state = read_bot(state_key)
-        name  = BOTS[bot_key]["name"]
-        if not state.get("day_locked"):
-            return f"{name} is not locked — no override needed."
-        write_bot(state_key, {"resume_trading": True})
-        return (
-            f"▶️ *Resume signal sent to {name}*\n"
-            f"Bot will unlock within 60s and resume trading.\n"
-            f"Peak protection is now OFF for the rest of today — trade carefully."
-        )
-
-    if cmd == "/resetweek":
-        if not can(user_id, cmd):
-            return denied()
-        from bot_state import read_bot, write_bot, BOT_NAMES
-        alias = parse_bot_key(parts)
-        if alias:
-            state_keys = [BOTS[alias].get("state_key", alias)]
-        else:
-            state_keys = [BOTS[k].get("state_key", k) for k in BOTS]
-        lines = []
-        for key in state_keys:
-            bal = read_bot(key).get("balance", 0)
-            write_bot(key, {"reset_requested": True})
-            name = BOT_NAMES.get(key, key)
-            lines.append(f"• {name}: reset signal sent (current balance ${bal:,.2f})")
-        return (
-            f"🔄 *Weekly/Daily Reset Requested*\n"
-            + "\n".join(lines) + "\n"
-            f"Bots will update references within 60s.\n"
-            f"Run after depositing funds to clear P&L counters."
-        )
-
-    # Unknown command cancels this user's pending action
-    if pending_actions.get(user_id, {}).get("command"):
-        pending_actions.pop(user_id, None)
-        return f"Action cancelled.\nUnknown command: `{cmd}`\nSend /help for commands."
-
-    return f"Unknown command: `{cmd}`\nSend /help for commands."
-
-
-# =============================================================================
-# MAIN LOOP
-# =============================================================================
 
 def main():
     acquire_singleton()
     print(f"Telegram bot started — polling every {POLL_INTERVAL}s")
     try:
-        send("🟢 *LWG Capital online*\nSend /help for available commands\\.")
+        send(alert("🟢", "COMMANDS ONLINE", "Telegram bot",
+                   "It is listening again. Send /help for the list."))
         offset     = load_offset()
         poll_count = 0
 

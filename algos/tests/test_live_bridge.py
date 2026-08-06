@@ -372,7 +372,7 @@ def test_closing_a_position_reports_pnl_and_r():
     # risk = |3290 - 3280| × 0.42 lots × 100 contract size = $420 → 3R
     assert closed["r_multiple"] == pytest.approx(3.0)
     # The exit alert leads with the OUTCOME, not the word "exit" — see algos/live/alerts.py.
-    assert any("WIN" in n and "+1,260.00" in n for n in notes)
+    assert any("WIN" in n and "Made $1,260.00" in n for n in notes)
 
 
 def test_a_position_cancels_any_leftover_resting_order():

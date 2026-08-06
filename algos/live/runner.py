@@ -71,6 +71,7 @@ from bridge import OrderBridge, BridgeState, assert_supported  # noqa: E402
 from feed import BarFeed              # noqa: E402
 from ledger import Ledger             # noqa: E402
 from version import verify_pin, current_commit, VersionMismatch  # noqa: E402
+from alert_format import alert, joined, money  # noqa: E402
 
 _stop_requested = False
 
@@ -344,9 +345,11 @@ class LiveRunner:
                 "arriving and the strategy is NOT seeing the market until it reconnects. The "
                 "usual cause is the terminal restarting itself after an auto-update.")
             self.ledger.event("mt5_link_lost", last_bar=str(self.feed.last_bar_time))
-            self._notify_health(
-                f"⚠️ *{self.cfg.display_name}* lost its MT5 connection.\n"
-                f"It is not seeing bars until it reconnects. Retrying.")
+            self._notify_health(alert(
+                "🔌", "NO MT5 LINK", self.cfg.display_name,
+                "Lost its connection to the terminal — still running, but seeing no market at all.",
+                f"Retrying every {_LINK_RETRY_SECONDS}s. If it does not come back, check "
+                f"MetaTrader on the VPS."))
 
         if now - self._link_retry_at < _LINK_RETRY_SECONDS:
             return
@@ -365,8 +368,11 @@ class LiveRunner:
         self._link_lost_at = None
         self.log.info(f"MT5 link restored after {down / 60:.1f} min — engines re-warmed.")
         self.ledger.event("mt5_link_restored", down_seconds=round(down))
-        self._notify_health(f"✅ *{self.cfg.display_name}* reconnected to MT5 after "
-                     f"{down / 60:.0f} min. Engines re-warmed.")
+        self._notify_health(alert(
+            "🟢", "RECONNECTED", self.cfg.display_name,
+            f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
+            f"missed.",
+            "Nothing to do."))
 
     def connect(self) -> bool:
         from mt5_ops import BotMT5
@@ -583,8 +589,11 @@ class LiveRunner:
         except (VersionMismatch, RuntimeError) as e:
             self.log.error(str(e))
             self.ledger.event("version_mismatch", detail=str(e))
-            self._notify_health(f"⛔️ *{self.cfg.display_name}* refused to start — the deployed code is "
-                         f"not the version it was promoted to run.")
+            self._notify_health(alert(
+                "⛔", "WILL NOT START", self.cfg.display_name,
+                "The code on disk is not the version this bot was promoted to run, so it "
+                "refused to start.",
+                "It is down and will stay down. Promote it again, or restore the snapshot."))
             return 2, "version pin mismatch"
         if not self.cfg.strategy_source_hash:
             self.log.warning(
@@ -637,14 +646,25 @@ class LiveRunner:
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")
             self.ledger.event("startup_failed", error=str(e))
-            self._notify_health(f"⛔️ *{self.cfg.display_name}* failed to start: {e}")
+            self._notify_health(alert(
+                "⛔", "WILL NOT START", self.cfg.display_name,
+                f"Startup failed: {e}",
+                "It is down and will stay down until someone looks at it."))
             return 5, f"startup failed: {e}"
 
-        self._notify_health(
-            f"🟢 *{self.cfg.display_name}* online\n"
-            f"{self.cfg.symbol} {self.cfg.timeframe} · account {self.cfg.account}\n"
-            f"v{self.cfg.strategy_version} ({self.source_hash[:8]})"
-            + ("\n_dry run — no orders will be placed_" if self.dry_run else ""))
+        self._notify_health(alert(
+            "🟢", "ONLINE", self.cfg.display_name,
+            joined([
+                "Trading live" if not self.dry_run else "Dry run — it will place no orders",
+                f"{self.cfg.symbol} {self.cfg.timeframe}",
+                # `probe_link` is the ONE way this class asks for a balance — it returns None
+                # when the terminal cannot be reached, and `money()` renders that as "unknown"
+                # rather than $0.00. A startup banner reporting a fabricated zero would be the
+                # blind-terminal defect of 2026-08-04 all over again, in the first message the
+                # bot ever sends.
+                money(self.probe_link()[1]),
+            ]),
+            f"v{self.cfg.strategy_version} ({self.source_hash[:8]}) · account {self.cfg.account}"))
 
         return self._loop()
 
@@ -726,13 +746,17 @@ class LiveRunner:
                                 # counter as soon as a bar lands cleanly, so a recurrence after
                                 # a real recovery alerts again. Repeating it every poll is how
                                 # a channel that also carries trade alerts gets muted.
-                                self._notify_health(
-                                    f"⚠️ *{self.cfg.display_name}* dropped a bar "
-                                    f"({row.name}) and is re-warming.\n`{e}`")
+                                self._notify_health(alert(
+                                    "⚠️", "DROPPED A BAR", self.cfg.display_name,
+                                    f"Failed to process the {row.name} bar, so it is re-warming "
+                                    f"the engines on the history it missed.",
+                                    f"Reason: {e}"))
                             if bar_errors >= 10:
-                                self._notify_health(
-                                    f"⛔️ *{self.cfg.display_name}* stopping — 10 bars in a row "
-                                    f"failed to process. A re-warm is not fixing it. Last: {e}")
+                                self._notify_health(alert(
+                                    "⛔", "STOPPING", self.cfg.display_name,
+                                    "Ten bars in a row failed to process and re-warming is not "
+                                    "fixing it, so it is shutting itself down.",
+                                    f"Last error: {e}"))
                                 return 6, f"10 consecutive bar errors, last: {e}"
                             break
 
@@ -750,13 +774,18 @@ class LiveRunner:
                 self.log.error(f"Loop error ({consecutive_errors}): {e}\n{traceback.format_exc()}")
                 self.ledger.event("loop_error", error=str(e), count=consecutive_errors)
                 if consecutive_errors >= 10:
-                    self._notify_health(f"⛔️ *{self.cfg.display_name}* stopping — 10 consecutive loop "
-                                 f"errors. Last: {e}")
+                    self._notify_health(alert(
+                        "⛔", "STOPPING", self.cfg.display_name,
+                        "Ten passes of its main loop failed in a row, so it is shutting itself "
+                        "down rather than running blind.",
+                        f"Last error: {e}"))
                     return 6, f"10 consecutive loop errors, last: {e}"
             time.sleep(self.cfg.poll_seconds)
 
         self.log.info("Stop requested — shutting down.")
-        self._notify_health(f"⏹ *{self.cfg.display_name}* stopped")
+        self._notify_health(alert(
+            "⏹", "STOPPED", self.cfg.display_name,
+            "Shut down cleanly. It will not come back on its own."))
         try:
             self.mt5.disconnect()
         except Exception:
@@ -886,9 +915,12 @@ class LiveRunner:
                 f"Still running the settings loaded at startup. Restart the bot to take "
                 f"them (the version pin and the engine warmup are re-checked on restart).")
             self.ledger.event("config_change_refused", changes=detail)
-            self._notify_health(f"⚠️ {self.cfg.display_name} — config changed on disk but was NOT "
-                         f"applied:\n{detail}\n\nStill running the startup settings. "
-                         f"Restart the bot to take them.")
+            self._notify_health(alert(
+                "⚠️", "SETTINGS NOT APPLIED", self.cfg.display_name,
+                f"Its config changed on disk but the new values were refused, so it is still "
+                f"trading the ones it started with.",
+                f"Refused: {detail}",
+                "Restart it to take them."))
             return
 
         if not allowed:
@@ -921,7 +953,10 @@ class LiveRunner:
 
         self.log.info(f"Runtime config applied while flat (strategy rebuilt): {detail}")
         self.ledger.event("config_applied", changes=detail)
-        self._notify_health(f"⚙️ {self.cfg.display_name} — {detail}\nApplied; the bot was flat.")
+        self._notify_health(alert(
+            "⚙️", "SETTINGS APPLIED", self.cfg.display_name,
+            detail,
+            "Applied straight away — the bot was flat. Nothing to do."))
 
     def _config_delta(self, fresh):
         """Split what changed into (reloadable, blocked).

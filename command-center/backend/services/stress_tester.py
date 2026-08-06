@@ -19,6 +19,7 @@ import numpy as np
 
 from services import lab_db
 from services import notify
+from services.alert_format import alert, joined
 from services.metrics import (
     apply_canonical_sharpe,
     daily_sharpe,
@@ -1393,30 +1394,37 @@ def _fire_grade_notification(stress_test_id: str, run: dict, st: dict, grade: Op
     prob_pass  = st.get("prob_pass_eval")
     p1_dd      = st.get("pct1_max_dd")
 
-    lines = [f"*Lab stress test complete*"]
-    lines.append(f"Strategy: `{strat_name}` | `{instrument}`")
-    # grade is None when the run was not gradeable (no drawdown limit on the ruleset) — say that
-    # rather than sending "Grade: *None*", which reads as a crash.
-    lines.append(f"Grade: *{grade}*" if grade else "Grade: _not graded_")
+    # The house shape (`services/alert_format.py`): icon, LABEL, subject, grouped facts, then
+    # the thing to act on. Plain text — a strategy name is full of underscores and Telegram drops
+    # the whole message on an unbalanced Markdown entity.
+    facts = [
+        # `grade` is None when the ruleset states no drawdown limit, so nothing could be graded.
+        # "not graded" is the honest word; "Grade: None" reads as a crash.
+        f"Grade {grade}" if grade else "Not graded — the ruleset states no drawdown limit",
+    ]
     if prob_pass is not None:
-        lines.append(f"Pass probability: {round(prob_pass * 100, 1)}%")
+        facts.append(f"{round(prob_pass * 100, 1)}% pass probability")
     # Quote the drawdown in the unit the GRADE read. This always printed dollars, so on a
     # compounding run the message quoted a figure the letter beside it had not looked at.
     if st.get("dd_basis") == "percent" and st.get("pct1_max_dd_pct") is not None:
-        lines.append(f"Worst-1% drawdown: {st['pct1_max_dd_pct']:.1f}%")
+        facts.append(f"worst-1% drawdown {st['pct1_max_dd_pct']:.1f}%")
     elif p1_dd is not None:
-        lines.append(f"Worst-1% drawdown: ${p1_dd:,.0f}")
+        facts.append(f"worst-1% drawdown ${p1_dd:,.0f}")
+
+    tail = []
     failures = st.get("phase_failures") or {}
     if failures:
-        lines.append("⚠ Phase failed: " + ", ".join(failures))
+        # A phase that RAN AND CRASHED leaves a NULL summary, which grading reads as "not run"
+        # and does not penalise. Saying so is the difference between a caveat and a fiction.
+        tail.append("Phase failed: " + ", ".join(failures) + " — the grade does not account "
+                    "for it.")
     if reasons:
-        lines.append("Reasons: " + "; ".join(reasons[:3]))
+        tail.append("Why: " + "; ".join(reasons[:3]))
 
-    # HEALTH, not TRADE. A finished stress test is a LAB result — neither category fits it
-    # cleanly — and it lands here because the trades chat is reserved for money actually moving
-    # on the account. If lab chatter ever earns its own room, add a third kind in `notify.py`
-    # rather than pointing this at the trades one.
-    notify.send_telegram("\n".join(lines), notify.HEALTH)
+    notify.send_telegram(alert(
+        "🧪", "STRESS TEST", f"{strat_name} {instrument}",
+        joined(facts),
+        *tail), notify.HEALTH)
 
 
 # ── Main stress test background task ──────────────────────────────────────────

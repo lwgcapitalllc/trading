@@ -49,6 +49,24 @@ group and says so; trades never fall back the other way. Full rules and the enfo
 
 Command REPLIES are not routed by kind at all — they go back to whichever chat asked.
 
+**Every message is rendered by `shared/alert_format.py`** (2026-08-05), so all of them read the
+same way:
+
+    <icon> <LABEL> · <subject>
+    <the facts, grouped>
+    <what to do about it>
+
+⚠ **No timestamp.** Telegram already prints the send time in each reader's own local clock. The one
+exception is a message about the PAST — the hourly log review reporting a restart three hours ago —
+which uses `alert_format.when()` and names the zone. ⚠ **Plain text, never Markdown**: a lone
+underscore in `mpc_sos_fade` makes Telegram reject the whole message.
+
+**The Telegram bot answers four commands: `/status`, `/balance`, `/help`, `/users`.** `/restart`,
+`/stop`, `/emergency`, `/trades`, `/resume`, `/resetweek` and `/confirm` were deleted on 2026-08-05
+because none of them could do anything — `BOTS` and `TASK_NAMES` had been empty since June, so the
+first two asked for a confirmation and then reported success on an empty list. Starting and stopping
+a bot is done from the command center, which can see how many copies are running.
+
 A live bot can override both destinations and the sender identity in its own instance config;
 see *Routing is per bot* below.
 
@@ -71,7 +89,6 @@ Bot status notifications are event-driven, not polling-based:
 |---|---|---|
 | Bot starts (any cause) | Bot calls `notify.send_telegram` at top of `run()` | Immediate |
 | Start/stop/restart from command center | command-center bots router sends Telegram notification | Immediate |
-| Stop/restart from Telegram command | Result message returned to user via `/confirm` flow | Immediate |
 | Bot crashes unexpectedly | `monitor.py` crash detector (every 1 min) | ≤ 1 min |
 | Bot comes back online after crash | `monitor.py` (same cycle as crash detection) | ≤ 1 min |
 | Telegram bot goes down | `monitor.py` watchdog (every 1 min) | ≤ 1 min |
@@ -98,18 +115,11 @@ If the bot's suppress key is in the file, the stop was intentional — no alert 
 
 Suppress keys: `fft`, `scalper`, `smc`, `reversion`.
 
-The suppress file is written by:
-- command-center bots router — writes `stop_suppress.json` via SSH before stopping a bot
-- `telegram_bot.py` — locally before executing `/stop`, `/restart`, `/emergency` commands
-
-**`/restart` full-restart sequence (all bots):**
-1. Suppress offline alerts for all bots (`stop_suppress.json`) so the planned stop doesn't trigger false crash alerts.
-2. Stop all Task Scheduler task entries (`schtasks /end`) for each bot.
-3. Force-kill all bot Python processes by script name via `wmic … call terminate` — `schtasks /end` stops the task entry but does not kill the running process.
-4. Poll (max 15s) until all bot processes are confirmed gone.
-5. Start the `SYS_STARTUP` coordinator, which starts bots sequentially.
-
-Individual `/restart <bot>` follows the same terminate-then-start pattern for the single bot.
+The suppress file is written by the command-center bots router, via SSH, before it stops a bot.
+⚠ **It used to be written by `telegram_bot.py` too, before `/stop`, `/restart` and `/emergency`.
+Those commands were deleted on 2026-08-05** — they resolved through a bot registry that had been
+empty since June, so they confirmed and then did nothing. There is now ONE writer, which is also
+the only thing that can stop a bot.
 
 🔴 **THE TELEGRAM BOT WAS NEVER CRASHING — IT WAS BEING KILLED, AND THIS WATCHDOG'S OWN
 "restarted" MESSAGE IS WHAT MADE IT LOOK LIKE A CRASH (found 2026-08-04).** Aaron had been
@@ -252,16 +262,17 @@ Telegram command interface. Reads from `bot_state.json` for all data.
 |---|---|
 | `/status` | Live bot status (checks process directly) |
 | `/balance` | Current balances and total P&L % |
-| `/restart` | Restart all bots (requires /confirm) |
-| `/restart scalper` | Restart one bot (requires /confirm) |
-| `/stop` | Stop all bots (requires /confirm) |
-| `/stop scalper` | Stop one bot (requires /confirm) |
-| `/emergency` | Emergency stop — immediate, no confirm |
-| `/resume scalper` | Resume a peak-protection-locked bot — no confirm. Clears lock within 60s. Peak protection stays OFF for rest of day. Admin only. |
-| `/resetweek` | Reset weekly and daily P&L references to current MT5 balance for all bots. Use after depositing funds. Bots apply within 60s and clear all alert flags. Admin only. |
-| `/resetweek smc` | Reset one bot only. |
-| `/help` | Command list |
-| `/users` | Manage users (admin only) |
+| `/status` | What is running, its uptime, its MT5 link and its balance — read off each bot's own state file |
+| `/balance` | Account balance and P&L |
+| `/help` | The command list |
+| `/users` | Who is authorized (admin only) |
+
+**There are no control commands, deliberately.** `/restart`, `/stop`, `/emergency`, `/trades`,
+`/resume`, `/resetweek` and `/confirm` were deleted on 2026-08-05: every one resolved through
+`BOTS` / `TASK_NAMES`, empty since the June bot deletion, so `/restart` and `/stop` asked you to
+confirm and then reported success having done nothing. Start and stop a bot from the command
+center, which can see how many copies are actually running — a phone command cannot, which is
+why a confirmation step could never have made it safe.
 
 ---
 
@@ -289,8 +300,6 @@ All components read from `bot_state.json` — single source of truth.
 | `started` | each bot at `run()` start; also startup_coordinator.py | Timestamp bot process launched |
 | `day_locked` | all bots | True when weekly cap / peak protection / daily ceiling fires |
 | `lock_reason` | all bots | Human-readable stop reason for the lock alert |
-| `resume_trading` | telegram_bot.py | Flag read by bot wait loop to break weekly-cap lock early |
-| `reset_requested` | telegram_bot.py `/resetweek` | When True, bot resets weekly_start and daily_start to current MT5 balance on its next loop iteration, then clears the flag. |
 
 ⚠ **There are no derived P&L fields in `bot_state.json` any more.** `daily_pnl`, `weekly_pnl`,
 `total_pnl_pct`, `peak_balance` and `trades_today` were written by `set_pnl()`, which went with
@@ -307,6 +316,6 @@ because a fabricated zero and a measured zero must never be the same value — s
 `last_week` from bot_state: if it matches the current ISO week the stored `weekly_start`
 is returned; otherwise the current balance is written as the new weekly_start.
 
-**After depositing funds:** send `/resetweek` via Telegram. All running bots pick up the
-flag within 60s, reset their in-memory references, and clear all P&L alert flags. No manual
-file editing required.
+⚠ **`/resetweek` is gone (2026-08-05)** along with the P&L tracker that read its flag, so there is
+no Telegram path for this any more. Nothing currently consumes `weekly_start` — `live/runner.py`
+writes `balance`, `total_pnl_pct` and `starting_balance`, and no job reads a weekly reference.

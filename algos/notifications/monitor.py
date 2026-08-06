@@ -50,6 +50,7 @@ import bot_state as _bot_state
 # algos/credentials.json — never pasted here. See algos/shared/credentials.py.
 from credentials import telegram_credentials  # noqa: E402
 from notify import chat_for, HEALTH            # noqa: E402
+from alert_format import alert                 # noqa: E402
 
 TELEGRAM_TOKEN, GROUP_CHAT, ADMIN_CHAT = telegram_credentials()
 
@@ -194,26 +195,20 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
 
     # ── Running state change alerts ───────────────────────────────────────
     if was_running is not None and running != was_running:
-        now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
         if not running:
             suppress_key = cfg.get("suppress_key", "")
             suppressed   = _is_stop_suppressed(suppress_key) if suppress_key else False
             bot_state["stop_suppressed"] = suppressed
             if not suppressed:
-                send_alert(
-                    f"🚨 *ALERT — Bot Offline*\n"
-                    f"{cfg['name']} stopped unexpectedly\n"
-                    f"Time: {now_str}\n"
-                    f"Restarting automatically…"
-                )
+                send_alert(alert(
+                    "🔴", "OFFLINE", cfg["name"],
+                    "The process is gone. Restarting it now."))
             _bot_state.set_status(bot_key, "offline")
         else:
             if not bot_state.get("stop_suppressed"):
-                send_alert(
-                    f"🟢 *ALERT — Bot Online*\n"
-                    f"{cfg['name']} is running again\n"
-                    f"Time: {now_str}"
-                )
+                send_alert(alert(
+                    "🟢", "BACK ONLINE", cfg["name"],
+                    "It is running again. Nothing to do."))
             bot_state["stop_suppressed"] = False
             bot_state["restart_tries"] = 0
             bot_state["max_retry_alerted"] = False
@@ -240,17 +235,15 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             return bot_state
 
         tries = bot_state.get("restart_tries", 0)
-        now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
         if tries < MAX_BOT_RESTARTS:
             print(f"{bot_key} is DOWN. Restart attempt {tries+1}/{MAX_BOT_RESTARTS}...")
             if restart_bot(bot_key):
                 bot_state["restart_tries"] = 0
                 bot_state["running"] = True
-                send_alert(
-                    f"🟢 *ALERT — {cfg['name']} Restarted*\n"
-                    f"Was offline\\. Auto\\-restarted at {now_str}\\.\n"
-                    f"Check the log for why it stopped\\."
-                )
+                send_alert(alert(
+                    "🟢", "RESTARTED", cfg["name"],
+                    "It was offline and has been restarted automatically.",
+                    "Worth checking the log for why it stopped."))
                 _bot_state.set_status(bot_key, "running")
             else:
                 bot_state["restart_tries"] = tries + 1
@@ -259,13 +252,12 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
             # needs a person to read the log, and repeating the alert every minute trains you
             # to mute the channel that also carries the trade alerts.
             bot_state["max_retry_alerted"] = True
-            send_alert(
-                f"🚨 *CRITICAL — {cfg['name']} Will Not Start*\n"
-                f"Failed {MAX_BOT_RESTARTS} restart attempts\\.\n"
-                f"It is NOT trading and will not retry\\.\n"
-                f"Check `{cfg['name']}` log — likely a version pin or MT5 login\\.\n"
-                f"Time: {now_str}"
-            )
+            send_alert(alert(
+                "🚨", "WILL NOT START", cfg["name"],
+                f"{MAX_BOT_RESTARTS} restart attempts have failed. It is not trading and will "
+                f"not retry.",
+                "It will stay down until someone looks. Usually a version pin or the MT5 login "
+                "— check its log."))
         return bot_state
 
     # ── Heartbeat check — catches alive-but-frozen loops ─────────────────
@@ -281,23 +273,19 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     stale_secs  = (time.time() - heartbeat) if heartbeat else 0
     if stale_secs > LOG_STALE_SECS:
         if not bot_state.get("stale_alerted"):
-            now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
-            send_alert(
-                f"⚠️ *{cfg['name']} — Loop Stalled*\n"
-                f"Process alive but heartbeat missing {stale_secs / 60:.0f} min\n"
-                f"Time: {now_str}\n"
-                f"Action: /restart or check `algo logs`"
-            )
+            send_alert(alert(
+                "⚠️", "STALLED", cfg["name"],
+                f"The process is alive but has not stamped its heartbeat for "
+                f"{stale_secs / 60:.0f} minutes, so it is not working through bars.",
+                "Restart it from the command center, or check its log."))
             bot_state["stale_alerted"] = True
             _bot_state.set_status(bot_key, "stalled")
     else:
         if bot_state.get("stale_alerted"):
-            now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
-            send_alert(
-                f"🟢 *{cfg['name']} — Loop Recovered*\n"
-                f"Heartbeat resumed. Bot is scanning again.\n"
-                f"Time: {now_str}"
-            )
+            send_alert(alert(
+                "🟢", "RECOVERED", cfg["name"],
+                "The heartbeat resumed and it is working through bars again.",
+                "Nothing to do."))
             _bot_state.set_status(bot_key, "running")
         bot_state["stale_alerted"] = False
 
@@ -305,17 +293,14 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     unresolved    = bot_live.get("unresolved_symbols", [])
     alerted_today = bot_state.get("unresolved_symbols_alerted", {})
     if unresolved:
-        now_str = datetime.now(TEXAS).strftime("%I:%M %p CT")
         for entry in unresolved:
             sym = entry.get("symbol", "")
             if not sym or alerted_today.get(sym) == today:
                 continue
-            send_alert(
-                f"⚠️ *{cfg['name']}: Watchlist Symbol Not Found*\n"
-                f"Symbol `{sym}` not found on broker — skipped this cycle\\.\n"
-                f"Fix `watchlist` in config\\.json\\.\n"
-                f"Time: {now_str}"
-            )
+            send_alert(alert(
+                "⚠️", "SYMBOL NOT FOUND", cfg["name"],
+                f"The broker does not list {sym}, so it was skipped this cycle.",
+                "Fix the watchlist in config.json."))
             alerted_today[sym] = today
     bot_state["unresolved_symbols_alerted"] = alerted_today
 
@@ -331,7 +316,6 @@ def check_telegram_bot(state: dict) -> dict:
     tg_state  = state.get("telegram_bot", {})
     running   = is_running("telegram_bot.py")
     max_tries = 3
-    now_str   = datetime.now(TEXAS).strftime("%I:%M %p CT")
 
     if not running:
         tries = tg_state.get("restart_tries", 0)
@@ -347,11 +331,10 @@ def check_telegram_bot(state: dict) -> dict:
                     import time; time.sleep(5)
                     if is_running("telegram_bot.py"):
                         print("Telegram bot restarted successfully.")
-                        send_alert(
-                            f"🟢 *ALERT — Telegram Bot Restarted*\n"
-                            f"Was offline\\. Auto-restarted at {now_str}\\.\n"
-                            f"Commands are available again\\."
-                        )
+                        send_alert(alert(
+                            "🟢", "RESTARTED", "Telegram bot",
+                            "It was offline and has been restarted. Commands work again.",
+                            "Nothing to do."))
                         tg_state["restart_tries"] = 0
                         tg_state["running"]        = True
                     else:
@@ -362,13 +345,10 @@ def check_telegram_bot(state: dict) -> dict:
                 tg_state["restart_tries"] = tries + 1
         else:
             if not tg_state.get("max_retry_alerted"):
-                send_alert(
-                    f"🚨 *CRITICAL — Telegram Bot Down*\n"
-                    f"Failed to restart after {max_tries} attempts\\.\n"
-                    f"Manual action required\\.\n"
-                    f"RDP into VPS: `schtasks /run /tn SYS_TELEGRAM`\n"
-                    f"Time: {now_str}"
-                )
+                send_alert(alert(
+                    "🚨", "WILL NOT START", "Telegram bot",
+                    f"{max_tries} restart attempts have failed, so commands are unavailable.",
+                    "RDP into the VPS and run: schtasks /run /tn SYS_TELEGRAM"))
                 tg_state["max_retry_alerted"] = True
     else:
         tg_state["running"]           = True
