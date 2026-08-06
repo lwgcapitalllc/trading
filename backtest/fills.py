@@ -25,7 +25,10 @@ difference by making tick mode guess.
 
 * **Spread** — real and measured. Entries and exits transact at the correct side of the book (a
   long buys the ask and sells the bid), so the spread is paid by construction rather than bolted on
-  as a fudge factor. Gold measures ~$0.33 and is stable (2026-07-14: median 0.330, p99 0.380).
+  as a fudge factor. Gold on PU Prime measures a FIXED ~$0.32 (2026-08-06, 1,893,438 ticks over 3
+  whole days: median 0.320, p99 0.370, max 0.390) — see `_SPREAD_XAUUSD_PUPRIME` for the by-hour
+  detail and for Vantage's very different $0.22. Re-measure with `algos/tools/broker_facts.py`
+  rather than quoting this line: it is a snapshot of a broker's pricing, not a constant.
 * **Commission** — a per-side fact about the ACCOUNT TYPE, not the symbol and not an estimate. It
   lives in `AccountProfile`, because on every broker the same symbol costs different amounts on
   different account tiers (PU Prime Standard: $0 + wide spread; Prime: $3.50/side/lot + raw spread).
@@ -90,7 +93,13 @@ class SwapModel:
 
         Swap in points = Swap (long or short) * Contract Size * 10^(-Digits) * Lot * Nights
 
-    XAUUSD.s check: -78.29 * 100 * 10^-2 * 1 * 1 = -$78.29/lot/night long. `+29.49` short (a credit).
+    XAUUSD.s check: -79.60 * 100 * 10^-2 * 1 * 1 = -$79.60/lot/night long. `+30.25` short (a credit).
+
+    ⚠ **THOSE NUMBERS MOVE, so do not treat this worked example as a constant.** The same symbol
+    read -78.29 / +29.49 on 2026-07-16 and -79.60 / +30.25 on 2026-08-06 — 1.7% / 2.6% adrift in
+    three weeks, with nothing to announce it. A swap gets read once, hardcoded, and then quietly
+    describes a rate the broker has moved on from, and on a strategy designed to hold overnight it
+    is the LARGEST re-priceable cost. Re-read it with `algos/tools/broker_facts.py`.
 
     `triple_weekday` is the day that carries three nights (the weekend roll). MT5 exposes it as the
     swap-rates table; PU Prime gold books it on WEDNESDAY (=2, Monday-based like date.weekday()).
@@ -226,11 +235,22 @@ class AccountProfile:
 # Verified account profiles. Sources, checked 2026-07-16:
 #   puprime.com/account-types  — Standard $0 | Prime $3.5/side/lot | ECN $1/side/lot | Cent none
 #   puprime.com/fee-charges    — the swap formula reproduced in SwapModel
-# XAUUSD.s swap values are off that symbol's own Specification window.
-# Evidence the live demo (700119432, PUPrime-Demo) is STANDARD and not a raw-spread tier: its gold
-# spread measures a FIXED $0.33 (median 0.330, p90 0.330 over 688k ticks). A marked-up fixed spread
-# is how a commission-free tier is priced; Prime/ECN quote a variable raw spread near zero.
-_XAUUSD_SWAP = SwapModel(swap_long_points=-78.29, swap_short_points=29.49,
+# Evidence the live demo (700107749, PUPrime-Demo) is STANDARD and not a raw-spread tier: its gold
+# spread measures a FIXED marked-up value (see the spread block below). That is how a
+# commission-free tier is priced; Prime/ECN quote a variable raw spread near zero.
+#
+# ✅ SWAP RE-MEASURED 2026-08-06 off the LIVE MT5_FFT terminal (`algos/tools/broker_facts.py`,
+# read-only): swap_long **-79.60**, swap_short **+30.25**, swap_mode 1 (points), contract 100,
+# digits 2, rollover3days 3 → our Monday-based `triple_weekday=2`. Confirmed identical on
+# 2026-08-05 and 2026-08-06, two days apart, so it is the broker's standing rate and not a blip.
+#
+# ⚠ A SWAP IS NOT A CONSTANT, AND THIS IS THE EVIDENCE. The previous values here (-78.29 / +29.49)
+# came off the same symbol's Specification window on **2026-07-16** and were 1.7% / 2.6% adrift
+# three weeks later. Nothing announced the change and nothing could have caught it — a swap is
+# read once, hardcoded, and then quietly describes a rate the broker has moved on from. Swap is
+# also the LARGEST re-priceable cost on this strategy (6.41R of the reference run's 12.08R), so
+# it is the worst one to leave stale. **Re-run `broker_facts.py` before quoting a cost figure.**
+_XAUUSD_SWAP = SwapModel(swap_long_points=-79.60, swap_short_points=30.25,
                          contract_size=100.0, digits=2, triple_weekday=2)
 
 # Vantage demo (account 25815745, VantageMarkets-Demo) — the BACKTEST-ONLY broker, chosen so bar and
@@ -246,13 +266,20 @@ _XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.9
 
 # Bar-mode spreads, MEASURED off each broker's own cached bid/ask tick stream — never quoted from
 # the other one, and that distinction is not academic: the two differ by 50%.
-#   PU Prime XAUUSD.s (2026-07-14, 688k ticks)  — median 0.330, p90 0.330, p99 0.380. A FIXED
-#     marked-up spread, which is how a zero-commission tier is priced.
+#   PU Prime XAUUSD.s (2026-08-06, **1,893,438 ticks** over 3 whole days off the LIVE MT5_FFT
+#     terminal's own tick store) — median **0.320**, p90 0.320, p99 0.370, max 0.390, min 0.270.
+#     A FIXED marked-up spread, which is how a zero-commission tier is priced.
+#     ⚠ It is flat at $0.32 in EVERY hour of the day except one. The 21:00-22:00 UTC daily break
+#     has no ticks at all, and the hour that REOPENS after it (22:00 UTC) is the only wide one —
+#     median $0.35, p99 $0.39. So the reopen, not the session, is where gold's spread lives here.
+#     ⚠ Supersedes 0.33 (2026-07-14, 688k ticks). Both are real; this one is 2.7x the sample, is
+#     three weeks newer, and — the part that matters — covers ALL 23 traded hours rather than a
+#     slice, which the previous figure could not claim.
 #   Vantage  XAUUSD   (2026-08-02, 1,494,459 ticks over 60 sampled hours of the local tick cache,
 #     spanning 2025-08 → 2026-07) — median **0.220**, p90 0.270, p99 0.310, max 0.310.
 # Tick mode ignores both: it has the real bid and ask on every tick. These exist so BAR mode, which
 # sees one price per bar, can be told what it cannot measure.
-_SPREAD_XAUUSD_PUPRIME = 0.33
+_SPREAD_XAUUSD_PUPRIME = 0.32
 _SPREAD_XAUUSD_VANTAGE = 0.22
 
 PROFILES = {

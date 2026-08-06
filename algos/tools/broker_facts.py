@@ -150,11 +150,99 @@ def sample_spread(mt5, symbol: str, seconds: int, point: float) -> dict:
     }
 
 
+def _pct(sorted_vals: list, p: float) -> float:
+    return sorted_vals[min(len(sorted_vals) - 1, int(p / 100 * len(sorted_vals)))]
+
+
+def history_spread(mt5, symbol: str, days: int, point: float) -> dict:
+    """The spread distribution over the terminal's own STORED ticks, bucketed by UTC hour.
+
+    ⚠ THIS IS THE MEASUREMENT `--sample` CANNOT MAKE, AND THE REASON IT EXISTS. Live sampling can
+    only ever see the session you happen to be sitting in — the first PU Prime reading (2026-08-05)
+    was 120 seconds of the London/NY overlap, and its own note said to re-run in an Asian session
+    and across a rollover before the number went into a cost model. You cannot do that by waiting;
+    you do it by reading the ticks the terminal already holds. Gold prints ~630k ticks a day here,
+    so three days is a bigger sample than the 1.49M-tick Vantage figure this repo trusts.
+
+    ⚠ THE TICK CLOCK IS THE BROKER'S, NOT UTC, AND THE OFFSET IS MEASURED RATHER THAN READ FROM
+    CONFIG. `algos/CLAUDE.md` records that MT5 labels broker-server seconds as though they were
+    UTC — the bug that put every bar 2-3 hours out behind a perfectly valid timestamp. The instance
+    config carries `broker_tz_offsets 2,3`, but that is a CLAIM about summer and winter, and only
+    one of them is true today. Bucketing by an assumed offset would put the Asian session's spread
+    under the London label and read as a completely ordinary result. So the newest tick is compared
+    against this machine's own UTC clock and the offset is rounded to the hour.
+
+    ⚠ Ticks are pulled a DAY AT A TIME. One call for the whole window returns a single array of
+    several million rows; the chunking keeps the peak allocation to roughly one day and lets a
+    partial history still report (a broker's tick store starts somewhere, exactly like its bars).
+    """
+    import datetime as dt
+
+    now = dt.datetime.utcnow()
+    now_epoch = dt.datetime.now(dt.timezone.utc).timestamp()
+
+    # Measure the server clock off the LIVE tick, before touching history.
+    # 🔴 The first version of this took it from the first history chunk it happened to process,
+    # which is the OLDEST one — so it measured "two days ago minus now" and reported UTC-48. The
+    # overall distribution was unharmed (it needs no clock at all), but every by-hour label was
+    # silently the BROKER's hour wearing a UTC heading, which is this repo's own never-assume-the-
+    # clock trap reintroduced by the very code written to avoid it. -48 also happens to be ≡ 0
+    # (mod 24), so the buckets looked like a plausible, self-consistent, wrong answer.
+    live = mt5.symbol_info_tick(symbol)
+    offset_h = round((int(live.time) - now_epoch) / 3600.0) if live is not None else None
+
+    spreads: list[float] = []
+    by_hour: dict[int, list[float]] = {}
+    days_seen = 0
+
+    for d in range(days, 0, -1):
+        lo = now - dt.timedelta(days=d)
+        hi = now - dt.timedelta(days=d - 1)
+        ticks = mt5.copy_ticks_range(symbol, lo, hi, mt5.COPY_TICKS_INFO)
+        if ticks is None or len(ticks) == 0:
+            continue
+        days_seen += 1
+        for t in ticks:
+            bid, ask = float(t[1]), float(t[2])
+            if bid <= 0.0 or ask <= 0.0:
+                continue                      # a half-populated tick is not a spread
+            s = ask - bid
+            if s < 0:
+                continue                      # crossed book — never a cost, always a data artefact
+            spreads.append(s)
+            if offset_h is not None:
+                # `None` = the live tick could not be read, so the offset is UNKNOWN. Bucketing
+                # anyway would publish broker hours under a UTC heading; the overall distribution
+                # below needs no clock and is still reported.
+                utc_h = (dt.datetime.utcfromtimestamp(int(t[0])).hour - offset_h) % 24
+                by_hour.setdefault(utc_h, []).append(s)
+
+    if not spreads:
+        return {"n": 0, "note": "the terminal holds no ticks for this window"}
+
+    spreads.sort()
+    out = {
+        "n": len(spreads), "days": days_seen, "server_offset_h": offset_h,
+        "min": spreads[0], "median": statistics.median(spreads),
+        "p90": _pct(spreads, 90), "p99": _pct(spreads, 99), "max": spreads[-1],
+        "median_points": statistics.median(spreads) / point if point else None,
+        "by_hour": {},
+    }
+    for h in sorted(by_hour):
+        v = sorted(by_hour[h])
+        out["by_hour"][h] = {"n": len(v), "median": statistics.median(v), "p99": _pct(v, 99)}
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Measure a live broker's symbol costs. Read-only.")
     ap.add_argument("--bot", required=True)
     ap.add_argument("--sample", type=int, default=120,
                     help="seconds of live ticks to sample for the spread distribution (0 = skip)")
+    ap.add_argument("--history-days", type=int, default=0,
+                    help="ALSO read the terminal's stored ticks over the last N days and report the "
+                         "spread by UTC hour. This is the only way to see the Asian session and the "
+                         "rollover without waiting for them.")
     args = ap.parse_args(argv)
 
     inst = load_instance(args.bot)
@@ -203,6 +291,31 @@ def main(argv=None) -> int:
                 print("  NOTE: a few minutes is a SNAPSHOT of one session, not the spread. Gold")
                 print("  widens at the 17:00 NY rollover, around news and out of hours. Sample")
                 print("  again in another session before quoting a median as the broker's cost.")
+
+        if args.history_days > 0:
+            print()
+            print(f"STORED TICKS - last {args.history_days} day(s) ...", flush=True)
+            h = history_spread(mt5, symbol, args.history_days, pt)
+            if not h.get("n"):
+                print(f"  {h.get('note')}")
+            else:
+                off = h["server_offset_h"]
+                print(f"  {h['n']:,} ticks over {h['days']} day(s); server clock measured at "
+                      + (f"UTC{off:+d}" if off is not None else "UNKNOWN (no live tick)"))
+                print(f"  min ${h['min']:.2f} | median ${h['median']:.2f} "
+                      f"({h['median_points']:.0f} points) | p90 ${h['p90']:.2f} "
+                      f"| p99 ${h['p99']:.2f} | max ${h['max']:.2f}")
+                if not h["by_hour"]:
+                    print("  by-hour breakdown SKIPPED - the server clock could not be measured, "
+                          "and broker hours under a UTC heading is a wrong answer, not a partial one.")
+                else:
+                    print("  by UTC hour (median / p99 / ticks):")
+                for hr, v in h["by_hour"].items():
+                    print(f"    {hr:02d}:00  ${v['median']:.2f}  ${v['p99']:.2f}  {v['n']:>8,}")
+                print()
+                print("  The 21:00-22:00 UTC band is the 17:00 NY rollover, where gold's spread")
+                print("  widens and the swap is charged. A cost model that quotes only the")
+                print("  overall median is understating what a trade held overnight pays.")
     finally:
         mt5.shutdown()
     return 0
