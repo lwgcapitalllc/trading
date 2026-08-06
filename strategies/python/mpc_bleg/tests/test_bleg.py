@@ -145,3 +145,67 @@ def test_this_fork_records_no_missed_setups():
     an overridden method."""
     strat = MpcBLegStrategy().run(synth_bars(30), warmup=100)
     assert strat.execution.misses == []
+
+
+# ── the two re-defaulted exit/staleness levers (2026-08-06) ───────────────────────
+def test_this_fork_redefaults_the_trail_step_and_the_staleness_cap():
+    """Both are FORK PINS, not inherited values, and both would silently revert if somebody
+    "reconciled" this config with its parent's.
+
+    `exec_trail_pct` is a percent of PRICE while a B leg's whole 1R is 0.13%-1.25% of price,
+    so the parent's 1.0 makes one trail step larger than the entire risk and the ratchet can
+    never climb off the stage-2 floor. That floor is exactly 1R here by construction
+    (TP1 = 2*edge - inv, stop = inv), so the runner banks precisely +1.00R and hands back the
+    rest — measured, 9 of 50 baseline trades exited at exactly that.
+
+    `bleg_max_days` was 1.25 because the Pine input's `maxval` was 3; 4-5 days measures best
+    and the cap was what had never been checked.
+    """
+    from mpc_sos_fade import SosFadeConfig
+
+    assert BLegConfig().exec_trail_pct == 0.05
+    assert SosFadeConfig().exec_trail_pct == 1.0, \
+        "the A+ parent must KEEP 1.0 — its own sweep says the opposite (0.25% -> 43.6R vs 109.3R)"
+    assert BLegConfig().bleg_max_days == 4.0
+
+
+def test_the_staleness_cap_default_is_reachable_on_its_own_pine_input():
+    """A default outside its input's own `maxval` is a config the Pine cannot express, which
+    would put `compare_bleg.py` red on the first export taken at the shipped settings. The cap
+    was raised 3 -> 6 in the same commit as the 1.25 -> 4.0 default; this reads the Pine rather
+    than trusting the memory of having done it."""
+    import re
+
+    for name in ("mpc_b_leg_strategy.pine", "mpc_b_leg_strategy_export.pine"):
+        src = (_ROOT / "indicators" / name).read_text()
+        line = next(ln for ln in src.splitlines() if ln.startswith("float bLegMaxDays = input."))
+        default = float(re.search(r"input\.float\(([\d.]+)", line).group(1))
+        lo = float(re.search(r"minval = ([\d.]+)", line).group(1))
+        hi = float(re.search(r"maxval = ([\d.]+)", line).group(1))
+        assert default == BLegConfig().bleg_max_days, f"{name}: Pine default {default} != config"
+        assert lo <= default <= hi, f"{name}: default {default} outside [{lo}, {hi}]"
+
+        tl = next(ln for ln in src.splitlines() if ln.startswith("float execTrailPct = input."))
+        td = float(re.search(r"input\.float\(([\d.]+)", tl).group(1))
+        assert td == BLegConfig().exec_trail_pct, f"{name}: Pine execTrailPct {td} != config"
+
+
+def test_the_meta_descs_are_the_pine_tooltips_verbatim():
+    """The lab row and the Pine input are ONE name and ONE explanation — the contract recorded
+    in this meta file's own `_comment`. It is enforced here rather than remembered, because the
+    failure mode is silent: the panel goes on describing the old behaviour and reads as correct.
+    Asserts it MATCHED something first, so a renamed param cannot make this vacuously green."""
+    import json
+    import re
+
+    pine = (_ROOT / "indicators" / "mpc_b_leg_strategy.pine").read_text().splitlines()
+    meta = json.loads((_ROOT / "strategies" / "python" / "mpc_bleg"
+                       / "mpc_bleg.meta.json").read_text())
+    by_name = {p["name"]: p for p in meta["params"]}
+    checked = 0
+    for field, var in (("bleg_max_days", "bLegMaxDays"), ("exec_trail_pct", "execTrailPct")):
+        line = next(ln for ln in pine if ln.startswith(f"float {var} = input."))
+        tip = re.search(r'tooltip = "((?:[^"\\]|\\.)*)"', line).group(1)
+        assert by_name[field]["desc"] == tip, f"{field}: meta desc has drifted from the Pine tooltip"
+        checked += 1
+    assert checked == 2, "this test matched nothing — the params were renamed, not verified"

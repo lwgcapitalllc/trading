@@ -1,0 +1,1846 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// MPC D STRATEGY — "D as in dog, the dirty one" (Aaron, 2026-08-06).
+//
+// A mature trend gets shaken out against itself and then resumes. Three steps:
+//   1. A trend is established and MATURE — an SOS opens it, then it prints at least one BOS.
+//   2. A COUNTER-trend SOS fires. This is the shakeout: price closes through the trend's
+//      last protected swing and prints a genuine LL (in an uptrend) or HH (in a downtrend).
+//   3. A WITH-trend SOS fires, straight back into the original direction. THAT IS THE ENTRY.
+// The stop sits beyond the extreme the counter leg reached. It is the only price in the
+// sequence that carries information: through it, the shakeout was a real reversal.
+//
+// ⚠ THE NON-OBVIOUS PART, AND IT IS THE WHOLE IMPLEMENTATION.
+// An SOS strictly ALTERNATES direction by construction — a bull SOS requires st.dir == -1
+// and sets it to 1, so the next SOS can only be a bear one. "An SOS then an opposite SOS"
+// is therefore ALWAYS true and can never be a trigger; every consecutive pair on every
+// chart satisfies it. What actually separates this sequence from ordinary structure is an
+// ASYMMETRY IN MATURITY between the two legs either side of the counter-SOS:
+//   the trend being RETURNED to must have printed >= dTrendBosMin BOS (it was a trend)
+//   the counter leg in between must have printed <= dCtrBosMax  BOS   (it was a shakeout)
+// Drop either test and this fires on every SECOND SOS on the chart. Those two numbers ARE
+// the strategy. See docs/MPC_D_STRATEGY_SPEC.md.
+//
+// ⚠ MEASURED ON AARON'S OWN FOUR EXAMPLES: entering at the return-SOS CLOSE with the stop
+// at the counter extreme gives roughly 0.5R to 1.2R. All four were directionally right and
+// only one cleared 1R. The cause is structural — an SOS confirms at the TOP of the reclaim
+// leg, so the entry is at the expensive end and the stop is the whole leg away. That is the
+// same problem A+ solves by resting a limit on the retrace instead of buying the break, so
+// "Retrace" is offered as an entry mode. Which one pays is a MEASUREMENT, not an argument.
+// The default stays "SOS close" because it marks exactly what Aaron drew, and the tool has
+// to be checked against the examples before anything is changed.
+//
+// The structure engine below (type SMCStructure through the external execution block) is
+// lifted BYTE-FOR-BYTE from indicators/structure_engine.pine, itself the external half of
+// mpc_assistant.pine. It is not re-implemented here — a second structure engine is
+// forbidden by CLAUDE.md and would be the thing that silently drifts.
+//
+// ⚠ EVERYTHING BELOW THE ENGINE FOLLOWS mpc_strategy.pine's CONVENTIONS (Aaron, 2026-08-06).
+// Same five input groups — "D Setup" for the sequence gates (as A+ uses "A+ Setup"),
+// "Strategy Execution" for everything that decides what a trade DOES, plus "D Debug",
+// "Result Stats" and "Diagnostic Log". Same d-prefix / exec-prefix split, same "   ↳ " for a
+// sub-input with `active =` on its parent, same tooltip rule: what it does, what ON vs OFF
+// means, and the one fact that changes the decision — never a measurement essay, those live
+// in the CLAUDE.md files. The exit ladder is a PORT of that file's, not a lookalike:
+// f_dRatchet is f_swingRatchet unchanged, and the staged stop, the TP2 floor modes, the
+// three trail methods, the time stop and the close-on-opposite-SOS all keep their shapes and
+// their defaults. Anywhere this file deliberately diverges, the divergence is commented at
+// the site — see the exit-rung re-issue guard.
+// ⚠ THIS IS A strategy(), NOT AN indicator(). That is what puts a Properties tab and a
+// Strategy Tester on the chart; an indicator has neither, which is what the first build of
+// this file got wrong.
+// ⚠ process_orders_on_close is ON so the "SOS close" entry fills at the CLOSE of the bar
+// that confirmed the SOS — the price the marker draws and the price the four reference
+// examples were measured at. With it off the fill is the NEXT bar's open, and every R in
+// docs/MPC_D_STRATEGY_SPEC.md would then be describing a different trade.
+// ⚠ margin 0.2% = 500x, the same pin as mpc_strategy.pine. Gold near $4,000 under a
+// percent-of-equity risk model sizes past a cash account, and TradingView REJECTS an order
+// it cannot margin rather than shrinking it — so leverage set too low shows up as a strategy
+// that quietly takes fewer trades, never as an error.
+strategy("MPC D Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, process_orders_on_close = true, margin_long = 0.2, margin_short = 0.2)
+//============================================================
+//  SMC SETTINGS (hardcoded)
+//============================================================
+int   majorLength = 15
+color bullColor   = color.blue
+color bearColor   = color.red
+color iBullColor  = bullColor
+color iBearColor  = bearColor
+
+//============================================================
+//  MARKET STRUCTURE — input selection (mirrors mpc_assistant.pine's GRP_STRUCT)
+//============================================================
+var GRP_STRUCT = "Market Structure"
+string structLabelSize  = input.string("Small", "Structure Label Size",    group = GRP_STRUCT, options = ["Tiny", "Small", "Normal", "Large", "Huge"], display = display.none)
+bool   showExternal     = input.bool(true,      "Show External Structure", group = GRP_STRUCT, display = display.none)
+bool   showSwingLabels  = input.bool(true, "Show Swing Point Labels", group = GRP_STRUCT, tooltip = "Off = hide ASH/ASL, HH/HL, LH/LL and the internal swing point labels, leaving only BOS/SOS and iBOS/iSOS on the chart. The structure engine keeps running exactly as before — fibs, order blocks and the confirmation table are unaffected.", display = display.none)
+float  pbBuffer         = 0.0
+
+f_structSize() =>
+    not showExternal ? size.auto : structLabelSize == "Tiny" ? size.tiny : structLabelSize == "Normal" ? size.normal : structLabelSize == "Large" ? size.large : structLabelSize == "Huge" ? size.huge : size.small
+
+// Swing-point labels are hidden by making their text transparent, not by skipping
+// their creation. The label objects still exist and the engine's state is untouched,
+// so structure tracking, fibs, OBs and the table behave identically either way.
+f_swingCol(color c) =>
+    showSwingLabels ? c : color(na)
+
+//============================================================
+//  SMC STRUCTURE TYPE
+//============================================================
+type SMCStructure
+    int    length
+    float  ash             = na
+    int    ash_loc         = na
+    string ash_type        = ""
+    line   ash_line        = na
+    label  ash_lbl         = na
+    float  asl             = na
+    int    asl_loc         = na
+    string asl_type        = ""
+    line   asl_line        = na
+    label  asl_lbl         = na
+    float  last_conf_high     = na
+    int    last_conf_high_loc = na
+    float  last_conf_low      = na
+    int    last_conf_low_loc  = na
+    int    dir            = 0
+    bool   choch_lock     = false
+    line   choch_ref      = na
+    int    pb_mode        = 0
+    int    pb_count       = 0
+    float  pb_level       = na
+    float  pb_extreme     = na
+    int    pb_extreme_loc = na
+    line   pb_line        = na
+    bool   pb_started     = false
+    float  pb_last_qualify_close = na
+    float  pb_last_qualify_high  = na
+    float  pb_extreme_close      = na
+    float  prev_close     = na
+    float  prev_high      = na
+    float  prev_low       = na
+    bool   seeded         = false
+    bool   bull_bos       = false
+    float  bull_bos_high  = na
+    int    bull_bos_h_loc = na
+    float  bull_bos_low   = na
+    int    bull_bos_l_loc = na
+    bool   bear_bos       = false
+    float  bear_bos_high  = na
+    int    bear_bos_h_loc = na
+    float  bear_bos_low   = na
+    int    bear_bos_l_loc = na
+    bool   new_swing_high = false
+    bool   new_swing_low  = false
+    bool   bull_sos       = false
+    bool   bear_sos       = false
+
+// prefix: "" for external, "i" for internal
+// bull_col / bear_col allow per-instance colors
+method create_ash(SMCStructure st, float val, int loc, color col, bool solid, string prefix) =>
+    if not na(st.ash_line)
+        line.delete(st.ash_line)
+    if not na(st.ash_lbl)
+        label.delete(st.ash_lbl)
+        st.ash_lbl := na
+    st.ash      := val
+    st.ash_loc  := loc
+    st.ash_type := ""
+    st.ash_lbl  := label.new(loc, val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(col), style=label.style_label_down, size=f_structSize())
+    st.ash_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+
+method create_asl(SMCStructure st, float val, int loc, color col, bool solid, string prefix) =>
+    if not na(st.asl_line)
+        line.delete(st.asl_line)
+    if not na(st.asl_lbl)
+        label.delete(st.asl_lbl)
+        st.asl_lbl := na
+    st.asl      := val
+    st.asl_loc  := loc
+    st.asl_type := ""
+    st.asl_lbl  := label.new(loc, val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(col), style=label.style_label_up, size=f_structSize())
+    st.asl_line := line.new(loc, val, bar_index, val, color=col, style=solid ? line.style_solid : line.style_dashed, width=solid ? 2 : 1)
+
+// process() now accepts prefix + bull/bear colors so both instances share one method
+method process(SMCStructure st, float ph_val, float pl_val, string prefix, color bull_col, color bear_col) =>
+
+    st.bull_bos := false
+    st.bear_bos := false
+    st.new_swing_high := false
+    st.new_swing_low  := false
+    st.bull_sos := false
+    st.bear_sos := false
+
+    bool is_inside = false
+    if not na(st.prev_high) and not na(st.prev_low)
+        is_inside := high < st.prev_high and low > st.prev_low
+
+    if st.choch_lock
+        if st.dir == 1 and not na(pl_val)
+            st.choch_lock := false
+        else if st.dir == -1 and not na(ph_val)
+            st.choch_lock := false
+
+    if st.pb_mode == 1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_1 = false
+            if na(st.pb_extreme) or high > st.pb_extreme
+                st.pb_extreme            := high
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_1        := true
+            bool extreme_is_bearish_1 = extreme_updated_1 and close < open
+            bool is_candle1_1 = na(st.pb_last_qualify_close) and not extreme_updated_1
+            if (not is_inside or is_candle1_1) and (not extreme_updated_1 or extreme_is_bearish_1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close < threshold - pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := low
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                if not na(st.ash_lbl)
+                    label.delete(st.ash_lbl)
+                st.ash      := st.pb_extreme
+                st.ash_loc  := st.pb_extreme_loc
+                st.ash_type := "LOCKED"
+                st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
+                st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+                st.new_swing_high := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    else if st.pb_mode == -1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_m1 = false
+            if na(st.pb_extreme) or low < st.pb_extreme
+                st.pb_extreme            := low
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_m1       := true
+            bool extreme_is_bullish_m1 = extreme_updated_m1 and close > open
+            bool is_candle1_m1 = na(st.pb_last_qualify_close) and not extreme_updated_m1
+            if (not is_inside or is_candle1_m1) and (not extreme_updated_m1 or extreme_is_bullish_m1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close > threshold + pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := high
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                if not na(st.asl_lbl)
+                    label.delete(st.asl_lbl)
+                st.asl      := st.pb_extreme
+                st.asl_loc  := st.pb_extreme_loc
+                st.asl_type := "LOCKED"
+                st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
+                st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+                st.new_swing_low := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    st.prev_close := close
+    st.prev_high  := high
+    st.prev_low   := low
+
+    if na(st.ash) and na(st.asl) and not st.seeded
+        if not na(ph_val)
+            st.create_ash(ph_val, bar_index[st.length], bear_col, false, prefix)
+            st.dir := -1
+        else if not na(pl_val)
+            st.create_asl(pl_val, bar_index[st.length], bull_col, false, prefix)
+            st.dir := 1
+
+    if not st.seeded
+        if not na(st.ash) and na(st.asl)
+            float seed_low = low
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
+            for i = 0 to lb
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
+            if seed_low < st.ash
+                st.asl      := seed_low
+                st.asl_loc  := seed_loc
+                st.asl_type := ""
+                st.asl_line := line.new(seed_loc, seed_low, bar_index, seed_low, color=bull_col, style=line.style_dashed, width=1)
+                st.asl_lbl  := label.new(seed_loc, seed_low, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+                st.seeded := true
+        else if not na(st.asl) and na(st.ash)
+            float seed_high = high
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
+            for i = 0 to lb
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
+            if seed_high > st.asl
+                st.ash      := seed_high
+                st.ash_loc  := seed_loc
+                st.ash_type := ""
+                st.ash_line := line.new(seed_loc, seed_high, bar_index, seed_high, color=bear_col, style=line.style_dashed, width=1)
+                st.ash_lbl  := label.new(seed_loc, seed_high, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+                st.seeded := true
+        else if not na(st.ash) and not na(st.asl)
+            st.seeded := true
+
+    if na(st.last_conf_high) and na(st.last_conf_low)
+        if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
+            if ph_val > st.ash
+                st.create_ash(ph_val, bar_index[st.length], bear_col, false, prefix)
+        if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
+            if pl_val < st.asl
+                st.create_asl(pl_val, bar_index[st.length], bull_col, false, prefix)
+
+    bool ash_broken = not na(st.ash) and close > st.ash
+    bool asl_broken = not na(st.asl) and close < st.asl
+
+    if ash_broken
+        st.bull_bos := true
+        st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc := st.ash_loc
+
+        bool was_in_bear_pb = st.pb_mode == -1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool   is_choch    = st.dir == -1
+        string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
+        if is_choch
+            st.bull_sos := true
+        int    mid_x       = math.round((st.ash_loc + bar_index) / 2)
+        label.new(mid_x, st.ash, "\n" + brk_lbl_txt, color=color(na), textcolor=bull_col, style=label.style_label_down, size=size.tiny)
+
+        if is_choch
+            st.choch_lock := true
+
+        bool brk_already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+        if not na(st.ash_lbl)
+            label.delete(st.ash_lbl)
+        if not brk_already_conf_high
+            bool   brk_is_hh  = na(st.last_conf_high) or st.ash >= st.last_conf_high
+            string brk_high_t = brk_is_hh ? prefix + "HH" : prefix + "LH"
+            color  brk_high_c = brk_is_hh ? bull_col : bear_col
+            label.new(st.ash_loc, st.ash, brk_high_t + "\n", color=color(na), textcolor=f_swingCol(brk_high_c), style=label.style_label_down, size=f_structSize())
+
+        if not na(st.ash_line)
+            line.set_style(st.ash_line, line.style_solid)
+            line.set_color(st.ash_line, bull_col)
+            line.set_width(st.ash_line, 2)
+            line.set_x2(st.ash_line, bar_index)
+            st.ash_line := na
+
+        st.last_conf_high     := st.ash
+        st.last_conf_high_loc := st.ash_loc
+        st.ash_lbl            := na
+        st.ash                := na
+        st.dir                := 1
+
+        if was_in_bear_pb
+            st.bull_bos_low   := st.pb_extreme
+            st.bull_bos_l_loc := st.pb_extreme_loc
+            if not na(st.asl_line)
+                line.delete(st.asl_line)
+            if not na(st.asl_lbl)
+                label.delete(st.asl_lbl)
+            bool   pb_is_hl = is_choch ? false : (na(st.last_conf_low) or st.pb_extreme >= st.last_conf_low)
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing low —
+            // it prints as ASL and is confirmed to HL/LL by the NEXT bullish break.
+            string pb_low_t = is_choch ? prefix + "ASL" : (pb_is_hl ? prefix + "HL" : prefix + "LL")
+            color  pb_low_c = is_choch ? bull_col : (pb_is_hl ? bull_col : bear_col)
+            st.asl      := st.pb_extreme
+            st.asl_loc  := st.pb_extreme_loc
+            st.asl_type := "LOCKED"
+            st.asl_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bull_col, style=line.style_solid, width=1)
+            st.asl_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, "\n" + pb_low_t, color=color(na), textcolor=f_swingCol(pb_low_c), style=label.style_label_up, size=f_structSize())
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := 1
+            st.pb_started            := true
+        else
+            if not na(st.asl)
+                bool already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+                if not already_conf_low
+                    bool   old_is_hl = is_choch ? false : (na(st.last_conf_low) or st.asl >= st.last_conf_low)
+                    string old_low_t = old_is_hl ? prefix + "HL" : prefix + "LL"
+                    color  old_low_c = old_is_hl ? bull_col : bear_col
+                    if not na(st.asl_lbl)
+                        label.delete(st.asl_lbl)
+                    label.new(st.asl_loc, st.asl, "\n" + old_low_t, color=color(na), textcolor=f_swingCol(old_low_c), style=label.style_label_up, size=f_structSize())
+                    st.last_conf_low     := st.asl
+                    st.last_conf_low_loc := st.asl_loc
+                else
+                    if not na(st.asl_lbl)
+                        label.delete(st.asl_lbl)
+                if not na(st.asl_line)
+                    line.delete(st.asl_line)
+                st.asl_line := na
+                st.asl_lbl  := na
+                st.asl      := na
+
+            float lowest_val = low
+            int   lowest_loc = bar_index
+            int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if low[i] < lowest_val
+                        lowest_val := low[i]
+                        lowest_loc := bar_index - i
+
+            st.bull_bos_low   := lowest_val
+            st.bull_bos_l_loc := lowest_loc
+
+            st.asl      := lowest_val
+            st.asl_loc  := lowest_loc
+            st.asl_type := ""
+            st.asl_line := line.new(lowest_loc, lowest_val, bar_index, lowest_val, color=bull_col, style=line.style_solid, width=1)
+            if lowest_val != st.last_conf_low
+                st.asl_lbl := label.new(lowest_loc, lowest_val, "\n" + prefix + "ASL", color=color(na), textcolor=f_swingCol(bull_col), style=label.style_label_up, size=f_structSize())
+            else
+                st.asl_lbl := na
+
+            st.pb_mode               := 1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    else if asl_broken
+        st.bear_bos := true
+        st.bear_bos_low   := st.asl
+        st.bear_bos_l_loc := st.asl_loc
+
+        bool was_in_bull_pb = st.pb_mode == 1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool   is_choch    = st.dir == 1
+        string brk_lbl_txt = is_choch ? prefix + "SOS" : prefix + "BOS"
+        if is_choch
+            st.bear_sos := true
+        int    mid_x       = math.round((st.asl_loc + bar_index) / 2)
+        label.new(mid_x, st.asl, brk_lbl_txt + "\n", color=color(na), textcolor=bear_col, style=label.style_label_up, size=size.tiny)
+
+        if is_choch
+            st.choch_lock := true
+
+        bool brk_already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+        if not na(st.asl_lbl)
+            label.delete(st.asl_lbl)
+        if not brk_already_conf_low
+            bool   brk_is_hl = na(st.last_conf_low) or st.asl >= st.last_conf_low
+            string brk_low_t = brk_is_hl ? prefix + "HL" : prefix + "LL"
+            label.new(st.asl_loc, st.asl, "\n" + brk_low_t, color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_up, size=f_structSize())
+
+        if not na(st.asl_line)
+            line.set_style(st.asl_line, line.style_solid)
+            line.set_color(st.asl_line, bear_col)
+            line.set_width(st.asl_line, 2)
+            line.set_x2(st.asl_line, bar_index)
+            st.asl_line := na
+
+        st.last_conf_low     := st.asl
+        st.last_conf_low_loc := st.asl_loc
+        st.asl_lbl           := na
+        st.asl               := na
+        st.dir               := -1
+
+        if was_in_bull_pb
+            st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_h_loc := st.pb_extreme_loc
+            if not na(st.ash_line)
+                line.delete(st.ash_line)
+            if not na(st.ash_lbl)
+                label.delete(st.ash_lbl)
+            bool   pb_is_hh  = na(st.last_conf_high) or st.pb_extreme >= st.last_conf_high
+            // On an SOS (fast reversal) the extreme is only the ACTIVE swing high —
+            // it prints as ASH and is confirmed to HH/LH by the NEXT bearish break.
+            string pb_high_t = is_choch ? prefix + "ASH" : (pb_is_hh ? prefix + "HH" : prefix + "LH")
+            color  pb_high_c = is_choch ? bear_col : (pb_is_hh ? bull_col : bear_col)
+            st.ash      := st.pb_extreme
+            st.ash_loc  := st.pb_extreme_loc
+            st.ash_type := "LOCKED"
+            st.ash_line := line.new(st.pb_extreme_loc, st.pb_extreme, bar_index, st.pb_extreme, color=bear_col, style=line.style_solid, width=1)
+            st.ash_lbl  := label.new(st.pb_extreme_loc, st.pb_extreme, pb_high_t + "\n", color=color(na), textcolor=f_swingCol(pb_high_c), style=label.style_label_down, size=f_structSize())
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := -1
+            st.pb_started            := true
+        else
+            float highest_val = high
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
+
+            if not na(st.ash)
+                bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+                if not already_conf_high
+                    bool   old_is_hh  = is_choch ? true : (na(st.last_conf_high) or st.ash >= st.last_conf_high)
+                    string old_high_t = old_is_hh ? prefix + "HH" : prefix + "LH"
+                    color  old_high_c = old_is_hh ? bull_col : bear_col
+                    if not na(st.ash_lbl)
+                        label.delete(st.ash_lbl)
+                    label.new(st.ash_loc, st.ash, old_high_t + "\n", color=color(na), textcolor=f_swingCol(old_high_c), style=label.style_label_down, size=f_structSize())
+                    st.last_conf_high     := st.ash
+                    st.last_conf_high_loc := st.ash_loc
+                else
+                    if not na(st.ash_lbl)
+                        label.delete(st.ash_lbl)
+                if not na(st.ash_line)
+                    line.delete(st.ash_line)
+                st.ash_line := na
+                st.ash_lbl  := na
+                st.ash      := na
+            else
+                // Neither an active pullback high nor a confirmed ASH was available to
+                // promote — use the actual highest point since the last confirmed low so
+                // a genuine swing high still gets confirmed instead of silently vanishing.
+                bool   fallback_is_hh  = na(st.last_conf_high) or highest_val >= st.last_conf_high
+                string fallback_high_t = fallback_is_hh ? prefix + "HH" : prefix + "LH"
+                color  fallback_high_c = fallback_is_hh ? bull_col : bear_col
+                if highest_val != st.last_conf_high
+                    label.new(highest_loc, highest_val, fallback_high_t + "\n", color=color(na), textcolor=f_swingCol(fallback_high_c), style=label.style_label_down, size=f_structSize())
+                    st.last_conf_high     := highest_val
+                    st.last_conf_high_loc := highest_loc
+
+            st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc := highest_loc
+
+            st.ash      := highest_val
+            st.ash_loc  := highest_loc
+            st.ash_type := ""
+            st.ash_line := line.new(highest_loc, highest_val, bar_index, highest_val, color=bear_col, style=line.style_solid, width=1)
+            if highest_val != st.last_conf_high
+                st.ash_lbl := label.new(highest_loc, highest_val, prefix + "ASH\n", color=color(na), textcolor=f_swingCol(bear_col), style=label.style_label_down, size=f_structSize())
+            else
+                st.ash_lbl := na
+
+            st.pb_mode               := -1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    if not na(st.ash_line)
+        line.set_x2(st.ash_line, bar_index)
+        if not showExternal
+            line.set_color(st.ash_line, color(na))
+    if not na(st.asl_line)
+        line.set_x2(st.asl_line, bar_index)
+        if not showExternal
+            line.set_color(st.asl_line, color(na))
+    if not showExternal
+        if not na(st.ash_lbl)
+            label.set_textcolor(st.ash_lbl, color(na))
+        if not na(st.asl_lbl)
+            label.set_textcolor(st.asl_lbl, color(na))
+
+//============================================================
+//  EXECUTION — EXTERNAL STRUCTURE
+//============================================================
+// External structure engine — majorLength=15, blue/red, prefix ""
+var st = SMCStructure.new(majorLength)
+ph = ta.pivothigh(high, majorLength, majorLength)
+pl = ta.pivotlow(low,  majorLength, majorLength)
+// showExternal off → pass color(na) so ALL lines and labels hidden inside process
+// showExternal off but showExternal on → pass color(na) for labels only — handled via ASH/ASL override below
+color extBullCol = showExternal ? (showExternal ? bullColor : color(na)) : color(na)
+color extBearCol = showExternal ? (showExternal ? bearColor : color(na)) : color(na)
+st.process(ph, pl, "", extBullCol, extBearCol)
+
+// After process runs — restore line colors when labels are hidden but structure is visible
+if not na(st.ash_line)
+    line.set_x2(st.ash_line, bar_index)
+    if showExternal and not showExternal
+        line.set_color(st.ash_line, bullColor)
+if not na(st.asl_line)
+    line.set_x2(st.asl_line, bar_index)
+    if showExternal and not showExternal
+        line.set_color(st.asl_line, bearColor)
+if not na(st.ash_lbl)
+    label.set_textcolor(st.ash_lbl, showExternal ? f_swingCol(bearColor) : color(na))
+if not na(st.asl_lbl)
+    label.set_textcolor(st.asl_lbl, showExternal ? f_swingCol(bullColor) : color(na))
+
+//============================================================
+//  D SETUP — the sequence gates
+//============================================================
+// Named and grouped after mpc_strategy.pine: the SETUP owns its own group with a d-prefix
+// (as A+ uses aplus*), and everything that decides what a trade DOES lives under
+// "Strategy Execution" with an exec- prefix. Keeping the two apart is what lets a gate be
+// tuned without touching the trade, and read without hunting.
+var GRP_DSEQ = "D Setup"
+// The two gates that ARE the strategy — see the header on why an opposite-direction SOS
+// pair is not a signal by itself.
+int dTrendBosMin = input.int(1, "Trend must have printed at least N BOS", group = GRP_DSEQ, minval = 0, maxval = 5, tooltip = "How mature the trend being RETURNED to had to be. 0 accepts a trend that only ever printed its opening SOS, which is most of the chart. Raise it to demand a trend that actually continued before it was shaken out.")
+// Deliberately NOT 0. Two of the four reference examples show a counter leg that broke
+// structure in its own direction before turning back, so a zero refuses half of them.
+int dCtrBosMax   = input.int(1, "Shakeout may print at most N BOS", group = GRP_DSEQ, minval = 0, maxval = 5, tooltip = "How much the shakeout may break in its OWN direction before it stops being a shakeout and becomes a genuine new trend. 0 demands a single clean break and refuses two of the four reference setups. High values let a real reversal-and-recovery through as if it were noise.")
+// In BARS, so it does NOT transfer between timeframes. 400 is ~4 days on 15m, ~33 hours on
+// 5m. The reference examples ran from about 3 hours to about 33.
+int dCtrBarsMax  = input.int(133, "Shakeout max length (bars)", group = GRP_DSEQ, minval = 5, tooltip = "How long the shakeout may last before the sequence goes stale. Counted in BARS, so this number means a different amount of TIME on every chart. ⚠ PINNED FOR 15m. 133 bars on 15m is ~33 hours, the same window 400 meant on 5m and the span the four reference examples actually ran (3h to 33h). Running this file on 5m WITHOUT changing it measures an 11-hour shakeout cap, which is a different strategy — re-check it whenever you change timeframe.")
+
+//============================================================
+//  STRATEGY EXECUTION
+//============================================================
+// ⚠ DECLARATION ORDER IS NOW FROZEN. TradingView keys a chart's saved input values off the
+// order of declaration within each TYPE, so inserting a string or a float above an existing
+// one silently resets every later input of that type on every chart running this script.
+// Add new inputs at the END of their type's run, never in the middle. mpc_strategy.pine
+// records the same trap at its own time-stop pair.
+var GRP_EXEC = "Strategy Execution"
+bool  execLongs   = input.bool(true,  "Trade longs",  group = GRP_EXEC, tooltip = "On = long setups may trade. Off = shorts only. Read at the SIGNAL, not at the order, so a disabled side draws nothing either — what is on the chart is what was traded.")
+bool  execShorts  = input.bool(true,  "Trade shorts", group = GRP_EXEC, tooltip = "On = short setups may trade. Off = longs only.")
+
+string execEntryMode = input.string("SOS close", "Entry", options = ["SOS close", "Retrace", "VWAP side"], group = GRP_EXEC, tooltip = "SOS close = enter at the close of the bar that confirms the with-trend SOS. Always fills, and is the expensive end of the leg. Retrace = rest a limit at a fib of the reclaim leg instead: better price, tighter stop, and it misses the setups that never come back. VWAP side = do not wait for the SOS at all — after the shakeout, enter on the first close back on the trend's own side of VWAP. Measured on the four reference examples, SOS close returns 0.5R to 1.2R — every one directionally right, only one past 1R — because an SOS confirms at the TOP of the reclaim. ⚠ VWAP side is a DIFFERENT TRADE, not a cheaper one: the with-trend SOS is the only evidence the shakeout failed, and this drops it. Which mode pays is a measurement, not an argument.")
+float execRetraceFib = input.float(0.5, "   ↳ Retrace level", group = GRP_EXEC, minval = 0.1, maxval = 0.9, step = 0.05, active = execEntryMode == "Retrace", tooltip = "How deep into the reclaim leg the limit rests, measured from the reclaim extreme back toward the shakeout extreme. 0.5 is the midpoint.")
+int   execLimitBars = input.int(20, "   ↳ Cancel an unfilled limit after N bars", group = GRP_EXEC, minval = 1, active = execEntryMode == "Retrace", tooltip = "A resting entry price never came back to is a setup that did not happen. Without this the order stays on the book and can fill days later on a move with nothing to do with this sequence. It is also cancelled if price reaches the STOP first, or if a newer SOS supersedes the sequence.")
+
+// ── WHERE THE STOP GOES. Four anchors, and they are genuinely different trades. ──
+//   SWEEP EXTREME    — the high/low the shakeout reached. The honest invalidation: through
+//                      it, the shakeout was a real reversal. Widest, so the smallest
+//                      position and the fewest stop-outs.
+//   COUNTER-SOS LINE — the level the counter-trend SOS BROKE and price then reclaimed.
+//                      Tighter, and clean in its own right: back below it and the reclaim
+//                      is void. It sits INSIDE the shakeout, so a wick back in stops you
+//                      out where the sweep stop holds.
+//   BETWEEN THE TWO  — slide between them. 0% = the SOS line, 100% = the sweep extreme.
+//   % OF ENTRY-TO-SWEEP — ignores structure entirely. For when both structural stops are
+//                      simply too wide to size against.
+// ⚠ A tighter stop is NOT a better trade. It buys a bigger position on the same risk budget
+// and pays for it in stop-outs on setups that later worked, and those do not cancel at a
+// fixed rate — which wins is a measurement per instrument and timeframe.
+string execSlMode = input.string("Sweep extreme", "Stop anchor", options = ["Sweep extreme", "Counter-SOS line", "Between the two", "% of entry-to-sweep"], group = GRP_EXEC, tooltip = "Sweep extreme = beyond the high/low the shakeout reached — widest, and the honest invalidation. Counter-SOS line = the level the counter-trend SOS broke and price reclaimed; tighter, but it sits inside the shakeout so a wick back in stops you out. Between the two = slide with the percent below. % of entry-to-sweep = ignore structure and take a fraction of the distance. A tighter stop buys a bigger position and pays for it in stop-outs; which wins has not been measured here.")
+float execSlPct   = input.float(50, "   ↳ Stop percent", group = GRP_EXEC, minval = 0, maxval = 100, step = 5, active = execSlMode == "Between the two" or execSlMode == "% of entry-to-sweep", tooltip = "For 'Between the two': 0 puts the stop on the counter-SOS line, 100 on the sweep extreme. For '% of entry-to-sweep': how far from the entry toward the sweep it sits, so a smaller number is a tighter stop.")
+float execSlBufTk = input.float(0, "Stop buffer beyond the anchor (ticks)", group = GRP_EXEC, minval = 0, tooltip = "Extra room past whichever anchor was chosen, so a wick that exactly retests the level does not clip you.")
+
+// ⚠ THE MINIMUM STOP GUARD IS ON BY DEFAULT AND MUST STAY THAT WAY WHILE ANY TIGHT STOP
+// ANCHOR IS REACHABLE. Size is risk DIVIDED BY stop distance, so a stop that collapses onto
+// the entry does not risk less — it builds an enormous position. This file ships three
+// anchors that can land arbitrarily close to the entry ('% of entry-to-sweep' at 5% is a
+// twentieth of the leg), which is exactly the shape that detonated A+ Run 4 and BOS Run 1
+// (worst trade -14.33R). It is an ENTRY FILTER: a refused setup is skipped, never resized.
+string execMinStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Skip a setup whose stop sits closer to the entry than the floor below. Percent of price scales itself as the instrument moves. Fixed dollars is one flat number at both ends. ATR multiple reacts to a quiet versus a violent market, and is the WRONG tool here: the dangerous stops print on QUIET bars, so ATR lets exactly those through. Off is only safe with a structural stop anchor.")
+float execMinStopVal = input.float(0.08, "   ↳ Minimum stop floor (unit = mode above)", group = GRP_EXEC, minval = 0, step = 0.01, active = execMinStopMode != "Off", tooltip = "The unit follows the mode above: a percent of price, dollars, or an ATR multiple. 0.08 percent is the value measured on the A+ bot over 7.9 years as the most protection that costs nothing. It has NOT been measured on this strategy.")
+
+string execSizeMode = input.string("Risk % of equity", "Position sizing", options = ["Risk % of equity", "Fixed contracts"], group = GRP_EXEC, tooltip = "Risk % sizes every trade so the entry-to-stop distance costs the same fraction of the account, which is what makes results comparable across setups of different widths. Fixed contracts does not, and will make a wide-stop trade look like a disaster next to a tight one.")
+float execRiskPct  = input.float(1.0, "   ↳ Risk % per trade", group = GRP_EXEC, minval = 0.1, maxval = 100, step = 0.1, active = execSizeMode == "Risk % of equity", tooltip = "How much of the account each trade risks. Size is worked back from this and the stop distance, so a tighter stop buys a bigger position at the same risk. ⚠ 10 BUSTS THE ACCOUNT over the real history — measured 2026-08-06, equity went negative partway through a 2020-2026 run and TradingView aborted the script. R is scale-free, so a measurement run at 1 gives exactly the same R, drawdown-in-R and profit factor while surviving to the end. Size the account AFTER you know the R distribution, never before.")
+float execFixedQty = input.float(1.0, "   ↳ Contracts", group = GRP_EXEC, minval = 0.01, step = 0.01, active = execSizeMode == "Fixed contracts", tooltip = "A flat position size, ignoring the stop distance.")
+
+float execTp1R = input.float(1.0, "TP1 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "First target, as a multiple of the entry-to-stop distance. The PRICE matters even at 0% size — touching it is what moves the stop to breakeven.")
+float execTp2R = input.float(2.0, "TP2 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "Second target, in R. Touching it lifts the stop to its floor and hands the runner to the trail.")
+float execTp3R = input.float(3.0, "TP3 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "Where the runner's limit sits. 0 = no limit at all, so the runner is resolved by the trailing stop alone.")
+// ⚠ A RUNG SIZED 0% IS SKIPPED, NEVER PLACED. strategy.exit() reads qty_percent = 0 as
+// "unspecified" and falls back to closing the WHOLE position at that limit — the exact
+// opposite of "bank nothing here". mpc_strategy.pine ships both at 0 because riding the
+// whole position to the runner tested best there; that is NOT measured on this strategy,
+// so these ship as a real scale-out and the mpc result is stated in the tooltip instead.
+float execTp1Pct = input.float(30, "   ↳ TP1 size %", group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. 0 = bank nothing and ride the whole position to the runner, which is what tested best on the A+ bot over 6.6 years — untested here. The TP1 price still moves the stop to breakeven at 0.")
+float execTp2Pct = input.float(30, "   ↳ TP2 size %", group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much the TP2 limit banks, as a percent of the ORIGINAL position. Whatever is left rides to TP3 or the trailing stop.")
+float execBeBufTk = input.float(30, "Breakeven buffer (ticks)", group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits this far past the entry, so a scratch still covers costs. It is also why the Strategy Tester reports no true breakevens — the exit books a few cents and files as a winner. The Result Stats band below counts them honestly.")
+string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the instant TP2 is reached, before the runner trail takes over. TP1 price is tight and can scratch the runner on the first pullback. Breakeven gives it the most room. One trail step behind keeps it under the high-water mark and never drops below breakeven. The trail can still tighten past this floor.")
+
+// ── THE RUNNER TRAIL, ported from mpc_strategy.pine's exit ladder ──
+// Same three methods and the same default. Structure alone parks the stop at the last
+// confirmed swing, which BREATHES with the trend but lags — in a strong leg the swing ends
+// up a long way behind and that is where a runner's give-back comes from. The ratchet keeps
+// the same anchor and climbs one step per step of favourable move, so it is never LOOSER
+// than the plain structure trail, only equal or tighter.
+string execRunnerTrail = input.string("Structure + % ratchet", "Runner trail method", options = ["Fixed step", "Structure (swing)", "Structure + % ratchet"], group = GRP_EXEC, tooltip = "How the runner is trailed once TP2 is reached, and which setting below is live. Fixed step is a dollar grid anchored at TP2. Structure parks the stop at the last confirmed swing — it breathes with the trend, but a swing lags, so it hands a lot back at the turn. Structure + % ratchet is the same anchor with the stop climbing one step per step of favourable move; on the A+ bot that lifted the share of each run actually banked from 43% to 53% on the same 164 trades.")
+float execStructTrailBufTk = input.float(20, "   ↳ Structure trail buffer (ticks)", group = GRP_EXEC, minval = 0, active = execRunnerTrail != "Fixed step", tooltip = "Used by both structure methods. The runner stop sits this many ticks beyond the last confirmed swing, so a wick through the swing does not clip it.")
+float execTrailPct = input.float(1.0, "   ↳ Runner ratchet step (% of price)", group = GRP_EXEC, minval = 0.05, step = 0.05, active = execRunnerTrail == "Structure + % ratchet", tooltip = "The stop starts at the last confirmed swing and climbs one step of this size per step of favourable move. A percent rather than dollars because an instrument that doubles would otherwise change what the trail means. Below about 0.5 it starts clipping runners.")
+float execTrailStep = input.float(5.0, "Runner trail step ($ of price)", group = GRP_EXEC, minval = 0.01, step = 0.5, tooltip = "Read by TWO settings, so it is never greyed out: the fixed-step trail, and the 'one trail step behind' stop floor above. On gold 1 pip is 10 cents of price, so 50 pips = 5.0.")
+
+bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS", group = GRP_EXEC, tooltip = "On = force-close the trade if an SOS fires against it before the stop or a target, on the view that an opposite SOS is early proof the resumption failed. Off = let the stop or a target resolve every trade. Worth reading carefully on THIS strategy: the sequence is built out of SOS events, so this is the most likely exit to fire.")
+string execTimeStopMode = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = GRP_EXEC, tooltip = "Close a trade that has been open for the hours below. Before TP1 only fires while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss — that is the measured shape on the A+ bot. Always ignores that and closes on the clock alone, which cuts winners too. Defaults to Before TP1 only at 36h — that is the configuration the 2026-08-06 measurement run used, so it is the baseline every result is stated against.")
+float execTimeStopHrs = input.float(36.0, "   ↳ Time stop (hours)", group = GRP_EXEC, minval = 0.25, step = 0.25, active = execTimeStopMode != "Off", tooltip = "Calendar hours since the fill, weekends included — the same clock a swap is charged on.")
+
+bool  execShowConfLabel = input.bool(true, "Show entry callout", group = GRP_EXEC, tooltip = "One label per trade with the full breakdown in its hover tooltip — entry, stop, which anchor produced it, all three targets, and the shakeout's own geometry. On close it recolours by result and appends the R the trade made.")
+string execLabelWhich = input.string("All", "   ↳ keep callouts for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, active = execShowConfLabel, tooltip = "Which trades keep their callout once the result is known. Every other one is deleted on the bar the trade closes, so the position blocks stay but the annotation goes. Losses + breakevens is the review view.")
+float execLabelOff = input.float(6, "   ↳ callout distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the callout sits from the entry, in ATRs. This is the only lever on where the hover tooltip opens — push it out and the tooltip lands over empty space instead of over the candles. A leader line always connects it back.")
+bool  execShowPosBox = input.bool(true, "Show position blocks", group = GRP_EXEC, tooltip = "The red risk block from entry to the LIVE stop — so it visibly collapses when breakeven lands — and the green reward blocks out to TP1, TP2 and TP3, spanning the bars the trade was open. Replaces TradingView's built-in trade markers.")
+bool  execShowExitLines = input.bool(true, "   ↳ Tag the targets when reached", group = GRP_EXEC, active = execShowPosBox, tooltip = "Marks the bar each target was reached and brightens that reward block, so which rungs paid is readable off the chart without opening the trade list. Off = the blocks still paint, just untagged.")
+bool  execShowShakeout = input.bool(true, "   ↳ Shade the shakeout", group = GRP_EXEC, active = execShowPosBox, tooltip = "The grey box spanning the counter-trend SOS through to the entry. It is there so you can see WHICH move the tool called a shakeout rather than trusting the marker.")
+
+//============================================================
+//  D DEBUG
+//============================================================
+var GRP_DEBUG = "D Debug"
+bool showBlockTag = input.bool(false, "Mark blocked setups on chart (pink)", group = GRP_DEBUG, tooltip = "Drops a pink 'SETUP BLOCKED' tag whenever a with-trend SOS returned to the right trend — the one structural fact the sequence is built on — and one of YOUR gates refused it. Hover for the reason and the price the entry would have taken. This is how you find out whether a gate is saving you money or costing it: count the tags, flip the gate, re-run, compare. Purely cosmetic — it never changes a trade. ⚠ DEFAULTS OFF because at debugDays = 0 over a full history it creates a line and a label on every refused candidate, which is both a wall of pink nobody can read and the single largest cost in a multi-year run. Nothing is lost by leaving it off: the export twin carries every refusal losslessly in its px_blk column. Turn it on with debugDays set to 30 or so when you are reading a recent window on the chart.")
+int  debugDays = input.int(0, "   ↳ only tag the last N days (0 = all)", group = GRP_DEBUG, minval = 0, maxval = 365, active = showBlockTag, tooltip = "Older tags are not drawn. Set 0 to tag the whole history. Applies ONLY to the blocked-setup tags — every real trade always keeps its callout, however old.")
+bool showStatePanel = input.bool(true, "Show state panel", group = GRP_DEBUG, tooltip = "Live read of the gates: how mature the current trend is, how far the sequence has progressed, and what it is waiting for. Use it to tell a genuinely quiet market apart from a gate set too tight — those need opposite responses.")
+
+//============================================================
+//  RESULT STATS
+//============================================================
+var GRP_STATS = "Result Stats"
+float execBeBandR = input.float(0.15, "Breakeven band (R)", group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade whose net result lands inside +/- this many R counts as a BREAKEVEN — price went out, came back, and the trade was closed for nothing. The Strategy Tester cannot report these: the breakeven buffer books a few cents, so it files them as winners.")
+
+//============================================================
+//  DIAGNOSTIC LOG
+//============================================================
+var GRP_DIAG = "Diagnostic Log"
+bool execDiagLog = input.bool(true, "Log every trade + block to Pine Logs", group = GRP_DIAG, tooltip = "Writes one text line per event to the Pine Logs tab: the sequence that armed each entry, the fill, the result in R, and every blocked setup with its reason. Copy the pane out for an off-chart audit. No effect on trades or drawings. ON by default as of 2026-08-06: it is the fallback for a chart-data export, and it carries two things that export alone has — each trade's MFE and MAE in R (the trade list gives best and worst price but never their ORDER, which is what decides whether an earlier stop protects a loser or clips a winner) and every REFUSED setup with its gates and geometry, so a refusal can be re-priced rather than merely counted. ⚠ Pine Logs keeps only the most recent N messages, so on a multi-year run the OLDEST lines are dropped silently — if the paste does not start at your backtest's first trade, it truncated.")
+
+//============================================================
+//  VWAP — the pro-trend side test
+//============================================================
+// ⚠ THESE ARE DECLARED HERE, AT THE END OF THE FILE'S INPUTS, AND MUST NOT BE TIDIED UP
+// INTO GRP_EXEC BESIDE THEIR SIBLINGS. TradingView keys a chart's saved input values off
+// DECLARATION ORDER WITHIN EACH TYPE, so inserting a bool and an int up at ~720 would shift
+// every later bool and int and silently reset them on every chart running this script. The
+// last input of EVERY type in this file sits at or before `execDiagLog`, so declaring the
+// pair after it shifts nothing at all — `group = GRP_EXEC` still files them under Strategy
+// Execution, only their position inside that group moves. **No "Reset settings to defaults"
+// is needed for this change.** mpc_strategy.pine records the identical trap at its own
+// time-stop pair; this is the same manoeuvre for the same reason.
+//
+// WHAT THIS IS FOR (Aaron, 2026-08-06). The D sequence's entry is the with-trend SOS, and
+// an SOS confirms at the TOP of the reclaim leg — so the entry is at the expensive end and
+// the stop is the whole leg away. That is measured, not suspected: the four reference
+// examples returned 0.5R to 1.2R, and the first full-history run capped every winner at the
+// ladder's arithmetic ceiling of 2.11R against full -1R losers. VWAP is the proposed way in
+// EARLIER: after the shakeout, take the trade when the close is back on the pro-trend side
+// of VWAP, without waiting for the SOS to confirm it.
+//
+// ⚠ IT IS A STATE TEST, NOT A CROSS EVENT, AND THAT IS AARON'S EXPLICIT CALL. "If it is
+// already supported by the VWAP and the VWAP is pro-trend, and it does not have to cross
+// back over, take those trades." So a shakeout that dipped under VWAP and reclaimed it and
+// a shakeout that never lost it are the SAME signal — both are simply "the close is on the
+// trend's side of the line". Writing this as `ta.crossover` would silently refuse every
+// setup of the second kind, which is half of what was asked for.
+bool execVwapReq = input.bool(false, "Require close on the pro-trend side of VWAP", group = GRP_EXEC, tooltip = "A FILTER on whichever entry mode is selected: refuse a setup whose entry bar does not close on the trend's own side of VWAP — above it for a long, below for a short. Off changes nothing, which is why it ships off: the 2026-08-06 baseline was measured without it and stays reproducible. It does NOT need price to have crossed back; a shakeout that never lost VWAP passes on the same terms as one that reclaimed it.")
+bool execVwapSlope = input.bool(false, "   ↳ and VWAP itself sloping with the trend", group = GRP_EXEC, active = execVwapReq or execEntryMode == "VWAP side", tooltip = "Additionally require the VWAP line to be RISING for a long and falling for a short, over the bars below. Off = only the close's side of the line is read, so a long can be taken above a VWAP that is still rolling over. Reads the line's direction, never price's.")
+int execVwapSlopeBars = input.int(4, "   ↳ slope measured over N bars", group = GRP_EXEC, minval = 1, maxval = 200, active = execVwapSlope and (execVwapReq or execEntryMode == "VWAP side"), tooltip = "How far back the slope is measured. 4 is one hour on 15m. ⚠ In BARS, so it means a different amount of TIME on every chart — re-check it whenever you change timeframe, the same way dCtrBarsMax has to be.")
+// Drawn by DEFAULT, and that is a decision rather than a convenience. The moment a rule reads
+// VWAP, "the VWAP" becomes a claim about a specific line, and this repo's most-repeated
+// defect is two places disagreeing about one number while both look right. Showing the exact
+// series the gate reads makes the two impossible to confuse on the chart.
+bool execShowVwap = input.bool(true, "Draw the VWAP line", group = GRP_EXEC, tooltip = "Plots the exact session VWAP the entry mode and the filter read. Off hides the line; it changes no decision. Leave it on whenever VWAP is gating anything — a rule you cannot see is a rule you cannot check.")
+
+color D_LONG  = #00E676
+color D_SHORT = #FF5252
+color D_MUTED = #94A3B8
+color D_RISK  = color.new(#FF1744, 84)
+color D_RWD   = color.new(#00E676, 90)
+color D_RWDH  = color.new(#00E676, 72)   // a reward block that was actually REACHED
+color D_SHADE = color.new(#888888, 88)
+color BLK_PINK  = color.new(#FF2E9A, 12)
+color BLK_PINKL = color.new(#FF2E9A, 0)
+
+//============================================================
+//  D SEQUENCE — state machine
+//============================================================
+// dTrendDir / dTrendBos describe the trend the LAST SOS killed. At the moment the NEXT SOS
+// is checked they still hold that value, which is exactly the trend TWO SOS back — the one
+// the sequence would be returning to. That one-SOS lag is the whole trick; see the header.
+var int   dTrendDir = 0
+var int   dTrendBos = 0
+var int   dCurBos   = 0     // BOS printed since the current direction was established
+var int   dSosBar   = na    // bar of the most recent SOS
+// Running extremes of the leg since that SOS. dLegLo/dLegHi are the leg's own extreme (the
+// sweep anchor); dRclHi/dRclLo are the RECOVERY off it, and they RESET every time the
+// extreme is exceeded — so at the entry they describe the reclaim leg alone rather than the
+// whole swing, which is what a retrace entry has to be measured against.
+var float dLegLo = na, var float dLegHi = na
+var float dRclHi = na, var float dRclLo = na
+// The PRICE the last SOS broke — the horizontal structure line drawn on the chart at that
+// break. Carried on the same one-SOS lag, so at the entry it still holds the level the
+// COUNTER-SOS took out, which is what the "Counter-SOS line" anchor uses. It is the
+// engine's own number (st.bull_bos_high / st.bear_bos_low), never re-derived from prices.
+var float dSosLvl = na
+// ⚠ ONE ENTRY PER SEQUENCE, AND WITHOUT THIS THE VWAP MODE TRADES THE SAME SHAKEOUT OVER
+// AND OVER. The SOS entry is self-limiting — an SOS fires on one bar, so it can only fire
+// once. The VWAP test is a STATE, true on every bar for as long as price stays on that side
+// of the line, so the only thing stopping a re-entry is `bBusy`, and `bBusy` goes false the
+// moment the trade closes. A sequence that stopped out would immediately re-enter at a worse
+// price, and keep doing it until the bar cap expired. Released only by the shift below.
+var bool dSeqTaken = false
+
+if not na(dSosBar)
+    if na(dLegLo) or low < dLegLo
+        dLegLo := low
+        dRclHi := high
+    else
+        dRclHi := math.max(nz(dRclHi, high), high)
+    if na(dLegHi) or high > dLegHi
+        dLegHi := high
+        dRclLo := low
+    else
+        dRclLo := math.min(nz(dRclLo, low), low)
+
+// A BOS that is NOT an SOS. The engine sets bull_bos on every bull_sos bar as well, so this
+// guard is load-bearing — without it every SOS would count itself as a continuation of the
+// trend it just started, and dCurBos could never read 0.
+if (st.bull_bos and not st.bull_sos) or (st.bear_bos and not st.bear_sos)
+    dCurBos += 1
+
+float dAtr = ta.atr(14)
+
+// ⚠ THE SESSION VWAP, AND IT IS DELIBERATELY THE ONE ON AARON'S CHART.
+// `ta.vwap(hlc3)` is the single line mpc_assistant.pine draws (its line 2274) and the one
+// engines/vwap/ is the canonical Python port of — session-anchored, re-anchored at the
+// trading-day open, volume-weighted. Anchoring a private VWAP at the shakeout instead would
+// be a SECOND VWAP implementation, which CLAUDE.md forbids outright, and it would also not
+// be the line the request was about: "already supported by the VWAP" describes a level that
+// has been sitting under price, which an anchor placed at the shakeout cannot be.
+// ⚠ It needs the bar's VOLUME. On XAUUSD that is tick volume, which is what Pine reads, so
+// this is free here — but a symbol with no volume data makes ta.vwap raise rather than
+// return na, and the whole script dies with it.
+// ⚠ IT RESETS DAILY, AND THE SHAKEOUT CAN OUTLIVE THE RESET. dCtrBarsMax allows 133 bars
+// (~33h on 15m), so a sequence may straddle the 18:00 New York roll and be judged against a
+// VWAP anchored AFTER its own shakeout began. That is not a bug to be fixed here — it is
+// what the line on the chart actually does, and a filter that silently used a different
+// VWAP from the one being looked at would be the worse failure.
+float dVwap = ta.vwap(hlc3)
+
+// The pro-trend side test, as ONE helper so the entry mode and the filter can never come to
+// different answers about the same bar. `dir` is the trade's direction, not the chart's.
+// ⚠ A `na` VWAP (no volume yet on the session's first bar) returns FALSE, never true —
+// "cannot ask" and "no" must not be the same value, and of the two available answers the
+// safe one for a gate is the refusal. It costs at most the first bar of a session.
+// ⚠ THE SLOPE IS TAKEN OUT HERE, AT GLOBAL SCOPE, AND MUST NOT BE MOVED INSIDE THE HELPER.
+// `dVwap[execVwapSlopeBars]` is a history reference, and the helper is called from inside
+// two conditional blocks — a bar where neither runs would not evaluate it. Reading a series'
+// history on some bars and not others is the shape Pine gives inconsistent answers for, and
+// it fails as a wrong NUMBER rather than an error. Computed unconditionally, the helper is
+// left as pure arithmetic over globals and is safe to call from anywhere.
+float dVwapSlope = dVwap - dVwap[execVwapSlopeBars]
+
+// ⚠ The line BREAKS at each trading-day anchor on its own — ta.vwap returns na across the
+// reset — which is correct and is why this is a plot() rather than a polyline. It is also
+// the visible proof of the daily-reset caveat noted above: where the line restarts is where
+// a shakeout's VWAP stopped being the one it began under.
+plot(execShowVwap ? dVwap : na, title = "VWAP", color = color.new(#00E5FF, 25), linewidth = 1)
+
+f_dVwapOk(int dir) =>
+    bool sideOk  = na(dVwap) ? false : (dir == 1 ? close > dVwap : close < dVwap)
+    bool slopeOk = not execVwapSlope ? true : (na(dVwapSlope) ? false : (dir == 1 ? dVwapSlope > 0 : dVwapSlope < 0))
+    sideOk and slopeOk
+
+//============================================================
+//  DRAWING — object pools
+//============================================================
+// A FIXED STRIDE of five boxes and five labels per TRADE: the shakeout, the risk block and
+// three reward blocks; the entry callout and one marker per target, plus a leader line. An
+// object that is switched off or not yet earned is created TRANSPARENT rather than skipped,
+// because the fixed stride is what lets the oldest trade be evicted as one unit — a variable
+// one splits a trade across an eviction and leaves orphaned blocks explaining nothing.
+// ⚠ Everything is drawn at the FILL, not at the signal. Under "Retrace" the two are
+// different bars, and a position block starting before the position existed would be
+// drawing a trade nobody was in.
+var array<box>   dBoxes = array.new<box>()
+var array<label> dLbls  = array.new<label>()
+var array<line>  dLines = array.new<line>()
+
+// Handles on the CURRENT trade's objects, so they can be extended and recoloured while it
+// runs. The arrays above own them for eviction; these are only pointers.
+var box   aShake = na
+var box   aRisk  = na
+var box   aR1    = na
+var box   aR2    = na
+var box   aR3    = na
+var label aEntry = na
+var label aTp1   = na
+var label aTp2   = na
+var label aTp3   = na
+var line  aLead  = na
+
+int D_KEEP = 40
+
+f_dEvict() =>
+    while array.size(dBoxes) > D_KEEP * 5
+        for _i = 1 to 5
+            box.delete(array.shift(dBoxes))
+        for _i = 1 to 4
+            label.delete(array.shift(dLbls))
+        line.delete(array.shift(dLines))
+    int _r = 0
+
+//============================================================
+//  D SEQUENCE — the fire, and why a setup was refused
+//============================================================
+// Reason PRECEDENCE — the first gate that would refuse the setup is the one reported, so a
+// tag can never blame a downstream gate for an upstream refusal.
+//   8 account bust (first — it refuses everything, so no later reason is the real one)
+//   1 direction off · 2 trend too young · 3 shakeout became a trend · 4 shakeout stale
+//   9 wrong side of VWAP · 5 stop too tight · 6 stop on the wrong side · 7 already in a position
+// ⚠ 9 is NUMBERED last and RANKED fifth, and the two are independent on purpose. The number
+// is a wire format — `px_blk` in the export twin and the B| log lines carry it, and an
+// archived export must keep decoding the way it did the day it was taken, so an existing
+// code can never be renumbered. Its POSITION in the chain is just which reason gets reported
+// when several apply, and VWAP belongs with the setup gates (2/3/4) rather than with the
+// sizing gates (5/6), because it describes the setup and not the order.
+// ⚠ Code 9 is raised by the FILTER only (execVwapReq, on the SOS-close and Retrace modes).
+// Under "VWAP side" the test is the TRIGGER rather than a gate, so a bar on the wrong side
+// is not a refused setup — it is a bar where no setup exists yet, and reporting it would
+// write one refusal per bar for the whole window and drown the log it was meant to serve.
+// ── Log formatters ──
+// `na` renders as an EMPTY field, never as "NaN" and never as 0. A parser has to be able to
+// tell "this value did not exist" from "this value was zero", and str.tostring(na) gives
+// "NaN" which reads as neither. Same rule the export columns follow.
+f_dN(float v) => na(v) ? "" : str.tostring(v, format.mintick)
+f_dI(int v)   => na(v) ? "" : str.tostring(v)
+
+f_dBlkWhy(int c) =>
+    switch c
+        1 => "'Trade longs' / 'Trade shorts' is OFF for this side."
+        2 => "Trend too young — the trend being returned to printed fewer BOS than your floor, so it was never established enough to be shaken OUT of."
+        3 => "Shakeout became a trend — the counter leg broke structure in its own direction more times than you allow, so it is a genuine reversal-and-recovery rather than a shakeout."
+        4 => "Shakeout stale — the counter leg ran longer than your bar cap. What came back is a new move, not the same one resuming."
+        5 => "Minimum stop distance — the stop sits closer to the entry than your floor, so this position would be oversized and noise-sensitive."
+        6 => "Stop on the wrong side — the chosen anchor lands at or past the entry, which is a zero or negative 1R. Nothing can be sized against it."
+        7 => "Already in a position — one trade at a time."
+        9 => "Wrong side of VWAP — the entry bar did not close on the trend's own side of the session VWAP (or the line was not sloping with the trend, if that sub-gate is on)."
+        8 => "Account is bust — equity is at or below zero, so nothing can be sized. Every setup from here reports the same thing; the run is over, not merely quiet."
+        => ""
+
+bool  dFired  = false
+int   dDir    = 0
+float dEntry  = na
+float dStop   = na
+int   dBlk    = 0     // 0 = nothing refused it
+float dBlkPx  = na    // the entry the refused setup would have taken
+// The shakeout's own geometry, handed to the execution block so the shaded box can be drawn
+// at the FILL rather than here. Under "Retrace" the fill can be many bars later, by which
+// time dSosBar and the leg extremes have been reset by the next SOS.
+int   dCtrBar = na
+float dCtrHi  = na
+float dCtrLo  = na
+float dCtrSos = na
+// ── The CANDIDATE record, set for EVERY candidate — fired or refused ──
+// These exist so the diagnostic log can carry, for each setup the sequence ever saw, the
+// three gate INPUTS and the geometry the entry was priced off. They are read at decision
+// time, before the unconditional shift at the bottom of the block overwrites them, and
+// they are per-bar (not `var`) so a stale one can never be logged against a later bar.
+// ⚠ Write-only bookkeeping: nothing below reads the six dCand* fields to make a decision.
+// dCandDir, added beside them, is the ONE exception and is read by the tag and the log.
+// ⚠ dCandDir REPLACES reading `st.bull_sos` to decide a candidate's direction, and that
+// substitution is load-bearing rather than tidy. The block tag and the B| log line both used
+// to infer the side from the SOS that fired on the same bar — which is correct only because
+// every candidate USED to arrive on an SOS bar. A VWAP-side candidate does not, so on those
+// bars `st.bull_sos` is false and every candidate, long or short, would have been drawn and
+// logged as a SHORT. Silent, and wrong in exactly the half of the cases nobody checks.
+int   dCandDir  = 0     // +1 long / -1 short, for EVERY candidate, whatever triggered it
+int   dCandTBos = na    // BOS the returned-to trend had printed
+int   dCandCBos = na    // BOS the shakeout printed in its own direction
+int   dCandBars = na    // how long the shakeout ran, in bars
+float dCandCtr  = na    // the shakeout's own extreme (the sweep)
+float dCandRcl  = na    // the reclaim leg's extreme
+float dCandSos  = na    // the counter-SOS's broken level
+
+if st.bull_sos or st.bear_sos
+    int nDir = st.bull_sos ? 1 : -1
+    // Read the gates BEFORE the shift at the bottom overwrites them.
+    bool okDir   = dTrendDir == nDir
+    float ctrExt = nDir == 1 ? dLegLo : dLegHi
+    float rclExt = nDir == 1 ? dRclHi : dRclLo
+    // "Ready" is okDir ALONE — the one structural fact the sequence is built on, that this
+    // SOS returns to the trend from two SOS back. Every other gate is a CHOICE, and those
+    // are precisely what the block tag exists to report. Folding any of them into ready
+    // would hide the refusals worth seeing.
+    // ⚠ "VWAP side" takes the sequence OUT of this block entirely — it is a mode, not an
+    // extra chance. Letting the with-trend SOS fire as a fallback when the VWAP entry never
+    // triggered would blend two entry models into one column of results, and the whole
+    // reason both exist is to be measured against each other.
+    if okDir and execEntryMode != "VWAP side" and not na(ctrExt) and not na(rclExt)
+        float e = execEntryMode == "Retrace" ? (nDir == 1 ? rclExt - (rclExt - ctrExt) * execRetraceFib : rclExt + (ctrExt - rclExt) * execRetraceFib) : close
+        // The counter-SOS's own broken level, still un-overwritten at this instant. It is
+        // always on the far side of the entry and always inside the sweep — the counter-SOS
+        // bar closed THROUGH it and then went further — so "Between the two" interpolates
+        // in a known direction and cannot invert.
+        float sAnchor = na(dSosLvl) ? ctrExt : dSosLvl
+        float sBase = switch execSlMode
+            "Counter-SOS line"    => sAnchor
+            "Between the two"     => sAnchor + (ctrExt - sAnchor) * execSlPct / 100.0
+            "% of entry-to-sweep" => e - nDir * math.abs(e - ctrExt) * execSlPct / 100.0
+            => ctrExt
+        float s    = sBase - nDir * execSlBufTk * syminfo.mintick
+        float dist = (e - s) * nDir
+        // The minimum stop floor. Computed from the COUNT of the distance rather than by
+        // sizing first and checking after — a guard that has to build the thing it guards
+        // against IS the event. ATR is read from a global series, never inside a branch.
+        float minStop = switch execMinStopMode
+            "% of price"  => e * execMinStopVal / 100.0
+            "Fixed $"     => execMinStopVal
+            "x ATR(14)"   => na(dAtr) ? 0.0 : dAtr * execMinStopVal
+            => 0.0
+        bool bDir   = nDir == 1 ? not execLongs : not execShorts
+        bool bYoung = dTrendBos < dTrendBosMin
+        bool bGrew  = dCurBos > dCtrBosMax
+        bool bStale = na(dSosBar) or bar_index - dSosBar > dCtrBarsMax
+        bool bSide  = dist <= 0
+        bool bTight = not bSide and execMinStopMode != "Off" and dist < minStop
+        bool bBusy  = strategy.position_size != 0
+        // ⚠ THE ACCOUNT CAN BE GONE, AND UNGUARDED THAT KILLS THE WHOLE RUN.
+        // Size is equity x risk% / distance. Once equity goes negative the quotient does
+        // too, and TradingView does not skip a negative-qty order — it ABORTS THE SCRIPT
+        // ("Invalid `qty` value (-0.1) in the `strategy.entry()` call"), so the Strategy
+        // Tester shows no report at all and the blow-up that caused it is invisible.
+        // Found 2026-08-06 on the first full-history run: at 10% risk from 2020 the account
+        // busts partway through, and the only symptom was an error banner about qty.
+        // Reported as a refusal instead, FIRST in the precedence chain — a bust account
+        // refuses every setup, so naming any later gate would be describing a decision that
+        // was never reached.
+        bool bBust  = execSizeMode == "Risk % of equity" and not (strategy.equity > 0)
+        // The VWAP FILTER. Read on the entry bar, because that is the bar whose close the
+        // question is about. Inert unless switched on, so the 2026-08-06 baseline is
+        // unmoved — and deliberately NOT applied when the mode is "VWAP side", where the
+        // same test is the trigger and this block does not run at all.
+        bool bVwap  = execVwapReq and not f_dVwapOk(nDir)
+        int  code   = bBust ? 8 : bDir ? 1 : bYoung ? 2 : bGrew ? 3 : bStale ? 4 : bVwap ? 9 : bTight ? 5 : bSide ? 6 : bBusy ? 7 : 0
+        dBlk    := code
+        dBlkPx  := e
+        dCandDir := nDir
+        // Every candidate carries its gates and its geometry, whatever the verdict. A
+        // refusal with no numbers attached cannot be re-priced offline, and re-pricing the
+        // refusals is the whole reason the gates are tunable.
+        dCandTBos := dTrendBos
+        dCandCBos := dCurBos
+        dCandBars := na(dSosBar) ? na : bar_index - dSosBar
+        dCandCtr  := ctrExt
+        dCandRcl  := rclExt
+        dCandSos  := dSosLvl
+        if code == 0
+            dFired  := true
+            dDir    := nDir
+            dEntry  := e
+            dStop   := s
+            dCtrBar := dSosBar
+            dCtrHi  := dLegHi
+            dCtrLo  := dLegLo
+            dCtrSos := dSosLvl
+    // The shift. UNCONDITIONAL — it runs whether or not the sequence fired, because the
+    // trend this SOS just killed is the candidate for the next one either way.
+    dTrendDir := -nDir
+    dTrendBos := dCurBos
+    dCurBos   := 0
+    dSosBar   := bar_index
+    dSosLvl   := nDir == 1 ? st.bull_bos_high : st.bear_bos_low
+    dLegLo    := low
+    dLegHi    := high
+    dRclHi    := high
+    dRclLo    := low
+    // A new SOS is a new sequence, so the once-per-sequence latch is released here and
+    // NOWHERE else — same place, same bar, as every other piece of sequence state.
+    dSeqTaken := false
+
+// ── THE VWAP-SIDE ENTRY: the sequence taken WITHOUT waiting for the with-trend SOS ──
+// This is the only block in the file that can open a trade on an ORDINARY bar, and that is
+// the entire point of it — the with-trend SOS confirms at the top of the reclaim leg, so
+// waiting for it is what makes the entry expensive and the stop wide.
+//
+// ⚠ IT IS SKIPPED ON EVERY SOS BAR, and the reason is the shift directly above. By the time
+// this runs on such a bar the shift has already executed, so dTrendDir describes the trend
+// that SOS just KILLED — the opposite side — and the leg extremes have been reset to this
+// bar's own high and low. Evaluating here would arm a trade against the move that just
+// confirmed, sized off a one-bar leg. On every other bar the state is exactly what the SOS
+// path would read, which is what lets both paths share one gate chain.
+//
+// ⚠ WHAT KEEPS IT FROM ARMING BACKWARDS IS dTrendBosMin, not a check of its own. After a
+// with-trend SOS the shift sets dTrendBos to the SHAKEOUT's BOS count, which is 0 or 1 by
+// construction — so at the shipped dTrendBosMin = 1 a bare shakeout cannot pose as a mature
+// trend. At dTrendBosMin = 0 that protection is gone and this will happily arm counter to a
+// trend that has just resumed. That setting was already documented as loose; it is LOOSER
+// here than it is on the SOS path, because this path gets a fresh look every bar.
+if execEntryMode == "VWAP side" and not (st.bull_sos or st.bear_sos) and not dSeqTaken and dTrendDir != 0
+    int   nDir   = dTrendDir
+    float ctrExt = nDir == 1 ? dLegLo : dLegHi
+    float rclExt = nDir == 1 ? dRclHi : dRclLo
+    // The trigger. Unlike the SOS path there is no event to hang a candidate on, so a bar on
+    // the wrong side of the line is simply not a candidate — see the note on code 9 above
+    // for why it is not reported as a refusal.
+    if f_dVwapOk(nDir) and not na(ctrExt) and not na(rclExt)
+        float e     = close
+        float sAnch = na(dSosLvl) ? ctrExt : dSosLvl
+        float sBase = switch execSlMode
+            "Counter-SOS line"    => sAnch
+            "Between the two"     => sAnch + (ctrExt - sAnch) * execSlPct / 100.0
+            "% of entry-to-sweep" => e - nDir * math.abs(e - ctrExt) * execSlPct / 100.0
+            => ctrExt
+        float s    = sBase - nDir * execSlBufTk * syminfo.mintick
+        float dist = (e - s) * nDir
+        float minStop = switch execMinStopMode
+            "% of price"  => e * execMinStopVal / 100.0
+            "Fixed $"     => execMinStopVal
+            "x ATR(14)"   => na(dAtr) ? 0.0 : dAtr * execMinStopVal
+            => 0.0
+        // ⚠ THE MINIMUM-STOP GUARD MATTERS MORE ON THIS PATH THAN ON ANY OTHER IN THE FILE,
+        // and it is worth being explicit about why. Entering early means entering CLOSE to
+        // the sweep extreme — that is the benefit — and the stop is anchored at that same
+        // extreme. So the better this entry is, the smaller `dist` gets, and `qty = risk /
+        // dist` grows without limit as it shrinks. On the SOS path the whole reclaim leg
+        // sits between the entry and the stop and the hazard is structurally rare; here it
+        // is the NORMAL case. Do not run this mode with execMinStopMode = "Off".
+        bool bDir   = nDir == 1 ? not execLongs : not execShorts
+        bool bYoung = dTrendBos < dTrendBosMin
+        bool bGrew  = dCurBos > dCtrBosMax
+        bool bStale = na(dSosBar) or bar_index - dSosBar > dCtrBarsMax
+        bool bSide  = dist <= 0
+        bool bTight = not bSide and execMinStopMode != "Off" and dist < minStop
+        bool bBusy  = strategy.position_size != 0
+        bool bBust  = execSizeMode == "Risk % of equity" and not (strategy.equity > 0)
+        int  code   = bBust ? 8 : bDir ? 1 : bYoung ? 2 : bGrew ? 3 : bStale ? 4 : bTight ? 5 : bSide ? 6 : bBusy ? 7 : 0
+        dBlk     := code
+        dBlkPx   := e
+        dCandDir := nDir
+        dCandTBos := dTrendBos
+        dCandCBos := dCurBos
+        dCandBars := na(dSosBar) ? na : bar_index - dSosBar
+        dCandCtr  := ctrExt
+        dCandRcl  := rclExt
+        dCandSos  := dSosLvl
+        if code == 0
+            dFired    := true
+            dDir      := nDir
+            dEntry    := e
+            dStop     := s
+            dCtrBar   := dSosBar
+            dCtrHi    := dLegHi
+            dCtrLo    := dLegLo
+            dCtrSos   := dSosLvl
+            dSeqTaken := true
+
+// ── The blocked-setup tag ──
+// Bounded by debugDays so an old history does not become a wall of pink. Every real trade
+// keeps its callout however old — only these are trimmed.
+bool dBlkRecent = debugDays == 0 or time >= timenow - debugDays * 86400000
+if showBlockTag and dBlk != 0 and not na(dBlkPx) and dBlkRecent and not na(dAtr)
+    // dCandDir, NOT st.bull_sos — a VWAP-side candidate arrives on a bar with no SOS on it,
+    // where the old test read false and drew every candidate as a short.
+    bool bLong = dCandDir == 1
+    // `tagY`, NOT `by` — `by` is a Pine KEYWORD (the step in `for i = 0 to n by 2`) and is
+    // refused as an identifier with CE10150. Nothing else in this file uses a reserved word.
+    float tagY = bLong ? low - dAtr * 2 : high + dAtr * 2
+    line.new(bar_index, dBlkPx, bar_index, tagY, color = BLK_PINKL, style = line.style_dotted, width = 1)
+    label.new(bar_index, tagY, (bLong ? "▲" : "▼") + " SETUP BLOCKED", tooltip = (bLong ? "▲ LONG" : "▼ SHORT") + " blocked\n──────────────────\n" + f_dBlkWhy(dBlk) + "\n──────────────────\nEntry would have been " + str.tostring(dBlkPx, format.mintick), color = BLK_PINK, textcolor = color.new(#101014, 0), style = bLong ? label.style_label_up : label.style_label_down, size = size.small)
+
+// Plain ASCII, no quotes and no newlines, so it drops straight into a webhook body.
+// Fires on BAR CLOSE: the engine's break test reads the LIVE close, so an SOS can appear and
+// vanish intrabar, and an alert that did that would be worse than no alert at all.
+if dFired
+    alert("MPC D " + syminfo.ticker + " " + (dDir == 1 ? "LONG" : "SHORT") + " entry " + str.tostring(dEntry, format.mintick) + " SL " + str.tostring(dStop, format.mintick), alert.freq_once_per_bar_close)
+
+//============================================================
+//  EXECUTION
+//============================================================
+// One position at a time (pyramiding = 0). The sequence fires a few times a month at the
+// default gates, so a second concurrent trade would almost always be the same swing read
+// twice rather than a genuinely separate setup.
+var int   tDir      = 0
+var float tE        = na
+var float tSL       = na    // the ORIGINAL stop. Never moves — every later stop is derived
+var float tDist     = na    // 1R, in price
+var float tRiskUsd  = na    // 1R, in account currency — what the result is scored against
+var float tNpAt     = na    // net profit at the fill, so the trade's own R can be recovered
+var int   tStage    = 0     // 0 = open, 1 = TP1 reached, 2 = TP2 reached
+var int   tMark     = 0     // how many target markers have been placed (drawing only)
+var float tMaxFav   = na    // the favourable extreme since the FILL — drives the trail
+// ⚠ tMaxAdv is the mirror of tMaxFav and is READ BY NOTHING except the log. It exists
+// because the trade list reports a trade's best and worst price but never their ORDER, and
+// the order is what decides whether an earlier stop would have clipped a winner or saved a
+// loser. Tracked on the same guarded bar range as tMaxFav for the same reason: the fill bar
+// of a resting limit is approached from the wrong side, so its extremes are not the trade's.
+var float tMaxAdv   = na
+var int   tTBos     = na    // the three gate inputs, frozen at the signal, for the log
+var int   tCBos     = na
+var int   tBars     = na
+var int   tOrdBar   = na    // bar the ORDER was placed (not the fill)
+var int   tFillBar  = na    // first bar the position was actually open
+var int   tFillTime = na
+var int   tSigBar   = na
+var int   tCtrBar   = na
+var float tCtrHi    = na
+var float tCtrLo    = na
+var float tCtrSos   = na
+
+string D_L = "D-L"
+string D_S = "D-S"
+
+// ── The CLOSE: score the trade in R, repaint the callout, honour the keep filter ──
+// 🔴 THIS BLOCK MUST RUN BEFORE `if dFired`, AND IT USED TO RUN AFTER IT.
+// That ordering froze the strategy dead on 2020-05-07 and it stayed frozen for the
+// remaining SIX YEARS of an eight-year run — found 2026-08-06 in the trade list, not by
+// the code reading. The shape is a SAME-BAR FLIP: a position closes and the next sequence
+// fires on the very same bar. When that happened, `if dFired` set the new trade up first
+// (tDir := 1, entry placed), and then this block — sitting at the bottom of the file, and
+// correctly seeing `position_size == 0` — scored the OLD trade and finished by resetting
+// `tDir := 0`. That wiped the direction of a trade that had just been placed.
+// From the next bar the FILL block and the whole exit block are both gated on `tDir != 0`,
+// so NEITHER EVER RAN AGAIN: the position sat open with no stop, no targets and no time
+// stop, `bBusy` was permanently true, and every later setup was refused with code 7.
+// ⚠ It fired ONCE in eight years — exactly one same-bar flip in the entire history — and
+// that one occurrence cost 6 of the 8 years. A path taken on 1 bar in 200,000 is still a
+// path, and the ordering of two blocks is not a detail.
+// ⚠ Scoring must ALSO precede the setup for a second reason: `if dFired` overwrites
+// tRiskUsd and tNpAt, which are exactly what the R grade divides by. Run after it and the
+// closing trade is scored against the NEW trade's risk — a wrong number in the label, the
+// log and the Result Stats, silently.
+if strategy.position_size == 0 and not na(tFillBar)
+    float rMade = na(tRiskUsd) or tRiskUsd == 0 ? na : (strategy.netprofit - nz(tNpAt)) / tRiskUsd
+    bool  isBe  = not na(rMade) and math.abs(rMade) <= execBeBandR
+    bool  isWin = not na(rMade) and rMade > execBeBandR
+    string verdict = na(rMade) ? "?" : isBe ? "BE" : isWin ? "WIN" : "LOSS"
+    color  vcol    = isBe ? #ffde59 : isWin ? D_LONG : D_SHORT
+    if not na(aEntry)
+        // The keep filter deletes the annotation, never the position blocks — those are the
+        // record of what happened and are not an opinion about it.
+        bool keep = execShowConfLabel and (execLabelWhich == "All" or (execLabelWhich == "Wins only" and isWin) or (execLabelWhich == "Losses only" and not isWin and not isBe) or (execLabelWhich == "Losses + breakevens" and not isWin))
+        if keep
+            label.set_text(aEntry, (tDir == 1 ? "D ▲ " : "D ▼ ") + verdict + "  " + (na(rMade) ? "" : str.tostring(rMade, "#.##") + "R"))
+            label.set_color(aEntry, color.new(vcol, 20))
+        else
+            label.delete(aEntry)
+            line.delete(aLead)
+        aEntry := na
+        aLead  := na
+    // ── The TRADE record. ONE line per trade, pipe-delimited, everything on it. ──
+    // It replaces the old ENTRY + RESULT pair, which is not tidying: Pine Logs keeps only
+    // the most recent N messages, so on an eight-year run the front of the paste is what
+    // gets dropped. Halving the lines halves how much history is lost, and the entry facts
+    // are worth nothing without the outcome anyway.
+    // ⚠ mfeR / maeR are the reason this exists. The Strategy Tester's trade list reports a
+    // trade's best and worst price but never their ORDER, and the order is exactly what
+    // decides whether staging the stop earlier would have protected a loser or clipped a
+    // winner. These two are measured from the FILL forward, so they answer it.
+    float _mfeR = na(tMaxFav) or na(tDist) or tDist == 0 ? na : (tMaxFav - tE) * tDir / tDist
+    float _maeR = na(tMaxAdv) or na(tDist) or tDist == 0 ? na : (tMaxAdv - tE) * tDir / tDist
+    if execDiagLog
+        log.info("T|" + str.tostring(bar_index) + "|" + str.format_time(time, "yyyy-MM-dd HH:mm") + "|" + (tDir == 1 ? "L" : "S") + "|" + verdict
+           + "|" + (na(rMade) ? "" : str.tostring(rMade, "#.####")) + "|" + f_dN(tE) + "|" + f_dN(tSL) + "|" + f_dN(tDist)
+           + "|" + (na(_mfeR) ? "" : str.tostring(_mfeR, "#.####")) + "|" + (na(_maeR) ? "" : str.tostring(_maeR, "#.####"))
+           + "|" + str.tostring(tStage) + "|" + str.tostring(bar_index - tFillBar)
+           + "|" + f_dI(tTBos) + "|" + f_dI(tCBos) + "|" + f_dI(tBars)
+           + "|" + f_dN(tDir == 1 ? tCtrLo : tCtrHi) + "|" + f_dN(tCtrSos))
+    tFillBar  := na
+    tFillTime := na
+    tStage    := 0
+    tDir      := 0
+
+if dFired
+    // Clear any resting order first. A previous Retrace entry may still be on the book, and
+    // if this setup is the OTHER way round the two ids differ — so without this the strategy
+    // would sit with a live buy limit and a live sell limit at once and take whichever price
+    // reached first, which is not a decision anything in here made.
+    strategy.cancel(D_L)
+    strategy.cancel(D_S)
+    float q = execSizeMode == "Fixed contracts" ? execFixedQty : (strategy.equity * execRiskPct / 100.0) / ((dEntry - dStop) * dDir)
+    tDir     := dDir
+    tE       := dEntry
+    tSL      := dStop
+    tDist    := (dEntry - dStop) * dDir
+    tRiskUsd := tDist * q
+    tStage   := 0
+    tMark    := 0
+    tMaxFav  := na
+    tOrdBar  := bar_index
+    tSigBar  := bar_index
+    tCtrBar  := dCtrBar
+    tCtrHi   := dCtrHi
+    tCtrLo   := dCtrLo
+    tCtrSos  := dCtrSos
+    tMaxAdv  := na
+    tTBos    := dCandTBos
+    tCBos    := dCandCBos
+    tBars    := dCandBars
+    // Retrace rests a LIMIT at the fib; SOS close is a market order that fills at this bar's
+    // close because of process_orders_on_close.
+    // ⚠ `q > 0` is belt-and-braces on top of block code 8, and it is not redundant: code 8
+    // only guards the "Risk % of equity" path, while "Fixed contracts" reaches here with a
+    // bust account, and a na equity would slip past a `>= 0` test. A non-positive qty does
+    // not skip the order — it ABORTS THE SCRIPT and destroys the whole report, so the cheap
+    // check is worth having twice.
+    if q > 0
+        if execEntryMode == "Retrace"
+            strategy.entry(dDir == 1 ? D_L : D_S, dDir == 1 ? strategy.long : strategy.short, qty = q, limit = dEntry)
+        else
+            strategy.entry(dDir == 1 ? D_L : D_S, dDir == 1 ? strategy.long : strategy.short, qty = q)
+
+// Kill a resting limit that never filled. Three ways it dies and all three matter: price ran
+// away and never came back, price reached the STOP first (the setup was invalidated before it
+// was ever entered), or a newer SOS superseded the sequence. Without these the order stays on
+// the book and can fill days later on a move that has nothing to do with this setup.
+// bar_index > tOrdBar excludes the bar the order was PLACED — under process_orders_on_close a
+// market entry has not filled yet when this runs on that bar.
+if strategy.position_size == 0 and not na(tOrdBar) and tDir != 0 and bar_index > tOrdBar
+    bool ordStale  = bar_index - tOrdBar > execLimitBars
+    bool ordKilled = not na(tSL) and (tDir == 1 ? low <= tSL : high >= tSL)
+    bool ordSuper  = (st.bull_sos or st.bear_sos) and not dFired
+    if ordStale or ordKilled or ordSuper
+        strategy.cancel(D_L)
+        strategy.cancel(D_S)
+        tOrdBar := na
+        tDir    := 0
+
+// ── The FILL: create every drawing object for this trade, once ──
+if strategy.position_size != 0 and na(tFillBar) and tDir != 0
+    tFillBar  := bar_index
+    tFillTime := time
+    tNpAt     := strategy.netprofit
+    tOrdBar   := na
+    float ftp1 = tE + tDir * tDist * execTp1R
+    float ftp2 = tE + tDir * tDist * execTp2R
+    float ftp3 = tE + tDir * tDist * execTp3R
+    color fdc  = tDir == 1 ? D_LONG : D_SHORT
+    // The shakeout spans the counter-SOS to the bar the sequence COMPLETED — not to the
+    // fill, which under "Retrace" is later and would stretch the box over the reclaim as
+    // well, drawing a shakeout that never happened.
+    aShake := box.new(nz(tCtrBar, tSigBar), nz(tCtrHi, high), nz(tSigBar, bar_index), nz(tCtrLo, low), bgcolor = execShowPosBox and execShowShakeout ? D_SHADE : color(na), border_color = execShowPosBox and execShowShakeout ? color.new(#888888, 55) : color(na), border_width = 1, border_style = line.style_dotted)
+    // The position. math.max/min rather than a per-direction branch, so a short is drawn by
+    // the same four lines as a long and the two cannot drift apart.
+    aRisk := box.new(tFillBar, math.max(tE, tSL), bar_index, math.min(tE, tSL), bgcolor = execShowPosBox ? D_RISK : color(na), border_color = color(na))
+    aR1   := box.new(tFillBar, math.max(tE, ftp1), bar_index, math.min(tE, ftp1), bgcolor = execShowPosBox and execTp1R > 0 ? D_RWD : color(na), border_color = color(na))
+    aR2   := box.new(tFillBar, math.max(ftp1, ftp2), bar_index, math.min(ftp1, ftp2), bgcolor = execShowPosBox and execTp2R > execTp1R ? D_RWD : color(na), border_color = color(na))
+    aR3   := box.new(tFillBar, math.max(ftp2, ftp3), bar_index, math.min(ftp2, ftp3), bgcolor = execShowPosBox and execTp3R > execTp2R ? D_RWD : color(na), border_color = color(na))
+    // The callout. One line on the chart so it does not sit on the candles, and the whole
+    // breakdown in the TOOLTIP — every number the trade was built from, so a setup can be
+    // audited on hover instead of by re-deriving it. Pushed execLabelOff ATRs away with a
+    // leader line back, which is the only lever on where the tooltip opens.
+    float lblY = tE + tDir * nz(dAtr, tDist) * execLabelOff * -1
+    string tip = "MPC D  " + (tDir == 1 ? "LONG" : "SHORT") + "\n"
+    tip += "Entry   " + str.tostring(tE, format.mintick) + "\n"
+    tip += "Stop    " + str.tostring(tSL, format.mintick) + "   (1R = " + str.tostring(tDist, format.mintick) + ")\n"
+    tip += "  anchor: " + execSlMode + "\n"
+    tip += "TP1     " + (execTp1R > 0 ? str.tostring(ftp1, format.mintick) + "   " + str.tostring(execTp1R) + "R   " + str.tostring(execTp1Pct) + "%" : "off") + "\n"
+    tip += "TP2     " + (execTp2R > 0 ? str.tostring(ftp2, format.mintick) + "   " + str.tostring(execTp2R) + "R   " + str.tostring(execTp2Pct) + "%" : "off") + "\n"
+    tip += "TP3     " + (execTp3R > 0 ? str.tostring(ftp3, format.mintick) + "   " + str.tostring(execTp3R) + "R   runner" : "off") + "\n"
+    tip += "Trail   " + execRunnerTrail + "\n"
+    tip += "\nThe sequence\n"
+    tip += "Shakeout extreme  " + str.tostring(tDir == 1 ? tCtrLo : tCtrHi, format.mintick) + "\n"
+    tip += "Counter-SOS line  " + (na(tCtrSos) ? "n/a" : str.tostring(tCtrSos, format.mintick)) + "\n"
+    tip += "Shakeout ran      " + str.tostring(nz(tSigBar, bar_index) - nz(tCtrBar, bar_index)) + " bars\n"
+    tip += "Trend had         " + str.tostring(dTrendBos) + " BOS behind it"
+    aLead  := line.new(tFillBar, tE, tFillBar, lblY, color = execShowConfLabel ? color.new(fdc, 55) : color(na), style = line.style_dotted, width = 1)
+    aEntry := label.new(tFillBar, lblY, (tDir == 1 ? "D ▲ " : "D ▼ ") + str.tostring(tE, format.mintick), style = tDir == 1 ? label.style_label_up : label.style_label_down, color = execShowConfLabel ? color.new(fdc, 20) : color(na), textcolor = execShowConfLabel ? color.white : color(na), size = size.small, tooltip = tip)
+    // Created EMPTY and transparent, then filled in on the bar each target is reached. They
+    // exist from the start so the per-trade object count is fixed and the eviction can drop
+    // a whole trade as one unit.
+    aTp1 := label.new(tFillBar, ftp1, "", style = label.style_label_left, color = color(na), textcolor = color(na), size = size.tiny)
+    aTp2 := label.new(tFillBar, ftp2, "", style = label.style_label_left, color = color(na), textcolor = color(na), size = size.tiny)
+    aTp3 := label.new(tFillBar, ftp3, "", style = label.style_label_left, color = color(na), textcolor = color(na), size = size.tiny)
+    array.push(dBoxes, aShake), array.push(dBoxes, aRisk), array.push(dBoxes, aR1), array.push(dBoxes, aR2), array.push(dBoxes, aR3)
+    array.push(dLbls, aEntry), array.push(dLbls, aTp1), array.push(dLbls, aTp2), array.push(dLbls, aTp3)
+    array.push(dLines, aLead)
+    f_dEvict()
+    // (The ENTRY log line was REMOVED 2026-08-06 and folded into the single T| record the
+    //  close block writes. Pine Logs retains only the most recent N messages, so on a
+    //  multi-year run the OLDEST lines are the ones silently dropped — two lines per trade
+    //  meant losing twice as much history, for facts that are useless without the outcome.)
+
+// ── f_dRatchet — ported from mpc_strategy.pine's f_swingRatchet, unchanged in behaviour.
+// Same anchor as the plain structure trail (last confirmed swing ± buffer), but from there
+// the stop climbs one pct-of-price step for every step of favourable move. The plain trail
+// sits at the swing however far price runs, and a swing is a LAGGING anchor — in a strong
+// leg it ends up a long way behind, which is where the runner's give-back comes from. Falls
+// back to the bare anchor until the move is one full step past it, so it is never LOOSER
+// than the structure trail, only equal or tighter.
+f_dRatchet(float swing, float maxFav, int dir, float buf, float pct) =>
+    float anchor = dir > 0 ? swing - buf : swing + buf
+    float step   = maxFav * pct / 100.0
+    float run    = (maxFav - anchor) * dir
+    float out    = anchor
+    if step > 0 and not na(run) and run >= step
+        float steps = math.floor((run - step) / step)
+        out := anchor + steps * step * dir
+    out
+
+// f_dFixedTrail — the dollar-grid alternative, anchored at TP2 rather than at structure.
+f_dFixedTrail(float maxFav, float tp2, int dir, float stepSz) =>
+    float run = (maxFav - tp2) * dir
+    float out = na
+    if not na(run) and run >= stepSz
+        float steps = math.floor((run - stepSz) / stepSz)
+        out := dir > 0 ? tp2 + steps * stepSz : tp2 - steps * stepSz
+    out
+
+if strategy.position_size != 0 and tDir != 0
+    float tp1 = tE + tDir * tDist * execTp1R
+    float tp2 = tE + tDir * tDist * execTp2R
+    float tp3 = tE + tDir * tDist * execTp3R
+    float beBuf = execBeBufTk * syminfo.mintick
+    // ⚠ THE FILL BAR MAY NOT STAGE THE STOP, AND MAY NOT FEED tMaxFav.
+    // A resting limit is reached by price coming to it from the WRONG side — a buy limit
+    // fills on the way down — so the fill bar's favourable extreme is where the market was
+    // before the trade existed, not profit the trade made. Staging off it lifts the stop to
+    // breakeven on a trade that has gone nowhere, which puts it through the market and
+    // market-closes every leg at the next bar's open at a price that is neither the stop nor
+    // any target. This is BUG_exit_fill_price_mismatch, fixed across five Pine files on
+    // 2026-08-01 — do not relax it. The exit orders are not live on the fill bar either, so
+    // nothing could have banked there.
+    if bar_index > tFillBar
+        tMaxFav := na(tMaxFav) ? (tDir == 1 ? high : low) : (tDir == 1 ? math.max(tMaxFav, high) : math.min(tMaxFav, low))
+        tMaxAdv := na(tMaxAdv) ? (tDir == 1 ? low : high) : (tDir == 1 ? math.min(tMaxAdv, low) : math.max(tMaxAdv, high))
+        if tStage < 1 and execTp1R > 0 and (tDir == 1 ? high >= tp1 : low <= tp1)
+            tStage := 1
+        if tStage < 2 and execTp2R > 0 and (tDir == 1 ? high >= tp2 : low <= tp2)
+            tStage := 2
+    // ── The runner trail candidate. na = not engaged yet. ──
+    float structBuf = execStructTrailBufTk * syminfo.mintick
+    float swing = tDir == 1 ? st.last_conf_low : st.last_conf_high
+    float trail = na
+    if tStage >= 2 and not na(tMaxFav)
+        if execRunnerTrail == "Structure + % ratchet"
+            trail := na(swing) ? na : f_dRatchet(swing, tMaxFav, tDir, structBuf, execTrailPct)
+        else if execRunnerTrail == "Structure (swing)"
+            trail := na(swing) ? na : swing - tDir * structBuf
+        else
+            trail := f_dFixedTrail(tMaxFav, tp2, tDir, execTrailStep)
+    // The TP2 stop FLOOR — the protective baseline the instant TP2 is reached, before the
+    // trail takes over. "One trail step behind" never drops below breakeven, so it cannot
+    // hand back a loss.
+    float floor2 = execTp2StopMode == "Breakeven" ? tE + tDir * beBuf : execTp2StopMode == "One trail step behind" ? (tDir == 1 ? math.max(tE + beBuf, tMaxFav - execTrailStep) : math.min(tE - beBuf, tMaxFav + execTrailStep)) : tp1
+    float curStop = tStage >= 2 ? (na(trail) ? floor2 : (tDir == 1 ? math.max(floor2, trail) : math.min(floor2, trail))) : tStage >= 1 ? tE + tDir * beBuf : tSL
+    // ── The position drawing, updated live ──
+    // na-guarded and guarded SEPARATELY from the exits below: a drawing call on an na id is
+    // a runtime error that takes the whole script down, and an order that stopped being
+    // issued because a BOX could not be drawn would turn a chart bug into a trading bug.
+    if not na(aRisk)
+        box.set_right(aRisk, bar_index)
+        box.set_top(aRisk, math.max(tE, curStop))
+        box.set_bottom(aRisk, math.min(tE, curStop))
+        box.set_right(aR1, bar_index)
+        box.set_right(aR2, bar_index)
+        box.set_right(aR3, bar_index)
+        // A target REACHED gets its marker and brightens its block. tMark only ever climbs,
+        // so a marker is written once and never rewritten on a later bar.
+        if execShowExitLines and tStage >= 1 and tMark < 1
+            tMark := 1
+            label.set_xy(aTp1, bar_index, tp1), label.set_text(aTp1, " TP1"), label.set_textcolor(aTp1, D_LONG)
+            box.set_bgcolor(aR1, execShowPosBox ? D_RWDH : color(na))
+        if execShowExitLines and tStage >= 2 and tMark < 2
+            tMark := 2
+            label.set_xy(aTp2, bar_index, tp2), label.set_text(aTp2, " TP2"), label.set_textcolor(aTp2, D_LONG)
+            box.set_bgcolor(aR2, execShowPosBox ? D_RWDH : color(na))
+        if execShowExitLines and tMark < 3 and execTp3R > 0 and (tDir == 1 ? high >= tp3 : low <= tp3)
+            tMark := 3
+            label.set_xy(aTp3, bar_index, tp3), label.set_text(aTp3, " TP3"), label.set_textcolor(aTp3, D_LONG)
+            box.set_bgcolor(aR3, execShowPosBox ? D_RWDH : color(na))
+    string eid = tDir == 1 ? D_L : D_S
+    // ⚠ A RUNG IS NOT RE-ISSUED ONCE ITS TARGET HAS BEEN TOUCHED. Calling strategy.exit with
+    // an id whose order already FILLED places a NEW order rather than modifying the old one,
+    // so a re-issued TP1 would bank another slice of the remainder every single bar after.
+    // ⚠ This is a DELIBERATE divergence from mpc_strategy.pine, which re-issues every bar
+    // unguarded. It gets away with it because it ships both rungs at 0% and the rung is then
+    // skipped entirely — the bug is unreachable at its defaults and reachable at these.
+    if execTp1Pct > 0 and execTp1R > 0 and tStage < 1
+        strategy.exit("D-TP1", from_entry = eid, qty_percent = execTp1Pct, limit = tp1, stop = curStop)
+    if execTp2Pct > 0 and execTp2R > 0 and tStage < 2
+        strategy.exit("D-TP2", from_entry = eid, qty_percent = execTp2Pct, limit = tp2, stop = curStop)
+    // The remainder. Declared as its own float rather than inlined as a ternary against na,
+    // which Pine will not always infer a type for. na = no limit, so the runner is resolved
+    // by the trailing stop alone when TP3 is switched off.
+    float tp3Lim = execTp3R > 0 ? tp3 : na
+    strategy.exit("D-RUN", from_entry = eid, limit = tp3Lim, stop = curStop)
+    // The two clock/structure exits, in mpc_strategy's own precedence: an opposite SOS is
+    // read as early proof the resumption failed and wins over the timer.
+    bool timeUp = execTimeStopMode != "Off" and not na(tFillTime) and (execTimeStopMode == "Always" or tStage == 0) and (time - tFillTime) >= execTimeStopHrs * 3600000
+    if execCloseOppSOS and (tDir == 1 ? st.bear_sos : st.bull_sos)
+        strategy.close(eid, comment = "opp SOS")
+    else if timeUp
+        strategy.close(eid, comment = "time stop")
+
+// (The CLOSE block used to sit HERE, at the very bottom, and that ordering was a bug —
+//  see the note at its new home above `if dFired`. Do not move it back.)
+
+// ── The REFUSAL record. Same shape as the trade record, so one parser reads both. ──
+// It carries the gates and the geometry, which is what makes a refused setup RE-PRICEABLE:
+// with the sweep extreme, the reclaim extreme and the counter-SOS line you can compute
+// offline what any stop anchor and any retrace level would have given it. A refusal logged
+// as prose ("blocked: trend too young") can be counted and nothing else.
+// ⚠ The header is emitted ONCE, on the first bar, so a pasted log is self-describing and
+// cannot be read against the wrong column order six weeks from now.
+if execDiagLog and barstate.isfirst
+    log.info("H|MPC D log v1 — pipe-delimited, na = empty field")
+    log.info("H|T|bar|time|dir|verdict|R|entry|stop|1R|mfeR|maeR|stage|heldBars|trendBOS|ctrBOS|ctrBars|sweepExt|sosLvl")
+    log.info("H|B|bar|time|dir|code|wouldEntry|trendBOS|ctrBOS|ctrBars|sweepExt|rclExt|sosLvl   (code: 1 dir off·2 trend young·3 shakeout became trend·4 stale·5 stop tight·6 stop wrong side·7 in a position·8 ACCOUNT BUST·9 wrong side of VWAP)")
+if execDiagLog and dBlk != 0 and not na(dBlkPx)
+    log.info("B|" + str.tostring(bar_index) + "|" + str.format_time(time, "yyyy-MM-dd HH:mm") + "|" + (dCandDir == 1 ? "L" : "S") + "|" + str.tostring(dBlk)
+       + "|" + f_dN(dBlkPx) + "|" + f_dI(dCandTBos) + "|" + f_dI(dCandCBos) + "|" + f_dI(dCandBars)
+       + "|" + f_dN(dCandCtr) + "|" + f_dN(dCandRcl) + "|" + f_dN(dCandSos))
+
+//============================================================
+//  STATE PANEL
+//============================================================
+// Reports the GATES, not just the outcome. A tool that only ever says "no setup" cannot tell
+// you whether the market is quiet or whether you have set a gate to refuse everything — and
+// those two need opposite responses.
+var table dTbl = table.new(position.top_right, 2, 7, bgcolor = color.new(#0B0E14, 0), border_color = color.new(#17578e, 70), border_width = 1, frame_color = color.new(#17578e, 70), frame_width = 1)
+
+f_dCell(table t, int row, string k, string v, color c) =>
+    table.cell(t, 0, row, k, text_color = D_MUTED, text_size = size.small, text_halign = text.align_left)
+    table.cell(t, 1, row, v, text_color = c, text_size = size.small, text_halign = text.align_right)
+
+if showStatePanel and barstate.islast
+    table.cell(dTbl, 0, 0, "MPC D", text_color = #00E5FF, text_size = size.small, text_halign = text.align_left)
+    table.cell(dTbl, 1, 0, "", text_color = #00E5FF, text_size = size.small)
+    f_dCell(dTbl, 1, "Trend", st.dir == 1 ? "Bullish" : st.dir == -1 ? "Bearish" : "—", st.dir == 1 ? D_LONG : st.dir == -1 ? D_SHORT : D_MUTED)
+    f_dCell(dTbl, 2, "BOS in leg", str.tostring(dCurBos), dCurBos <= dCtrBosMax ? D_LONG : D_MUTED)
+    // The candidate is the trend TWO SOS back — the one a with-trend SOS would return to. If
+    // it is not mature the sequence cannot fire whatever price does next.
+    f_dCell(dTbl, 3, "Returns to", dTrendDir == 1 ? "Bullish" : dTrendDir == -1 ? "Bearish" : "—", dTrendBos >= dTrendBosMin ? (dTrendDir == 1 ? D_LONG : D_SHORT) : D_MUTED)
+    // The VWAP read, and it reports the ANSWER for the side the sequence would trade — not
+    // "price is above VWAP", which the reader would then have to combine with the direction
+    // themselves and would get wrong on exactly the short setups.
+    bool vwapOkNow = dTrendDir == 0 ? false : f_dVwapOk(dTrendDir)
+    string vwapTxt = na(dVwap) ? "no data" : dTrendDir == 0 ? "—" : (vwapOkNow ? "pro-trend" : "wrong side")
+    f_dCell(dTbl, 4, "VWAP", vwapTxt, na(dVwap) ? D_MUTED : dTrendDir == 0 ? D_MUTED : vwapOkNow ? D_LONG : D_SHORT)
+    // ⚠ The VWAP term is listed LAST in this chain and that mirrors the block-code
+    // precedence deliberately: the panel and the tag must never name different reasons for
+    // one refusal. It is also only shown when VWAP can actually refuse something — under the
+    // other two modes with the filter off, VWAP is being displayed, not consulted.
+    bool vwapGates = execEntryMode == "VWAP side" or execVwapReq
+    string dWait = dTrendDir == 0 ? "Warming up" : dTrendBos < dTrendBosMin ? "Trend too young" : dCurBos > dCtrBosMax ? "Shakeout became a trend" : not na(dSosBar) and bar_index - dSosBar > dCtrBarsMax ? "Shakeout stale" : (vwapGates and not vwapOkNow) ? "Waiting on VWAP" : dSeqTaken ? "Sequence already taken" : execEntryMode == "VWAP side" ? (dTrendDir == 1 ? "Armed - long on VWAP" : "Armed - short on VWAP") : dTrendDir == 1 ? "Armed - need bull SOS" : "Armed - need bear SOS"
+    f_dCell(dTbl, 5, "State", dWait, str.startswith(dWait, "Armed") ? #ffde59 : D_MUTED)
+    f_dCell(dTbl, 6, "Position", strategy.position_size == 0 ? "Flat" : (tDir == 1 ? "LONG " : "SHORT ") + "stage " + str.tostring(tStage), strategy.position_size == 0 ? D_MUTED : (tDir == 1 ? D_LONG : D_SHORT))
+
+//============================================================================
+//  PARITY / ANALYSIS EXPORT — per-bar DECISION STREAM
+//============================================================================
+// This file is `mpc_d_strategy.pine` + THIS appended block, and NOTHING else changed.
+// The body above is byte-identical to the parent apart from line 60's title.
+//
+// ⚠ REGENERATE WITH THIS EXACT RECIPE — and CHECK THE PLOT COUNT AFTERWARDS.
+//     B=$(grep -n 'PARITY / ANALYSIS EXPORT' <export> | head -1 | cut -d: -f1)
+//     sed -n "$((B-2)),\$p" <export> > /tmp/blk
+//     cp indicators/mpc_d_strategy.pine <export>
+//     sed -i '' '60s/strategy("MPC D Strategy"/strategy("MPC D Strategy Export"/' <export>
+//     cat /tmp/blk >> <export>
+//     grep -c '^plot(' <export>      # MUST be 51
+// (48 → 51 on 2026-08-06 with the VWAP work: px_vwap and cfg_vwap_slope_bars were added to
+//  this block, and the PARENT gained one visible plot of its own — the VWAP line — which
+//  arrives here for free through the copy. Bump this number whenever either side gains a
+//  plot, or the check stops being a check.)
+// The count check is not ceremony. On 2026-08-06 the extraction grep was anchored on the
+// `//====` rule line, which does not contain the words it was matching, so it produced an
+// EMPTY block — and every downstream check still passed, because a bare copy of the parent
+// is byte-identical to the parent and compiles perfectly. It just silently exported nothing.
+// A regeneration that loses the whole point of the file must fail loudly; count the plots.
+//
+// WHY IT EXISTS. The Strategy Tester's trade list records FILLS. It cannot say what the
+// gates refused, how far a trade ran before it handed the move back, or what a different
+// stop anchor would have produced. Those are the three questions this strategy is being
+// tuned on, so they get columns.
+//
+// ⚠ GOTCHA, inherited from every other export in this repo: a plotted column MUST use a
+// transparent colour, never `display.none` — TradingView DROPS display.none series from
+// the CSV. Every plot here uses _INV.
+//
+// ── READING THE STREAM ──────────────────────────────────────────────────────
+// Most columns are na except on the bars where they mean something, so the CSV filters
+// down to a few hundred rows.
+//
+// CANDIDATE BARS — any bar where px_cand_dir is non-na. ⚠ THAT IS NO LONGER THE SAME THING
+//   AS "A BAR WHERE AN SOS FIRED", and reading it that way is now the easiest mistake to
+//   make with this file. Under execEntryMode = "VWAP side" a candidate arrives on an
+//   ORDINARY bar — no SOS on it, so px_sos carries only bit 4 (dFired) and none of the SOS
+//   bits. Filter the CSV on px_cand_dir, never on px_sos.
+//
+//   Every value is the parent's OWN record, taken at decision time and copied, never
+//   re-derived here: px_cand_dir, px_ctr_ext, px_rcl_ext, px_sos_lvl and the three px_gate_*
+//   columns all come straight off dCandDir / dCandCtr / dCandRcl / dCandSos / dCandTBos /
+//   dCandCBos / dCandBars. That is exact by construction rather than by argument — there is
+//   no second implementation here that could disagree with the gate.
+//
+//   The authoritative dCtrHi / dCtrLo / dCtrSos are still plotted on FIRED bars (px_fire_*),
+//   and on any fired bar they must agree with px_ctr_ext / px_sos_lvl. That cross-check now
+//   guards a copy rather than a reconstruction, so it should be trivially true — if it ever
+//   is not, something upstream in the parent has moved.
+//
+// THE POINT OF px_ctr_ext / px_rcl_ext / px_sos_lvl. With those three plus px_cand_entry
+// you can compute OFFLINE what every stop anchor and every retrace level would have priced,
+// on every candidate the strategy ever saw, without re-running TradingView:
+//   Sweep extreme       = px_ctr_ext
+//   Counter-SOS line    = px_sos_lvl
+//   Between the two @p  = px_sos_lvl + (px_ctr_ext - px_sos_lvl) * p/100
+//   Retrace @f (entry)  = px_rcl_ext - (px_rcl_ext - px_ctr_ext) * f   [long; mirrored short]
+// That turns one export into a sweep instead of one configuration.
+//
+// px_mfe_r / px_mae_r are the running favourable and adverse excursion of the OPEN trade,
+// in R, per bar. They are what the trade list cannot give you, and they are what settles
+// whether a winner's drawdown came BEFORE or AFTER it reached a staging level — the one
+// unknown that bounds the whole exit-ladder result. Both EXCLUDE the fill bar, for the same
+// reason the parent's tMaxFav does (BUG_exit_fill_price_mismatch).
+//
+// px_stage is tracked here rather than read from tStage, because the parent resets tStage
+// to 0 on the close bar and the close bar is exactly where the final stage matters.
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// ── Candidate geometry: DELETED 2026-08-06, and the deletion is the fix ─────
+// `f_xCand()` lived here and rebuilt the candidate's direction and leg extremes from
+// `st.bull_sos` plus `[1]` lookups. It is gone, not repaired: the parent publishes
+// dCandDir / dCandCtr / dCandRcl for every candidate at decision time, so there was never a
+// second claim worth maintaining — only a second claim that could disagree. See the note at
+// the px_cand_* plots for what it got wrong once a candidate could arrive off an SOS bar.
+// ⚠ Do not reintroduce a derivation here. Anything the columns need, the parent should
+// record and this block should copy.
+
+// ── Trade tracker — export-owned, so the parent's close-bar resets cannot erase it ──
+// Returns [fillPx, oneR, stage, mfeR, maeR, closedR]. Every value survives the bar the
+// trade closes on, which is the bar the parent has already zeroed tStage / tDir / tFillBar.
+f_xTrade() =>
+    var int   _dir = 0
+    var float _e = na, var float _d1r = na, var float _risk = na, var float _np = na
+    var int   _fb = na
+    var float _hi = na, var float _lo = na
+    var int   _stg = 0
+    float _fill = na, float _cr = na
+    bool _isFill  = strategy.position_size != 0 and strategy.position_size[1] == 0
+    bool _isClose = strategy.position_size == 0 and strategy.position_size[1] != 0
+    if _isFill
+        _dir  := tDir
+        _e    := tE
+        _d1r  := tDist
+        _risk := tRiskUsd
+        _np   := tNpAt
+        _fb   := bar_index
+        _hi   := na
+        _lo   := na
+        _stg  := 0
+        _fill := tE
+    if strategy.position_size != 0 and not na(_fb) and bar_index > _fb
+        _hi  := na(_hi) ? high : math.max(_hi, high)
+        _lo  := na(_lo) ? low  : math.min(_lo, low)
+        // Ternary, not math.max — math.max returns a float and _stg is an int, which is a
+        // type error rather than a silent widening. Same reason the plots below build a
+        // float local instead of putting an int in a ternary against na.
+        _stg := tStage > _stg ? tStage : _stg
+    if _isClose and not na(_risk) and _risk != 0
+        _cr := (strategy.netprofit - nz(_np)) / _risk
+    float _mfe = na, float _mae = na
+    if _dir != 0 and not na(_d1r) and _d1r != 0 and not na(_hi)
+        _mfe := _dir == 1 ? (_hi - _e) / _d1r : (_e - _lo) / _d1r
+        _mae := _dir == 1 ? (_lo - _e) / _d1r : (_e - _hi) / _d1r
+    bool _live = strategy.position_size != 0 or _isClose
+    // _stgOut is declared float FIRST. `_live ? _stg : na` with an int _stg leaves Pine to
+    // infer a type for the na branch, and it does not always pick float — which is a paste-
+    // time compile error, not a wrong number, so it is cheap to prevent and expensive to hit.
+    float _stgOut = _live ? _stg : na
+    [_fill, _live ? _d1r : na, _stgOut, _live ? _mfe : na, _live ? _mae : na, _cr]
+
+// ── Real exit fills this bar, by rung ───────────────────────────────────────
+// The PRICE the engine actually got, never the level it aimed at. A non-na px_exit_run on a
+// bar where px_stage is 0 is a stop-out or a forced close (time stop / opposite SOS), which
+// is how those are told apart offline.
+f_xExits() =>
+    var int _seen = 0
+    float _t1 = na, float _t2 = na, float _rn = na
+    if strategy.closedtrades > _seen
+        for _i = _seen to strategy.closedtrades - 1
+            if strategy.closedtrades.exit_bar_index(_i) == bar_index
+                string _id = strategy.closedtrades.exit_id(_i)
+                float  _px = strategy.closedtrades.exit_price(_i)
+                if str.contains(_id, "TP1")
+                    _t1 := _px
+                else if str.contains(_id, "TP2")
+                    _t2 := _px
+                else
+                    _rn := _px
+        _seen := strategy.closedtrades
+    [_t1, _t2, _rn]
+
+[_xFill, _xR, _xStg, _xMfe, _xMae, _xClosedR] = f_xTrade()
+[_xT1, _xT2, _xRun] = f_xExits()
+
+// ── DECISION STREAM ─────────────────────────────────────────────────────────
+// px_sos (packed) = bull_sos·1 + bear_sos·2 + dFired·4 + limit_resting·8 + fill_bar·16 + close_bar·32
+//   "limit_resting" only ever appears under Entry = Retrace; under SOS close the fill is the
+//   signal bar. Counting bars where bit 8 is set and no bit 16 follows IS the unfilled-limit
+//   rate, which is the entire cost of the Retrace entry and is invisible in the trade list.
+plot((st.bull_sos ? 1 : 0) + (st.bear_sos ? 2 : 0) + (dFired ? 4 : 0) + (strategy.position_size == 0 and not na(tOrdBar) ? 8 : 0) + (strategy.position_size != 0 and strategy.position_size[1] == 0 ? 16 : 0) + (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 32 : 0), "px_sos", _INV, editable = false)
+// The refusal code, identical to the pink chart tag and the [BLOCK] log line:
+//   0 none · 1 direction off · 2 trend too young · 3 shakeout became a trend
+//   4 shakeout stale · 5 stop too tight · 6 stop wrong side · 7 already in a position
+//   8 ACCOUNT BUST — equity <= 0. Once this appears it appears on every candidate after it,
+//     and that run of 8s marks the exact bar the strategy died. Nothing later is a signal.
+// Each is built as a float LOCAL before it is plotted. Every one is an int in a ternary
+// against na, which is the one shape Pine will not reliably type.
+// 🔴 THESE NOW READ THE PARENT'S OWN RECORD AND NO LONGER RECONSTRUCT ANYTHING (2026-08-06).
+// They used to be rebuilt here from `st.bull_sos` plus a set of `[1]` lookups, on the premise
+// that every candidate arrives on an SOS bar and the shift has already destroyed the values
+// the gate read. Both halves of that premise broke the moment "VWAP side" existed:
+//   (a) a VWAP-side candidate arrives on an ORDINARY bar, so `st.bull_sos` is false and the
+//       reconstruction returned direction 0 — which would have blanked px_cand_dir,
+//       px_ctr_ext, px_rcl_ext, px_sos_lvl and all three px_gate_* columns on EVERY
+//       candidate of the new mode. The export would have gone on producing a clean CSV that
+//       simply had nothing in it, which is the failure this file is least able to detect.
+//   (b) `[1]` is only equivalent to "before the shift" on a bar where the shift RAN. On a
+//       non-SOS bar nothing shifted, and `dCurBos` can have been incremented by a plain BOS
+//       earlier in the same bar — so `dCurBos[1]` would report the value the gate did NOT
+//       read, on exactly the bars where a BOS and a candidate coincide.
+// The parent records dCandDir / dCandCtr / dCandRcl / dCandSos / dCandTBos / dCandCBos /
+// dCandBars for EVERY candidate, fired or refused, read at decision time and before any
+// shift. Those are the authoritative values; copying them cannot drift from what the gate
+// saw, where a reconstruction has to be re-proved against every new way a candidate can
+// arise. px_fire_* below still carries the parent's fire-time geometry, so the two remain
+// cross-checkable on any fired bar.
+float _pBlk      = dBlk == 0 ? na : dBlk
+float _pDir      = dCandDir == 0 ? na : dCandDir
+float _pSosLvl   = dCandDir == 0 ? na : dCandSos
+float _pTrendBos = dCandDir == 0 ? na : dCandTBos
+float _pCtrBos   = dCandDir == 0 ? na : dCandCBos
+float _pCtrBars  = dCandDir == 0 ? na : dCandBars
+plot(_pBlk,                      "px_blk",        _INV, editable = false)
+plot(_pDir,                      "px_cand_dir",   _INV, editable = false)
+plot(dBlkPx,                     "px_cand_entry", _INV, editable = false)   // set for FIRED and BLOCKED alike
+plot(dStop,                      "px_sig_stop",   _INV, editable = false)   // fired only
+plot(dCandCtr,                   "px_ctr_ext",    _INV, editable = false)   // the shakeout's own extreme (exact)
+plot(dCandRcl,                   "px_rcl_ext",    _INV, editable = false)   // the reclaim leg's extreme (exact)
+plot(_pSosLvl,                   "px_sos_lvl",    _INV, editable = false)   // the counter-SOS's broken level (exact)
+// The three gate INPUTS, exact, at decision time. Every candidate carries them whether it
+// fired or not, so a gate can be re-run offline over the whole history from one export.
+plot(_pTrendBos,                 "px_gate_trend_bos", _INV, editable = false)
+plot(_pCtrBos,                   "px_gate_ctr_bos",   _INV, editable = false)
+plot(_pCtrBars,                  "px_gate_ctr_bars",  _INV, editable = false)
+// The parent's OWN geometry on fired bars — the cross-check on the reconstruction above.
+plot(dFired ? dCtrHi  : na,      "px_fire_ctr_hi",  _INV, editable = false)
+plot(dFired ? dCtrLo  : na,      "px_fire_ctr_lo",  _INV, editable = false)
+plot(dFired ? dCtrSos : na,      "px_fire_sos_lvl", _INV, editable = false)
+
+// ── TRADE STREAM ────────────────────────────────────────────────────────────
+plot(_xFill,    "px_fill",      _INV, editable = false)   // fill price, on the fill bar only
+plot(_xR,       "px_1r",        _INV, editable = false)   // 1R in PRICE, so R and dollars are reconcilable
+plot(_xStg,     "px_stage",     _INV, editable = false)   // 0 open · 1 TP1 reached · 2 TP2 reached
+plot(_xMfe,     "px_mfe_r",     _INV, editable = false)   // running favourable excursion, in R
+plot(_xMae,     "px_mae_r",     _INV, editable = false)   // running adverse excursion, in R (negative)
+plot(_xT1,      "px_exit_tp1",  _INV, editable = false)
+plot(_xT2,      "px_exit_tp2",  _INV, editable = false)
+plot(_xRun,     "px_exit_run",  _INV, editable = false)
+plot(_xClosedR, "px_closed_r",  _INV, editable = false)   // the trade's own R, on its close bar
+plot(strategy.equity, "px_equity", _INV, editable = false)
+plot(dAtr,      "px_atr14",     _INV, editable = false)
+// ⚠ px_vwap IS PLOTTED ON EVERY BAR, UNGATED, AND IS NOT THE SAME COLUMN AS THE BODY'S
+// VISIBLE "VWAP" PLOT — that one is gated on execShowVwap and is `na` whenever the line is
+// switched off, so a parser must never read it.
+// ⚠ This is the column that makes the VWAP rule RE-PRICEABLE OFFLINE, which is the whole
+// design of this block. With the value on every bar you can reconstruct the side test at any
+// candidate bar, and the slope over ANY lookback, from a run taken with the gate switched
+// OFF entirely — so one export answers "would a VWAP filter have helped?" instead of
+// requiring a second run to ask it. Storing only the boolean answer would have thrown away
+// exactly the information the question needs.
+plot(dVwap,     "px_vwap",      _INV, editable = false)
+
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+// Every input that can change a trade gets a column, so a stored export is self-describing
+// and two of them can never be compared without noticing they ran different settings.
+//   cfg_bits  = execLongs·1 + execShorts·2 + execCloseOppSOS·4
+//               + execVwapReq·8 + execVwapSlope·16
+//   cfg_modes = entry·1 + slAnchor·10 + minStop·100 + sizing·1000
+//               + tp2Floor·10000 + runnerTrail·100000 + timeStop·1000000
+//     entry:       0 SOS close · 1 Retrace · 2 VWAP side
+//     slAnchor:    0 Sweep extreme · 1 Counter-SOS line · 2 Between the two · 3 % of entry-to-sweep
+//     minStop:     0 Off · 1 % of price · 2 Fixed $ · 3 x ATR(14)
+//     sizing:      0 Risk % of equity · 1 Fixed contracts
+//     tp2Floor:    0 TP1 price · 1 Breakeven · 2 One trail step behind
+//     runnerTrail: 0 Fixed step · 1 Structure (swing) · 2 Structure + % ratchet
+//     timeStop:    0 Off · 1 Before TP1 only · 2 Always
+// The numerics are plotted RAW, one column each, and deliberately NOT packed: they are
+// floats, any pack that fits several into one float64 has to round, and a silently rounded
+// threshold mis-describes the run — the exact failure this block exists to prevent.
+// ⚠ cfg_ctr_bars_max is in BARS, so it means a different amount of TIME on every timeframe.
+// A 5m export and a 15m export carrying the same 400 are NOT the same strategy.
+// ⚠ THE NEW BITS AND THE NEW ENTRY VALUE ARE BOTH BACKWARD-SAFE, AND THAT IS WHY THEY WERE
+// APPENDED RATHER THAN RESHUFFLED. An export taken before 2026-08-06 carries bits 8 and 16
+// CLEAR, which decodes to both VWAP gates OFF — which is exactly what it ran, because they
+// did not exist. Likewise entry ∈ {0,1} keeps its old meaning and only the new value 2 is
+// added. A stored export must go on decoding the way it did the day it was taken; that is
+// the whole contract of these columns, and it is why an existing code is never renumbered.
+plot((execLongs ? 1 : 0) + (execShorts ? 2 : 0) + (execCloseOppSOS ? 4 : 0) + (execVwapReq ? 8 : 0) + (execVwapSlope ? 16 : 0), "cfg_bits", _INV, editable = false)
+// 🔴 THREE-WAY, NOT TWO-WAY, AND THE OLD FORM WAS ALREADY WRONG THE MOMENT "VWAP side"
+// EXISTED. `execEntryMode == "SOS close" ? 0 : 1` sends BOTH other modes to 1, so a VWAP
+// run would have been stored, and later read, as a Retrace run — a whole different entry
+// model, reported with total confidence. This is the `execRunnerTrail` trap of 2026-07-26
+// exactly: a code that collapses a widened dropdown does not fail, it lies. **Whenever an
+// option is added to any input, find its cfg digit in the same commit.**
+plot((execEntryMode == "SOS close" ? 0 : execEntryMode == "Retrace" ? 1 : 2)
+   + (execSlMode == "Sweep extreme" ? 0 : execSlMode == "Counter-SOS line" ? 1 : execSlMode == "Between the two" ? 2 : 3) * 10
+   + (execMinStopMode == "Off" ? 0 : execMinStopMode == "% of price" ? 1 : execMinStopMode == "Fixed $" ? 2 : 3) * 100
+   + (execSizeMode == "Risk % of equity" ? 0 : 1) * 1000
+   + (execTp2StopMode == "TP1 price" ? 0 : execTp2StopMode == "Breakeven" ? 1 : 2) * 10000
+   + (execRunnerTrail == "Fixed step" ? 0 : execRunnerTrail == "Structure (swing)" ? 1 : 2) * 100000
+   + (execTimeStopMode == "Off" ? 0 : execTimeStopMode == "Before TP1 only" ? 1 : 2) * 1000000, "cfg_modes", _INV, editable = false)
+plot(dTrendBosMin,          "cfg_trend_bos_min", _INV, editable = false)
+plot(dCtrBosMax,            "cfg_ctr_bos_max",   _INV, editable = false)
+plot(dCtrBarsMax,           "cfg_ctr_bars_max",  _INV, editable = false)
+plot(execRetraceFib,        "cfg_retrace_fib",   _INV, editable = false)
+plot(execLimitBars,         "cfg_limit_bars",    _INV, editable = false)
+plot(execSlPct,             "cfg_sl_pct",        _INV, editable = false)
+plot(execSlBufTk,           "cfg_sl_buf",        _INV, editable = false)
+plot(execMinStopVal,        "cfg_min_stop_val",  _INV, editable = false)
+plot(execRiskPct,           "cfg_risk_pct",      _INV, editable = false)
+plot(execFixedQty,          "cfg_fixed_qty",     _INV, editable = false)
+plot(execTp1R,              "cfg_tp1_r",         _INV, editable = false)
+plot(execTp2R,              "cfg_tp2_r",         _INV, editable = false)
+plot(execTp3R,              "cfg_tp3_r",         _INV, editable = false)
+plot(execTp1Pct,            "cfg_tp1_pct",       _INV, editable = false)
+plot(execTp2Pct,            "cfg_tp2_pct",       _INV, editable = false)
+plot(execBeBufTk,           "cfg_be_buf",        _INV, editable = false)
+plot(execStructTrailBufTk,  "cfg_struct_buf",    _INV, editable = false)
+plot(execTrailPct,          "cfg_trail_pct",     _INV, editable = false)
+plot(execTrailStep,         "cfg_trail_step",    _INV, editable = false)
+plot(execTimeStopHrs,       "cfg_time_stop_hrs", _INV, editable = false)
+plot(execBeBandR,           "cfg_scratch_r",     _INV, editable = false)
+// Raw, like every other numeric here, and for the same reason. ⚠ It is in BARS — a 5m and a
+// 15m export both carrying 4 are measuring the slope over different amounts of TIME, the
+// same warning cfg_ctr_bars_max carries.
+plot(execVwapSlopeBars,     "cfg_vwap_slope_bars", _INV, editable = false)

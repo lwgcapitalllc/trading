@@ -4309,11 +4309,21 @@ f_processNyRange() =>
             nyr_low_val  := low5
             nyr_high_val := high5
         if inSession5 and isMondayToFriday and withinNYRangeDays
-            if inSession5[1]
-                line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
-                line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
-                line.delete(nyr_middleHLine)
-                box.delete(nyr_bgBox)
+            // ── THE DELETE IS UNCONDITIONAL NOW (Aaron, 2026-08-05) ──
+            // It used to be guarded by `if inSession5[1]` — "only if we were already in
+            // the session last bar" — which skipped it on the FIRST bar of the window
+            // while the six lines below reassigned every handle anyway. Yesterday's box
+            // and lines were then unreferenced and could never be deleted by anything:
+            // they stayed on the chart until TradingView evicted them at max_lines_count,
+            // which is roughly eighty days of them.
+            // Worse on a 5m chart, where the whole 0930-0935 window is ONE bar, so
+            // `inSession5[1]` is never true and this delete never ran at all.
+            // Deleting an `na` handle is a no-op in Pine, so dropping the guard costs
+            // nothing on the first bar and closes the leak on every later one.
+            line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
+            line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
+            line.delete(nyr_middleHLine)
+            box.delete(nyr_bgBox)
             if low5 < nyr_low_val
                 nyr_low_val := low5
             if high5 > nyr_high_val
@@ -4337,6 +4347,28 @@ f_processNyRange() =>
                 t1 = line.get_x1(nyr_middleHLine), p = line.get_y1(nyr_middleHLine)
                 line.delete(nyr_middleHLine)
                 nyr_middleHLine := line.new(t1, p, time, p, xloc = xloc.bar_time, color = color.red, style = line.style_dotted, width = 2)
+    // ── AND IT IS WIPED WHEN THE DAY ENDS (Aaron, 2026-08-05) ──
+    // Nothing here ever removed the range. It was only ever deleted from inside the
+    // 0930-0935 block above, so after 16:00 NY the box, both verticals, the high/low
+    // lines and the red midline simply stopped being touched and sat on the chart
+    // through the overnight session and all of the next London — until 09:30 the
+    // following morning. That is the "still there when a new day starts" complaint.
+    // `inExtend5` bounds the NY day (0935-1600), so its falling edge IS the end of the
+    // day and is the honest moment to clear a level that only described that day.
+    // ⚠ Deliberately OUTSIDE `if showNYRange`, unlike everything above it. Switching the
+    // tool off mid-session used to leave the drawing behind for the same reason — the
+    // only delete lived on a path the toggle had already closed. The na guard is what
+    // stops this firing on every bar once it has run.
+    bool nyrEnded = (not inExtend5 and inExtend5[1]) or (not showNYRange and not na(nyr_bgBox))
+    if nyrEnded
+        line.delete(nyr_lowHLine),  line.delete(nyr_topHLine)
+        line.delete(nyr_leftVLine), line.delete(nyr_rightVLine)
+        line.delete(nyr_middleHLine)
+        box.delete(nyr_bgBox)
+        nyr_lowHLine    := na, nyr_topHLine   := na
+        nyr_leftVLine   := na, nyr_rightVLine := na
+        nyr_middleHLine := na, nyr_bgBox      := na
+        nyr_low_val     := na, nyr_high_val   := na
     int _ret = 0
 f_processNyRange()
 

@@ -31,11 +31,13 @@
       "unit": "days",
       "label": "Days to watch for the late retrace",
       "step": 0.25,
-      "desc": "How long a B leg watches its frozen band for the late retrace before it goes stale. Set in days but counted in bars, so weekends and the daily close do not burn it. 1.25 = the original 120 bars on 15m. Lower means quick retraces only. Sweep 1 to 3.",
+      "desc": "How long a B leg watches its frozen band for the late retrace before it goes stale. Set in days but counted in bars, so weekends and the daily close do not burn it. 1.25 = the original 120 bars on 15m. Lower means quick retraces only. Measured over the full history: 1.25 gives 59 trades, 3 gives 92, 4 gives 112, 5 gives 118, and it degrades past 5. The old maxval of 3 was cutting off the best region.",
       "guide": [
         "Only quick retraces fill",
-        "A band waits longer for a late return"
-      ]
+        "A band waits longer for a late return — 4-5 days measured best"
+      ],
+      "min": 1,
+      "max": 6
     },
     {
       "name": "exec_risk_pct",
@@ -117,10 +119,10 @@
       "show_if": {
         "exec_runner_trail": "Structure + % ratchet"
       },
-      "desc": "The stop starts at the last confirmed swing and climbs one step of this size for every step of favourable move. A percent rather than dollars because gold ran 1,500 to 3,400 — $20 is a 1.3% trail at one end and 0.6% at the other. Below about 0.5 it starts clipping runners.",
+      "desc": "The stop starts at the last confirmed swing and climbs one step of this size for every step of favourable move. A percent of price rather than dollars, because gold ran 1,500 to 3,400. It must be far smaller here than on the A+ chart: a B leg risks 0.13% to 1.25% of price, so at 1.0 one step is bigger than the whole trade and the ratchet never lifts off its floor — the runner then banks exactly 1R and hands back the rest.",
       "guide": [
-        "Below 0.5 — clips runners, costs real edge",
-        "Above 2.5 — barely binds, back to the plain structure trail"
+        "Tighter — banks more of each run on this fork",
+        "Above ~0.25 the ratchet stops lifting off its floor here"
       ]
     },
     {

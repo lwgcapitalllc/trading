@@ -75,7 +75,39 @@ class BLegConfig(SosFadeConfig):
     #   never on B legs — it is inherited for ONE-LADDER consistency, not as a proven B-LEG result.
     #   Sweep it here before treating it as tuned.
 
+    exec_trail_pct: float = 0.05  # "Runner ratchet step (% of price)" — RE-DEFAULTED for this fork
+    #   The parent ships 1.0 and that value is right THERE and structurally wrong here, for a
+    #   reason that is about units rather than about tuning. The step is a percent of PRICE,
+    #   while a B leg's whole 1R is 0.13%-1.25% of price (measured, 2026-08-06, over the 50
+    #   baseline trades: stop distances $2.51 to $49.02). At 1.0 one trail step is routinely
+    #   LARGER THAN THE ENTIRE RISK, so `f_swingRatchet` can never climb above the stage-2 floor
+    #   and the ratchet is inert — the runner is capped at that floor on every trade.
+    #   ⚠ And the floor is exactly 1R here, by construction rather than by choice: TP1 is
+    #   `2*edge - inv` and the stop is `inv`, so TP1 - edge == edge - inv. With
+    #   `exec_tp2_stop_mode` at its inherited "TP1 price" the runner therefore banks precisely
+    #   +1.00R and hands back everything above it. Nine of the 50 baseline trades exited at
+    #   exactly +1.00R, one of them after running +6.82R; across all 50 the sum of maximum
+    #   favourable excursion was 73.9R against a captured -0.9R.
+    #   MEASURED by real replay, 186,312 M15 bars (2018-09-13 -> 2026-08-05), spread + swap
+    #   charged, alongside bleg_max_days below — see this package's CLAUDE.md for the grid.
+    #   ⚠ 0.05 is the Pine input's own `minval`, and the plateau genuinely continues below it —
+    #   but that lower half is a BAR-GRANULARITY artefact, not a market fact: a $2 step and a
+    #   $0.25 step exit on the same 15m bar, which is why 0.03 / 0.02 / 0.01 all returned the
+    #   identical figure to the cent. Do not read that flatness as headroom.
+    #   ⚠ INHERITED BY NOTHING — `mpc_sos_fade` keeps 1.0. Its own measurement says the opposite
+    #   (0.25% -> 43.6R against 109.3R at 1.0), because an A+ stop is a fib fraction of a leg on
+    #   a ladder whose rungs are also fib levels. Do not "reconcile" the two.
+
     # ── B-LEG-only input (Pine bLegMaxDays, group "Strategy Execution") ─────────────
-    bleg_max_days: float = 1.25   # days a frozen band watches before it goes stale (1-3)
+    bleg_max_days: float = 4.0    # days a frozen band watches before it goes stale (1-6)
     #   Converted to a BAR count (day ÷ chart timeframe) so weekends and the daily close
-    #   don't burn the clock. Default 1.25 = the original 120 bars on 15m. See bleg.py.
+    #   don't burn the clock. 1.25 = the original 120 bars on 15m. See bleg.py.
+    #   RE-DEFAULTED 1.25 -> 4.0 on 2026-08-06, and the interesting part is that the old value
+    #   was not a tuned number at all — it was the Pine input's `maxval = 3` that mattered, and
+    #   the best region sits OUTSIDE it. Charged, over the full broker history: 1.25 -> 59
+    #   trades / +7.29R, 3.0 -> 92 / +10.56R, 4.0 -> 112 / +12.02R, 5.0 -> 118 / +13.76R,
+    #   7.0 -> 121 / +8.62R. 4-5 days is a plateau and it degrades past it. 4.0 is chosen for
+    #   the LOWEST drawdown in the plateau (-8.89R against 5.0's -10.41R) and the only clearly
+    #   positive in-sample half, not for the highest total.
+    #   ⚠ The Pine `maxval` was raised 3 -> 6 in the same commit. A cap is a claim about where
+    #   the useful range ends, and this one had never been measured.
