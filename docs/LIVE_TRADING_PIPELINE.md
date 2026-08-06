@@ -336,13 +336,34 @@ account-types page (read 2026-07-16) puts ECN at $1.00/side and Prime at $3.50/s
 breakdown reverses it and quotes ECN gold at 5-15 cents. The replay covers that whole range on
 purpose, so the conflict changes nothing. **Do not promote any of it to a measurement.**
 
-🔴 **A LATENT DEFECT THIS FOUND, AND IT IS THE SILENT KIND.** `backtest/fills.py::PROFILES` gives
-**all four** PU Prime tiers `_SPREAD_XAUUSD_PUPRIME = 0.32` — a figure measured on the STANDARD
-account. So selecting `puprime_ecn` today charges ECN's commission on top of Standard's spread: a
-combination no real account offers, which overstates the raw tiers' cost and would make Standard
-look better than it is. Nothing errors. The honest fix is a REFUSAL (the `SENTINEL` pattern
-`commission_per_side_per_lot` already uses) rather than typing a published number into code —
-**an unmeasured tier must not be silently priced at a measured one's spread.**
+🔴 **A LATENT DEFECT THIS FOUND, AND IT IS THE SILENT KIND — now FIXED.** `backtest/fills.py::PROFILES`
+gave **all four** PU Prime tiers `_SPREAD_XAUUSD_PUPRIME = 0.32` — a figure measured on the
+STANDARD account, which is the one tier priced by a MARKED-UP spread. So selecting `puprime_ecn`
+charged ECN's commission on top of Standard's spread: a combination no real account offers, which
+overstates the raw tiers' cost and made Standard look better than it is. **Nothing errored.**
+
+✅ **Fixed as a REFUSAL rather than a published number typed into code** — the `SENTINEL` pattern
+`commission_per_side_per_lot` already uses. The three raw tiers carry `SPREAD_UNMEASURED`;
+`AccountProfile.spread_or_refuse()` raises and names `broker_facts.py`, and `bid_ask_fills` on an
+unmeasured tier is refused at CONSTRUCTION, because it decides which trades exist.
+
+⚠ **The refusal is on the SPREAD, not on the tier.** A raw tier's commission and swap are known
+and still chargeable — refusing to build the profile at all would make the honest half unusable.
+
+✅ **DRIVEN against real replays rather than unit-tested alone**, all six cases: `puprime_ecn`
++spread and `puprime_cent` +spread+swap refuse at the first charge, `puprime_prime` +bid_ask_fills
+refuses at construction, `puprime_ecn` +commission+swap still RUNS, and `puprime_standard` /
+`vantage_demo` are untouched (3 trades each, identical to before).
+
+⚠ **One test asserts the MESSAGE and that is the whole test.** The sentinel is `-1.0`, so the
+pre-existing `spread <= 0` guard already raised — saying *"spread is 0 — the ask would equal the
+bid"*, a confident FALSE DIAGNOSIS, since the spread is not zero but unknown. **A nearby guard
+that happens to fire is not the same as the right guard firing.**
+
+⚠ **Swap is assumed tier-invariant and that assumption is NAMED, not measured** (`_XAUUSD_SWAP` is
+Standard's). It is deliberately not sentinelled: the spread differs between tiers by CONSTRUCTION —
+it is how a tier is priced — where swap is normally a fact about the symbol and merely unconfirmed
+here. **If question 3 comes back saying it varies, that outranks this whole comparison.**
 
 **Still open — see the broker questions in `docs/BROKER_QUESTIONS.md`.** The one number that would
 change this answer is not in any table above: **swap costs 6.60R, larger than the entire gap between

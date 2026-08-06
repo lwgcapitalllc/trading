@@ -87,13 +87,12 @@ does mean **the numbers in the questions below are the ones to get confirmed, no
 1. Put the confirmed figures into **`docs/LIVE_TRADING_PIPELINE.md` → G5a**, replacing the
    published ones and **labelling them as broker-stated, not measured**. A support reply is a
    better source than a marketing page and is still not a measurement.
-2. 🔴 **Fix the latent defect in `backtest/fills.py::PROFILES` before anyone selects a raw tier
-   in the lab.** All four PU Prime profiles currently share `_SPREAD_XAUUSD_PUPRIME = 0.32`, which
-   was measured on the **Standard** account — so picking `puprime_ecn` today charges ECN's
-   commission on top of Standard's spread, a combination no real account offers. It overstates the
-   raw tiers and makes Standard look better than it is, and **nothing errors**. The honest fix is
-   the `SENTINEL` refusal pattern that `commission_per_side_per_lot` already uses: an unmeasured
-   tier must REFUSE, not inherit a measured tier's spread.
+2. ✅ **Replace the sentinel in `backtest/fills.py::PROFILES` with what you measured.** The three
+   raw tiers now carry `SPREAD_UNMEASURED` and **refuse to be charged a spread** rather than
+   borrowing Standard's 0.32 (which is what they all did until 2026-08-06 — see G5a). Once you
+   have a real figure, set it on that tier and the refusal turns itself off. ⚠ **Do not paste in
+   the number support gives you as though it were measured** — record it as broker-stated, and
+   measure the tier properly once an account of that type exists.
 3. **Once the live account is open, measure it — do not trust the reply.** Run
    `algos/tools/broker_facts.py --history-days 3` against the funded terminal. That is the same
    read-only tool that produced the $0.32, and it is the only figure on this page that came from

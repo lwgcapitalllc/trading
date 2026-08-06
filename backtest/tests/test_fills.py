@@ -12,8 +12,8 @@ import datetime
 import pytest
 
 from backtest.data.ticks import Tick, TickWindowUnavailable
-from backtest.fills import (PROFILES, AccountProfile, Bar, BarPathResolver, CostsNotConfigured,
-                            Level, SwapModel, TickPathResolver)
+from backtest.fills import (PROFILES, SPREAD_UNMEASURED, AccountProfile, Bar, BarPathResolver,
+                            CostsNotConfigured, Level, SwapModel, TickPathResolver)
 
 _SWAP = SwapModel(swap_long_points=-78.29, swap_short_points=29.49)
 
@@ -291,6 +291,68 @@ def test_each_brokers_spread_is_its_own_measurement():
     """
     assert PROFILES["vantage_demo"].spread == 0.22
     assert PROFILES["puprime_standard"].spread == 0.32
+
+
+# ── the spread belongs to an ACCOUNT TIER, not to a broker ────────────────────
+
+def test_the_raw_puprime_tiers_do_not_inherit_standards_measured_spread():
+    """🔴 The defect this whole block exists for, shipped until 2026-08-06.
+
+    All four PU Prime tiers carried 0.32 — a figure measured on a STANDARD demo, which is the one
+    tier priced by a MARKED-UP spread. So `puprime_ecn` charged ECN's commission on top of
+    Standard's spread: a combination no real account offers, which overstates every raw tier and
+    makes the commission-free one look better than it is. Nothing errored.
+
+    ⚠ The right fix is a REFUSAL, not a published figure typed into code — a marketing page is not
+    a measurement, and the published numbers for these tiers contradict each other across sources
+    (their own account-types page puts ECN at $1.00/side and Prime at $3.50; a third-party
+    breakdown reverses it). Measure the tier, then replace the sentinel.
+    """
+    assert PROFILES["puprime_standard"].spread_measured is True
+    for tier in ("puprime_prime", "puprime_ecn", "puprime_cent"):
+        assert PROFILES[tier].spread_measured is False, tier
+        assert PROFILES[tier].spread != PROFILES["puprime_standard"].spread, tier
+
+
+def test_charging_an_unmeasured_spread_refuses_and_names_the_tool():
+    """It must RAISE, never fall back. Two things make a silent fallback worse than a crash here:
+    0.0 would run a raw-tier backtest charging commission and no spread at all, and the sentinel
+    is NEGATIVE, so passing it through pays the trader half a spread on every fill."""
+    with pytest.raises(CostsNotConfigured) as exc:
+        PROFILES["puprime_ecn"].spread_or_refuse()
+    assert "broker_facts.py" in str(exc.value)
+    assert "puprime_ecn" in str(exc.value)
+
+
+def test_a_measured_spread_is_returned_unchanged():
+    """The other half of the rule, stated on purpose — a guard that refuses everything is not a
+    guard. Pinned because a rule written in one direction is the one that gets 'simplified'."""
+    assert PROFILES["puprime_standard"].spread_or_refuse() == 0.32
+    assert PROFILES["vantage_demo"].spread_or_refuse() == 0.22
+
+
+def test_modelling_fills_on_an_unmeasured_spread_is_refused_at_construction():
+    """`bid_ask_fills` decides WHICH TRADES EXIST, so it is caught at construction rather than at
+    the first fill — the same reasoning as the existing spread<=0 guard beside it, and the earliest
+    point the mistake can be reported.
+
+    ⚠ **It asserts the MESSAGE, and that is the whole test.** The sentinel is -1.0, so the older
+    `spread <= 0` guard one line below already raises — with the words *"spread is 0 — the ask
+    would equal the bid"*, which is a confident FALSE DIAGNOSIS: the spread is not zero, it is
+    unknown. Proven by neutering this guard alone, which leaves the raise intact and the wording
+    wrong. Never let a nearby guard's message stand in for a distinct failure."""
+    with pytest.raises(CostsNotConfigured) as exc:
+        AccountProfile("ecn-like", 1.00, spread=SPREAD_UNMEASURED, bid_ask_fills=True)
+    assert "never been measured" in str(exc.value)
+
+
+def test_an_unmeasured_spread_still_builds_a_profile_for_its_other_costs():
+    """The refusal is at the point of CHARGING, not construction — a raw tier's commission and swap
+    are known and chargeable, and it is only the spread that nobody has read. Refusing to build the
+    profile at all would make the honest half unusable."""
+    ecn = PROFILES["puprime_ecn"]
+    assert ecn.commission(100) == pytest.approx(1.00)
+    assert ecn.swap is not None
 
 
 def test_bid_ask_fills_refuses_to_run_with_no_spread():

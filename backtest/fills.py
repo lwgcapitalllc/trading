@@ -25,10 +25,12 @@ difference by making tick mode guess.
 
 * **Spread** — real and measured. Entries and exits transact at the correct side of the book (a
   long buys the ask and sells the bid), so the spread is paid by construction rather than bolted on
-  as a fudge factor. Gold on PU Prime measures a FIXED ~$0.32 (2026-08-06, 1,893,438 ticks over 3
-  whole days: median 0.320, p99 0.370, max 0.390) — see `_SPREAD_XAUUSD_PUPRIME` for the by-hour
-  detail and for Vantage's very different $0.22. Re-measure with `algos/tools/broker_facts.py`
-  rather than quoting this line: it is a snapshot of a broker's pricing, not a constant.
+  as a fudge factor. Gold on PU Prime **Standard** measures a FIXED ~$0.32 (2026-08-06, 1,893,438
+  ticks over 3 whole days: median 0.320, p99 0.370, max 0.390) — see
+  `_SPREAD_XAUUSD_PUPRIME_STANDARD` for the by-hour detail and for Vantage's very different $0.22.
+  Re-measure with `algos/tools/broker_facts.py` rather than quoting this line: it is a snapshot of
+  a broker's pricing, not a constant. ⚠ **It is a fact about an ACCOUNT TIER, not about the
+  broker** — the raw tiers carry `SPREAD_UNMEASURED` and REFUSE rather than borrowing this figure.
 * **Commission** — a per-side fact about the ACCOUNT TYPE, not the symbol and not an estimate. It
   lives in `AccountProfile`, because on every broker the same symbol costs different amounts on
   different account tiers (PU Prime Standard: $0 + wide spread; Prime: $3.50/side/lot + raw spread).
@@ -54,12 +56,32 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Protocol, Sequence
 
 __all__ = ["AccountProfile", "PROFILES", "CostsNotConfigured", "PathResolver", "BarPathResolver",
-           "TickPathResolver", "Bar", "Fill", "Level", "SwapModel", "SENTINEL"]
+           "TickPathResolver", "Bar", "Fill", "Level", "SwapModel", "SENTINEL",
+           "SPREAD_UNMEASURED"]
 
 # An un-set cost. Not 0.0: zero is a legitimate value (PU Prime Standard genuinely charges no
 # commission), so zero must be a thing you can deliberately SAY, distinct from never having said
 # anything. A backtest that silently runs at zero cost is how a losing strategy passes review.
 SENTINEL = -1.0
+
+# A spread NOBODY HAS MEASURED on this account, as distinct from `spread = 0.0`, which means
+# "not priced" and charges nothing on purpose. Same reasoning as SENTINEL one line up, and it
+# exists because of a defect this file actually shipped:
+#
+# 🔴 Until 2026-08-06 all four PU Prime tiers in `PROFILES` carried ONE spread — 0.32, measured on
+# a STANDARD demo, which is the single tier priced by a marked-up spread. So selecting
+# `puprime_ecn` charged ECN's commission ON TOP OF Standard's spread: a combination no real
+# account offers, which overstates every raw tier and flatters Standard. Nothing errored.
+#
+# ⚠ This is the repo's own "quoting one broker's figure for another is a 50% error" rule one level
+# DOWN — the same trap between two ACCOUNTS of one broker rather than between two brokers, and it
+# is harder to see, because the broker name on the profile is right.
+#
+# The fix is a REFUSAL rather than a published number typed into code. A marketing page is not a
+# measurement, and the published figures for these tiers contradict each other across sources.
+# Measure the tier with `algos/tools/broker_facts.py --history-days 3` against an account of that
+# type, then replace the sentinel with what it read.
+SPREAD_UNMEASURED = -1.0
 
 
 class CostsNotConfigured(RuntimeError):
@@ -209,8 +231,15 @@ class AccountProfile:
             raise CostsNotConfigured("latency_ms must be >= 0")
         if self.slippage_ticks < 0:
             raise CostsNotConfigured("slippage_ticks must be >= 0")
-        if self.spread < 0:
+        if self.spread < 0 and self.spread != SPREAD_UNMEASURED:
             raise CostsNotConfigured("spread must be >= 0 (it is a width, not a signed cost)")
+        if self.bid_ask_fills and self.spread == SPREAD_UNMEASURED:
+            raise CostsNotConfigured(
+                f"profile {self.name!r}: bid_ask_fills is on but this account's spread has never "
+                f"been measured. Modelling fills against an ask nobody has read is not a "
+                f"conservative estimate — it decides WHICH TRADES EXIST. Measure it with "
+                f"`algos/tools/broker_facts.py --history-days 3` against an account of this type."
+            )
         if self.bid_ask_fills and self.spread <= 0:
             raise CostsNotConfigured(
                 "bid_ask_fills is on but spread is 0 — the ask would equal the bid, so the "
@@ -225,6 +254,28 @@ class AccountProfile:
     def commission(self, qty: float) -> float:
         """Commission for ONE side of a `qty`-unit trade."""
         return self.commission_per_side_per_lot * self.lots(qty)
+
+    @property
+    def spread_measured(self) -> bool:
+        """False when nobody has read this account's spread. See `SPREAD_UNMEASURED`."""
+        return self.spread != SPREAD_UNMEASURED
+
+    def spread_or_refuse(self) -> float:
+        """The spread, or a refusal — never a stand-in.
+
+        Call this from anything that is about to CHARGE the spread or model fills against it.
+        Reading `.spread` directly is fine for reporting ("is this priced?"); it is not fine for
+        arithmetic, because the sentinel is a negative number and would quietly pay the trader.
+        """
+        if not self.spread_measured:
+            raise CostsNotConfigured(
+                f"profile {self.name!r}: this account's spread has never been measured, so it "
+                f"cannot be charged. It is deliberately NOT defaulted to a sibling tier's figure "
+                f"— a broker's tiers differ by exactly this number, so borrowing one is the whole "
+                f"error. Measure it with `algos/tools/broker_facts.py --history-days 3` against an "
+                f"account of this type, or run this backtest without the spread layer."
+            )
+        return self.spread
 
     def swap_charge(self, direction: int, qty: float, roll_date) -> float:
         if self.swap is None:
@@ -279,18 +330,34 @@ _XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.9
 #     spanning 2025-08 → 2026-07) — median **0.220**, p90 0.270, p99 0.310, max 0.310.
 # Tick mode ignores both: it has the real bid and ask on every tick. These exist so BAR mode, which
 # sees one price per bar, can be told what it cannot measure.
-_SPREAD_XAUUSD_PUPRIME = 0.32
+#
+# ⚠ **THE SPREAD IS PER ACCOUNT TIER, NOT PER BROKER, AND THE 0.32 BELONGS TO ONE TIER.** The live
+# demo is a **Standard** account — a commission-free tier is priced by MARKING UP the spread, which
+# is why 0.32 reads flat in 22 of 23 hours, and it agrees with PU Prime's published "3.0 pips" for
+# Standard at the $0.10/pip gold convention. Prime and ECN are raw-spread tiers and quote something
+# far tighter. Giving them Standard's number is not a conservative approximation; it is the single
+# number that distinguishes them. They carry `SPREAD_UNMEASURED` until somebody opens an account of
+# that type and measures it. See `docs/BROKER_QUESTIONS.md`.
+_SPREAD_XAUUSD_PUPRIME_STANDARD = 0.32
 _SPREAD_XAUUSD_VANTAGE = 0.22
 
+# ⚠ **SWAP IS ASSUMED TIER-INVARIANT, and that assumption is NAMED rather than measured.** These
+# values were read off the Standard demo. Overnight financing is normally a fact about the SYMBOL
+# and the same across a broker's tiers — but nobody has confirmed it here, and swap is the largest
+# re-priceable cost on this strategy (6.60R vs a ~10R total gap between tiers), so if it does vary
+# it outranks everything the tier comparison measured. It is question 3 in
+# `docs/BROKER_QUESTIONS.md`. It is deliberately NOT sentinelled: the spread is different by
+# CONSTRUCTION (it is how a tier is priced) where this is merely unconfirmed, and refusing every
+# raw-tier run over an assumption that is probably true would cost more than it buys.
 PROFILES = {
     "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP,
-                                       spread=_SPREAD_XAUUSD_PUPRIME),
+                                       spread=_SPREAD_XAUUSD_PUPRIME_STANDARD),
     "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP,
-                                       spread=_SPREAD_XAUUSD_PUPRIME),
+                                       spread=SPREAD_UNMEASURED),
     "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP,
-                                       spread=_SPREAD_XAUUSD_PUPRIME),
+                                       spread=SPREAD_UNMEASURED),
     "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=_XAUUSD_SWAP,
-                                       spread=_SPREAD_XAUUSD_PUPRIME),
+                                       spread=SPREAD_UNMEASURED),
     "vantage_demo":     AccountProfile("vantage_demo",     0.00, swap=_XAUUSD_SWAP_VANTAGE,
                                        spread=_SPREAD_XAUUSD_VANTAGE),
 }

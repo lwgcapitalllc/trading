@@ -1529,9 +1529,19 @@ class Execution:
 
         Tick mode returns 0.0 for the same reason `_charge_slippage` does: the resolver transacts
         on the real side of the book, so the spread is already IN the fill price and charging a
-        stated one on top books it twice."""
+        stated one on top books it twice.
+
+        ⚠ **An UNMEASURED spread raises rather than reading as 0.0** — `AccountProfile` carries a
+        sentinel for an account nobody has measured (a raw PU Prime tier), and 0.0 means "charge
+        nothing" on purpose. Collapsing the two would run a raw-tier backtest that silently
+        charged commission and no spread, which is not a cost model any real account offers. The
+        sentinel is also NEGATIVE, so passing it through would pay the trader half a spread per
+        fill. The refusal is the profile's own, so it names the tool that fixes it."""
         if self._profile is None or self._resolver is not None:
             return 0.0
+        refuse = getattr(self._profile, "spread_or_refuse", None)
+        if refuse is not None:
+            return refuse()
         return getattr(self._profile, "spread", 0.0)
 
     def _charge_spread(self, qty: float) -> None:

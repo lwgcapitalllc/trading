@@ -1036,6 +1036,22 @@ better short credit (+30.25 vs +26.98) on a strategy that trades both sides. **S
 as the BACKTEST broker's cost and add ~23% for the live one** — Vantage is pinned here because it
 matches the TradingView feed the Pine was written on, which is a parity decision, not a cost one.
 
+🔴 **AND THAT $0.32 IS A FACT ABOUT AN ACCOUNT TIER, NOT ABOUT A BROKER (2026-08-06).** It was
+measured on PU Prime's **Standard** account — the one tier priced by a MARKED-UP spread — and
+`backtest/fills.py::PROFILES` gave all four PU Prime tiers the same number, so a `puprime_ecn` run
+charged ECN's commission ON TOP OF Standard's spread, a combination no real account offers.
+✅ The three unmeasured tiers now carry `SPREAD_UNMEASURED` and **REFUSE**: `_spread()` routes
+through `AccountProfile.spread_or_refuse()`, so the refusal fires wherever the profile came from
+rather than only on the lab's path. ⚠ **It refuses the SPREAD, not the tier** — a raw tier's
+commission and swap are known and still chargeable. ⚠ **`0.0` and "unmeasured" must never
+collapse**: 0.0 charges nothing on purpose, and the sentinel is NEGATIVE, so passing it through
+would PAY the trader half a spread on every fill. **Which tier to actually trade is measured and
+answered in `docs/BROKER_QUESTIONS.md` — a RAW tier, not Standard, because on this strategy the
+spread costs ~20x what the commission does and it costs by killing FILLS** (8 setups of 159 never
+fill at $0.32, 3 at $0.08; commission is 0.48R at $1.00/side and 1.67R at $3.50/side over 6.5
+years). That is the same limit-order asymmetry the `bid_ask_fills` row above describes, read as a
+decision rather than as a lab curiosity.
+
 Two things to take from that table, and the second is the one worth remembering.
 
 ⚠ **A small charge is not a small effect.** 12.04R of cost turns $28.3M into $10.1M — **64% of the
