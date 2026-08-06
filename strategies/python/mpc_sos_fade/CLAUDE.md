@@ -679,27 +679,63 @@ and the last `input.float/string/int` in `mpc_strategy.pine` is `execBeBandR` (~
 the pair down at the exit block shifts **nothing**. Inserting them beside their siblings at ~483
 would silently reset every later string and float input on every chart running the script.
 
-⚠ **STILL NOT PARITY-VALIDATED, AND THE SECOND ATTEMPT IS THE INSTRUCTIVE ONE.** The export mirrors
-carry `cfg_time_stop` / `cfg_time_stop_hrs` and `compare_strategy.py` decodes them (absent column ⇒
-**Off**, never the Python default). Two rounds of real exports were taken on 2026-08-06:
+✅ **PARITY VALIDATED 2026-08-06, AND GETTING THERE TOOK THREE EXPORTS AND FOUND A REAL BUG.**
 
-- **Round 1, mode Off** — worthless by construction, exactly as this section warned.
-- **Round 2, mode ON at 36h** — `compare_bleg.py` **exit 0** on 21,999 bars. 🔴 **And it proves
-  nothing, because the clock fired ZERO times in the window.** Counted, not assumed: replaying the
-  export's own bars at the export's own decoded config closes **0 of 5** B-LEG trades and **0 of
-  26** A+ trades by the clock. At 36 hours the lever fires ~6 times in 6.5 years, so a 230-day
-  export catches none of them.
+- **Round 1, mode Off** — worthless by construction, exactly as this section had warned.
+- **Round 2, mode ON at 36h** — `compare_bleg.py` exit 0, and it proved NOTHING: the clock fired
+  **zero times**. At 36h the lever fires ~6 times in 6.5 years, so no export a human takes will
+  reach it.
+- **Round 3, mode ON at 4h** — the clock fires constantly, and the gate went **RED on its first
+  exercised bar.**
 
-**The lesson is one this repo has now hit three times in three days, and this is the sharpest
-version: the exercise check has to be part of the gate, not a thing you remember to do.** The
-minimum-stop guard shipped green with block code 7 raised zero times; the Stress Test page shipped
-graded against an engine that no longer existed; this went green on a branch neither side entered
-while the tester was *specifically watching for that failure mode*. Knowing about the trap did not
-prevent it — the default cutoff is simply too rare to exercise itself.
+🔴 **The bug it found is a one-bar fill error, and it was in the port from the first line.**
+`_close_at(sig, sig.close, ...)` closed the position at the DECIDING bar's close. Pine's
+`strategy.close()` is a MARKET order, so it cannot execute on a bar that has already closed — it
+fills at the NEXT bar's open. Measured on real bars: Python booked bar 696's close **3651.28**,
+Pine booked bar 697's open **3651.23**. The force-close is now held as `_pending_close` and filled
+at the next bar's open, ahead of any stop or target, which is the order TradingView executes in.
 
-**So: export at `exec_time_stop_hrs = 4`, not 36.** Four hours fires dozens of times in a normal
-export window and is the same code path; 36 is the shipped value and is untestable on any chart a
-human will export. **Then count the `time stop` closes before believing the green.**
+⚠ **The same defect was already sitting in `exec_close_opp_sos`**, which is the other
+`strategy.close()` in the Pine. It defaults OFF and has never appeared in a parity export, so it
+was corrected by inference from the time stop's measured evidence rather than by its own. **The
+one force-close that is NOT deferred is `flat_by_close`** — it has no `strategy.close()` behind it
+(no Pine input exists) and its entire purpose is to be flat before the daily close, so deferring it
+to the next open would carry the position overnight and charge the swap it exists to avoid.
+
+🔴 **The second bug was in the HARNESS, and it is the more dangerous shape.** `_py_row` mapped a
+force-close to `px_exit_run` by matching `endswith("CLOSE")`, so the new `L-TIME` / `S-TIME` leg
+matched nothing and the tool reported `py=None pine=3855.13` — **a manufactured mismatch, in code
+that was correct to the cent.** It now selects "any exit that is not a TP rung", so a future leg
+name cannot reintroduce it. **A parity tool that must be taught every new leg name will fail this
+way, and it fails by accusing the strategy.**
+
+**After both fixes:**
+
+| gate | result | clock exits in the window |
+|---|---|---|
+| `compare_bleg.py` | **exit 0** | 1 |
+| `compare_strategy.py` | clean to bar 11031 | **6** (2 long, 4 short) |
+
+Bar 11031 is the pre-existing minimum-stop divergence recorded above, unrelated to this lever and
+red before it existed. Every clock exit before it matches Pine bar-for-bar and price-for-price.
+
+⚠ **A THIRD probe bug is worth recording, because it is this section's own lesson eating itself.**
+The script that counts clock exits read `getattr(t, "exit_name", "")` — a field `Trade` does not
+have — so it returned `0 closed BY THE CLOCK` for **every** export, including the one where the
+clock fired 12 times. The field is `exit_reason`. **The exercise check written to catch
+"green on a branch neither side entered" was itself silently answering zero**, and a zero from a
+broken counter is indistinguishable from a zero from an unexercised branch. Read the field
+directly so a rename raises; never `getattr` with a default in a check whose whole job is to
+notice absence.
+
+🔴 **THE MEASURED SWEEP ABOVE IS NOW STALE BY ONE BAR AND MUST BE RE-RUN.** Every row in it was
+replayed with the force-close landing on the deciding bar's CLOSE, which is the bug fixed here. The
+cut trades are the same trades and the shape of the result will not move — the exits shift by one
+bar, on ~6 trades in 6.5 years — but the R and drawdown figures are no longer exact. Re-run the
+7-config replay and correct the table before quoting these numbers anywhere.
+
+⚠ **Re-export at 4 hours after any change to this lever.** 36 is the shipped value and is
+untestable on a normal chart; 4 is the same code path and exercises it dozens of times.
 
 ### 🔴 OPEN — A+ Pine↔Python parity is RED at the shipped minimum-stop floor (2026-08-06)
 

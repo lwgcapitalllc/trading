@@ -487,6 +487,14 @@ class Execution:
         # flat), so the tag is all that keeps each stream off the other's position. When flat it is
         # ignored, so with `exec_secondary` OFF (no secondary ever opens) `step()` is unchanged.
         self._entry_kind = "primary"
+        # A force-close DECIDED at this bar's close and FILLED at the next bar's open, held as
+        # (reason, leg tag) or None. Pine's `strategy.close()` is a MARKET order, and a market
+        # order in this fill model is subject to the same one-bar delay every other order is —
+        # it cannot execute on the bar that decided it, because that bar has already closed.
+        # Measured on a real 4-hour-cutoff export (2026-08-06): Python was closing at bar 696's
+        # close 3651.28 while Pine closed at bar 697's open 3651.23, one bar apart on every
+        # clock-driven exit. See `### The time stop` in this package's CLAUDE.md.
+        self._pending_close: Optional[Tuple[str, str]] = None
         self._qty = 0.0
         self._entry = 0.0
         self._entry_index = 0
@@ -685,6 +693,14 @@ class Execution:
         opened = False
         if self._pos_dir == 0:
             opened = self._try_entry_fill(sig, dec)
+        # A force-close decided last bar is a MARKET order, so it fills at THIS bar's open —
+        # before any stop or target, exactly as TradingView executes a `strategy.close()` ahead
+        # of the bar's own trading. Doing it after `_manage_open` would let a stop that the
+        # market only reached mid-bar pre-empt an exit the broker had already filled.
+        if self._pending_close is not None and self._pos_dir != 0 and not opened:
+            reason, tag = self._pending_close
+            self._close_at(sig, sig.open, reason, dec, tag=tag)
+        self._pending_close = None
         # Exit orders are placed at a bar's close and active the NEXT bar, so a trade
         # never fills an exit on the bar it opened (TradingView one-bar delay). A secondary
         # position is managed on the 1m stream, so a 15m bar never touches it.
@@ -720,13 +736,19 @@ class Execution:
             if self._cfg.exec_close_opp_sos and (
                 (self._pos_dir > 0 and sig.bear_sos) or (self._pos_dir < 0 and sig.bull_sos)
             ):
-                self._close_at(sig, sig.close, "opp-SOS", dec)
+                self._pending_close = ("opp-SOS", "CLOSE")
             # deliberate deviation: force-flat before the daily close (real runs only)
             elif self._cfg.flat_by_close and self._in_flat_window(sig):
+                # The ONE force-close that fills at this bar's CLOSE rather than the next open,
+                # and it is not an inconsistency: it has no `strategy.close()` behind it (there is
+                # no such input in any Pine file) and its whole purpose is to be FLAT before the
+                # daily close. Deferring it to the next bar's open would carry the position
+                # overnight — the exact thing it exists to prevent — and would charge the swap it
+                # was switched on to avoid.
                 self._close_at(sig, sig.close, "flat-by-close", dec)
             # optional time stop (Pine execTimeStopMode) — the clock, not the price
             elif self._time_stop_due(sig):
-                self._close_at(sig, sig.close, "time-stop", dec, tag="TIME")
+                self._pending_close = ("time-stop", "TIME")
         elif self._pos_dir == 0:
             self._place_entries(sig, seq, dec, dec.long_edge, dec.short_edge)
         # else: a secondary is open — managed on the 1m stream (step_secondary), not here.

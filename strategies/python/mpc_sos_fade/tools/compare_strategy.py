@@ -277,9 +277,16 @@ def _decision_row(dec: Decision) -> Dict[str, object]:
         f = next((f for f in dec.fills if f.kind == "exit" and f.order_id.endswith(suffix)), None)
         return f.price if f else None
     run_px = exit_px("RUN")
-    if run_px is None:  # a force-close (opp-SOS / flat-by-close) exits the runner slot
-        f = next((f for f in dec.fills
-                  if f.kind == "exit" and (f.order_id.endswith("CLOSE"))), None)
+    if run_px is None:
+        # Anything that is not a TP rung closes the RUNNER slot, which is the slot Pine plots
+        # `px_exit_run` from. Stated as "not a rung" rather than as a list of force-close leg
+        # names on purpose: this used to read `endswith("CLOSE")`, so when the time stop added an
+        # `L-TIME` / `S-TIME` leg the harness silently reported NO EXIT and blamed the strategy —
+        # a clock exit that matched Pine to the cent showed as `py=None pine=3855.13`. A parity
+        # tool that has to be taught every new leg name will keep failing this way, and it fails
+        # in the worst direction: it manufactures a mismatch in code that is correct.
+        f = next((f for f in dec.fills if f.kind == "exit"
+                  and not f.order_id.endswith(("TP1", "TP2"))), None)
         run_px = f.price if f else None
     edge = dec.long_edge if dec.long_edge is not None else dec.short_edge
     return {
