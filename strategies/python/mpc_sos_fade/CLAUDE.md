@@ -1026,6 +1026,16 @@ would have overstated every backtest cost by 50%.
 | + spread + swap | 161 | 123.90R | $10.09M | −$333,110 |
 | **bid/ask fills + swap** | **159** | **141.93R** | **$29.48M** | −$361,835 |
 
+🔴 **EVERY ROW ABOVE IS PRICED ON VANTAGE, AND THE BOT TRADES PU PRIME — which costs 23% more.**
+Measured 2026-08-06 (`docs/LIVE_TRADING_PIPELINE.md` → G5) off the live terminal's own tick store,
+1,893,438 ticks over 3 whole days. On the CURRENT shipped defaults over 155,531 bars, one real
+replay per row: free **+142.18R** · Vantage costs **+130.59R** · **PU Prime costs +127.91R**, with
+max drawdown 5.61R → 6.83R. **89% of that 2.68R gap is the SPREAD** ($0.32 vs $0.22 — 7.67R vs
+5.28R), not the swap, whose worse long leg (−79.60 vs −74.84) is almost exactly cancelled by its
+better short credit (+30.25 vs +26.98) on a strategy that trades both sides. **So read this table
+as the BACKTEST broker's cost and add ~23% for the live one** — Vantage is pinned here because it
+matches the TradingView feed the Pine was written on, which is a parity decision, not a cost one.
+
 Two things to take from that table, and the second is the one worth remembering.
 
 ⚠ **A small charge is not a small effect.** 12.04R of cost turns $28.3M into $10.1M — **64% of the
