@@ -205,10 +205,65 @@ and overstated fees by 25%).
 ⚠ **`None` = could not ask, `0.0` = charged nothing.** `deals: 0` is what an unreachable terminal
 returns, and writing its zeros down would fabricate a measurement.
 
-**Still assumed until trades accumulate:** the symbol's **minimum stop distance** and **tick size**
-are read from the terminal at order time but have never been recorded against a refusal, and the
-**spread** is only observable through fill-vs-intended on a resting limit, which needs fills. This
-item stays OPEN; what changed is that the data is now being collected instead of discarded.
+**2026-08-06 — MEASURED, and the cost model now carries PU Prime's own numbers.**
+`algos/tools/broker_facts.py --history-days 3` reads the live MT5_FFT terminal's own tick store
+instead of waiting for sessions to come round, which is what made this answerable in one run:
+**1,893,438 ticks over 3 whole days**, against the 120-second London/NY snapshot the first attempt
+managed. Read-only; it attaches to the running terminal and asserts the account before printing.
+
+| | PU Prime (live) | Vantage (every backtest) | was in `fills.py` |
+|---|---|---|---|
+| spread, median | **$0.32** | $0.22 | 0.33 (688k ticks, 2026-07-14) |
+| spread, p99 / max | $0.37 / $0.39 | 0.31 (p99) | — |
+| swap LONG /lot/night | **−79.60** | −74.84 | −78.29 (2026-07-16) |
+| swap SHORT /lot/night | **+30.25** (a credit) | +26.98 | +29.49 |
+| broker min stop | 20 pts = **$0.20** | — | not modelled |
+| commission | **$0.00** (demo) | $0.00 | 0.00 |
+
+✅ **WHAT IT COSTS, replayed rather than estimated — 155,531 M15 bars, 2020-01-01 → 2026-08-03, one
+real replay per row at the shipped defaults:**
+
+| | trades | total R | max DD | cost vs free |
+|---|---|---|---|---|
+| free (no costs) | 159 | +142.18R | 5.61R | — |
+| Vantage costs | 159 | +130.59R | 6.23R | 11.59R |
+| **PU Prime costs** | 159 | **+127.91R** | 6.83R | **14.27R** |
+
+**So trading this on the real broker costs 2.68R more than every cost table in this repo says —
+23% more cost, and max drawdown 5.61R → 6.83R.**
+
+🔴 **And 89% of that gap is the SPREAD, not the swap, which is the opposite of what the swap's size
+suggests.** Isolated by replaying each layer alone:
+
+| | spread alone | swap alone | together |
+|---|---|---|---|
+| Vantage | 5.28R | 6.31R | 11.59R |
+| PU Prime | **7.67R** | 6.60R | 14.27R |
+| gap | **+2.39R** | +0.29R | +2.68R |
+
+Swap is the bigger cost on both brokers, but it barely differs BETWEEN them — PU Prime's worse long
+swap (−79.60 vs −74.84) is almost exactly cancelled by its better short credit (+30.25 vs +26.98),
+and this strategy trades both sides. The spread is 45% wider and nothing offsets it.
+⚠ The layers are additive here (5.28 + 6.31 = 11.59 exactly, and 159 trades in every row), which
+says no trade was added or removed — a cost changes what a trade MAKES, never whether it happens.
+
+⚠ **The spread is FLAT at $0.32 in 22 of the 23 traded hours.** The 21:00–22:00 UTC daily break has
+no ticks at all, and the hour that REOPENS after it is the only wide one (median $0.35, p99 $0.39).
+So on this broker the reopen is where the spread lives, not the session — and a fixed marked-up
+spread is confirmation this demo is the commission-free STANDARD tier rather than a raw one.
+
+🔴 **A SWAP IS NOT A CONSTANT, and that is the transferable half.** The values in `fills.py` were
+read on 2026-07-16 and were 1.7% / 2.6% adrift three weeks later. Nothing announced it and nothing
+could have caught it: a swap is read once, hardcoded, and then quietly describes a rate the broker
+has moved on from. Swap is also the LARGEST re-priceable cost on this strategy. **Re-run
+`broker_facts.py` before quoting any cost figure.**
+
+**Still open, and narrower than it was:** **commission** is `$0.00` on the standing fact that demos
+do not charge, and no live fill has confirmed it — `get_deal_breakdown` records it per trade and
+will. The **minimum stop distance** is measured at 20 points ($0.20) but has still never been
+recorded against a real refusal; note our own `exec_min_stop_mode` floor of 0.08% (~$3.20 on
+$4,000 gold) binds ~16x earlier, so the broker's limit should never be the one that bites.
+**Three days is three days** — it covers every hour but no weekend and no major news cycle.
 
 ### G6 — The minimum-stop-distance guard is a live hazard and does not exist in Python — **CLOSED 2026-07-30**
 

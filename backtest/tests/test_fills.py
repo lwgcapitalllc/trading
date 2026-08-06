@@ -116,8 +116,8 @@ def test_swap_scales_with_lots():
 def test_profile_swap_converts_units_to_lots():
     p = PROFILES["puprime_standard"]
     tue = datetime.date(2026, 7, 14)
-    assert p.swap_charge(1, 100, tue) == pytest.approx(-78.29)     # 100oz = 1 lot
-    assert p.swap_charge(1, 1485, tue) == pytest.approx(-78.29 * 14.85)
+    assert p.swap_charge(1, 100, tue) == pytest.approx(-79.60)     # 100oz = 1 lot
+    assert p.swap_charge(1, 1485, tue) == pytest.approx(-79.60 * 14.85)
 
 
 def test_profile_without_swap_charges_nothing():
@@ -277,11 +277,20 @@ def test_latency_can_skip_an_early_fill():
 # ── spread (2026-08-02) ──────────────────────────────────────────────────────────
 
 def test_each_brokers_spread_is_its_own_measurement():
-    """The two differ by 50%, so quoting one for the other overstates or understates every
+    """The two differ by ~45%, so quoting one for the other overstates or understates every
     bar-mode run on that broker. Vantage is the BACKTEST broker; PU Prime is where we trade live.
-    Both are measured off that broker's own cached bid/ask ticks — see the note in fills.py."""
+    Both are measured off that broker's own bid/ask ticks — see the note in fills.py.
+
+    ⚠ These are MEASUREMENTS, so this test failing on a deliberate re-measure is the system
+    working. What it exists to catch is the other case: one broker's figure being copied onto the
+    other, or a number moving with no measurement behind it. Re-measure with
+    `algos/tools/broker_facts.py --history-days N`, then change the value AND the provenance
+    comment in fills.py in the same commit.
+
+    PU Prime last measured 2026-08-06 over 1,893,438 ticks / 3 whole days off the live terminal.
+    """
     assert PROFILES["vantage_demo"].spread == 0.22
-    assert PROFILES["puprime_standard"].spread == 0.33
+    assert PROFILES["puprime_standard"].spread == 0.32
 
 
 def test_bid_ask_fills_refuses_to_run_with_no_spread():
