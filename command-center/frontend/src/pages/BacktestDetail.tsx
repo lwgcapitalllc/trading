@@ -4211,7 +4211,9 @@ export function BacktestDetail() {
   // moved to `useNavActivity`. So the run page was pulling every run in the lab (~1.7 KB each,
   // polled every 3s while anything runs) to render one number.
   // ⚠ `source_run_id` is always set — never fall back to `undefined`, which fetches the whole lab.
-  const { data: derivedRuns } = useBacktestRuns({ source_run_id: runId ?? ' none' })
+  // The sentinel just has to be a string no run_id can be (they are 12 hex chars), so the
+  // query returns nothing rather than everything.
+  const { data: derivedRuns } = useBacktestRuns({ source_run_id: runId ?? '__no_run__' })
   const tuneCount = useMemo(
     // A sweep and an optimization stamp `source_run_id` too — only a standalone child is a tweak.
     () => (derivedRuns ?? []).filter(r => !r.sweep_id && !r.optimization_id).length,

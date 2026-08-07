@@ -88,19 +88,41 @@ test('an indicator that omits defaultOn still arrives ON', async ({ page }) => {
   expect(on).not.toContain(VWAP)
 })
 
-// 🔴 A FIFTH CHECK WAS WRITTEN, PASSED, AND WAS DELETED FOR FAILING TO BITE.
-//
-// It claimed the reader's toggle survives a roster rebuild — the `reconcileToggles` rule, which
-// `groupsOn` genuinely needed. It switched the display timeframe and asserted the VWAP was still
-// drawn, and it **passed with `reconcileToggles` replaced by a plain re-seed**, which is the exact
-// defect it named.
-//
-// The reason is that the condition cannot be produced from the UI. `indicatorRoster` is memoized on
-// `spec.indicators`, a timeframe switch is a display-only resample that never touches the spec, and
-// `useRefreshChartSpec` — the one thing that would swap the object — has NO CALLERS. So nothing in
-// this app rebuilds that roster during a session, and a green test there was asserting that a
-// timeframe switch does not do something it was never going to do.
-//
-// The reconcile STAYS in the panel: it costs nothing and it is the correct shape for a roster
-// derived from data. But it is defensive rather than exercised, and this comment is the honest
-// record of that, because a passing test would have claimed otherwise.
+test("the reader's choice survives a chart rebuild rather than being re-seeded", async ({ page }) => {
+  // `reconcileToggles`. **Rebuild chart** re-fetches the spec with `?refresh=true` and writes the
+  // result into the cache, so a spec that came back DIFFERENT gives `spec.indicators` a new
+  // identity, `indicatorRoster` recomputes, and the effect that seeds `indicatorsOn` fires. A plain
+  // re-seed there switches the reader's layer off under them, on a button whose whole promise is
+  // that it rebuilds the DATA.
+  //
+  // ⚠ The rebuilt spec has to actually DIFFER, and that is the non-obvious part. TanStack applies
+  // structural sharing, so a rebuild returning identical content hands back the OLD object and the
+  // roster never recomputes — a version of this check that rebuilt an unchanged spec passed against
+  // the very re-seed it was written to catch. Gaining a layer is also the realistic case: it is
+  // exactly what a spec cached before the VWAP existed does when it is rebuilt.
+  //
+  // ⚠ An earlier version switched the display TIMEFRAME instead and was briefly deleted as
+  // unreachable, on a `grep` that had silently skipped this app's largest page. See
+  // `ChartPanel/CLAUDE.md`.
+  await openStructureMenu(page)
+
+  await page.getByRole('button', { name: new RegExp(VWAP) }).click()
+  await expect.poll(() => drawn(page)).toContain(VWAP)
+  await page.keyboard.press('Escape')
+
+  // The rebuild comes back carrying one layer the reader has never seen.
+  await page.route('**/chart-spec?*refresh=true*', async route => {
+    const res = await route.fetch()
+    const spec = await res.json()
+    const vwap = spec.indicators.find((i: { name: string }) => i.name === VWAP)
+    spec.indicators = [...spec.indicators, { name: 'ATR', pane: 'sub', series: vwap.series.slice(0, 500) }]
+    await route.fulfill({ response: res, json: spec })
+  })
+
+  await page.getByRole('button', { name: /rebuild chart/i }).click()
+  // The rebuild really replays the engines server-side, so wait for the new layer to land.
+  await expect.poll(() => drawn(page), { timeout: 180_000 }).toContain('ATR')
+
+  // The layer the READER turned on is still on; only the genuinely new key took a default.
+  expect(await drawn(page)).toContain(VWAP)
+})
