@@ -268,3 +268,93 @@ def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
     assert not missing, (
         f"run_dual's 1m sig is missing {missing}, which _advance_stage reads on every managed "
         f"bar — any secondary trade surviving to its next 1m bar raises AttributeError")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# `exec_sec_once_per_setup` — one re-entry per PRIMARY, not per 1-minute leg.
+#
+# Aaron read two SEC chips on one screen (2024-12-02) and asked why the feature could fire twice
+# off one structure break. It can: the original latch retires the 1m LEG, and a live 15m setup
+# keeps producing fresh legs. These pin the cap, the un-capped rule it replaces, and — the one
+# that matters most — that the two 15m-keyed latches did not get merged into one.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _second_1m_leg():
+    """A different 1m leg (bar 1001) on the SAME 15m setup — what the cap has to refuse."""
+    return M1State(bull_sos_bar=1001, bear_sos_bar=None, bull_leg_hi=104.0, bull_leg_lo=103.0,
+                   bear_leg_hi=None, bear_leg_lo=None, direction=1,
+                   new_bull_sos=True, new_bear_sos=False)
+
+
+def _armed_and_traded(cfg):
+    """Arm once on the first 1m leg and fill it, the state both paths start from."""
+    arm_sm = SecondaryArm(cfg)
+    first = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert first.l_armed is True, "the fixture never armed — nothing below proves anything"
+    arm_sm.mark_traded(1)
+    return arm_sm
+
+
+def test_the_cap_refuses_a_second_reentry_on_the_same_15m_setup():
+    arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=True))
+    again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert again.l_armed is False, (
+        "a fresh 1m leg re-armed on a 15m setup that has already had its one re-entry")
+    assert again.l_edge is None, "refused but still published a resting price"
+
+
+def test_with_the_cap_OFF_a_fresh_1m_leg_re_arms_on_the_same_setup():
+    """The rule the cap replaces, pinned so 'off' cannot quietly become 'on'.
+
+    Without this the cap could be made unconditional and every test above would still pass —
+    the shipped default is ON, so nothing else exercises the other branch."""
+    arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=False))
+    again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert again.l_armed is True, "the un-capped rule is one re-entry per 1m LEG, not per setup"
+
+
+def test_the_cap_is_per_SETUP_not_per_LIFETIME():
+    """A new break of structure re-opens the door. The cap bounds a cascade; it does not retire
+    the feature, and reading it as a kill switch would make the measured numbers meaningless."""
+    arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=True))
+    seq_new = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
+    revived = arm_sm.update(_second_1m_leg(), _SIG_LONG, seq_new, zone_close=102.5,
+                            ny_hour=10, flat=True, be_sos_l=600, be_sos_s=None)
+    assert revived.l_armed is True, "a NEW 15m setup was refused its first re-entry"
+
+
+def test_the_stop_out_latch_is_not_the_cap_latch():
+    """`mark_dead` must still kill a leg with the cap OFF.
+
+    Both gate on the 15m SOS bar, so the cheap implementation serves them from one latch — and
+    then a risk rule (a re-entry stopped out, so this setup is finished) silently depends on a
+    preference switch.
+
+    It cannot be watched red against HEAD (the stop-out latch predates the cap and already
+    worked), so its non-vacuity was proven by MUTATION: gating `_dead` on
+    `exec_sec_once_per_setup` turns it red. ⚠ Note the neighbouring mutation — stamping `_dead`
+    from `mark_traded` — is caught by `test_with_the_cap_OFF_...` instead, not by this. The pair
+    covers the shortcut; neither test does alone."""
+    cfg = SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=False)
+    arm_sm = SecondaryArm(cfg)
+    first = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert first.l_armed is True
+    arm_sm.mark_dead(1, _SEQ_LONG)
+    after = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
+    assert after.l_armed is False, (
+        "a stopped-out leg re-armed with the cap off — the stop-out rule is not a preference")
+
+
+def test_the_secondary_and_its_cap_ship_ON():
+    """Aaron's call, 2026-08-07, and it MOVES every historical figure in this repo.
+
+    Both are asserted here rather than in a general defaults test because the pair is what
+    describes the shipped book: the secondary alone is the uncapped 190-trade run."""
+    cfg = SosFadeConfig()
+    assert cfg.exec_secondary is True
+    assert cfg.exec_sec_once_per_setup is True

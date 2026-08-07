@@ -51,3 +51,21 @@ def test_the_fork_inherits_every_OTHER_engine_pin_from_the_parent():
         assert getattr(fork, f.name) == getattr(parent, f.name), (
             f"{f.name} drifted from the parent's pin — the fork must differ on eq_exempt_fvg alone"
         )
+
+
+def test_the_fork_pins_the_secondary_OFF():
+    """The parent defaulted `exec_secondary` ON on 2026-08-07 and this fork cannot honour it.
+
+    The 1m re-entry follows a 15m A+ PRIMARY that reached breakeven, and in this fork A+ never
+    places an order — `MpcBLegStrategy.run_dual` raises outright. The lab reads this field to
+    decide whether to load a 1m feed and call `run_dual`, so an INHERITED True does not change
+    this bot's trades, it kills every B-LEG lab run on a NotImplementedError.
+
+    Watched red against the pin removed."""
+    from strategies.python.mpc_bleg.config import BLegConfig
+    from strategies.python.mpc_sos_fade.config import SosFadeConfig
+
+    assert SosFadeConfig().exec_secondary is True, (
+        "the parent no longer defaults this ON — if it was deliberately reverted, this pin is "
+        "now redundant rather than load-bearing; say which in the same commit")
+    assert BLegConfig().exec_secondary is False

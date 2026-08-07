@@ -54,6 +54,16 @@ class BLegConfig(SosFadeConfig):
     exec_fib_deep_edge: bool = False  # rule 2 — absent from this Pine
     exec_fvg_pre_zone: bool = False   # the pre-zone gate — absent from this Pine
     exec_sl_deep: bool = False        # the deep-entry stop override — absent, and unused here
+    exec_secondary: bool = False      # the 1m sniper re-entry — pinned OFF, and NOT inert
+    #   The parent defaulted this True on 2026-08-07. It is an A+ feature end to end: it re-enters
+    #   a 15m A+ leg whose PRIMARY reached breakeven, and in this fork A+ never places an order, so
+    #   there is no primary for it to follow. `MpcBLegStrategy.run_dual` raises outright.
+    #   ⚠ **Pinned rather than left to inherit, because inheriting it BREAKS this bot rather than
+    #   quietly changing it**: the lab reads `exec_secondary` off the config to decide whether to
+    #   load a 1m feed and call `run_dual`, so an inherited True makes every B-LEG lab run die on
+    #   that NotImplementedError. Same class as the `exec_min_stop_mode` pin below — a parent
+    #   default that this fork's code cannot honour — but the failure is loud instead of silent,
+    #   which is the only reason it was caught rather than shipped.
     exec_min_stop_mode: str = "Off"   # "Minimum stop distance" — pinned OFF, and INERT here
     #   Inherited from the parent, which added it 2026-07-30 as the guard for a stop that collapses
     #   onto the entry. It does NOT apply on this path: the floor is enforced in the parent's

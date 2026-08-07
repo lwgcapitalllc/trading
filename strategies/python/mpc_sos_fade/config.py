@@ -283,9 +283,11 @@ class SosFadeConfig:
     #   on, rather than silently diffing against logic this bot does not have. Porting it means
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
-    exec_secondary: bool = False       # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
-    #   OFF (default) = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
-    #   ON = also re-enter on the same 15m leg from the 1m chart (needs run_dual + a 1m feed).
+    exec_secondary: bool = True        # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
+    #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
+    #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from the 1m chart. It
+    #   NEEDS run_dual and a 1m feed, which is the whole reason the default matters — see the
+    #   "not every path can run it" warning below before assuming a number came from this book.
     #   Full rules: docs/MPC_SOS_FADE_SECONDARY.md. There is NO Pine parity gate for it — the Pine
     #   is only the approximate version — so it is verified visually, not by compare_strategy.py.
     #   ⚠ LAB ONLY. algos/live/bridge.py REFUSES this config: the live runner drives one timeframe
@@ -296,10 +298,19 @@ class SosFadeConfig:
     #   trades / +139.90R / maxDD 45.6%, secondary ON 190 / +165.46R / maxDD 50.7%. Ten re-entries
     #   in 7.9 years, and 2023-04-03 alone is +27.33R — DELETE IT AND THE OTHER NINE ARE −1.77R,
     #   with the book's average falling BELOW baseline (+0.777 → +0.731 R/trade). It is bought with
-    #   drawdown (45.6% → 50.7%). It stays default OFF until something other than one trade argues
-    #   for it. ✅ Zero primaries displaced, and the 1m clock is inert with it off (a control run of
-    #   run_dual reproduced the baseline's 180 trades exactly) — so those numbers are the
-    #   re-entries and nothing else.
+    #   drawdown (45.6% → 50.7%). ✅ Zero primaries displaced, and the 1m clock is inert with it off
+    #   (a control run of run_dual reproduced the baseline's 180 trades exactly) — so those numbers
+    #   are the re-entries and nothing else.
+    #   ⚠ DEFAULTED ON 2026-08-07 AT AARON'S REQUEST, against that measurement, which is recorded
+    #   here rather than quietly reversed: the case for the feature is still one trade. With the
+    #   per-setup cap below it is 188 trades / +165.46R / maxDD 45.3%. PIN IT OFF to reproduce any
+    #   figure in this repo measured before that date — every one of them is a primary-only book.
+    #   🔴 NOT EVERY PATH CAN RUN IT, AND THAT IS THE COST OF THE DEFAULT. `run_dual` has exactly
+    #   one caller (`python_runner`'s single-backtest path). `backtest/optimizer.run_sweep` replays
+    #   ONE frame, so the optimizer, a sweep and the stress test's pooled sensitivity have no 1m
+    #   stream to give it. Those paths now REFUSE rather than silently replaying a primary-only
+    #   book and ranking it beside a baseline that has re-entries — the same call `reprice.py`
+    #   makes about `bid_ask_fills`. Turn it off for that run, or wire a 1m frame through the sweep.
     #   ⚠ Until 2026-08-06 this had never opened a position on real data at all: run_dual built a 1m
     #   signal missing `last_conf_high`/`last_conf_low`, so the first 1m bar after any fill raised
     #   AttributeError. Any figure predating that fix describes a feature that could not run.
@@ -319,6 +330,28 @@ class SosFadeConfig:
     #   and do not read a change in trade COUNT as the answer.
     #   ⚠ A number rather than a two-way switch on purpose — that is what lets the optimizer sweep
     #   it, the same reasoning as exec_sl_custom.
+
+    exec_sec_once_per_setup: bool = True   # "One re-entry per primary" — cap the cascade
+    #   ON (default) = a 15m setup hands out AT MOST ONE re-entry. OFF = the original rule, one per
+    #   1-MINUTE leg, which is what let 2024-12-02 take two re-entries off a single structure break
+    #   (~100 minutes apart, the second two minutes after the first closed).
+    #   ⚠ THE CAP IS PER SETUP, NOT PER LIFETIME. A new break of structure gives a new 15m SOS bar
+    #   and re-opens the door, so this limits a cascade rather than retiring the feature.
+    #   ✅ MEASURED over the full history (186,366 M15 + 2,745,711 M1 bars), one real replay each:
+    #   OFF 190 trades / +165.46R / maxDD 6.53R (50.7%) · ON 188 / +165.46R / maxDD 5.53R (45.3%).
+    #   It fires on exactly TWO setups in 7.9 years and removes two trades — 2024-01-16 18:44
+    #   (−1.000R) and 2024-12-03 01:51 (+1.000R). ⚠ **The total R is identical to fourteen decimal
+    #   places by COINCIDENCE — those two happen to be exactly ∓1R and cancel.** Do not read that as
+    #   "capping is free by construction"; on another history the second re-entry could be the big
+    #   one. What is not luck is the drawdown: the −1R came out of the middle of the worst losing
+    #   stretch, so maxDD improves 6.53R → 5.53R and the capped book is now marginally BETTER than
+    #   the primary-only baseline (5.61R) where the uncapped one was clearly worse.
+    #   ✅ Zero primaries moved either direction, so this touches re-entries and nothing else.
+    #   ⚠ It does NOT rescue the feature. Eight re-entries instead of ten, 2023-04-03 is still
+    #   +27.33R of the +25.56R total, and the book's average excluding it is 0.739R against the
+    #   baseline's 0.777R. The case for `exec_secondary` is unchanged and is still one trade.
+    #   ⚠ Read ONLY when exec_secondary is on — a cap on a feature that never fires is inert, so
+    #   the optimizer may sweep it behind an OFF secondary. That is a wasted grid, not an error.
 
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH

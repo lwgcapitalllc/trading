@@ -65,6 +65,27 @@ def _run_in_worker(combo: Combo) -> dict:
                        _W.get("cost_profile"))
 
 
+def _refuse_unreplayable(config) -> None:
+    """Refuse a config this sweep structurally cannot run.
+
+    A sweep replays ONE frame. `mpc_sos_fade`'s `exec_secondary` (default ON since 2026-08-07)
+    needs a second, 1-minute stream via `run_dual`, and there is nowhere here to get one. The
+    dangerous option is not refusing — it is replaying single-stream, because every combo then
+    comes back primary-only and is ranked against a baseline that HAS re-entries, and the winner
+    is handed to a validation run that does too. That is a comparison whose two sides were
+    measured on different books, which is this repo's most-repeated defect.
+
+    Same call `reprice.py` makes about `bid_ask_fills`: a thing this shape cannot compute is
+    REFUSED and NAMED, never approximated.
+    """
+    if getattr(config, "exec_secondary", False):
+        raise ValueError(
+            "exec_secondary is on and a sweep cannot run it: the 1m re-entry needs a second bar "
+            "stream (run_dual) and this replays one frame. Every combo would be primary-only "
+            "while the run it is compared against is not. Set exec_secondary=False for the "
+            "sweep, or give the sweep a 1m frame.")
+
+
 def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=None) -> dict:
     """Replay the whole frame under one config and return {params, kpis}.
 
@@ -75,6 +96,7 @@ def _replay_one(strategy_cls, df, capital: float, combo: Combo, cost_profile=Non
     from backtest.output import build_kpis
     from backtest.replay import EngineStack, build_strategy, iter_bars
 
+    _refuse_unreplayable(combo.config)
     strategy = build_strategy(strategy_cls, combo.config,
                               initial_capital=capital, cost_profile=cost_profile)
     if len(df.index) > 1:
@@ -127,6 +149,11 @@ def run_sweep(
     combos = list(combos)
     if not combos:
         return []
+    # Fail before a pool is spawned. `_replay_one` refuses too (it is the seam every combo goes
+    # through, serial or pooled), but there it raises inside a WORKER — the message survives, and
+    # a grid that dies one combo in after starting N processes reads like a crash rather than a
+    # refusal. Checking combo 0 is enough: a sweep varies params, never the strategy.
+    _refuse_unreplayable(combos[0].config)
 
     total = len(combos)
     workers = max_workers if max_workers is not None else default_workers(total)

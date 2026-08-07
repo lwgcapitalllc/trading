@@ -594,7 +594,19 @@
         "off": "Primary only",
         "on": "Secondary on"
       },
-      "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters, with a much tighter stop for the same 15m targets. Needs a 1m feed alongside the 15m, so it runs in the lab only — the live bot refuses it. Measured over the full 7.9 years it fired 10 times and its whole result is ONE trade: +25.56R total, of which April 2023 is +27.33R, so the other nine are −1.77R and the book's average R per trade ends up below baseline. Drawdown 45.6% → 50.7%. Off by default for that reason. Slow: a full-history run replays 2.7M 1m bars."
+      "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters, with a much tighter stop for the same 15m targets. Needs a 1m feed alongside the 15m, so it runs in the lab only — the live bot refuses it, and so do the optimizer, sweeps and the stress test's sensitivity phase, which replay one timeframe and would otherwise rank a primary-only book against a baseline that has re-entries. On by default since 2026-08-07. Read the measurement before trusting it: over the full 7.9 years it fires 8 times and its whole result is ONE trade — +25.56R total, of which April 2023 is +27.33R, so the other seven are −1.77R and the book's average R per trade excluding it sits below baseline. Slow: a full-history run replays 2.7M 1m bars (~9 minutes)."
+    },
+    {
+      "name": "exec_sec_once_per_setup",
+      "group": "Direction & sessions",
+      "widget": "toggle",
+      "label": "One re-entry per primary",
+      "options": {
+        "off": "One per 1m leg",
+        "on": "One per primary"
+      },
+      "show_if": {"exec_secondary": true},
+      "desc": "Cap how many times one 15m setup may be re-entered. On (default) = at most one re-entry per primary. Off = the original rule, one per 1-MINUTE leg, which is what let 2 December 2024 take two re-entries off a single structure break about 100 minutes apart. The cap is per SETUP, not per lifetime — a fresh break of structure re-opens it. Measured over the full 7.9 years it fires on exactly two setups and removes two trades: 190 → 188 trades, total R identical (the two happen to be exactly −1R and +1R and cancel — coincidence, not a rule), max drawdown 6.53R → 5.53R and 50.7% → 45.3%. No primary trade moves either way."
     },
     {
       "name": "exec_sec_retrace",

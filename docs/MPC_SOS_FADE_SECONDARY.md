@@ -16,8 +16,15 @@ breakeven), keep re-entering on that *same* 15m leg from the 1-minute chart. Whi
 divergence **and** SOS are still live and price is back inside the **0.618–0.886** zone of the
 15m fib, watch the 1m chart (same structure engine) for a **1m shift of structure** in the
 trade direction. When one fires, rest a limit at a **38.2% retrace of that 1m leg**. The tight
-1m leg is what makes it a *sniper* entry — small stop, fast to breakeven. Multiple re-entries
-per 15m leg are allowed (always flat first), but **each distinct 1m leg fires at most one**.
+1m leg is what makes it a *sniper* entry — small stop, fast to breakeven.
+
+**How many re-entries one setup may have is `exec_sec_once_per_setup` (default ON = one).** The
+original rule was *each distinct 1m LEG fires at most one*, which is not the same thing: a live
+15m setup keeps producing fresh 1m legs, so it could re-enter repeatedly. Measured, it did —
+2024-12-02 took two off one structure break (15m SOS bar 7893, 1m legs 120399 and 120499, the
+second filling two minutes after the first closed). With the cap on, a fill retires the **15m SOS
+bar** as well, which is one-to-one with the primary. ⚠ **The cap is per SETUP, not per lifetime**:
+a new break of structure re-opens it.
 
 A re-entry is **never the first trade on a leg** — the primary must have traded that leg first.
 
@@ -25,8 +32,18 @@ A re-entry is **never the first trade on a leg** — the primary must have trade
 
 ## The rules (ported line-for-line from the Pine WIP `f_secArm`)
 
-Config toggle: **`exec_secondary`** (Pine `execSecondary`, default **False**). Off = primary
-only, one entry per 15m leg (today's behaviour, unchanged).
+Config toggle: **`exec_secondary`** (Pine `execSecondary`), **default True since 2026-08-07**
+(Aaron's call). Off = primary only, one entry per 15m leg. ⚠ **Every measurement in this repo
+taken before that date is a primary-only book** — pin it Off to reproduce one.
+
+Cap: **`exec_sec_once_per_setup`** (default **True**), described above. Python-only, like
+`exec_sec_retrace` — the Pine WIP has neither.
+
+⚠ **`run_dual` has exactly one caller.** `backtest/optimizer.run_sweep` replays a single frame, so
+the optimizer, sweeps and the stress test's pooled sensitivity **refuse** a config with this on
+rather than silently replaying a primary-only book and ranking it against a baseline that has
+re-entries. `algos/live/bridge.py` refuses it too. `mpc_bleg` pins it **Off** — A+ never places an
+order in that fork, so there is no primary to re-enter behind, and its `run_dual` raises.
 
 ### 1m leg latch (records the leg a re-entry will trade)
 - The 1m structure engine runs continuously on 1m bars. Its **latched** state per side is: the

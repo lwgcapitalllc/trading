@@ -133,6 +133,17 @@ class SecondaryArm:
         setup lives), but a re-entry that hits its own initial stop KILLS the leg (`mark_dead`):
         no more re-entries until a new break of structure resets it.
 
+    **`exec_sec_once_per_setup` (default ON) caps the cascade at one re-entry per PRIMARY.** The
+    latch above retires the 1-MINUTE leg, so one 15m setup can keep handing out fresh legs — on
+    2024-12-02 it took two re-entries off one structure break, the second two minutes after the
+    first closed. With the cap, a fill also retires the 15m SOS BAR (`_used`), which is one-to-one
+    with the primary because the arm already requires `be_sos == seq.*_sos_bar`. A new break gives
+    a new SOS bar and re-opens the door, so this bounds a cascade rather than retiring the feature.
+    ⚠ `_used` is deliberately NOT `_dead`, even though both gate on the 15m SOS bar and the cheap
+    version of this would have reused it. They answer different questions — *this setup has had its
+    re-entry* vs *a re-entry stopped out, so the leg is finished* — and merging them would make the
+    stop-out rule silently depend on a preference switch.
+
     **Zone is a 15m gate, not a 1m one (faithful to the Pine).** Pine's `zoneL` reads the 15m
     bar `close` (`close <= fiboP3 and close >= fiboP6`): "the last 15m bar closed inside the
     retrace zone." That gate stays open for the whole 15m bar (~15 one-minute bars), and any 1m
@@ -149,11 +160,17 @@ class SecondaryArm:
         self._l_lo: Optional[float] = None
         self._l_traded: Optional[int] = None
         self._l_dead: Optional[int] = None      # 15m leg killed by a stopped re-entry (no more)
+        self._l_used: Optional[int] = None      # 15m leg that has had its one re-entry (the cap)
         self._s_leg: Optional[int] = None
         self._s_hi: Optional[float] = None
         self._s_lo: Optional[float] = None
         self._s_traded: Optional[int] = None
         self._s_dead: Optional[int] = None
+        self._s_used: Optional[int] = None
+        # The 15m SOS bar each side is currently arming against, captured in `update()` because
+        # `mark_traded` is called by the driver without `seq` in hand.
+        self._l_sos: Optional[int] = None
+        self._s_sos: Optional[int] = None
 
     def update(self, m1: M1State, sig, seq, zone_close: float, ny_hour: int,
                flat: bool, be_sos_l: Optional[int],
@@ -162,12 +179,19 @@ class SecondaryArm:
 
         # 1. Clear a latched 1m leg the instant its 15m setup dies (Pine: `if na(aplusL_sosBar)`).
         #    A new break of structure also resets the dead-leg flag (the leg is fresh again).
+        #    `_used` (the one-per-setup cap) clears here too: the setup it referred to is gone.
+        #    The `!=` test below would already re-open on a new SOS bar, so this is tidiness
+        #    rather than correctness — but leaving a latch pointing at a dead setup is how the
+        #    next reader concludes it means something.
+        self._l_sos, self._s_sos = seq.l_sos_bar, seq.s_sos_bar
         if seq.l_sos_bar is None:
             self._l_leg = self._l_hi = self._l_lo = None
             self._l_dead = None
+            self._l_used = None
         if seq.s_sos_bar is None:
             self._s_leg = self._s_hi = self._s_lo = None
             self._s_dead = None
+            self._s_used = None
 
         # 2. Zone (0.886..0.618 of the 15m fib) — a 15m gate: Pine reads the last-closed 15m bar
         #    `close`, so `zone_close` is that bar's close (NOT the live 1m close, which the 1m SOS
@@ -199,17 +223,21 @@ class SecondaryArm:
         respect_veto = cfg.exec_respect_veto
         # Same SOS-aware veto the primary reads (Pine longVetoA/shortVetoA).
         long_veto, short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
+        # The one-per-setup cap. Inert when off, so the OFF path is the original rule exactly.
+        cap = cfg.exec_sec_once_per_setup
+        l_capped = cap and self._l_used is not None and seq.l_sos_bar == self._l_used
+        s_capped = cap and self._s_used is not None and seq.s_sos_bar == self._s_used
 
         l_armed = (cfg.exec_secondary and cfg.exec_longs and flat
                    and seq.l_sos_bar is not None and be_sos_l == seq.l_sos_bar
-                   and seq.l_sos_bar != self._l_dead
+                   and seq.l_sos_bar != self._l_dead and not l_capped
                    and sig.bull_div_active and sig.fibo_dir == 1 and fibs_ready
                    and self._l_hi is not None and self._l_lo is not None and self._l_hi > self._l_lo
                    and (self._l_traded is None or self._l_leg != self._l_traded)
                    and not late and (not long_veto or not respect_veto))
         s_armed = (cfg.exec_secondary and cfg.exec_shorts and flat
                    and seq.s_sos_bar is not None and be_sos_s == seq.s_sos_bar
-                   and seq.s_sos_bar != self._s_dead
+                   and seq.s_sos_bar != self._s_dead and not s_capped
                    and sig.bear_div_active and sig.fibo_dir == -1 and fibs_ready
                    and self._s_hi is not None and self._s_lo is not None and self._s_hi > self._s_lo
                    and (self._s_traded is None or self._s_leg != self._s_traded)
@@ -232,11 +260,17 @@ class SecondaryArm:
         )
 
     def mark_traded(self, direction: int) -> None:
-        """Retire the just-filled 1m leg (Pine `sec.lTraded := sec.lPend`) so it re-enters once."""
+        """Retire the just-filled 1m leg (Pine `sec.lTraded := sec.lPend`) so it re-enters once.
+
+        Also retires the 15m SOS bar for `exec_sec_once_per_setup`. The stamp is UNCONDITIONAL —
+        the config is read at ARM time, not here — so flipping the cap on mid-run cannot find a
+        half-filled latch, and the OFF path simply never looks at it."""
         if direction > 0:
             self._l_traded = self._l_leg
+            self._l_used = self._l_sos
         else:
             self._s_traded = self._s_leg
+            self._s_used = self._s_sos
 
     def mark_dead(self, direction: int, seq) -> None:
         """A re-entry on this 15m leg hit its initial stop — the leg is dead. No further re-entries
