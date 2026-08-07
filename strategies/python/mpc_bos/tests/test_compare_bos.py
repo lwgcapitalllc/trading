@@ -126,8 +126,16 @@ _PX_NULLABLE = ("px_edge_l", "px_edge_s", "px_l_ext", "px_l_org", "px_s_ext", "p
                 "px_stage", "px_vwap", "px_closed_r")
 
 
-def _write_export(tmp_path: Path, rows: int = 3, *, volume: bool = True, **over) -> Path:
-    """A minimal but STRUCTURALLY REAL export CSV — every column `compare()` requires."""
+def _write_export(tmp_path: Path, rows: int = 3, *, volume: bool = True,
+                  volume_col: str = "px_volume", **over) -> Path:
+    """A minimal but STRUCTURALLY REAL export CSV — every column `compare()` requires.
+
+    ⚠ The volume column defaults to `px_volume` because that is what the export Pine PLOTS.
+    This fixture wrote `volume` until 2026-08-07, which no real BOS export has ever carried —
+    a fixture inventing a column name production does not produce, so the guard it exercised
+    was written against the wrong one and refused the first genuine export. Pass `volume_col`
+    only to prove the fallbacks work.
+    """
     df = pd.concat([_row(**over)] * rows, ignore_index=True)
     df["time"] = [1_704_067_200 + i * 900 for i in range(rows)]      # unix seconds, as TV ships
     for i, col in enumerate(("open", "high", "low", "close")):
@@ -137,7 +145,7 @@ def _write_export(tmp_path: Path, rows: int = 3, *, volume: bool = True, **over)
     for col in _PX_NULLABLE:
         df[col] = float("nan")
     if volume:
-        df["volume"] = 1000.0
+        df[volume_col] = 1000.0
     path = tmp_path / "export.csv"
     df.to_csv(path, index=False)
     return path
@@ -163,6 +171,35 @@ def test_the_same_export_is_accepted_once_the_filter_is_off(tmp_path):
     rc = cb.compare(_write_export(tmp_path, volume=False, cfg_bits=off),
                     warmup=0, price_tol=0.01, r_tol=0.02)
     assert rc == 0
+
+
+@pytest.mark.parametrize("col", ["px_volume", "volume", "Volume"])
+def test_the_volume_column_is_found_under_every_name_an_export_can_ship_it_as(tmp_path, col):
+    """`px_volume` is what the export Pine plots; `volume`/`Volume` is what TradingView's own
+    Volume study emits if somebody has it on the chart. All three are the same fact, and
+    `compare_vwap.py` has resolved them in this order since it was written.
+
+    ⚠ This is the half that was actually broken: the tool looked for `volume` ONLY, so the
+    first real export — which carries neither, because the Pine did not plot it — was refused,
+    and an export taken with the study on would have been refused too, since TradingView
+    capitalises it.
+    """
+    path = _write_export(tmp_path, volume_col=col)
+    df = cb.load_export(path)
+    assert cb._volume_col(df) == col
+    assert "volume" in cb._bars_from(df).columns
+
+
+def test_a_volume_column_with_nothing_under_it_counts_as_no_volume(tmp_path):
+    """A header with an empty column is not a measurement. Accepting it would feed NaNs to the
+    VWAP engine and answer F10's question with a number nobody took — the same 'no' vs
+    'cannot ask' rule the price comparison below enforces, one layer earlier."""
+    path = _write_export(tmp_path)
+    df = pd.read_csv(path)
+    df["px_volume"] = float("nan")
+    df.to_csv(path, index=False)
+    with pytest.raises(cb.ExportIncomplete, match="volume"):
+        cb.compare(path, warmup=0, price_tol=0.01, r_tol=0.02)
 
 
 def test_a_missing_px_column_refuses_instead_of_comparing_what_is_left(tmp_path):

@@ -9,7 +9,22 @@ touching an exit).
 `indicators/mpc_bos_strategy_export.pine`. `tools/compare_bos.py` exists and **has never been
 run**, because no TradingView CSV export of that Pine is on disk. Until it is green, every
 number this bot produces is a LAB FINDING — read the direction, never the decimals.
-**Last reviewed:** 2026-08-07 — the rebuild. See below.
+**Last reviewed:** 2026-08-07 — the rebuild, plus the volume fix below.
+
+🔴 **The first real export was REFUSED by the gate, and the refusal was right.** Aaron took a
+7,154-bar CSV off the export Pine on 2026-08-07; every decision and config column was present,
+and `compare_bos.py` stopped before comparing a bar because there was **no volume column**, which
+F10 needs. The docstring had said "TradingView exports it" — false: `Export chart data` ships a
+Volume column only when the Volume STUDY is on the chart, so it describes a chart layout rather
+than the export format. **Measured across ~40 exports in `engines/`: exactly one has volume, and
+it is the one whose Pine plots it.** Fixed by making `mpc_bos_strategy_export.pine` plot
+`px_volume` itself (the convention `vwap_export.pine` and `svp_export.pine` have always used),
+and by making this tool resolve `px_volume` → `volume` → `Volume` the way `compare_vwap.py` does
+— it looked for `volume` alone, so an export taken *with* the study on would have been refused
+too, since TradingView capitalises it. An all-NaN column counts as no column. ⚠ **The fixture is
+what hid it: it wrote a `volume` column no real export has ever carried, so the guard was written
+against a name production does not produce.** **Re-export off the current Pine before running the
+gate — the 2026-08-07 CSV cannot drive it.**
 
 ---
 
@@ -141,6 +156,13 @@ Three consequences:
   a strategy with no signals; pass everything → a filter reported as ON and doing nothing. The
   Pine cannot hit this (TradingView always has tick volume on XAUUSD), so there is no Pine
   behaviour to mirror and refusing is the honest third answer.
+
+- **The EXPORT must carry it too, and it does not come for free.** `mpc_bos_strategy_export.pine`
+  plots `px_volume`; TradingView's own Volume column only appears when the reader has the Volume
+  study on the chart, so an export cannot be assumed to have one. `compare_bos.py` resolves
+  `px_volume` → `volume` → `Volume` and REFUSES when none of them holds data — replaying F10
+  against an absent VWAP blocks every setup, and an empty book matching an empty book is
+  agreement about nothing.
 
 ⚠ A `na` VWAP (the session's first bar, before any volume) **BLOCKS both sides**. "Cannot ask"
 and "no" must not be the same value, and of the two answers available to a gate about to place

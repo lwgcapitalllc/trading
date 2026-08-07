@@ -21,10 +21,17 @@ VALIDATED.** That is not boilerplate: the previous port was deleted on 2026-08-0
 produced an 82-configuration sweep nobody could check, and `backtest/tools/bos_sweep.py` was
 falsified by a single Strategy Tester run the day it was written. Take the export first.
 
-⚠ **THE VOLUME COLUMN.** TradingView exports it and the session-VWAP filter needs it. An export
-taken without it (or with the column empty) cannot drive F10, and the tool REFUSES rather than
-replaying the filter against nothing — a gate that silently blocks every setup is green about
-an empty book.
+⚠ **THE VOLUME COLUMN, AND THE CLAIM THIS DOCSTRING USED TO MAKE ABOUT IT WAS FALSE.** It said
+"TradingView exports it". It does not: "Export chart data" carries a Volume column only if the
+Volume STUDY is on the reader's chart, so it is a fact about somebody's layout rather than about
+the export. Measured 2026-08-07 across ~40 exports in `engines/` — exactly ONE has volume, and it
+is the one whose Pine plots it. The first real BOS export arrived with none, and this tool refused.
+The fix is that `mpc_bos_strategy_export.pine` now plots `px_volume` itself, which is the same
+convention `vwap_export.pine` and `svp_export.pine` have carried since they were written; the
+column is resolved here as px_volume → volume → Volume, exactly as `compare_vwap.py` resolves it.
+The session-VWAP filter (F10, default ON) is the only rule that needs it, and the tool REFUSES
+rather than replaying the filter against nothing — a gate that silently blocks every setup is
+green about an empty book.
 
 ⚠ **A GREEN RUN IS ONLY GREEN ABOUT THE BRANCHES BOTH SIDES ENTERED.** This repo has shipped a
 setting on a parity run that never exercised it (the min-stop guard, 2026-08-04: block code 7
@@ -267,12 +274,15 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
     cfg = config_from_export(df)
     eng = engine_config_from_export(df)
 
-    if cfg.bos_vwap_req != "Off" and "volume" not in df.columns:
+    if cfg.bos_vwap_req != "Off" and _volume_col(df) is None:
         raise ExportIncomplete(
-            "the export has bosVwapReq ON but carries no volume column, so the Python side "
-            "cannot compute the session VWAP. Re-export with volume, or take the export with "
-            "the filter Off — replaying it against an absent VWAP would block every setup and "
-            "call the resulting empty book agreement."
+            "the export has bosVwapReq ON but carries no usable volume column, so the Python "
+            "side cannot compute the session VWAP. The export Pine must plot `px_volume` — "
+            "TradingView only ships a native Volume column when the Volume STUDY is on the "
+            "chart, so it is not something an export can be assumed to carry. Re-export from a "
+            "current mpc_bos_strategy_export.pine, or take the export with the filter Off — "
+            "replaying it against an absent VWAP would block every setup and call the "
+            "resulting empty book agreement."
         )
 
     print(f"config from export: sl={cfg.bos_sl_model} entry={cfg.bos_entry_fib} "
@@ -323,15 +333,36 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
     return 0
 
 
+def _volume_col(df: pd.DataFrame) -> Optional[str]:
+    """The export's volume column, or None if it has none worth using.
+
+    Order is the one `compare_vwap.py` and `compare_svp.py` already use: the Pine's own
+    `px_volume` first, then a native column under either casing. An all-empty column counts
+    as NO column — a header with nothing under it is the shape TradingView produces when the
+    Volume study was toggled on after the range was drawn, and feeding those NaNs to the VWAP
+    engine would answer the gate's question with a number nobody measured.
+    """
+    for name in ("px_volume", "volume", "Volume"):
+        if name in df.columns and pd.to_numeric(df[name], errors="coerce").notna().any():
+            return name
+    return None
+
+
 def _bars_from(df: pd.DataFrame) -> pd.DataFrame:
     """The export's own OHLC(+volume), as a canonical bar frame."""
     cols = ["open", "high", "low", "close"]
-    if "volume" in df.columns:
-        cols.append("volume")
+    vcol = _volume_col(df)
+    if vcol is not None:
+        cols.append(vcol)
     # `load_export` has already parsed the time column into the INDEX (TradingView ships unix
     # seconds, which re-parsing as a datetime string would silently mangle), so the index is
     # taken as-is rather than rebuilt from a column that may still hold the raw integers.
     out = df[cols].copy()
+    if vcol is not None:
+        # Renamed, never left as `px_volume` — `ReplayBar` reads a column called `volume`, and a
+        # frame carrying the data under the export's own name would look exactly like a feed with
+        # no volume at all: the tracker would REFUSE, and the refusal would blame the feed.
+        out = out.rename(columns={vcol: "volume"})
     out.index.name = "time"
     return out
 

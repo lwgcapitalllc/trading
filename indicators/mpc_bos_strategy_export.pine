@@ -4389,7 +4389,7 @@ f_diag(array<int> ds) =>
 f_diag(diagState)
 
 //     cat /tmp/blk >> <export>
-//     grep -c '^plot(' <export>      # MUST be 59  (5 inherited + 54 here)
+//     grep -c '^plot(' <export>      # MUST be 60  (5 inherited + 55 here)
 // The count check is not ceremony. On 2026-08-06 the D export's extraction grep was
 // anchored on the `//====` rule line, which does not contain the words it was matching,
 // so it produced an EMPTY block — and every downstream check still passed, because a bare
@@ -4398,13 +4398,13 @@ f_diag(diagState)
 // loudly; count the plots.
 //
 // ⚠ PINE CAPS A SCRIPT AT 64 plot() CALLS. The first build of this block came to 69 and
-// was caught by the count check above, not by a compiler. It is now 59, and the ten columns
+// was caught by the count check above, not by a compiler. It is now 60, and the ten columns
 // cut were the ones either DERIVABLE from an event already in the stream (bosCnt*/bosTrd*
 // follow from px_struct fires, qty from risk/stop) or belonging to a path the shipped
 // defaults never enter (px_sz_* — the Sniper Zone prices nothing while bosUseFvg is OFF).
 // ⚠ RE-ADD px_sz_top / px_sz_bot BEFORE TRUSTING ANY PARITY RUN WITH bosUseFvg ON — without
 // them the gap ladder's zone branch is unverified, and a green gate would be green about a
-// branch neither side entered. This block is built to 59 so the
+// branch neither side entered. This block is built to 60, four under the cap, so the
 // parent can gain a few plots without the export becoming uncompilable. If you need more
 // columns, PACK them into an existing bitfield rather than adding a plot.
 //
@@ -4502,6 +4502,17 @@ plot((lateDayBlock ? 1 : 0) + (htfBiasBlockLong ? 2 : 0) + (htfBiasBlockShort ? 
 // ── CONTEXT the gates read ───────────────────────────────────────────────────
 plot(bosVwap, "px_vwap",  _INV, editable = false)
 plot(atr14,   "px_atr14", _INV, editable = false)
+// ⚠ THE VOLUME IS PLOTTED, NOT ASSUMED, and this file shipped without it by mistake.
+// TradingView's "Export chart data" carries a Volume column ONLY if the Volume STUDY is on
+// the chart — measured across ~40 exports in engines/, exactly one has volume and it is the
+// one whose Pine plots it. So "TradingView exports it" is a claim about the reader's chart
+// layout, not about the export, and the first real BOS export arrived with no volume at all.
+// The session-VWAP gate (bosVwapReq, default ON) is the only rule here that needs it, and
+// without it compare_bos.py can only REFUSE — replaying against an absent VWAP would block
+// every setup and the empty book would read as agreement.
+// vwap_export.pine and svp_export.pine already carry `px_volume` for exactly this reason;
+// this is that convention, not a new one. Do not remove it to buy back a plot slot.
+plot(volume,  "px_volume", _INV, editable = false)
 
 // ── THE TRADE ────────────────────────────────────────────────────────────────
 // Frozen at the fill and carried, so the comparator can check the whole ladder was priced
