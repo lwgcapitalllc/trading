@@ -121,6 +121,10 @@ def test_every_event_written_in_algos_live_is_classified():
         "startup", "startup_failed", "shutdown", "version_mismatch", "warmed", "rewarm",
         "bar_error", "loop_error", "mt5_link_lost", "mt5_link_restored",
         "config_applied", "config_change_refused", "halted", "went_live",
+        # HEALTH rather than a decision, and the line is the usual one: it is about the
+        # machinery correcting its own book-keeping, not about a setup. No order changes
+        # because of it — the next one is merely sized off a number that is true.
+        "equity_reanchored",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (

@@ -72,6 +72,7 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 import MetaTrader5 as mt5
@@ -417,6 +418,80 @@ class BotMT5:
         if not si or si.trade_stops_level <= 0:
             return 0.0
         return si.trade_stops_level * si.point
+
+    # ── what one lot of this symbol IS (added 2026-08-07) ─────────────────────
+    #
+    # Read together with `algos/shared/order_sizing.py`, which is the reason these exist. Before
+    # that date nothing in the live path ever asked the broker what a lot was worth: the bridge
+    # took the strategy's quantity — in OUNCES — and sent it as LOTS. Every order was 100x.
+    #
+    # These three are deliberately thin and deliberately honest. They return `None` rather than a
+    # guess, because every fallback available here is a number that would size a real position.
+
+    def symbol_spec(self, symbol: str = None):
+        """The broker's facts about one symbol, as an `order_sizing.SymbolSpec`.
+
+        Returns `None` when the terminal cannot answer — a wrong suffix, a symbol not in Market
+        Watch, or a terminal still loading all produce that, and each one has to REFUSE the
+        order rather than fall back to a plausible-looking gold-shaped default.
+
+        ⚠ **It returns the same dataclass the tests' fake returns.** That is deliberate: this
+        repo has already been bitten by a test fixture that was MORE COMPLETE than production
+        (`tests/test_secondary.py`, 2026-08-06 — the fake 1m bar carried two fields the real one
+        did not, so every test exercised a shape the code never produced). Sharing the type
+        makes that impossible here: a field the fake supplies is a field this method must supply.
+        """
+        from order_sizing import SymbolSpec
+
+        sym = symbol or self.symbol
+        si = mt5.symbol_info(sym)
+        if not si:
+            self.log.error(f"No symbol info for {sym} — cannot size an order for it.")
+            return None
+        return SymbolSpec(
+            symbol=sym,
+            contract_size=float(si.trade_contract_size),
+            tick_size=float(si.trade_tick_size or si.point),
+            # ⚠ `trade_tick_value` is in the ACCOUNT's currency, which is the whole reason this
+            # generalises past gold. Do not substitute `point` arithmetic here: on a JPY-quoted
+            # pair, price units and account dollars are not the same thing and the difference is
+            # a factor of ~150.
+            tick_value=float(si.trade_tick_value),
+            volume_min=float(si.volume_min),
+            volume_max=float(si.volume_max),
+            volume_step=float(si.volume_step),
+            digits=int(si.digits),
+        )
+
+    def margin_for(self, direction: str, lots: float, price: float,
+                   symbol: str = None) -> Optional[float]:
+        """Margin the broker would require for this order, in the account's currency.
+
+        `None` = the terminal declined to compute it. The caller must treat that as a REFUSAL,
+        never as "affordable" — this is the `mt5_link` three-state rule applied to money.
+        """
+        sym = symbol or self.symbol
+        order_type = (mt5.ORDER_TYPE_BUY if direction == "bullish" else mt5.ORDER_TYPE_SELL)
+        try:
+            m = mt5.order_calc_margin(order_type, sym, float(lots), float(price))
+        except Exception as e:
+            self.log.error(f"order_calc_margin failed for {sym} {lots}L @ {price}: {e}")
+            return None
+        if m is None:
+            self.log.error(f"order_calc_margin returned None for {sym} {lots}L @ {price}: "
+                           f"{mt5.last_error()}")
+            return None
+        return float(m)
+
+    def free_margin(self) -> Optional[float]:
+        """The account's free margin, or `None` if the terminal cannot be asked.
+
+        Free margin rather than balance or equity on purpose: it is the number the broker
+        actually checks when it activates a pending order, and it is already net of whatever
+        else this account is carrying.
+        """
+        info = mt5.account_info()
+        return float(info.margin_free) if info else None
 
     def normalize_volume(self, lots: float, symbol: str = None) -> float:
         """Round `lots` DOWN to the symbol's volume step and clamp to its max.

@@ -89,8 +89,13 @@ STREAM_RE = re.compile(r"^(decisions|health)-(\d{4})-(\d{2})-(\d{2})\.jsonl$")
 _DECISION_EVENTS = {
     # the broker's answer to an order the strategy asked for
     "order_placed",
+    # ⚠ `order_refused` absorbed the old `order_too_small` on 2026-08-07. Both were "the
+    # strategy wanted a trade and none exists", and splitting them by ONE of the eight reasons
+    # meant the other seven had no home — `order_refused` now carries a `code` naming which.
     "order_refused",
-    "order_too_small",
+    # A resting order the BROKER removed without filling it (margin, expiry, a hand delete).
+    # A decision, not health: it is the answer to "why was there no trade on that setup".
+    "order_vanished",
     "stop_moved",
     "dry_run_action",
     # a position that existed before this process did, so the strategy never chose it

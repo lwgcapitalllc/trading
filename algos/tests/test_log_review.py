@@ -251,6 +251,32 @@ def test_the_same_halt_keeps_one_key_across_runs(tmp_path):
     assert {f.key for f in first} & {f.key for f in second}, "the same halt changed its key"
 
 
+def test_the_still_halted_finding_keys_on_the_HALT_not_on_the_heartbeat(tmp_path):
+    """🔴 THE 2026-08-07 NOTIFICATION SPAM. Watched red against HEAD.
+
+    `halted_now` fires off the LATEST PULSE, and a pulse is written every 15 minutes — so keying
+    it on the pulse's timestamp minted a brand-new dedup key on every hourly run. Aaron got one
+    Telegram message an hour, all night, about a single halt that started at 06:15.
+
+    ⚠ **The test above did not catch it and could not have**, which is the part worth carrying:
+    it asserts the two runs SHARE a key (an intersection), and they do — the stable `halted:` key
+    is in both. A finding that re-keys itself every run is invisible to a test that only asks
+    whether *something* matched. Assert on the key that is supposed to be stable, by name.
+    """
+    rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="x")]
+    rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
+    _write(tmp_path, rows)
+
+    def _now_key(at):
+        found = lr.review_bot("b", tmp_path, RUNNING, now=at)
+        return next(f.key for f in found if f.key.startswith("halted_now:"))
+
+    # Two runs an hour apart, reading the same file. Same incident, so: the same key.
+    assert _now_key(NOW) == _now_key(NOW + timedelta(hours=1))
+    # And it names the HALT's own timestamp, so a NEW halt still gets a new key.
+    assert _now_key(NOW).endswith("2026-08-05T14:00:00+00:00")
+
+
 def test_a_second_distinct_halt_gets_its_own_key(tmp_path):
     """🔴 The dedup bug that is silent: keying on the kind of thing means the second incident is
     never reported."""

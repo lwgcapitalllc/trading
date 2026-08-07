@@ -50,6 +50,9 @@ if str(_SHARED) not in sys.path:
 import alerts        # noqa: E402
 import notify        # noqa: E402  (for the TRADE/HEALTH routing kinds only)
 from alert_format import alert  # noqa: E402
+from order_sizing import (  # noqa: E402
+    DEFAULT_MARGIN_SAFETY_PCT, SizedOrder, plan_order,
+)
 
 
 class BridgeState(str, Enum):
@@ -101,17 +104,29 @@ def assert_supported(strategy_config) -> None:
 
 class OrderBridge:
     def __init__(self, bot_mt5, execution, ledger, log, *,
-                 notify=None, dry_run: bool = True) -> None:
+                 notify=None, dry_run: bool = True,
+                 margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT) -> None:
         self._mt5 = bot_mt5
         self._ex = execution
         self._ledger = ledger
         self._log = log
         self._notify = notify or (lambda text, kind, reply_to=None: None)
         self.dry_run = dry_run
+        self._margin_safety_pct = float(margin_safety_pct)
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
         self.state = BridgeState.LIVE
         self._rest: dict[int, Optional[_Rest]] = {1: None, -1: None}
+        # Why the LAST refusal is remembered per side, rather than just logged and dropped.
+        # A refused order is not by itself a broken state — the setup may never fill, and
+        # halting on every unaffordable setup would stop a bot for a trade that never happened.
+        # But if the EMULATOR then fills that same setup, the two ledgers part, and the halt
+        # message must say *why the broker had no order* instead of the generic "your limit
+        # filled here and not there". On 2026-08-07 that generic message was all Aaron got.
+        self._refused: dict[int, str] = {1: "", -1: ""}
+        # One alert per distinct refusal per side. Re-stating an unaffordable setup every bar
+        # for the six hours it rests is how a channel gets muted before the day it matters.
+        self._refusal_alerted: dict[int, str] = {1: "", -1: ""}
         self._pos_ticket: Optional[int] = None
         self._pos_dir: int = 0
         self._pos_entry: float = 0.0
@@ -191,6 +206,9 @@ class OrderBridge:
         positions = self._mt5.get_open_positions()
         self._observe_close(positions, dec, sig)
         self._observe_open(positions, dec, sig)
+        # AFTER `_observe_open`, which consumes `_rest[d]` when a position appears — otherwise a
+        # perfectly ordinary fill reads as a vanished order.
+        self._observe_vanished()
 
         if self.state is BridgeState.WARMING:
             if self._ex._pos_dir == 0:
@@ -319,6 +337,42 @@ class OrderBridge:
             when=self._bar_time(sig)),
             notify.TRADE)
 
+    def _observe_vanished(self) -> None:
+        """A resting order that is gone from the broker WITHOUT having filled.
+
+        🔴 **Built 2026-08-07 because nothing could see this.** The bot's sell limit was deleted
+        by the broker with `deleted [no money]` — it could not afford to activate 54.82 lots on a
+        $2,000 account — and the bot had no idea. It kept believing the order was resting, the
+        emulator filled itself on the same bar, and the only symptom anywhere in the system was a
+        generic halt six hours later saying the two disagreed.
+
+        A pending order can leave the book three ways: it FILLS (a position appears, handled one
+        method up), WE cancel it (`_rest[d]` is cleared at the same moment), or the BROKER removes
+        it — margin, expiry, an admin action, a manual delete in the terminal. Only the third
+        reaches here, and it is always worth a message: it means an order the strategy is still
+        counting on does not exist.
+        """
+        if not any(self._rest.values()):
+            return
+        live = {o.ticket for o in (self._mt5.get_pending_orders() or [])}
+        for d, held in list(self._rest.items()):
+            if held is None or held.ticket in live:
+                continue
+            self._rest[d] = None
+            why = (f"The {self._side(d)} limit T{held.ticket} ({held.lots} lots @ {held.price}) "
+                   f"is no longer at the broker and never filled. The broker removed it — the "
+                   f"usual cause is that the account could not afford to activate it.")
+            self._log.error(why)
+            self._ledger.event("order_vanished", dir=d, ticket=held.ticket, lots=held.lots,
+                               price=held.price, stop=held.sl)
+            # HEALTH, not TRADE: no trade happened. It is the machinery failing to carry out an
+            # instruction, which is the same class of fact as a halt.
+            self._notify(alert(
+                "⚠️", "ORDER GONE", self._mt5.bot_label,
+                why,
+                "The strategy still expects it. Check the account's free margin."),
+                notify.HEALTH)
+
     def _agrees(self, positions) -> bool:
         """Both ledgers must tell the same story. Anything else halts — see the module
         docstring for why this is not 'log and continue'."""
@@ -329,10 +383,17 @@ class OrderBridge:
                        f"this strategy takes one at a time.")
             return False
         if emu and not broker:
-            self._halt("The strategy believes it is in a position but MT5 has none. Its resting "
-                       "limit filled in the emulator and not at the broker (or the position was "
-                       "closed outside the bot). Every later decision would be computed against "
-                       "a trade that does not exist.")
+            # Name the refusal if there was one. The generic sentence below is true but useless
+            # on its own — it describes the symptom of every cause at once, and on 2026-08-07 it
+            # sent the reader looking at the fill logic when the answer was the order size.
+            because = self._refused.get(self._ex._pos_dir, "") or \
+                self._refused.get(1, "") or self._refused.get(-1, "")
+            self._halt(
+                "The strategy believes it is in a position but MT5 has none. Its resting "
+                "limit filled in the emulator and not at the broker (or the position was "
+                "closed outside the bot). Every later decision would be computed against "
+                "a trade that does not exist."
+                + (f"\nThe last order on this side was REFUSED: {because}" if because else ""))
             return False
         if broker and not emu:
             self._halt("MT5 holds a position the strategy does not know about. It will keep its "
@@ -349,22 +410,28 @@ class OrderBridge:
                 self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
                            f"cancel {self._side(direction)} limit T{held.ticket}")
                 self._rest[direction] = None
+            self._refused[direction] = ""
+            self._refusal_alerted[direction] = ""
             return
 
-        lots = self._mt5.normalize_volume(pend.qty)
-        if lots <= 0:
-            # Not an error — the account is too small for this stop distance. Recorded so the
-            # gap between "the strategy wanted a trade" and "no trade exists" is never silent.
-            self._ledger.event("order_too_small", dir=direction, wanted_lots=pend.qty,
-                               price=pend.edge, stop=pend.sl)
+        plan = self._plan(direction, pend)
+        if not plan.ok:
+            self._record_refusal(direction, plan, pend)
             if held is not None:
+                # The strategy still wants this trade, but we cannot place it at the size it
+                # asked for. Leaving a stale order resting would mean the broker carries a size
+                # nobody currently endorses.
                 self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
-                           f"cancel {self._side(direction)} limit T{held.ticket}")
+                           f"cancel {self._side(direction)} limit T{held.ticket} (refused)")
                 self._rest[direction] = None
             return
 
+        self._refused[direction] = ""
+        self._refusal_alerted[direction] = ""
+        lots = plan.lots
+
         if held is None:
-            self._place(direction, lots, pend, sig)
+            self._place(direction, lots, pend, sig, plan)
             return
 
         # MODIFY cannot change volume (see mt5_ops) — a size change is a cancel + re-place.
@@ -372,7 +439,7 @@ class OrderBridge:
             self._exec(lambda t=held.ticket: self._mt5.cancel_pending(t),
                        f"re-size {self._side(direction)} limit T{held.ticket}")
             self._rest[direction] = None
-            self._place(direction, lots, pend, sig)
+            self._place(direction, lots, pend, sig, plan)
             return
 
         if self._moved(held.price, pend.edge) or self._moved(held.sl, pend.sl):
@@ -382,7 +449,77 @@ class OrderBridge:
             if ok:
                 self._rest[direction] = _Rest(held.ticket, pend.edge, lots, pend.sl)
 
-    def _place(self, direction: int, lots: float, pend, sig) -> None:
+    # ── sizing ───────────────────────────────────────────────────────────────
+    #
+    # 🔴 EVERY order goes through `_plan`, and `_plan` is the ONLY place a lot count is
+    # produced. That single-seam rule is the fix for 2026-08-07: before it, the conversion from
+    # the strategy's units to MT5's lots did not exist anywhere, and there was no one place a
+    # reviewer could have looked to notice.
+
+    def _plan(self, direction: int, pend):
+        """How many lots, or why not. See `algos/shared/order_sizing.py` for the reasoning."""
+        spec = self._mt5.symbol_spec()
+        if spec is None:
+            from order_sizing import SizingRefusal
+            return SizingRefusal(
+                "symbol_unreadable",
+                f"the terminal returned no symbol info for {self._mt5.symbol}, so nothing is "
+                f"known about lot size, tick value or the volume band.")
+
+        side = "bullish" if direction > 0 else "bearish"
+        cfg = getattr(self._ex, "cfg", None)
+        return plan_order(
+            qty_units=pend.qty,
+            entry=pend.edge,
+            stop=pend.sl,
+            spec=spec,
+            # Read LIVE off the strategy, never cached at construction — the runner mutates this
+            # same config object when a runtime risk change is applied, and a cached copy would
+            # size against the risk the bot started with.
+            point_value=float(getattr(cfg, "point_value", 1.0) or 1.0),
+            # The BROKER's balance, not the emulator's. This is the second half of the
+            # 2026-08-07 fix: the emulator compounds its warm-up replay, so its equity had drifted
+            # to ~$4,423 against a real $2,000 and it sized every order off the fiction.
+            account_equity=self._account_balance(),
+            risk_pct=getattr(cfg, "exec_risk_pct", None),
+            free_margin=self._mt5.free_margin(),
+            margin_for=lambda lots: self._mt5.margin_for(side, lots, pend.edge),
+            margin_safety_pct=self._margin_safety_pct,
+        )
+
+    def _account_balance(self):
+        """The broker's balance, or None if it cannot be read.
+
+        `None` is passed straight through to `plan_order`, which then simply skips the
+        authorised-risk check rather than comparing against a fabricated zero — the same
+        three-state rule as `mt5_link`. A zero here would refuse every order forever.
+        """
+        try:
+            import MetaTrader5 as mt5
+            info = mt5.account_info()
+            return float(info.balance) if info else None
+        except Exception:
+            return None
+
+    def _record_refusal(self, direction: int, plan, pend) -> None:
+        """A refused order is loud once, then quiet — but never forgotten."""
+        detail = f"[{plan.code}] {plan.detail}"
+        self._refused[direction] = detail
+        self._ledger.event("order_refused", dir=direction, code=plan.code, detail=plan.detail,
+                           wanted_units=pend.qty, price=pend.edge, stop=pend.sl,
+                           sos_bar=getattr(pend, "sos_bar", None))
+        self._log.error(f"Order REFUSED ({self._side(direction)}): {detail}")
+        if self._refusal_alerted.get(direction) == plan.code:
+            return
+        self._refusal_alerted[direction] = plan.code
+        self._notify(alert(
+            "⚠️", "ORDER REFUSED", self._mt5.bot_label,
+            f"A {self._side(direction)} setup was ready and no order was placed.\n{plan.detail}",
+            "No position was opened. The strategy will keep re-offering it while the setup "
+            "lives, and this will not alert again for the same reason."),
+            notify.HEALTH)
+
+    def _place(self, direction: int, lots: float, pend, sig, plan=None) -> None:
         side = "bullish" if direction > 0 else "bearish"
         ticket = self._exec(
             lambda: self._mt5.place_pending_limit(side, lots, pend.edge, pend.sl),
@@ -393,7 +530,15 @@ class OrderBridge:
             self._rest[direction] = _Rest(ticket, pend.edge, lots, pend.sl)
             self._ledger.event("order_placed", dir=direction, ticket=ticket, lots=lots,
                                price=pend.edge, stop=pend.sl,
-                               sos_bar=getattr(pend, "sos_bar", None))
+                               sos_bar=getattr(pend, "sos_bar", None),
+                               # The sizing WORKING is now part of the record, not just the
+                               # sizing failing. `risk_ccy` is what this order really puts at
+                               # risk in account currency — the number that was wrong by 221x
+                               # and that no artefact anywhere would have revealed.
+                               risk_ccy=getattr(plan, "risk_ccy", None),
+                               intended_risk_ccy=getattr(plan, "intended_risk_ccy", None),
+                               margin_ccy=getattr(plan, "margin_ccy", None),
+                               units=pend.qty)
         elif not self.dry_run:
             # place_pending_limit already logged WHY; record it so a refused setup is countable
             # next to the strategy's own blocked setups.

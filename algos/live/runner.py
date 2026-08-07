@@ -446,7 +446,50 @@ class LiveRunner:
         # zero is how anyone notices the strategy stopped recording refusals at all.
         self.ledger.event("warmed", bars=len(df), first=str(df.index[0]),
                           last=str(df.index[-1]), replayed_setups=dropped)
+        self.reanchor_equity("after warm-up")
         return df
+
+    def reanchor_equity(self, why: str) -> None:
+        """Point the emulator's balance back at the REAL account.
+
+        🔴 **This is the second half of the 2026-08-07 oversizing incident, and on its own it
+        was a 2.2x error.** `Execution` sizes every order off `self.equity`, which is the
+        emulator's own compounding balance. Warm-up replays 5,000 bars THROUGH that emulator,
+        and its simulated trades book onto that same balance — so after warming, a bot given a
+        real $2,000 was sizing against ~$4,423 of profit it had imagined. Its own orders gave it
+        away: every one risked $442.30, which is 10% of a balance that did not exist.
+
+        ⚠ **The warm-up's P&L is not a small error to carry, it is a category error.** Those
+        trades never happened. The emulator replays them to build engine state — structure legs,
+        fib anchors, gap lists — and its equity curve is a side effect of that, not a record.
+
+        ⚠ **Called only when FLAT**, which is the same seam a runtime config change uses
+        (`bridge.is_flat`). Nothing is sized between trades, so re-anchoring there can never
+        change a position already open or an order already resting — and it guarantees the next
+        order is sized off the truth.
+
+        ⚠ **A balance we cannot read leaves the emulator alone.** Writing a zero, or a stale
+        cached figure, would size the next trade off a fabricated number — which is exactly the
+        failure being fixed, arriving through the fix.
+        """
+        ex = getattr(self.strategy, "execution", None)
+        account = getattr(ex, "_account", None)
+        if account is None:
+            return
+        _, balance = self.probe_link()
+        if not balance:
+            self.log.warning(
+                f"Could not read the account balance to re-anchor equity {why}; the strategy "
+                f"keeps its own ({getattr(account, 'balance', '?')}). Sizing may be refused "
+                f"until this clears.")
+            return
+        was = float(getattr(account, "balance", 0.0))
+        if abs(was - balance) < 0.005:
+            return
+        account.balance = float(balance)
+        self.log.info(f"Equity re-anchored to the account {why}: "
+                      f"{was:,.2f} → {balance:,.2f}")
+        self.ledger.event("equity_reanchored", was=was, now=float(balance), why=why)
 
     def _bind_code(self) -> None:
         """Point every subsequent import at this bot's own code, before anything imports it.
@@ -637,7 +680,8 @@ class LiveRunner:
             self.strategy, scfg = self._build_strategy()
             self.feed = BarFeed(self.mt5, self.cfg.timeframe, self.cfg.symbol)
             self.bridge = OrderBridge(self.mt5, self.strategy.execution, self.ledger, self.log,
-                                      notify=self._notify, dry_run=self.dry_run)
+                                      notify=self._notify, dry_run=self.dry_run,
+                                      margin_safety_pct=self.cfg.margin_safety_pct)
             self.bridge.adopt_broker_state()
             if self.bridge.state is BridgeState.HALTED:
                 return 4, "bridge halted while adopting the broker's state"
@@ -761,6 +805,13 @@ class LiveRunner:
                             break
 
                     self._maybe_reload_runtime()
+                    # Same FLAT seam as the reload above, for the same reason: between trades
+                    # nothing is sized, so the emulator's balance can be pulled back onto the
+                    # broker's without touching an open position or a resting order. It costs
+                    # one account read per bar and it is what keeps the drift that produced the
+                    # 2026-08-07 oversizing from accumulating over a long run.
+                    if self.bridge and self.bridge.is_flat:
+                        self.reanchor_equity("flat between trades")
 
                 # Stamped on BOTH paths, and carrying the link state. A blind bot must still
                 # look alive to the watchdog — it IS alive, and a missing stamp would report it

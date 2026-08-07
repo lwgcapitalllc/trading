@@ -92,6 +92,12 @@ class LiveConfig:
     warmup_bars: int = 5000           # history replayed to warm the engines before acting
     poll_seconds: int = 10            # how often to check for a newly closed bar
     initial_capital: float = 0.0      # 0 = read the live account balance at startup
+    # The most of the account's FREE margin ONE order may consume. An order needing more is
+    # REFUSED, never shrunk to fit — see `algos/shared/order_sizing.py`. 50 leaves room for the
+    # position to move against us before the broker starts closing things, and for a second bot
+    # sharing the login. 100 would let one setup commit the whole account, which is how the
+    # 2026-08-07 order got as far as the broker deleting it at the fill.
+    margin_safety_pct: float = 50.0
 
     # ── broker clock ────────────────────────────────────────────────────────
     # "std,dst" hours ahead of UTC. MEASURED with backtest/tools/compare_feeds.py against THIS

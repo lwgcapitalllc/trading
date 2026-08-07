@@ -231,8 +231,24 @@ def review_bot(bot_key: str, instance_dir: Path, state: dict,
             f"the Bots page both read RUNNING. Check the account."))
 
     if pulses and str(pulses[-1].get("bridge_state", "")).lower() == "halted":
+        # 🔴 The key is the timestamp of the HALT, never of the pulse that reports it.
+        #
+        # It was `_ts(pulses[-1])` until 2026-08-07, and a pulse is written every 15 minutes —
+        # so this finding minted a brand-new dedup key on every hourly run and re-alerted for
+        # as long as the bot stayed halted. Aaron got one Telegram message an hour, all night,
+        # about a single incident. **That is precisely the de-duplicating-alerter bug this
+        # module's own docstring warns about, committed in the module that warns about it**:
+        # the key has to name the OCCURRENCE, and the occurrence here is the halt.
+        #
+        # ⚠ It deliberately does NOT fall back to the pulse timestamp when no halt event is on
+        # today's file. A halt from yesterday whose event has rotated out is still ONE halt, and
+        # the whole point of the standing `review.json` chip is that it is still there tomorrow
+        # without needing to shout again. `unknown` is stable, which is the property that
+        # matters — a NEW halt writes a new `halted` event and gets its own key.
+        halts = _of("halted")
+        occurrence = _ts(halts[-1]) if halts else "unknown"
         findings.append(Finding(
-            f"halted_now:{_ts(pulses[-1])}", ALERT,
+            f"halted_now:{occurrence}", ALERT,
             "Bridge is HALTED right now",
             f"Its latest heartbeat, at {_at(pulses[-1])}, says the order bridge is halted, so it is "
             f"placing nothing.\n"

@@ -57,6 +57,10 @@ class _Bridge:
         self._ex = "OLD"
         self.began = 0
         self.state = SimpleNamespace(value="live")
+        # The real bridge exposes this and the loop reads it every pass (the FLAT seam that the
+        # runtime config reload and the equity re-anchor both hang off). A fake missing it makes
+        # the loop raise, which reads as a link failure — the wrong diagnosis entirely.
+        self.is_flat = True
 
     def begin_live(self):
         self.began += 1
@@ -116,6 +120,9 @@ def _runner(monkeypatch, *, account_info):
     r.source_hash = "0123456789abcdef"
     r.ledger = _Ledger()
     r.bridge = _Bridge()
+    # `LiveRunner.__new__` skips __init__, so nothing sets this. The real runner always has it
+    # by the time the loop turns; `reanchor_equity` reads it every flat pass.
+    r.strategy = None
     r.feed = _Feed()
     r._link_lost_at = None
     r._link_retry_at = 0.0
