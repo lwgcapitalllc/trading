@@ -128,7 +128,7 @@
 //   • "Track RSI Divergence (REQUIRED)"          -> the divergence kill (F5/F5b)
 //   • "Show External Fib (REQUIRED)"             -> gates the SNIPER-ZONE tracker,
 //     which is entry method 3 and defaults ON here. The fib LEVELS themselves are
-strategy("MPC BOS Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
+//     no longer read off it — the entry band, stop and targets are computed from
 //     the structure engine's own anchors — but `_snTrack` sits behind showFibo, so
 //     turning it off silently removes the no-FVG entry path.
 // Liquidity is not read at all — this setup has no sweep arm.
@@ -139,7 +139,7 @@ strategy("MPC BOS Strategy Export", overlay = true, max_labels_count = 500, max_
 // and it refuses trades. It is the one formerly-cosmetic feature that now costs
 // money when it is wrong. Set it to "Off" to reproduce any earlier run.
 // ============================================================================
-strategy("MPC BOS Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
+strategy("MPC BOS Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 // (The "Confirmation Table" group — 3 inputs + f_tablePosition + f_tableSize —
 //  was DELETED 2026-07-31. The table itself was removed on 2026-07-24 to free
 //  compile tokens, so every one of those settings had been doing nothing since:
