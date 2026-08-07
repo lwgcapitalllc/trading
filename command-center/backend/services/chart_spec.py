@@ -132,26 +132,14 @@ def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str
             df["close"].astype(float).tolist(),
         )
     ]
-    # Tick volume rides along when the feed has it, for the VWAP layer and nothing else. It is
-    # STRIPPED again before the spec is written (`_strip_volume`) — see the note there.
+    # Tick volume rides along when the feed has it — read server-side by the VWAP layer, and shipped
+    # so the chart's own OHLC readout can print it. ABSENT rather than zero when the feed supplied
+    # none (a bar cache written before 2026-08-06, or a runner whose feed carries no volume), because
+    # klinecharts renders a missing value as `n/a` and a fabricated 0 as a dead session.
     if "volume" in df.columns:
         for row, v in zip(rows, df["volume"].astype(float).tolist()):
             row["volume"] = v
     return rows
-
-
-def _strip_volume(candles: list[dict]) -> None:
-    """Drop `volume` from every candle, in place, once the server-side layers have read it.
-
-    Volume is fetched for `vwap_overlays` and NOTHING in the browser plots it — the VWAP arrives
-    as a computed series, not as bars to re-average. On a full-history run that is ~156k numbers
-    of payload, parse time and heap bought for nobody, so the spec carries the line and not the
-    ingredients. ⚠ `ChartCandle.volume` stays on the frontend contract as optional: the field is
-    genuinely optional, and a chart that one day draws a volume pane should re-add it here
-    deliberately rather than discover it arriving by accident.
-    """
-    for c in candles:
-        c.pop("volume", None)
 
 
 def _leg_label(reason: str) -> str:
@@ -651,9 +639,6 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     vwap = build_vwap_indicator(candles)
     if vwap:
         indicators = indicators + [vwap]
-    # Every server-side layer that wanted volume has now read it. The browser plots none, so it
-    # does not travel — ~156k numbers of payload and parse bought for nobody.
-    _strip_volume(candles)
 
     spec = {
         "instrument": instrument,
@@ -809,9 +794,6 @@ def build_run_candles(
     end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
     candles = _build_candles(instrument, start_date, end_date, timeframe, runner)
     candles = [c for c in candles if from_ms <= c["time"] <= to_ms]
-    # Drill-down is bars only — no layer is rebuilt here, so nothing reads the volume and it must
-    # not travel. The spec's own builder strips it for the same reason.
-    _strip_volume(candles)
     data_start_ms = candles[0]["time"] if candles else None
     # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
     # weekend/holiday gap), and OUR cap didn't clip the request.

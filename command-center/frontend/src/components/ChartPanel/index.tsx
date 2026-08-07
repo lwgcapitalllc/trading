@@ -9,7 +9,7 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings2, Trash2 } from 'lucide-react'
+import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartPage, ChartSpec } from './types'
@@ -17,6 +17,9 @@ import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
 import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, FOCUS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays } from './overlays'
 import FibSettings from './FibSettings'
+import FibLevelEditor from './FibLevelEditor'
+import ChartSettingsPanel from './ChartSettingsPanel'
+import { loadChartSettings, saveChartSettings, type ChartSettings } from './chartSettings'
 import { DEFAULT_FIB_LEVELS, loadFibLevels, sameFibLevels, saveFibLevels, type FibLevel } from './fibLevels'
 import { ensureSeriesIndicator } from './indicators'
 import { sessionWindows } from './sessions'
@@ -459,6 +462,8 @@ const DISPLAY_TFS: readonly TfOption[] = [
   { label: 'M15', min: 15 },
   { label: 'M30', min: 30 },
   { label: 'H1', min: 60 },
+  { label: 'H4', min: 240 },
+  { label: 'D1', min: 1440 },
 ]
 
 // Drill-down timeframes BELOW the chart's base bars — pulled live from the broker (they can't be
@@ -476,15 +481,37 @@ const FETCH_TFS: readonly TfOption[] = [
   { label: 'H1', min: 60 },
 ]
 
-// How far back to REQUEST each drill-down TF. For M1/M5 this is deliberately MORE than the broker's
-// known depth (~30d / ~240d) so the fetch reaches the feed's true edge, which the backend reports as
-// a hard limit (the red "no earlier data" line). From M15 up the broker has years, so the binding
-// limit is the backend's own 60k-candle drill cap instead — these values sit just under it, which is
-// what a full-depth request would be clamped to anyway (and a clamped request correctly draws NO red
-// edge, since the boundary is ours, not the broker's).
-const FETCH_TF_LOOKBACK_DAYS: Record<number, number> = {
-  1: 45, 5: 270, 15: 850, 30: 1700, 60: 3400,
+// How much history ONE drill-down request asks for, in BARS rather than days — because what a reader
+// scrolls through is a count of bars, and the same 45 days is 65,000 M1 bars or 4,300 H1 ones. It
+// matches `PAGE_BARS`, so scrolling back at M5 covers the same distance per page as scrolling back
+// at the run's own timeframe.
+//
+// 🔴 **It used to be a fixed lookback ending at the RUN'S LAST BAR, and that is what made M1/M5 look
+// broken (fixed 2026-08-06).** Pressing M5 while reading 2020 fetched the newest 270 days and threw
+// the reader six years forward with nothing on screen saying so — reproduced from 2020-08-05, which
+// landed on 2026-08-06 — while M30 and H1 stayed put because they are resamples of bars already in
+// memory. That is exactly the split it was reported as: *"5 or 1 min does nothing, 30 and 1hr work"*.
+// The window is anchored on the VIEWPORT now (`runFetch`) and the rest is paged in like any other
+// history, so the lookback no longer has to be big enough to reach the feed's edge in one shot.
+const FETCH_CHUNK_BARS = 12_000
+// Bars → calendar milliseconds. Gold trades ~24/5, so a calendar week carries ~5 days of bars; 1.5
+// covers that plus holidays. Overshooting is harmless — the request simply comes back with fewer
+// bars than it asked for. UNDERSHOOTING is what would matter: a page arriving short reads exactly
+// like the end of the broker's data.
+const FETCH_SPAN_SLACK = 1.5
+/** Calendar span one drill-down request covers at `min`-minute bars. */
+function fetchSpanMs(min: number): number {
+  return Math.round(FETCH_CHUNK_BARS * min * 60_000 * FETCH_SPAN_SLACK)
 }
+/** How far PAST the anchor a drill-down window reaches. The rest is behind it, for the same reason
+ *  `goToDate` slices weighted-back: the reader is looking at a moment, and what led to it is the
+ *  context that explains it. */
+const FETCH_LEAD_FRAC = 0.25
+
+/** A drill-down timeframe's loaded bars and the calendar range they were REQUESTED over.
+ *  `edge` = the broker's true oldest bar for this timeframe, once a request has actually reached it
+ *  (null = not reached, which is not the same as "there is no more"). */
+type DrillWindow = { candles: ChartCandle[]; edge: number | null; fromMs: number; toMs: number }
 
 /** `<input type="date">` value ("YYYY-MM-DD") → epoch ms at LOCAL midnight, or null if malformed.
  *  Local, not UTC, on purpose: klinecharts prints its time axis in the browser's own timezone, so
@@ -573,12 +600,17 @@ function resample(candles: ChartCandle[], targetMs: number): ChartCandle[] {
     if (bucket === null || start !== bucketStart) {
       if (bucket) out.push(bucket)
       bucketStart = start
-      bucket = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume ?? 0 }
+      bucket = { time: start, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }
     } else {
       bucket.high = Math.max(bucket.high, c.high)
       bucket.low = Math.min(bucket.low, c.low)
       bucket.close = c.close
-      bucket.volume = (bucket.volume ?? 0) + (c.volume ?? 0)
+      // ⚠ A bucket is UNDEFINED the moment any base bar in it has no volume, and `?? 0` here was
+      // wrong in the direction that hides it: a bar we have no volume for is not a bar that traded
+      // nothing, and summing it as zero reports a short total under a name that claims a measurement
+      // (the readout would print a confident number for a window we only partly know). Same rule as
+      // `backtest/data/resample.py::_volume_sum`, which returns NaN for exactly this case.
+      bucket.volume = bucket.volume == null || c.volume == null ? undefined : bucket.volume + c.volume
     }
   }
   if (bucket) out.push(bucket)
@@ -666,12 +698,22 @@ export default function ChartPanel({
   // The broker's TRUE oldest bar for the active drill-down TF (M1 ~30d back, M5 ~240d) — drawn as a
   // red dashed "no earlier data" line. null = no hard edge (feed has more, or nothing loaded).
   const [dataEdge, setDataEdge] = useState<{ ts: number; tf: number } | null>(null)
-  // In-session cache per drill-down TF. A completed run's window is fixed, so once pulled the full
-  // sub-base depth never changes — re-selecting the TF shows it instantly (no re-fetch flash). The
-  // backend also caches the bars to disk, so even a cold reload only hits the broker once.
-  const fetchCacheRef = useRef<Map<number, { candles: ChartCandle[]; edge: number | null }>>(new Map())
+  // In-session cache per drill-down TF, and it carries the RANGE it covers as well as the bars.
+  // ⚠ The range is the load-bearing half: a completed run's bars never change, but a drill-down no
+  // longer holds one fixed window — it is anchored on where the reader is and grown by paging, so a
+  // cache keyed on the timeframe ALONE would answer a drill at 2020 with the window pulled for 2026.
+  // A hit therefore requires the anchor to fall inside what was actually fetched.
+  const fetchCacheRef = useRef<Map<number, DrillWindow>>(new Map())
   const fetchTokenRef = useRef(0)
   const isFetchMode = onRequestCandles != null && selectedMin < baseMin
+  // Read by the load-data callback and by `goToDate`, both of which are registered once and would
+  // otherwise close over the first render's timeframe for ever.
+  const isFetchModeRef = useRef(isFetchMode)
+  useEffect(() => { isFetchModeRef.current = isFetchMode }, [isFetchMode])
+  const selectedMinRef = useRef(selectedMin)
+  useEffect(() => { selectedMinRef.current = selectedMin }, [selectedMin])
+  const fetchedRef = useRef(fetched)
+  useEffect(() => { fetchedRef.current = fetched }, [fetched])
 
   // The candles HANDED TO KLINECHARTS: the newest `APPLIED_BARS` of the spec, grown backwards as you
   // scroll left. The spec itself carries the WHOLE run (2026-08-06) — this is the window applied to
@@ -738,36 +780,105 @@ export default function ChartPanel({
     [displayCandles],
   )
 
-  // Pull a drill-down TF's FULL broker depth in one shot (ending at the run's last bar), so the chart
-  // shows every sub-base bar the feed still holds — the user scrolls left until the red edge line.
-  // The backend reports that true edge; we cache the result per TF (the run's window is fixed) so
-  // re-selecting is instant.
-  const runFetch = async (min: number) => {
-    if (!onRequestCandles) return
+  const drillLabel = (min: number) => FETCH_TFS.find(tf => tf.min === min)?.label ?? `M${min}`
+
+  // Pull ONE window of a drill-down TF, anchored on `anchorMs` — the moment the reader is actually
+  // looking at, never the run's tail. Older bars arrive by PAGING (`drillOlder`), exactly as they do
+  // at the run's own timeframe, so this is a chunk rather than a whole depth.
+  //
+  // Returns the candles it applied, or null if the request was superseded, failed, or was answered
+  // from cache with the identical array — `goToDate` needs to know whether a redraw is coming.
+  const runFetch = async (min: number, anchorMs: number, force = false): Promise<ChartCandle[] | null> => {
+    if (!onRequestCandles) return null
     const cached = fetchCacheRef.current.get(min)
-    if (cached) {
+    if (!force && cached && anchorMs >= cached.fromMs && anchorMs <= cached.toMs) {
       setFetched(cached.candles)
       setDataEdge(cached.edge != null ? { ts: cached.edge, tf: min } : null)
       setFetchStatus(cached.candles.length ? 'ok' : 'empty')
-      return
+      return cached.candles === fetchedRef.current ? null : cached.candles
     }
-    const end = spec.candles[spec.candles.length - 1]?.time ?? Date.now()
-    const from = end - (FETCH_TF_LOOKBACK_DAYS[min] ?? 30) * DAY_MS
-    const label = FETCH_TFS.find(tf => tf.min === min)?.label ?? `M${min}`
+    const span = fetchSpanMs(min)
+    const runEnd = spec.candles[spec.candles.length - 1]?.time ?? Date.now()
+    // Never reach past the run's own last bar: there is nothing out there to draw, and the lead would
+    // simply be spent on empty calendar instead of on bars the reader can scroll into.
+    const to = Math.min(runEnd, anchorMs + Math.round(span * FETCH_LEAD_FRAC))
+    const from = to - span
     const token = ++fetchTokenRef.current
     setFetchStatus('loading')
     try {
-      const res = await onRequestCandles(label, from, end)
-      if (token !== fetchTokenRef.current) return // a newer fetch superseded this one
+      const res = await onRequestCandles(drillLabel(min), from, to)
+      if (token !== fetchTokenRef.current) return null // a newer fetch superseded this one
       const edge = res.hardEdge && res.dataStartMs != null ? res.dataStartMs : null
-      fetchCacheRef.current.set(min, { candles: res.candles, edge })
+      fetchCacheRef.current.set(min, { candles: res.candles, edge, fromMs: from, toMs: to })
       setFetched(res.candles)
       setDataEdge(edge != null ? { ts: edge, tf: min } : null)
       setFetchStatus(res.candles.length ? 'ok' : 'empty')
+      return res.candles
     } catch {
       if (token === fetchTokenRef.current) setFetchStatus('error')
+      return null
     }
   }
+
+  // `runFetch` is re-created every render (it reads `spec.candles`), while `drillTo` and the load
+  // callback are registered once — so they go through this rather than closing over the first one.
+  const runFetchRef = useRef(runFetch)
+  runFetchRef.current = runFetch
+
+  // ── Paging a DRILL-DOWN timeframe ────────────────────────────────────────────────────────────
+  // The mirror of `loadOlder`/`loadNewer` for bars that are not in the spec: they come off the feed
+  // one `fetchSpanMs` chunk at a time, and the accumulated list is written back into the cache so a
+  // re-select restores everything the reader had already scrolled through.
+  //
+  // ⚠ **Without this, anchoring the fetch alone would only MOVE the wall.** A window that stops mid
+  // history has no `hardEdge`, so the red "no earlier data" line correctly does not draw — leaving a
+  // blank strip with nothing saying why, which is the one thing this panel's paging markers exist to
+  // prevent.
+  const drillOlder = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    const min = selectedMinRef.current
+    const loaded = fetchedRef.current
+    const oldest = loaded[0]?.time
+    if (!onRequestCandles || oldest == null) return { bars: [], more: false }
+    const cached = fetchCacheRef.current.get(min)
+    // Already at the broker's true oldest bar — the red edge is drawn there and there is nothing behind it.
+    if (cached?.edge != null && oldest <= cached.edge) return { bars: [], more: false }
+    const span = fetchSpanMs(min)
+    const from = oldest - span
+    const res = await onRequestCandles(drillLabel(min), from, oldest)
+    // Strictly older, so a feed answering with an overlapping window cannot duplicate a bar.
+    const bars = res.candles.filter(c => c.time < oldest)
+    const edge = res.hardEdge && res.dataStartMs != null ? res.dataStartMs : (cached?.edge ?? null)
+    if (edge != null) setDataEdge({ ts: edge, tf: min })
+    fetchCacheRef.current.set(min, {
+      candles: [...bars, ...loaded],
+      edge,
+      fromMs: Math.min(from, cached?.fromMs ?? from),
+      toMs: cached?.toMs ?? oldest,
+    })
+    // A hard edge in this answer means the page reached it, so there is nothing left to ask for.
+    return { bars, more: bars.length > 0 && !(res.hardEdge && res.dataStartMs != null) }
+  }, [onRequestCandles])
+
+  const drillNewer = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    const min = selectedMinRef.current
+    const loaded = fetchedRef.current
+    const newest = loaded[loaded.length - 1]?.time
+    const runEnd = spec.candles[spec.candles.length - 1]?.time
+    if (!onRequestCandles || newest == null || runEnd == null || newest >= runEnd) {
+      return { bars: [], more: false }
+    }
+    const to = Math.min(runEnd, newest + fetchSpanMs(min))
+    const res = await onRequestCandles(drillLabel(min), newest, to)
+    const bars = res.candles.filter(c => c.time > newest)
+    const cached = fetchCacheRef.current.get(min)
+    fetchCacheRef.current.set(min, {
+      candles: [...loaded, ...bars],
+      edge: cached?.edge ?? null,
+      fromMs: cached?.fromMs ?? newest,
+      toMs: Math.max(to, cached?.toMs ?? to),
+    })
+    return { bars, more: bars.length > 0 && to < runEnd }
+  }, [onRequestCandles, spec.candles])
 
   // ── Paging older history (scroll left) — an IN-MEMORY SLICE since 2026-08-06 ─────────────────
   // klinecharts asks for more the moment you scroll past the left edge. This used to answer with a
@@ -794,6 +905,7 @@ export default function ChartPanel({
   // still ON, which is the defect that fix existed to remove. Doing it safely means backfilling
   // each skipped window's analysis after the jump lands, and that is its own change.
   const loadOlder = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    if (isFetchMode) return drillOlder()
     const all = spec.candles
     const oldest = baseCandlesRef.current[0]?.time
     // Nothing loaded, or the applied window already starts at the run's first bar.
@@ -809,7 +921,7 @@ export default function ChartPanel({
     if (idx <= 0) return { bars: [], more: false }
     const from = Math.max(0, idx - PAGE_BARS)
     return { bars: all.slice(from, idx), more: from > 0 }
-  }, [spec.candles])
+  }, [spec.candles, isFetchMode, drillOlder])
   const loadOlderRef = useRef(loadOlder)
   useEffect(() => { loadOlderRef.current = loadOlder }, [loadOlder])
 
@@ -819,6 +931,7 @@ export default function ChartPanel({
   // a jump in 2020 puts the window's RIGHT edge mid-history, and without this the reader hits an
   // invisible wall scrolling back toward the present.
   const loadNewer = useCallback(async (): Promise<{ bars: ChartCandle[]; more: boolean }> => {
+    if (isFetchMode) return drillNewer()
     const all = spec.candles
     const loaded = baseCandlesRef.current
     const newest = loaded[loaded.length - 1]?.time
@@ -832,13 +945,9 @@ export default function ChartPanel({
     if (idx >= all.length) return { bars: [], more: false }
     const to = Math.min(all.length, idx + PAGE_BARS)
     return { bars: all.slice(idx, to), more: to < all.length }
-  }, [spec.candles])
+  }, [spec.candles, isFetchMode, drillNewer])
   const loadNewerRef = useRef(loadNewer)
   useEffect(() => { loadNewerRef.current = loadNewer }, [loadNewer])
-  // A drill-down TF loads its own full depth in one shot, so paging must not fire there — it would
-  // splice base-TF bars into a 1m chart.
-  const pagingOffRef = useRef(false)
-  useEffect(() => { pagingOffRef.current = isFetchMode }, [isFetchMode])
   // Set when a candle change came from a PAGE rather than a TF/spec switch. klinecharts has already
   // merged those bars and holds the scroll position; re-running `applyNewData` would throw both away
   // and snap the view back — the jump-on-every-page bug.
@@ -880,18 +989,63 @@ export default function ChartPanel({
     chart.scrollToDataIndex(Math.min(candles.length - 1, idx + half))
   }, [])
 
-  // The reachable span the date box bounds itself to: everything APPLIED, plus everything the
-  // in-memory pager can still reach (the whole spec, back to the run's own start). In drill-down
-  // there is no paging, so it is whatever that timeframe's one-shot fetch brought back.
+  // ⚠ **A suspected runaway-paging freeze on a DISPLAY timeframe switch was investigated on
+  // 2026-08-06 and NOT REPRODUCED — recorded here so the next reader does not re-derive it.** A
+  // Playwright click on M30 after a jump to 2020 timed out past 90 seconds, which is what a frozen
+  // main thread looks like from outside, and the plausible mechanism was there: a switch re-applies,
+  // `applyNewData` parks on the newest loaded bar, and after a jump that bar is mid-history, so
+  // klinecharts could ask `loadNewer` for page after page from the edge it had just parked on.
+  // **The page is not frozen and does not walk forward.** An in-page 50 ms timer logged 2,407
+  // samples over 120 s — i.e. it never missed a tick — and the applied window went from
+  // `2020-03-19 00:15 .. 2020-09-20 23:30` to `00:00 .. 23:30`, which is the M30 resample and
+  // nothing else. It reproduces identically at HEAD, so it is not the drill-down change either.
+  // The blocked click is the harness; `dispatchEvent` applies the switch fine. **No guard was added,
+  // because the bug it would have guarded does not exist.**
+
+  // Fetch a drill-down window around `target` and LAND ON IT, borrowing `goToDate`'s own machinery.
+  // Used both by a date jump in drill-down and by the timeframe switch itself.
+  //
+  // 🔴 **The scroll is not a nicety, and driving it is what showed why (2026-08-06).** Anchoring the
+  // fetch alone already keeps the reader in the right YEAR, but `applyNewData` parks the view on the
+  // newest bar of whatever it was handed — so pressing M5 while reading 2020-08-05 landed on
+  // 2020-10-22, two and a half months past the moment being read, and klinecharts then requested a
+  // NEWER page from the edge it had parked on, walking it further away and paying a round trip to do
+  // it. `jumpingRef` refuses that page and the flush effect puts the view on the target instead.
+  const drillTo = useCallback(async (min: number, target: number, force: boolean) => {
+    jumpingRef.current = true
+    pendingJumpRef.current = target
+    const got = await runFetchRef.current(min, target, force)
+    // Nothing new applied (superseded, refused, or the feed had nothing back there) ⇒ no redraw is
+    // coming, so the flush effect will never run and the guard has to be released here, or every
+    // later jump and every page is refused for the rest of the session.
+    if (!got || !got.length) {
+      pendingJumpRef.current = null
+      jumpingRef.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // The reachable span the date box bounds itself to: everything APPLIED, plus everything the pager
+  // can still reach.
   //
   // ⚠ It used to gate the reachable half on `onRequestCandles` — correct while paging was a network
   // call through that fetcher, and wrong since paging became a slice of `spec.candles` (2026-08-06).
   // A host that wires no fetcher can still page the whole run; only the DRILL-DOWN needs one.
+  //
+  // ⚠ **A drill-down reaches the whole run too, as of the anchored-fetch fix.** It used to be bounded
+  // by the one window that had been fetched, which was honest then and would now be a box refusing
+  // dates the chart can perfectly well go to. The floor is the broker's own edge for this timeframe
+  // once a request has MEASURED one — never a guess at how much M1 history the feed keeps.
   const jumpRange = useMemo(() => {
     if (loadedLoTs == null || loadedHiTs == null) return null
-    const start = !isFetchMode && spec.historyStartMs != null ? spec.historyStartMs : null
-    return { lo: start != null ? Math.min(start, loadedLoTs) : loadedLoTs, hi: loadedHiTs }
-  }, [loadedLoTs, loadedHiTs, isFetchMode, spec.historyStartMs])
+    const runEnd = spec.candles[spec.candles.length - 1]?.time ?? loadedHiTs
+    const edge = isFetchMode && dataEdge?.tf === selectedMin ? dataEdge.ts : null
+    const start = edge ?? spec.historyStartMs ?? null
+    return {
+      lo: start != null ? Math.min(start, loadedLoTs) : loadedLoTs,
+      hi: Math.max(loadedHiTs, isFetchMode ? runEnd : loadedHiTs),
+    }
+  }, [loadedLoTs, loadedHiTs, isFetchMode, spec.historyStartMs, spec.candles, dataEdge, selectedMin])
 
   // 🟢 **A jump RE-CENTRES the applied window; it does not grow it from the right edge.** That is
   // the difference between a jump being instant and a jump being the slowest thing on the page.
@@ -911,13 +1065,24 @@ export default function ChartPanel({
   // the past, so scrolling back toward the present now needs a real answer.
   const goToDate = useCallback(async (target: number) => {
     if (!chartRef.current || jumpingRef.current) return
+    // A drill-down holds a fetched WINDOW rather than a slice of the spec, so a date outside it is a
+    // re-anchored request rather than a re-slice. Before 2026-08-06 this branch did not exist and the
+    // jump silently degraded to a scroll inside whatever the one-shot fetch happened to hold.
+    if (isFetchModeRef.current) {
+      const f = fetchedRef.current
+      if (f.length > 0 && target >= f[0].time && target <= f[f.length - 1].time) {
+        scrollToTs(target, f)
+        return
+      }
+      await drillTo(selectedMinRef.current, target, true)
+      return
+    }
     const all = spec.candles
     const loaded = baseCandlesRef.current
     const inWindow = loaded.length > 0
       && target >= loaded[0].time && target <= loaded[loaded.length - 1].time
-    // Already applied, a drill-down TF (which holds its own one-shot fetch), or nothing to slice ⇒
-    // this is a plain scroll.
-    if (inWindow || pagingOffRef.current || !all.length) {
+    // Already applied, or nothing to slice ⇒ this is a plain scroll.
+    if (inWindow || !all.length) {
       scrollToTs(target, displayCandles)
       return
     }
@@ -954,6 +1119,7 @@ export default function ChartPanel({
     pendingJumpRef.current = target
     baseCandlesRef.current = slice
     setBaseCandles(slice)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec.candles, displayCandles, scrollToTs])
 
   // Session boxes are derived from the BASE candles (high/low envelope is TF-invariant) and
@@ -1415,6 +1581,11 @@ export default function ChartPanel({
   // The tool's DEFAULT ladder — a setting, so it persists across reloads (a drawing does not).
   const [fibLevels, setFibLevels] = useState<FibLevel[]>(() => loadFibLevels())
   useEffect(() => { saveFibLevels(fibLevels) }, [fibLevels])
+  // How the reader wants the chart DRAWN — persisted per browser, never part of a run. Same
+  // load-once / save-on-change shape as the fib ladder above; see `chartSettings.ts`.
+  const [chartSettings, setChartSettings] = useState<ChartSettings>(() => loadChartSettings())
+  useEffect(() => { saveChartSettings(chartSettings) }, [chartSettings])
+  const [settingsAt, setSettingsAt] = useState<{ x: number; y: number } | null>(null)
   // The open level editor. `fibId: null` = editing the default ladder (from the tool strip);
   // a fib id = editing that one drawing's override (from its right-click menu).
   const [fibEditor, setFibEditor] = useState<{ x: number; y: number; fibId: string | null } | null>(null)
@@ -1537,7 +1708,7 @@ export default function ChartPanel({
     // page merges never perform one however far the window grows.
     chart.setLoadDataCallback(({ type, callback }) => {
       // A jump is rewriting the whole applied window — two writers would duplicate or drop bars.
-      if (pagingOffRef.current || jumpingRef.current) {
+      if (jumpingRef.current) {
         callback([], type === LoadDataType.Forward)
         return
       }
@@ -1547,7 +1718,11 @@ export default function ChartPanel({
       void load().then(({ bars, more }) => {
         if (bars.length) {
           skipApplyRef.current = true
-          setBaseCandles(prev => (older ? [...bars, ...prev] : [...prev, ...bars]))
+          // The applied list is `fetched` in drill-down and `baseCandles` otherwise, and splicing
+          // base-timeframe bars into a 1-minute chart is exactly what the old blanket paging guard
+          // existed to prevent — so the page goes to whichever list `displayCandles` is reading.
+          if (isFetchModeRef.current) setFetched(prev => (older ? [...bars, ...prev] : [...prev, ...bars]))
+          else setBaseCandles(prev => (older ? [...bars, ...prev] : [...prev, ...bars]))
         }
         callback(candlesToKLine(bars), more)
       }).catch(() => callback([], false)).finally(() => { if (older) setPagingOlder(false) })
@@ -1607,6 +1782,14 @@ export default function ChartPanel({
   // index shifts under it; a timestamp range survives that, which is what lets this coexist with
   // paging without a recompute ordering rule between them.
   const [drawRange, setDrawRange] = useState<[number, number] | null>(null)
+  // The timestamp under the middle of the plot, tracked continuously — the drill-down's fetch anchor.
+  //
+  // ⚠ **`visibleCentreTs()` cannot do this job and it is worth saying why.** That reads the chart's
+  // visible INDEX range against `displayCandlesRef`, so it is only correct while the two agree — and
+  // the one instant they do not is a timeframe switch, which is precisely when the anchor is needed:
+  // the array has already been swapped for the new timeframe's while klinecharts' index range still
+  // describes the old one. A timestamp recorded before the swap survives it.
+  const viewCentreRef = useRef<number | null>(null)
 
   useEffect(() => {
     const chart = chartRef.current
@@ -1620,6 +1803,7 @@ export default function ChartPanel({
       const span = Math.max(1, r.to - r.from)
       const visLo = c[clampIdx(r.from, c.length)].time
       const visHi = c[clampIdx(r.to, c.length)].time
+      viewCentreRef.current = c[clampIdx((r.from + r.to) / 2, c.length)].time
       setDrawRange(prev => {
         // Already covered? Then do nothing. This is the common case on EVERY FRAME of a drag, and
         // recommitting here would re-create every overlay 60 times a second — i.e. it would turn
@@ -1657,7 +1841,10 @@ export default function ChartPanel({
     return [Math.max(loadedLoTs, drawRange[0]), Math.min(loadedHiTs, drawRange[1])]
   }, [loadedLoTs, loadedHiTs, drawRange])
 
-  // Drill-down: when a sub-base TF is selected, pull its full broker depth; clear on leave.
+  // Drill-down: when a sub-base TF is selected, pull the window the reader is LOOKING AT; clear on
+  // leave. The anchor is the viewport's centre, falling back to the run's last bar only when nothing
+  // has been rendered yet — which is the open case, and the only case the old fixed anchor was ever
+  // right for.
   useEffect(() => {
     if (!isFetchMode) {
       setFetched([])
@@ -1665,7 +1852,8 @@ export default function ChartPanel({
       setDataEdge(null)
       return
     }
-    runFetch(selectedMin)
+    const anchor = viewCentreRef.current ?? spec.candles[spec.candles.length - 1]?.time ?? Date.now()
+    void drillTo(selectedMin, anchor, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFetchMode, selectedMin])
 
@@ -1678,6 +1866,12 @@ export default function ChartPanel({
   useEffect(() => {
     if (autoFellBackRef.current || selectedMin !== openMin || openMin === baseMin) return
     if (fetchStatus !== 'empty' && fetchStatus !== 'error') return
+    // ⚠ Only the OPENING fetch may fall back. Since the drill-down window follows the reader
+    // (2026-08-06), an empty answer is also what jumping to a date behind the broker's M1 depth
+    // returns — and silently changing timeframe under someone who has just asked for a date is the
+    // "jumped somewhere they didn't ask for" failure this guard exists to prevent, arriving by a
+    // route that did not exist when it was written.
+    if (fetchCacheRef.current.get(selectedMin)?.candles.length) return
     autoFellBackRef.current = true
     setSelectedMin(baseMin)
   }, [fetchStatus, selectedMin, openMin, baseMin])
@@ -1735,6 +1929,7 @@ export default function ChartPanel({
           // Profit-depth inputs — prices, converted to pixels in the overlay via the y-axis.
           // Absent fields make the overlay fall back to the plain entry→exit box.
           precision: pricePrecision,   // every side label prints its own price
+          showPrices: chartSettings.tradeLabelPrices,  // reader preference — Chart settings → Trades
           entryPrice: tr.entryPrice,
           exitPrice: tr.exitPrice,
           mfePrice: tr.mfePrice,
@@ -1754,7 +1949,8 @@ export default function ChartPanel({
         },
       })
     }
-  }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs])
+  }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs,
+      chartSettings])
 
   // Trade fibs — the leg each trade was priced off. Rebuilt on data change like every other
   // overlay effect (`applyNewData` clears them).
@@ -2483,9 +2679,9 @@ export default function ChartPanel({
             // because bars that don't match the TF button would otherwise be a silent lie.
             const text = fetchStatus === 'loading'
                 ? (showingPlaceholder
-                    ? `showing ${spec.baseTimeframe.toUpperCase()} — loading all available bars…`
-                    : 'loading all available bars…')
-              : fetchStatus === 'empty' ? 'no data (feed offline?)'
+                    ? `showing ${spec.baseTimeframe.toUpperCase()} — loading these bars…`
+                    : 'loading these bars…')
+              : fetchStatus === 'empty' ? 'no data here (feed offline, or none this far back?)'
               : fetchStatus === 'error' ? 'fetch failed'
               : dataEdge ? 'all the broker still has'
               : ''
@@ -2547,24 +2743,32 @@ export default function ChartPanel({
           >
             <AlignJustify className="w-5 h-5" />
           </button>
-          {/* Sits directly under the fib button, and is deliberately SMALLER — it configures that
-              tool rather than being one, so it must not read as a third drawing tool. Opens the
-              DEFAULT ladder; one drawing's own levels are reached by right-clicking that drawing. */}
+          {/* ⚠ The fib tool's own gear used to sit here, opening the DEFAULT ladder. It moved into
+              Chart settings on 2026-08-06 (Aaron's ask) and was NOT left behind as a shortcut: two
+              controls editing one ladder is two places for it to be answered from. One drawing's
+              own levels are still reached by right-clicking that drawing, which is a different
+              scope rather than a second route to this one. */}
+          {/* More tools land here. */}
+
+          {/* Chart settings — how the chart is DRAWN, for this reader, across every run. It sits at
+              the BOTTOM of the strip (`mt-auto`), away from the drawing tools, because it is not a
+              tool: those configure a DRAWING, this configures the chart. The full-size cog and the
+              gap are the same distinction said twice. */}
+          <div className="mt-auto" />
           <button
             onClick={e => {
               const r = e.currentTarget.getBoundingClientRect()
-              openFibEditor(r.right + 8, r.top, null)
+              setSettingsAt(s => (s ? null : { x: r.right + 8, y: r.top }))
             }}
-            title="Fibonacci levels — add, remove, retune or recolour the levels the fib tool draws"
-            className={`flex items-center justify-center w-8 h-6 rounded-md border transition-colors ${
-              fibEditor && !fibEditor.fibId
+            title="Chart settings — how the chart is drawn (labels, colours). Saved in this browser; it never changes what a run measured."
+            className={`flex items-center justify-center w-8 h-8 rounded-md border transition-colors ${
+              settingsAt
                 ? 'border-accent/60 text-accent bg-accent/10'
                 : 'border-transparent text-text-tertiary hover:text-text-secondary hover:bg-bg-surface'
             }`}
           >
-            <Settings2 className="w-3.5 h-3.5" />
+            <Settings className="w-4 h-4" />
           </button>
-          {/* More tools land here. */}
         </div>
 
         <div
@@ -2738,6 +2942,34 @@ export default function ChartPanel({
           onSaveAsDefault={saveFibLevelsAsDefault}
           onUseDefault={clearFibOverride}
           onResetFactory={resetFibLevels}
+        />
+      )}
+
+      {/* Chart settings — rendered at the panel root like the fib editor and the context menu, so
+          the chart body's measure-mode click handler can never see its clicks. */}
+      {settingsAt && (
+        <ChartSettingsPanel
+          x={settingsAt.x}
+          y={settingsAt.y}
+          settings={chartSettings}
+          onChange={setChartSettings}
+          onClose={() => setSettingsAt(null)}
+          renderCustom={section =>
+            section === 'fibLevels' ? (
+              <FibLevelEditor
+                scope="default"
+                levels={fibLevels}
+                // The panel is mounted only while open, so the editor seeds from the live ladder on
+                // every open; the seq is what re-seeds it when Reset replaces the set underneath.
+                // Shared with the per-drawing popover deliberately — `resetFibLevels` bumps it and
+                // both editors are showing the same ladder at that moment.
+                resetKey={`default:${fibEditorSeq}`}
+                maxRowsHeight={220}
+                onChange={setFibLevels}
+                onResetFactory={resetFibLevels}
+              />
+            ) : null
+          }
         />
       )}
     </div>

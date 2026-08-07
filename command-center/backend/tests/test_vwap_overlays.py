@@ -192,17 +192,45 @@ def test_no_candles_means_no_layer():
 # --------------------------------------------------------------------------- the spec's candles
 
 
-def test_the_spec_strips_volume_after_the_layers_have_read_it():
-    """Volume is fetched for THIS layer and nothing in the browser plots it.
+def _candles_from(df, monkeypatch):
+    """Drive `_build_candles` over a frame, with the fetch stubbed."""
+    from services import chart_spec
 
-    On a full-history run that is ~156k numbers of payload, parse time and heap bought for nobody,
-    so the spec carries the LINE and not the ingredients.
+    monkeypatch.setattr(chart_spec.ohlc_fetcher, "get_ohlc", lambda *a, **k: df)
+    return chart_spec._build_candles("XAUUSD", "2026-01-05", "2026-01-06", "M15", "python")
+
+
+def _frame(volume):
+    """Two bars, with `volume` as a column of values or None for a frame that carries none."""
+    import pandas as pd
+
+    idx = pd.to_datetime([T0 * 1_000_000, (T0 + BAR_MS) * 1_000_000])
+    cols = {"open": [100.0, 101.0], "high": [102.0, 103.0], "low": [99.0, 100.0], "close": [101.0, 102.0]}
+    if volume is not None:
+        cols["volume"] = volume
+    return pd.DataFrame(cols, index=idx)
+
+
+def test_the_spec_ships_the_volume_the_feed_gave_it(monkeypatch):
+    """The candles carry tick volume, so the chart's OHLC readout can print a real number.
+
+    It used to be STRIPPED after this layer had read it — ~156k numbers of payload for a browser
+    that plotted none. It is ~16 bytes a candle (measured 2.49 MB on a 23.32 MB full-history spec)
+    and it is what the readout's Volume row shows, so it travels.
     """
-    from services.chart_spec import _strip_volume
+    candles = _candles_from(_frame([1234.0, 5678.0]), monkeypatch)
 
-    candles = _flat(3)
-    _strip_volume(candles)
+    assert [c["volume"] for c in candles] == [1234.0, 5678.0]
+
+
+def test_a_feed_with_no_volume_ships_no_volume_key(monkeypatch):
+    """ABSENT, never 0.0 — the readout renders a missing value as `n/a` and a zero as a dead bar.
+
+    This is the case for every bar cache written before volume rode through the pipeline
+    (2026-08-06), and for any runner whose feed carries none. The same *no data is not a
+    measurement* rule the VWAP layer's own refusals are built on, one hop downstream.
+    """
+    candles = _candles_from(_frame(None), monkeypatch)
 
     assert all("volume" not in c for c in candles)
-    # …and the bars themselves are untouched.
     assert all({"time", "open", "high", "low", "close"} <= set(c) for c in candles)

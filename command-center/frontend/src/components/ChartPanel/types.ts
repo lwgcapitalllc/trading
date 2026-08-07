@@ -12,7 +12,14 @@
 /** Epoch milliseconds. KLineChart's native time unit. */
 export type EpochMs = number
 
-/** Base-timeframe OHLC bar. `volume` optional. */
+/** Base-timeframe OHLC bar.
+ *
+ *  `volume` is the bar's TICK volume, as the feed reported it, and it is OPTIONAL in the strong
+ *  sense: absent means we do not have it (a bar cache written before the pipeline carried volume,
+ *  or a runner whose feed has none), never that the bar traded nothing. klinecharts renders the
+ *  absence as `n/a` in its OHLC readout, which is the honest answer; a fabricated 0 would read as
+ *  a dead session. Nothing PLOTS it today — the session VWAP arrives as a computed series — so it
+ *  is on the wire for the readout, and for whatever draws a volume pane next. */
 export interface ChartCandle {
   time: EpochMs
   open: number
