@@ -82,6 +82,25 @@ Mirror for `sArmed`.
 Sizing = the same `exec_risk_pct` / stop-distance as the primary. On fill, **retire that 1m
 leg** (`lLegTraded := lLeg`) so it can't re-enter twice.
 
+**The minimum-stop floor applies here too, since 2026-08-07** — the same `_stop_clears_floor` the
+15m path uses, not a second copy of the rule. Until then `_secondary_pending` asked only
+`dist > 0`, so the shipped `"% of price"` 0.08 floor did not reach the one path where it matters
+most: sizing is `risk / stop_distance`, and a 1-minute leg is a **shorter leg**, so its stop
+distance is smaller by construction.
+
+⚠ **Measured before it was added, and it refuses almost nothing: ONE setup in 7.9 years**
+(2024-12-02 20:08 — a $2.08 stop against a $2.11 floor). Two full replays at shipped defaults,
+control reproducing the shipped book exactly: **188 trades / +165.46R / ddR 5.53 → 188 / +165.42R /
+ddR 5.53**, all 180 primaries identical, −0.04R. The refused trade did not vanish — a later
+re-entry took the freed slot 47 minutes on. 🔴 **1,956 secondary limits were placed and 90 rested
+under the floor, but all 90 are the SAME limit re-placed every 1m bar** — one setup resting 90
+minutes. **A resting order is re-placed per bar, so counting placements counts bars, not risk.**
+The case for the guard is consistency, not this measurement.
+
+⚠ The floor reads the **15-minute** ATR(14) (`_update_atr` runs in `step`, never
+`step_secondary`) — correct, since the setup and its risk are 15m, and irrelevant outside
+`"x ATR(14)"` mode.
+
 ---
 
 ## The one deliberate deviation from the Pine — exact 1m timing

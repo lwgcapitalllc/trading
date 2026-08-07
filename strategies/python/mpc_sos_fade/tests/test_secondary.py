@@ -8,6 +8,7 @@ so it is the ground truth for the bear side; the scenario has no bull SOS, which
 to "never latched".
 """
 
+import dataclasses
 import sys
 from pathlib import Path
 
@@ -102,7 +103,11 @@ def _synth_df1m(df15: pd.DataFrame) -> pd.DataFrame:
 def test_run_dual_primary_is_identical_to_run_when_secondary_off():
     df15 = _synth_df15(400)
     df1m = _synth_df1m(df15)
-    cfg = SosFadeConfig()                       # exec_secondary defaults False
+    # PINNED False, not defaulted. `exec_secondary` ships True since 2026-08-07, so relying on
+    # the default here would silently turn this into a test of the secondary path — and it would
+    # still pass, because this synthetic 1m stream never arms one. A parity test that stops
+    # exercising the branch it names is worse than no test.
+    cfg = SosFadeConfig(exec_secondary=False)
     a = MpcSosFadeStrategy(cfg).run(df15)
     b = MpcSosFadeStrategy(cfg).run_dual(df15, df1m)
     assert a.decisions == b.decisions           # Decision/Fill are dataclasses → structural ==
@@ -358,3 +363,86 @@ def test_the_secondary_and_its_cap_ship_ON():
     cfg = SosFadeConfig()
     assert cfg.exec_secondary is True
     assert cfg.exec_sec_once_per_setup is True
+
+
+# ── the minimum-stop floor on the 1m path ────────────────────────────────────────
+
+# A 1m long: buy limit 102.618, stop at the leg origin 102.0 → a 0.618 stop distance.
+_TIGHT_LONG = SecArm(l_armed=True, l_edge=102.618, l_sl=102.0, l_tp1=105.0, l_tp2=106.18,
+                     l_leg=1000)
+# The same leg read short: sell limit 102.0, stop above at 102.618. Same 0.618 distance.
+_TIGHT_SHORT = SecArm(s_armed=True, s_edge=102.0, s_sl=102.618, s_tp1=99.0, s_tp2=98.0,
+                      s_leg=1000)
+
+
+def _pending(**cfg_kw):
+    execu = Execution(SosFadeConfig(exec_secondary=True, **cfg_kw), initial_capital=100_000.0)
+    return execu
+
+
+def test_the_min_stop_floor_refuses_a_secondary_whose_stop_is_too_tight():
+    """The defect this pins: `_secondary_pending` asked only `dist > 0` while `_place_entries`
+    had enforced the floor since 2026-07-30, so the 1m re-entry could rest a limit the 15m path
+    would have refused — and `qty = risk / dist`, so the tighter the stop the BIGGER the position.
+
+    0.618 against a floor of ~1.03 (0.618 is 60% of it). Measured on real history, 90 of 1,956
+    secondary limits rested under the shipped 0.08% floor."""
+    execu = _pending(exec_min_stop_mode="% of price", exec_min_stop_val=1.0)
+    assert execu._min_stop_floor(102.618) > 0.618           # the floor really does bite here
+    assert execu._secondary_pending(_TIGHT_LONG) is None
+    assert execu._secondary_pending(_TIGHT_SHORT) is None
+
+
+def test_the_floor_lets_a_secondary_through_when_the_stop_clears_it():
+    """The other half, and the one that stops the fix from being 'refuse everything'.
+
+    ⚠ This one PASSES against HEAD and is kept deliberately: it pins the direction the old
+    `dist > 0` rule already got right, which is exactly the direction a later 'simplification'
+    would restore. A rule stated in only one direction is the one that gets undone."""
+    execu = _pending(exec_min_stop_mode="% of price", exec_min_stop_val=0.1)
+    assert execu._min_stop_floor(102.618) < 0.618
+    long_pend = execu._secondary_pending(_TIGHT_LONG)
+    short_pend = execu._secondary_pending(_TIGHT_SHORT)
+    assert long_pend is not None and long_pend.dir == 1
+    assert short_pend is not None and short_pend.dir == -1
+
+
+def test_the_floor_is_LIVE_on_the_secondary_at_the_shipped_defaults():
+    """`exec_min_stop_mode` has shipped "% of price" 0.08 since 2026-08-04 — it is NOT Off — so
+    this guard bites in a default run rather than waiting to be switched on. That is the whole
+    reason it had to be added: the 1m path was the one place the shipped floor did not reach.
+
+    Both directions, because guarding one side and not the other is the shape of bug that would
+    show up as a mysterious short-side-only sizing outlier years later."""
+    execu = _pending()
+    assert execu._cfg.exec_min_stop_mode == "% of price"
+    assert execu._cfg.exec_min_stop_val == 0.08
+    # 0.08% of 102.618 is ~$0.082, which a 0.618 stop clears comfortably
+    assert execu._secondary_pending(_TIGHT_LONG) is not None
+    assert execu._secondary_pending(_TIGHT_SHORT) is not None
+    # …and a stop UNDER that floor is refused, on the shipped settings, on both sides
+    tight_long = dataclasses.replace(_TIGHT_LONG, l_sl=102.618 - 0.05)
+    tight_short = dataclasses.replace(_TIGHT_SHORT, s_sl=102.0 + 0.05)
+    assert execu._secondary_pending(tight_long) is None
+    assert execu._secondary_pending(tight_short) is None
+
+
+def test_the_floor_is_inert_when_the_mode_is_switched_Off():
+    """"Off" is a real floor of 0.0 that every positive distance clears — not a skipped check —
+    so pinning the mode reproduces the pre-guard behaviour exactly."""
+    execu = _pending(exec_min_stop_mode="Off")
+    assert execu._min_stop_floor(102.618) == 0.0
+    assert execu._secondary_pending(_TIGHT_LONG) is not None
+    assert execu._secondary_pending(_TIGHT_SHORT) is not None
+
+
+def test_an_unknowable_floor_refuses_the_secondary_exactly_as_it_refuses_the_primary():
+    """"x ATR(14)" before the ATR has 14 bars has no floor to compare against. The 15m path
+    refuses there (Pine's NA comparison reads as false), and the 1m path must not quietly
+    diverge into permitting — an unknown floor is the one case where the two rules disagreeing
+    would be invisible, because it only happens during warm-up."""
+    execu = _pending(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=0.3)
+    assert execu._atr is None                               # no 15m bar has been stepped
+    assert execu._min_stop_floor(102.618) is None
+    assert execu._secondary_pending(_TIGHT_LONG) is None
+    assert execu._secondary_pending(_TIGHT_SHORT) is None

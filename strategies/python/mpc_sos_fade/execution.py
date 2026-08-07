@@ -657,16 +657,30 @@ class Execution:
 
     def _secondary_pending(self, arm) -> Optional["_Pending"]:
         """Turn the armed side of a `SecArm` into a resting `_Pending`, sized off the 1m-leg stop
-        distance with the same %-risk as the primary. At most one side arms (fibo_dir is one value)."""
+        distance with the same %-risk as the primary. At most one side arms (fibo_dir is one value).
+
+        The minimum-stop floor applies HERE as well as on the 15m path, and it is the same
+        `_stop_clears_floor` rather than a second copy of the rule. The hazard is identical and
+        it is worse on this path: `qty = risk / dist`, and a 1-minute leg is a shorter leg, so
+        its stop distance is smaller by construction — measured, 90 of 1,956 secondary limits
+        rested under the shipped 0.08%-of-price floor. What makes them easy to miss is that a
+        limit under the floor costs nothing until price happens to reach it; only ONE of the 90
+        ever filled in 7.9 years.
+
+        ⚠ The floor is read off `self._atr`, which is the FIFTEEN-minute ATR(14) — `_update_atr`
+        runs in `step`, never in `step_secondary`. That is the right reading (the setup is a 15m
+        setup and the risk is budgeted against it) but it only matters under "x ATR(14)"; the
+        shipped "% of price" mode is a pure function of the entry price and does not care.
+        """
         cfg = self._cfg
         if arm.l_armed and arm.l_edge is not None and arm.l_sl is not None:
             dist = arm.l_edge - arm.l_sl
-            if dist > 0:
+            if self._stop_clears_floor(dist, arm.l_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 return _Pending(1, arm.l_edge, qty, arm.l_sl, arm.l_tp1, arm.l_tp2, arm.l_leg)
         if arm.s_armed and arm.s_edge is not None and arm.s_sl is not None:
             dist = arm.s_sl - arm.s_edge
-            if dist > 0:
+            if self._stop_clears_floor(dist, arm.s_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 return _Pending(-1, arm.s_edge, qty, arm.s_sl, arm.s_tp1, arm.s_tp2, arm.s_leg)
         return None
