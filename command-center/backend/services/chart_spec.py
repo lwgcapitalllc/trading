@@ -102,15 +102,36 @@ def _iso_to_epoch_ms(s: str) -> Optional[int]:
 
 
 def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str, runner: str) -> list[dict]:
+    """Candle rows for a window, or `[]`. The spec build's view — it degrades to an empty chart
+    either way, so it does not need to know WHY."""
+    return _fetch_candles(instrument, start_date, end_date, base_tf, runner)[0]
+
+
+def _fetch_candles(
+    instrument: str, start_date: str, end_date: str, base_tf: str, runner: str,
+) -> tuple[list[dict], Optional[str]]:
+    """`(rows, error)` — and the error half is the point.
+
+    🔴 **Until 2026-08-07 this swallowed the exception and returned `[]`, so "the MT5 agent is down"
+    and "the broker has no bars that far back" were THE SAME VALUE.** `build_run_candles` then set
+    `available = bool(candles)`, which is tautological, while its own docstring claimed `available:
+    false` meant the feed could not serve the window. The distinction was destroyed here and
+    unrecoverable above, so the price chart's drill-down could only hedge — it printed *"no data
+    here (feed offline, or none this far back?)"*, asking the reader a question the fetch had
+    already answered. Same rule as `mt5_link`, three layers down: never let "no" and "cannot ask"
+    be the same value.
+    """
     # ohlc_fetcher normalizes the symbol (strips the broker suffix, re-adds a configured one), so
     # we can pass the run instrument as-is — the MT5 agent's terminal uses plain names.
     try:
         df = ohlc_fetcher.get_ohlc(instrument, start_date, end_date, timeframe=base_tf, runner=runner)
     except Exception as exc:  # noqa: BLE001 — fetch is best-effort; empty candles degrade gracefully
         log.warning("chart_spec: candle fetch failed for %s %s: %s", instrument, base_tf, exc)
-        return []
+        return [], f"{type(exc).__name__}: {exc}"[:200]
     if df is None or df.empty:
-        return []
+        # The feed ANSWERED and had nothing for this window — a real fact about the broker's depth,
+        # not a failure. `None` error is what lets the caller say so.
+        return [], None
     # Column-at-a-time, NOT `df.iterrows()`. Measured 2026-08-06 on a real 155,776-bar run:
     # 12.63s by iterrows against 0.15s here, byte-identical output — 85x, paid on every chart
     # request. `iterrows` builds a fresh Series per row, which is the whole cost.
@@ -139,7 +160,7 @@ def _build_candles(instrument: str, start_date: str, end_date: str, base_tf: str
     if "volume" in df.columns:
         for row, v in zip(rows, df["volume"].astype(float).tolist()):
             row["volume"] = v
-    return rows
+    return rows, None
 
 
 def _leg_label(reason: str) -> str:
@@ -764,9 +785,10 @@ def build_run_candles(
 
     Returns:
       - None if the run is unknown (router → 404).
-      - {instrument, timeframe, candles, available, data_start_ms, hard_edge} otherwise.
-        `available` is False (candles empty) when the feed can't serve that window at all — most
-        often the MT5 agent being offline. `hard_edge` is True when the oldest bar returned is the
+      - {instrument, timeframe, candles, available, feed_error, data_start_ms, hard_edge}.
+        `available` is False ONLY when the feed could not be ASKED (the MT5 agent or its terminal
+        is down), with `feed_error` naming the failure; an empty `candles` list under
+        `available: true` is the feed answering that it has nothing for that window. `hard_edge` is True when the oldest bar returned is the
         broker's TRUE data limit (the feed has nothing older), with `data_start_ms` marking it —
         the frontend draws its red "no earlier data" line there. It is False when the feed simply
         has more than our fetch clamp could ship (then the edge is ours, not the broker's).
@@ -792,7 +814,7 @@ def build_run_candles(
     # The fetch is day-granular; widen to whole UTC days, then slice back to the exact window.
     start_date = datetime.fromtimestamp(from_ms / 1000, tz=timezone.utc).date().isoformat()
     end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
-    candles = _build_candles(instrument, start_date, end_date, timeframe, runner)
+    candles, feed_error = _fetch_candles(instrument, start_date, end_date, timeframe, runner)
     candles = [c for c in candles if from_ms <= c["time"] <= to_ms]
     data_start_ms = candles[0]["time"] if candles else None
     # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
@@ -802,10 +824,16 @@ def build_run_candles(
         "instrument": instrument,
         "timeframe": timeframe.upper(),
         "candles": candles,
-        "available": bool(candles),
+        # ⚠ **`available` is whether the feed could be ASKED, not whether it had anything.** It was
+        # `bool(candles)` until 2026-08-07 — the same fact as `candles == []`, so a caller could not
+        # tell a dead MT5 agent from a broker with no 1m history back that far, and the chart's
+        # drill-down hedged in a message rather than saying which. `available: true` with an empty
+        # list is now a real answer: the feed replied and has nothing for this window.
+        "available": feed_error is None,
+        "feed_error": feed_error,
         "data_start_ms": data_start_ms,
         "hard_edge": hard_edge,
     }
-    log.info("run_candles: %s %s [%s, %s] -> %d candles (hard_edge=%s)",
-             run_id, timeframe, start_date, end_date, len(candles), hard_edge)
+    log.info("run_candles: %s %s [%s, %s] -> %d candles (hard_edge=%s, feed_error=%s)",
+             run_id, timeframe, start_date, end_date, len(candles), hard_edge, feed_error)
     return out

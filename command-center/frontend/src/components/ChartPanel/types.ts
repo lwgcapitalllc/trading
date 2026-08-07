@@ -276,7 +276,16 @@ export interface ChartSpec {
  *  paging older history is an in-memory slice and those four fields are gone. */
 export interface ChartPage {
   candles: ChartCandle[]
+  /** Whether the feed could be ASKED — NOT whether it had anything.
+   *
+   *  ⚠ It was `bool(candles)` on the backend until 2026-08-07, i.e. the same fact as
+   *  `candles.length === 0`, so a caller could not tell a dead MT5 agent from a broker that simply
+   *  has no 1-minute history that far back. The drill-down could only hedge, and printed *"no data
+   *  here (feed offline, or none this far back?)"* — asking the reader the question the fetch had
+   *  already answered. `available: true` with an empty `candles` is now a real answer. */
   available: boolean
+  /** What went wrong when `available` is false. Null otherwise. */
+  feedError: string | null
   dataStartMs: number | null
   hardEdge: boolean
 }

@@ -321,7 +321,8 @@ export function useRefreshChartSpec() {
 
 // One bounded window of a run's bars: an imperative fetcher (not a query) the ChartPanel calls for
 // its DRILL-DOWN path — a finer-than-base TF (1m/5m) over the visible window. `available: false` =
-// the feed can't serve that window (1m older than the broker's ~35-day 1m history).
+// the feed could not be ASKED (agent/terminal down, `feedError` names it); an empty `candles` under
+// `available: true` = it answered and has no bars that far back. Those were ONE value until 2026-08-07.
 //
 // ⚠ **It used to serve the scroll-left pager too, with an `analysis` flag asking for that window's
 // structure overlays / gaps / blocked / missed setups (deleted 2026-08-06).** The ChartSpec carries
@@ -330,14 +331,15 @@ export function useRefreshChartSpec() {
 export function useRunCandles(runId: string | null) {
   return useCallback(
     async (tf: string, fromMs: number, toMs: number): Promise<ChartPage> => {
-      if (!runId) return { candles: [], available: false, dataStartMs: null, hardEdge: false }
+      if (!runId) return { candles: [], available: false, feedError: 'no run', dataStartMs: null, hardEdge: false }
       const q = `tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
-      const res = await api.get<ChartPage & { data_start_ms: number | null; hard_edge: boolean }>(
+      const res = await api.get<ChartPage & { data_start_ms: number | null; hard_edge: boolean; feed_error: string | null }>(
         `/backtests/runs/${runId}/candles?${q}`,
       )
       return {
         candles: res.candles ?? [],
         available: !!res.available,
+        feedError: res.feed_error ?? null,
         dataStartMs: res.data_start_ms ?? null,
         hardEdge: !!res.hard_edge,
       }

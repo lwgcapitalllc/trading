@@ -9,7 +9,7 @@
  * only load once the panel's section is opened (page performance).
  */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, RotateCcw, Ruler, Settings, Settings2, Trash2 } from 'lucide-react'
+import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Loader2, RotateCcw, Ruler, Settings, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartPage, ChartSpec } from './types'
@@ -513,6 +513,21 @@ const FETCH_LEAD_FRAC = 0.25
  *  (null = not reached, which is not the same as "there is no more"). */
 type DrillWindow = { candles: ChartCandle[]; edge: number | null; fromMs: number; toMs: number }
 
+/** A server-side failure sentence, trimmed to something a one-line badge can hold.
+ *
+ *  It keeps the SERVER'S OWN WORDS rather than mapping the error to a phrase of ours, because the
+ *  useful half is the specifics: `HistoryFloorError` says *"XAUUSD has no real 1-minute history
+ *  before 2018-09-14 on VantageMarkets-Demo (measured, not assumed)"*, and a local paraphrase can
+ *  only ever be a vaguer version of that. Drops the exception CLASS (`Foo: `) — that names our
+ *  plumbing, not the reader's problem — and the parenthetical asides, which are for whoever reads
+ *  the log. The whole sentence stays on the `title`. */
+function shortNote(msg: string): string {
+  let s = msg.replace(/^[A-Za-z_]*Error:\s*/, '').replace(/\s*\([^)]*\)/g, '').trim()
+  const stop = s.search(/\.\s/)
+  if (stop > 0) s = s.slice(0, stop)
+  return s.length > 96 ? `${s.slice(0, 95).trimEnd()}…` : s
+}
+
 /** `<input type="date">` value ("YYYY-MM-DD") → epoch ms at LOCAL midnight, or null if malformed.
  *  Local, not UTC, on purpose: klinecharts prints its time axis in the browser's own timezone, so
  *  local midnight is the instant that sits under that date ON SCREEN. `new Date("2026-03-05")`
@@ -632,7 +647,8 @@ export default function ChartPanel({
    * Drill-down data source: fetch finer-than-base candles for a bounded window (e.g. 1m under a
    * 15m run, to see a trade's exact entry). When provided, the timeframe control offers sub-base
    * TFs (1m/5m) that pull the visible window live; omitted (e.g. the fixture) → panel behaves as
-   * before. `available: false` means the feed can't serve that window (1m older than the broker keeps).
+   * before. `available: false` means the feed could not be ASKED; an empty list under `available: true`
+   * means it answered and has nothing that far back. See `ChartPage`.
    */
   onRequestCandles?: (tf: string, fromMs: number, toMs: number) => Promise<ChartPage>
   /**
@@ -651,6 +667,8 @@ export default function ChartPanel({
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<Chart | null>(null)
+  // The panel root — carries the declared test seams; see them at the render.
+  const rootRef = useRef<HTMLDivElement>(null)
 
   const baseMin = useMemo(() => parseTfMinutes(spec.baseTimeframe), [spec.baseTimeframe])
   const options = useMemo<TfOption[]>(() => {
@@ -695,6 +713,14 @@ export default function ChartPanel({
   // selected; then `fetched` (pulled live for the visible window) replaces the resampled candles.
   const [fetched, setFetched] = useState<ChartCandle[]>([])
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'empty' | 'error'>('idle')
+  // WHY a drill-down came back with nothing, and it is two completely different facts:
+  // `offline` = the feed could not be reached (`available: false` — the MT5 agent or its terminal is
+  // down), `no-history` = the feed answered and the broker simply has no bars that far back at that
+  // timeframe. ⚠ **They were one message until 2026-08-07** — *"no data here (feed offline, or none
+  // this far back?)"* — a sentence that asks the reader the question the response had already
+  // answered, and this repo's *never let "no" and "cannot ask" be the same value* rule broken by a
+  // string rather than by a type. `available` has been on the payload the whole time and nothing read it.
+  const [fetchNote, setFetchNote] = useState<string | null>(null)
   // The broker's TRUE oldest bar for the active drill-down TF (M1 ~30d back, M5 ~240d) — drawn as a
   // red dashed "no earlier data" line. null = no hard edge (feed has more, or nothing loaded).
   const [dataEdge, setDataEdge] = useState<{ ts: number; tf: number } | null>(null)
@@ -755,6 +781,21 @@ export default function ChartPanel({
   // their rosters now. They encode "keep an answer the reader has already given", which is a rule
   // about the reader, not about paging.
 
+  // The DISPLAY-side candles, memoized apart from the drill-down state on purpose.
+  //
+  // 🔴 **Folding this into `displayCandles` is what made a timeframe switch lose the reader's place
+  // (measured 2026-08-07).** `displayCandles` lists `fetched` among its dependencies, and the
+  // drill-down effect calls `setFetched([])` on every timeframe change — a FRESH empty array each
+  // time — so switching M15 → H1 recomputed the resample a second time, and the second
+  // `applyNewData` re-parked the view on the newest bar AFTER `pendingJumpRef` had already scrolled
+  // it to the right place and been consumed. **Traced by logging the applies, not by reading the
+  // effect**: `apply n=3002` → `flush 2020-08-05` → `apply n=3002` again, landing 42 days out.
+  // Keyed only on what a resample actually depends on, the second apply cannot happen.
+  const resampled = useMemo(
+    () => (selectedMin === baseMin ? baseCandles : resample(baseCandles, selectedMin * 60_000)),
+    [baseCandles, selectedMin, baseMin],
+  )
+
   const displayCandles = useMemo(() => {
     // In drill-down, show the SHIPPED bars until the finer ones land. They arrive in the spec, so
     // they paint on the first frame; the drill-down is a network pull. Returning `fetched` straight
@@ -763,11 +804,19 @@ export default function ChartPanel({
     // open into a blank screen where it used to be instant. Coarse bars now, correct bars in a
     // moment, never nothing.
     if (isFetchMode) return fetched.length ? fetched : baseCandles
-    return selectedMin === baseMin ? baseCandles : resample(baseCandles, selectedMin * 60_000)
-  }, [isFetchMode, fetched, baseCandles, selectedMin, baseMin])
+    return resampled
+  }, [isFetchMode, fetched, baseCandles, resampled])
   // True while the chart is showing shipped bars that are NOT the selected TF — the header says so,
   // because bars that don't match the TF button would otherwise be a silent lie.
   const showingPlaceholder = isFetchMode && fetched.length === 0 && baseCandles.length > 0
+  // A drill-down request is in flight. Drives the spinner on the timeframe button and the badge over
+  // the plot — see the badge for why an 11px header note was not enough.
+  const drillPending = isFetchMode && fetchStatus === 'loading'
+  // A drill-down that finished with nothing to show. It gets the SAME badge as the loading state,
+  // because it is the answer to the same question the reader asked — and because the chart is still
+  // showing the coarser bars underneath, which without a visible line is a silent lie about what
+  // timeframe is on screen.
+  const drillUnavailable = isFetchMode && (fetchStatus === 'empty' || fetchStatus === 'error')
 
   // Time bounds of the LOADED candles (ascending). Overlays anchored OUTSIDE this range must not be
   // drawn: klinecharts clamps an out-of-range point to the plot edge, so in a drill-down TF (whose
@@ -795,6 +844,7 @@ export default function ChartPanel({
       setFetched(cached.candles)
       setDataEdge(cached.edge != null ? { ts: cached.edge, tf: min } : null)
       setFetchStatus(cached.candles.length ? 'ok' : 'empty')
+      setFetchNote(null)
       return cached.candles === fetchedRef.current ? null : cached.candles
     }
     const span = fetchSpanMs(min)
@@ -813,6 +863,11 @@ export default function ChartPanel({
       setFetched(res.candles)
       setDataEdge(edge != null ? { ts: edge, tf: min } : null)
       setFetchStatus(res.candles.length ? 'ok' : 'empty')
+      // The SERVER's own sentence, verbatim — it is the only one that can name the date. Asking
+      // for M1 before the broker's measured floor comes back with "XAUUSD has no real 1-minute
+      // history before 2018-09-14 on VantageMarkets-Demo (measured, not assumed)", which is the
+      // whole answer; anything this side could write instead would be a vaguer paraphrase of it.
+      setFetchNote(res.candles.length ? null : (res.feedError ?? null))
       return res.candles
     } catch {
       if (token === fetchTokenRef.current) setFetchStatus('error')
@@ -989,6 +1044,35 @@ export default function ChartPanel({
     chart.scrollToDataIndex(Math.min(candles.length - 1, idx + half))
   }, [])
 
+  const drillSeqRef = useRef(0)
+  // Whether the previous render was in drill-down — the leaving-drill branch needs to fire on the
+  // TRANSITION, not on every render that happens not to be a drill-down (which includes the mount).
+  const wasFetchRef = useRef(false)
+
+  // Change timeframe and STAY WHERE THE READER IS — Aaron's requirement, in his words: *"I should be
+  // able to switch from any time frame to any time frame."*
+  //
+  // A timeframe switch is a real data swap, so the apply effect calls `applyNewData`, which parks the
+  // view on the NEWEST bar it was handed. While the applied window ran to the present that was
+  // invisible; since a jump can leave the window's right edge mid-history, it means every switch
+  // throws you forward to the end of whatever is loaded — measured at ~6 weeks after a jump to
+  // 2020-08-05. It is the same complaint as the drill-down teleport, one control over.
+  //
+  // The two refs `goToDate` already owns do the work: `jumpingRef` holds paging off across the swap,
+  // and `pendingJumpRef` puts the view back on the bar that was under the middle of the plot.
+  //
+  // ⚠ **This is NOT the runaway-paging guard described below.** That one was written against a
+  // 90-second freeze that turned out not to exist, and was removed. This is a positioning fix for a
+  // behaviour that was measured, and it happens to use the same two refs.
+  const pickTimeframe = useCallback((min: number) => {
+    const centre = viewCentreRef.current
+    if (centre != null) {
+      jumpingRef.current = true
+      pendingJumpRef.current = centre
+    }
+    setSelectedMin(min)
+  }, [])
+
   // ⚠ **A suspected runaway-paging freeze on a DISPLAY timeframe switch was investigated on
   // 2026-08-06 and NOT REPRODUCED — recorded here so the next reader does not re-derive it.** A
   // Playwright click on M30 after a jump to 2020 timed out past 90 seconds, which is what a frozen
@@ -1012,9 +1096,15 @@ export default function ChartPanel({
   // NEWER page from the edge it had parked on, walking it further away and paying a round trip to do
   // it. `jumpingRef` refuses that page and the flush effect puts the view on the target instead.
   const drillTo = useCallback(async (min: number, target: number, force: boolean) => {
+    // ⚠ Sequenced, because the release below is destructive. Switch M5 → M1 while the M5 request is
+    // still out and the older call returns null (superseded by the token in `runFetch`) — without
+    // this it would then clear the NEWER call's `pendingJumpRef` and drop its `jumpingRef`, so the
+    // second switch would land wherever `applyNewData` parked it and paging would reopen mid-swap.
+    const seq = ++drillSeqRef.current
     jumpingRef.current = true
     pendingJumpRef.current = target
     const got = await runFetchRef.current(min, target, force)
+    if (seq !== drillSeqRef.current) return   // a newer drill owns the guard now
     // Nothing new applied (superseded, refused, or the feed had nothing back there) ⇒ no redraw is
     // coming, so the flush effect will never run and the guard has to be released here, or every
     // later jump and every page is refused for the rest of the session.
@@ -1804,6 +1894,9 @@ export default function ChartPanel({
       const visLo = c[clampIdx(r.from, c.length)].time
       const visHi = c[clampIdx(r.to, c.length)].time
       viewCentreRef.current = c[clampIdx((r.from + r.to) / 2, c.length)].time
+      // Written to the DOM imperatively, NOT through state: this runs on every frame of a drag, and
+      // a `setState` here would re-render the whole panel at 60fps to publish a test seam.
+      rootRef.current?.setAttribute('data-view-centre', String(viewCentreRef.current))
       setDrawRange(prev => {
         // Already covered? Then do nothing. This is the common case on EVERY FRAME of a drag, and
         // recommitting here would re-create every overlay 60 times a second — i.e. it would turn
@@ -1847,11 +1940,28 @@ export default function ChartPanel({
   // right for.
   useEffect(() => {
     if (!isFetchMode) {
-      setFetched([])
+      // ⚠ `prev.length ? [] : prev` — never a fresh `[]` when it is already empty. A new array here
+      // is a new identity, which is half of the double-apply described on `resampled` above; the
+      // memo split is the other half, and both are kept because either alone leaves the hazard live
+      // for the next reader who adds a dependency.
+      setFetched(prev => (prev.length ? [] : prev))
       setFetchStatus('idle')
+      setFetchNote(null)
       setDataEdge(null)
+      // Coming back UP from a drill-down, the reader can be somewhere the applied base window does
+      // not cover — they paged M1 back past its left edge. `pickTimeframe`'s scroll would then clamp
+      // to whichever end of the loaded bars is nearest, which is a silent few weeks off. Re-slicing
+      // the spec around them is what `goToDate` already does, so ask it.
+      const centre = viewCentreRef.current
+      const b = baseCandlesRef.current
+      if (wasFetchRef.current && centre != null && b.length
+          && (centre < b[0].time || centre > b[b.length - 1].time)) {
+        void goToDate(centre)
+      }
+      wasFetchRef.current = false
       return
     }
+    wasFetchRef.current = true
     const anchor = viewCentreRef.current ?? spec.candles[spec.candles.length - 1]?.time ?? Date.now()
     void drillTo(selectedMin, anchor, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2491,6 +2601,12 @@ export default function ChartPanel({
     // guard existed: a jump to 2020-06-01 came to rest on 2021-01-19 with a perfectly healthy chart
     // and no error. They are `displayCandles`' own bounds, reused — never a second derivation.
     //
+    // ⚠ `data-view-centre` is the third such seam and the one that finally made "does a timeframe
+    // switch keep my place?" answerable. The applied WINDOW is not the answer — a switch can leave
+    // the window exactly where it was and still park the VIEW on its right edge, which is six weeks
+    // from the date being read and is precisely what was reported. It is the same value the
+    // drill-down anchors on, published rather than re-derived.
+    //
     // ⚠ `data-indicators-on` is the same kind of seam for the same kind of reason: an indicator is
     // drawn INTO the candle pane's canvas, so "is the VWAP line on screen" has no DOM answer, and a
     // check that settles for "the menu row is ticked" would pass against a panel that draws nothing.
@@ -2499,6 +2615,7 @@ export default function ChartPanel({
     <div
       data-applied-lo={loadedLoTs ?? undefined}
       data-applied-hi={loadedHiTs ?? undefined}
+      ref={rootRef}
       data-indicators-on={drawnIndicatorNames.join('|')}
       onMouseEnter={() => { hoveredRef.current = true }}
       onMouseLeave={() => { hoveredRef.current = false }}
@@ -2520,6 +2637,11 @@ export default function ChartPanel({
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border-subtle bg-bg-sunken text-[11px] font-mono font-medium text-text-secondary hover:text-text-primary transition-colors"
             >
               {options.find(o => o.min === selectedMin)?.label ?? spec.baseTimeframe.toUpperCase()}
+              {/* A drill-down is a network round trip (~4.5s measured), and until this landed the
+                  ONLY sign of it was an 11px grey line further along the header — while the chart
+                  went on showing the previous timeframe's candles, which look exactly like nothing
+                  having happened. Reported as "1 min isn't working". */}
+              {drillPending && <Loader2 className="w-3 h-3 text-accent animate-spin" />}
               <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${tfOpen ? 'rotate-180' : ''}`} />
             </button>
             {tfOpen && (
@@ -2534,7 +2656,7 @@ export default function ChartPanel({
                     <Fragment key={tf.label}>
                       {divider && <div className="my-1 border-t border-border-subtle" />}
                       <button
-                        onClick={() => { setSelectedMin(tf.min); setTfOpen(false) }}
+                        onClick={() => { pickTimeframe(tf.min); setTfOpen(false) }}
                         className={`block w-full px-3 py-1.5 text-left text-[11px] font-mono font-medium transition-colors ${
                           tf.min === selectedMin
                             ? 'bg-accent/10 text-accent'
@@ -2681,7 +2803,7 @@ export default function ChartPanel({
                 ? (showingPlaceholder
                     ? `showing ${spec.baseTimeframe.toUpperCase()} — loading these bars…`
                     : 'loading these bars…')
-              : fetchStatus === 'empty' ? 'no data here (feed offline, or none this far back?)'
+              : fetchStatus === 'empty' ? 'none this far back'
               : fetchStatus === 'error' ? 'fetch failed'
               : dataEdge ? 'all the broker still has'
               : ''
@@ -2794,6 +2916,45 @@ export default function ChartPanel({
           }}
         >
           <div ref={containerRef} className="w-full" style={{ height }} />
+
+          {/* 🔴 **The loading badge, and it is the fix for "1 min isn't working".** A drill-down is a
+              real round trip — MEASURED at ~4.5s per 12,000-bar window on a warm cache — and the
+              panel deliberately keeps the PREVIOUS timeframe's candles on screen throughout, because
+              a blank chart is worse. The consequence nobody had answered for is that the two states
+              look identical: the same candles, the same position, and an 11px grey line in the
+              header as the only difference. So it is a badge over the plot, it NAMES BOTH
+              timeframes — the one being fetched and the one you are looking at meanwhile — and it is
+              `pointer-events: none` so it cannot eat a click on the chart under it. */}
+          {(drillPending || drillUnavailable) && (
+            <div
+              className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md border bg-bg-surface/95 px-3 py-1.5 shadow-lg ${
+                drillPending ? 'border-accent/40' : 'border-warn-text/50'
+              }`}
+              style={{ top: 12, pointerEvents: 'none', zIndex: 3 }}
+              title={fetchNote ?? undefined}
+            >
+              {drillPending
+                ? <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+                : <EyeOff className="w-3.5 h-3.5 text-warn-text" />}
+              <span className="text-[11px] font-mono text-text-secondary">
+                {drillPending ? (
+                  <>
+                    loading <span className="text-accent">{drillLabel(selectedMin)}</span> bars
+                    {showingPlaceholder && <> — showing {spec.baseTimeframe.toUpperCase()} meanwhile</>}
+                  </>
+                ) : (
+                  <>
+                    <span className="text-warn-text">{drillLabel(selectedMin)}</span>
+                    {' — '}
+                    {fetchNote ? shortNote(fetchNote)
+                      : fetchStatus === 'error' ? 'the request failed'
+                      : 'no bars this far back'}
+                    {showingPlaceholder && <> · showing {spec.baseTimeframe.toUpperCase()}</>}
+                  </>
+                )}
+              </span>
+            </div>
+          )}
 
           {/* Measurement display layer — pointer-events:none so klinecharts canvas gets all events
               (crosshair, scrolling, etc.) and our onClick/onMouseMove handlers fire via bubbling */}
