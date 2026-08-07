@@ -465,16 +465,24 @@ here**, so the chart shows exactly what the strategy saw.
   stays theme-free (fav/adv/entry/chip colours are passed in). **Degrades gracefully:** a trade
   lacking the rich fields (`mfePrice`/`profitLegs` — an NT8/MT5 run, or an old Python run whose stored
   `equity_curve.json` predates them) falls back to the original entry→exit outcome box (win green /
-  loss red, dashed border + a direction triangle for a 1m secondary). **A SECONDARY trade also carries
-  a small `SEC` chip pinned to its entry** (2026-08-06, Aaron's ask), on both the rich and the degraded
-  path. It had only the dashed box border before, which is invisible in practice: a dashed border reads
-  as "different" only when a solid one is beside it, and a 1m re-entry is rare enough that there usually
-  is not one on screen. ⚠ **The tag is at the ENTRY and deliberately not folded into the Won/Lost chip** —
-  the question a reader has is *why is there a SECOND trade on this leg*, which is a question about the
-  entry; how it resolved is a separate fact with its own chip ("win or lose doesn't matter"). ⚠ **It is
-  drawn on the degraded path too even though an NT8/MT5 trade cannot be a secondary today**: a marker that
-  appeared only on the rich path would read as *not a re-entry* rather than as *this renderer had less to
-  work with*, and an absence that looks like an answer is this repo's most-repeated defect. The rich fields are emitted by
+  loss red, dashed border + a direction triangle for a 1m secondary). **A SECONDARY trade says so in
+  words** (2026-08-06, Aaron's ask): the outcome chip reads **`SEC · Won`**, and on the degraded path a
+  small `SEC` chip sits beyond the entry arrow. It had only the dashed box border before, which is
+  invisible in practice — a dashed border reads as "different" only when a solid one is beside it, and a
+  1m re-entry is rare enough that there usually is not one on screen. ⚠ **The first version pinned that
+  chip under the ENTRY on both paths and it was UNREADABLE on real data, which is worth recording because
+  the reasoning for it was sound**: the question a reader has is *why is there a SECOND trade on this leg*,
+  which is a question about the entry — but directly under the entry point is exactly where the `Entry` /
+  `SL` / `Deepest` price chips stack, and **a 1m re-entry is TIGHT BY CONSTRUCTION, which is the whole
+  idea**, so its box is short and those chips are already almost on top of each other. Screenshotted on
+  2024-12-02, `Deepest 2634.29` and `SEC` were overlapping and `SL 2634.56` was touching it. The outcome
+  chip is centred beyond the trade's resolved extreme and is the one label with clear air around it.
+  ⚠ **It reads `SEC` FIRST (`SEC · Won`), so the fact that it is a re-entry survives being skimmed** —
+  win or lose was explicitly not the point of the ask. ⚠ **The degraded path keeps the entry chip even
+  though an NT8/MT5 trade cannot be a secondary today**: a marker that appeared only on the rich path
+  would read as *not a re-entry* rather than as *this renderer had less to work with*, and an absence that
+  looks like an answer is this repo's most-repeated defect. **The standing lesson is small and this folder
+  has recorded it before: a placement can be right in principle and wrong on the data — render it.** The rich fields are emitted by
   `backtest/output.py` (`mfe_price`/`mae_price`/`stop_price`/`legs`, all reporting-only — parity-safe)
   → `chart_spec` (which filters `legs` to real profit-takes beyond a 0.1R scratch band, so a
   breakeven-stop fill is never drawn as profit, and attaches each surviving leg's label). One on/off

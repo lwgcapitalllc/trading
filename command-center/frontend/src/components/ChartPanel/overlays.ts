@@ -174,6 +174,10 @@ interface TradeExtend {
   layerName?: string   // strategy name printed IN the outcome chip ("SOS Fade · Won") — the stack's
                        // primary "who won this one" signal (absent on a single-run chart)
   precision?: number   // instrument price decimals — every side label states its own price
+  // `false` drops the number from every side label, leaving `Entry` / `SL` / `TP1` alone. A reader
+  // preference (Chart settings), NOT a data change — the levels drawn are identical either way.
+  // Undefined means ON, so a caller that has not been updated keeps the shipped behaviour.
+  showPrices?: boolean
   entryPrice?: number
   exitPrice?: number
   mfePrice?: number
@@ -348,8 +352,12 @@ export function registerChartOverlays(): void {
       // entry; how it resolved is a separate fact that already has its own chip (Aaron's call,
       // 2026-08-06: "win or lose doesn't matter").
       //
-      // It sits beyond the arrow tip, on the side the arrow points away from, so it never lands on
-      // the candle the entry filled on.
+      // ⚠ It sits beyond the arrow tip on the DEGRADED path only. The first version put it there on
+      // the rich path too and it was unreadable on real data (Aaron, 2026-08-06): directly under the
+      // entry point is exactly where the `Entry` / `SL` / `Deepest` price chips already stack, so on
+      // a tight trade — and a 1m re-entry is tight by construction, that is the whole idea — the tag
+      // landed on top of them. The rich path folds it into the outcome chip instead, which is
+      // centred beyond the trade's extreme and is the one label with clear air around it.
       const secTagFig = (): OverlayFigure => ({
         type: 'text',
         attrs: {
@@ -436,10 +444,17 @@ export function registerChartOverlays(): void {
       // EVERY label carries its PRICE (Aaron's call, 2026-08-03). A bare `SL` says a level exists
       // and makes you read it off the axis; the annotations are the trade's own record of what
       // happened, so each states the number it happened at.
+      //
+      // That call is now a SETTING rather than a rule (`showPrices`, Chart settings → Trades). The
+      // reason is the 1m re-entry: its box is short by construction, so the chips stack on top of
+      // each other, and the price is most of each chip's width. Undefined keeps the price, so the
+      // shipped reading is unchanged for anything that has not been updated to pass it.
       const px = (p: number) => p.toFixed(d.precision ?? 2)
+      const withPrice = d.showPrices !== false
       const labels: { y: number; text: string; color: string }[] = []
       const addLabel = (p: number | undefined, text: string, color: string) => {
-        const y = yOf(p); if (y != null) labels.push({ y, text: `${text} ${px(p as number)}`, color })
+        const y = yOf(p); if (y == null) return
+        labels.push({ y, text: withPrice ? `${text} ${px(p as number)}` : text, color })
       }
 
       const entryY = entry.y
@@ -563,8 +578,11 @@ export function registerChartOverlays(): void {
         const outPix = won ? -sign : sign      // beyond the extreme, away from entry (px: up = −)
         // On a portfolio stack the chip also NAMES the strategy ("SOS Fade · Won") — with several
         // strategies' trades on one chart, the outcome alone doesn't say whose trade it was.
+        // A 1m re-entry says so here rather than at the entry — see `secTagFig`. It reads
+        // "SEC · Won", so the fact that it IS a re-entry comes first and survives being skimmed.
         const outcome = won ? 'Won' : 'Lost'
-        const text = d.layerName ? `${d.layerName} · ${outcome}` : outcome
+        const parts = [d.layerName, secondary ? 'SEC' : null, outcome].filter(Boolean)
+        const text = parts.join(' · ')
         const cx = (x0 + x1) / 2
         const cy = extY + outPix * 12
         chip(cx, cy, text, won ? profitColor : stopColor, 'center', d.layerColor)
@@ -580,11 +598,6 @@ export function registerChartOverlays(): void {
           })
         }
       }
-
-      // Last, so it sits over the bands rather than under them. The rich path draws no entry arrow
-      // (the entry is a tick + dot + price chip), so the tag lands just past the entry price on the
-      // side the trade is heading away from.
-      if (secondary) figures.push(secTagFig())
 
       return figures
     },
