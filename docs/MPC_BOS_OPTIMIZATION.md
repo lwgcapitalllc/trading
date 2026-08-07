@@ -8,8 +8,21 @@ deleted on 2026-08-04 as a half-built port with no parity harness (commit `1946f
 findings are summarised in Run 5 below and the full text is recoverable at `1946f8b^`. They are
 not restated here in full; they are cited, because Run 5 only makes sense against them.
 
-⚠ **NO NUMBER IN THIS FILE COMES FROM A PINE↔PYTHON PARITY-VALIDATED RUN.** There is still no
-`mpc_bos_strategy_export.pine` and no `compare_bos.py` (spec §10 steps 3–4 are open). Runs 1–4 came
+⚠ **NO NUMBER IN THIS FILE COMES FROM A PINE↔PYTHON PARITY-VALIDATED RUN.** Still true on
+2026-08-07, but the reason has changed and the fix is now one command away: both
+`indicators/mpc_bos_strategy_export.pine` and
+`strategies/python/mpc_bos/tools/compare_bos.py` **now exist** (spec §10 steps 3–4 are closed),
+along with a rebuilt `strategies/python/mpc_bos/` that runs and sweeps. What is missing is a
+real **TradingView CSV export** — a five-minute human step — so the gate has never been run:
+
+```bash
+python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 500
+```
+
+Exit 0 and this file's numbers can be re-measured and believed. ⚠ Read the tool's COVERAGE table
+before believing its exit code: with `bosUseFvg` off the four gap-entry rules never run.
+⚠ The Runs below were produced by tools that **predate the port** and none of them was the
+strategy — Run 8 is the record of one of them being falsified by a single Strategy Tester run. Runs 1–4 came
 from a Python port that was never validated; Run 5 comes from a deliberately simplified skeleton
 that is not the strategy at all. Read the DIRECTION of everything here, never the decimals.
 

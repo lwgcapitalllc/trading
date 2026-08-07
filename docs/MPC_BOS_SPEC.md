@@ -397,10 +397,30 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
    why). Execution layer written to this spec. Awaiting a TradingView compile.
 2. Backtest on XAUUSD 15m, the same window the other two were measured on. Baseline first with
    every optional filter off, then sweep F1 → F4 → the SL model.
-3. `indicators/mpc_bos_strategy_export.pine` + a `compare_bos.py` harness, matching the pattern in
-   `strategies/python/mpc_bleg/`.
-4. Only then the Python port under `strategies/python/mpc_bos/`, and only after a real TradingView
-   export has passed exit 0 (the standing rule).
+3. ~~`indicators/mpc_bos_strategy_export.pine` + a `compare_bos.py` harness~~ — **BOTH DONE.**
+   The export twin landed 2026-08-07 (59 plots: the full decision stream, the two anchor
+   endpoints, every input as `cfg_*`); `strategies/python/mpc_bos/tools/compare_bos.py` landed
+   the same day and is unit-tested. ⚠ **It has never been RUN** — see step 4.
+4. ~~Only then the Python port under `strategies/python/mpc_bos/`~~ — **BUILT 2026-08-07, and
+   the order in this list was deliberately broken.** The rule ("port only after a real export
+   has passed exit 0") assumes the export is the cheap half; here the CSV is a human step nobody
+   had taken for a week and the port was blocking Aaron's brother from sweeping anything at all.
+   So the port was written first and shipped **loudly unvalidated** — a red banner in the package
+   `__init__`, its CLAUDE.md, `docs/MPC_BOS_OPTIMIZATION.md` and `docs/STRATEGY_WORKFLOW.md`.
+   ⚠ **That is a defensible trade only because the gate was written in the same pass.** A port
+   with no harness is what got the last one deleted (`1946f8b`, 2026-08-04).
+
+**The one step left, and only a human can do it:** open
+`indicators/mpc_bos_strategy_export.pine` on XAUUSD 15m in TradingView, *⋮ → Export chart data →
+Bar data and indicator values*, then
+
+```bash
+python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 500
+```
+
+Exit 0 and every number in `docs/MPC_BOS_OPTIMIZATION.md` becomes trustworthy. ⚠ Read the tool's
+COVERAGE table before believing the exit code — with `bosUseFvg` off (today's default) the four
+gap-entry rules never run, and a green gate is only green about the branches both sides entered.
 
 ### 10b. Run 1 (2026-07-29) — and the F4 design conflict it exposed
 

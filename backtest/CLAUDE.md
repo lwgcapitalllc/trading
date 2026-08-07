@@ -535,8 +535,17 @@ caches by hour. Pull the SMALLEST window that answers the question — gold is ~
 - **The cache is git-ignored broker data** — never commit anything under `backtest/cache/`.
 - **Tests run offline.** Network (the MT5 agent) is injected, so tests use a fake. Run:
   `command-center/backend/.venv/bin/python -m pytest backtest/tests/ -q`.
-- **Bars are UTC**, timestamped at the bar OPEN (matching MT5), columns open/high/low/close, no
-  volume (the A+ engines don't need it).
+- **Bars are UTC**, timestamped at the bar OPEN (matching MT5), columns open/high/low/close plus
+  an OPTIONAL `volume`. This line said "no volume (the A+ engines don't need it)" until
+  2026-08-07 and was two generations stale: the data layer has carried volume since the
+  2026-08-06 `FEED_VERSION` 3 pass, and `ReplayBar` carries it from 2026-08-07 for
+  `strategies/python/mpc_bos/`, the first strategy that needs it (its session-VWAP filter).
+  ⚠ **`ReplayBar.volume` is `Optional[float]` and `None` means THE FEED CARRIED NONE — never
+  0.0.** A zero-volume bar is a real thing MT5 reports on a dead session, so filling the unknown
+  with one puts a measurement where there is none, and a volume-weighted consumer averages
+  straight through it without complaining. A NaN cell (one unknown bar inside an otherwise
+  populated column) is `None` for the same reason. The A+ and B-LEG paths never read it, so
+  their replays are byte-identical.
 
 ## Reading the numbers — two standing caveats
 

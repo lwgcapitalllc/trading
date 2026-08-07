@@ -15,7 +15,18 @@ own.
 harness is `indicators/vwap_export.pine`, diffed against this Python by `tools/compare_vwap.py`. Pine
 stays in `indicators/` (shared source, TradingView-only toolchain); the CSV + compare tool are the
 engine's half.
-**Last reviewed:** 2026-07-05
+**Consumers:** `strategies/python/mpc_bos/` since 2026-08-07 — the FIRST strategy consumer this
+engine has had, and the first thing in the repo's strategy layer to need a volume column. It reads
+`VwapEvents.value` for its F10 filter (refuse a setup while price is not closing on the trend's own
+side of the line) and reads nothing else. ⚠ **That makes this engine trade-affecting now**, where
+before it fed nothing: a change here moves BOS entries. The `crossed_up` / `crossed_down` edges are
+still unconsumed — the BOS filter is a STATE, deliberately, and asks only which side the bar closed.
+⚠ A private VWAP anchored at a structure break was considered and REFUSED: it would be a second
+implementation of this engine, and it would not be the line anyone is looking at on the chart.
+**Last reviewed:** 2026-08-07 — gained its first consumer (above); no code change. The one thing a
+consumer must handle is `value = None`, which this engine returns whenever the session has seen no
+volume yet. It means **cannot compute**, never zero, and `mpc_bos` reads it as a REFUSAL on both
+sides for exactly that reason. Earlier: 2026-07-05
 
 ---
 
