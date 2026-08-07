@@ -98,6 +98,37 @@ class BLegConfig(SosFadeConfig):
     #   (0.25% -> 43.6R against 109.3R at 1.0), because an A+ stop is a fib fraction of a leg on
     #   a ladder whose rungs are also fib levels. Do not "reconcile" the two.
 
+    exec_time_stop_hrs: float = 8.0   # "Time stop (hours)" — RE-DEFAULTED for this fork
+    #   The parent ships 36.0 and BOTH numbers are measured, on their own trades, and they
+    #   disagree — so this is pinned rather than inherited, the same call as exec_trail_pct
+    #   above. `exec_time_stop_mode` is NOT pinned: "Before TP1 only" is right on both forks.
+    #   MEASURED 2026-08-06 by real replay, 186,312 M15 bars (2018-09-13 -> 2026-08-05),
+    #   spread + swap charged, one axis moved off the shipped baseline per row:
+    #       Off  111 / +6.50R  / PF 1.11 / maxDD -12.01
+    #       36h  112 / +12.02R / PF 1.23 / maxDD  -8.89   (the inherited value)
+    #       18h  113 / +15.54R / PF 1.33 / maxDD  -8.10
+    #       12h  113 / +15.21R / PF 1.35 / maxDD  -6.03
+    #        8h  114 / +17.56R / PF 1.45 / maxDD  -5.15   <- shipped
+    #        6h  114 / +14.37R / PF 1.38 / maxDD  -5.13
+    #        4h  114 / +13.32R / PF 1.39 / maxDD  -5.19
+    #   ⚠ 8 is defensible because 4-12 is a PLATEAU on drawdown (all near 5R against 8.89R
+    #   at 36), not because it is the single highest R. Read the drawdown: +5.5R over 114
+    #   trades in 7.9 years is inside a noise band this strategy has never had measured —
+    #   the A+ jitter audit put THAT bot's run-to-run spread at sd 15.06R and no equivalent
+    #   has been run here.
+    #   ⚠ It cuts NO winners. The lever only fires at stage 0 (TP1 never touched), so the
+    #   gain is dead trades ending sooner and the single position slot freeing up — not a
+    #   runner being handled better.
+    #   ⚠ THE OPPOSITE LEVER WAS MEASURED AND REJECTED, which is the part worth keeping.
+    #   The exit-stage map over the 112 baseline trades reads: stage 0, 63 trades, -48.12R
+    #   banked on 24.61R shown; stage 1 (touched +1R, stop at breakeven, never reached TP2),
+    #   18 trades, -1.38R banked on 31.23R shown; stage 2 (runner trail live), 31 trades,
+    #   +61.52R banked on 73.31R shown — 84% kept. Stage 1 looks like a 32R hole and every
+    #   way of closing it LOST money: trailing from stage 1 gives +1.92R, flooring at +1R
+    #   gives +4.09R, pulling TP2 to 60% gives +1.10R, pushing it to 180% gives -4.82R, and
+    #   all four cut the best trade from +5.07R to under +4.4R. The breakeven-until-TP2 gap
+    #   is what lets the stage-2 cohort run; protecting earlier saves the 18 and kills the 31.
+
     # ── B-LEG-only input (Pine bLegMaxDays, group "Strategy Execution") ─────────────
     bleg_max_days: float = 4.0    # days a frozen band watches before it goes stale (1-6)
     #   Converted to a BAR count (day ÷ chart timeframe) so weekends and the daily close

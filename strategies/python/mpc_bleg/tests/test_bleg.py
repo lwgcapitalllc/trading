@@ -147,7 +147,50 @@ def test_this_fork_records_no_missed_setups():
     assert strat.execution.misses == []
 
 
-# ── the two re-defaulted exit/staleness levers (2026-08-06) ───────────────────────
+# ── the re-defaulted exit/staleness levers (2026-08-06) ───────────────────────────
+def test_this_fork_redefaults_the_time_stop_and_the_parent_keeps_its_own():
+    """`exec_time_stop_hrs` is a FORK PIN. Both forks measured this lever on their own trades
+    and got different answers — A+ sat on a 24h-40h plateau and ships 36, this fork sits on a
+    4h-12h one and ships 8 — so inheriting would silently move every B-LEG exit to a number
+    measured on a different strategy. The mode is deliberately NOT pinned: "Before TP1 only"
+    is right on both.
+
+    Measured here by real replay, 186,312 M15 bars, spread + swap charged:
+        Off 111 / +6.50R / maxDD -12.01 · 36h 112 / +12.02R / -8.89 · 8h 114 / +17.56R / -5.15
+    """
+    from mpc_sos_fade import SosFadeConfig
+
+    assert BLegConfig().exec_time_stop_hrs == 8.0
+    assert SosFadeConfig().exec_time_stop_hrs == 36.0, \
+        "the A+ parent must KEEP 36 — its own plateau is 24h-40h, measured on A+ trades"
+    assert BLegConfig().exec_time_stop_mode == "Before TP1 only"
+    assert SosFadeConfig().exec_time_stop_mode == "Before TP1 only", \
+        "the MODE is shared on purpose — only the hours fork"
+
+
+def test_the_time_stop_only_ever_fires_before_tp1():
+    """The whole case for 8 hours rests on this: the lever cuts DEAD trades, never winners.
+    If the stage gate were ever dropped the clock would start closing runners and the measured
+    +17.56R would describe a strategy nobody shipped — which is exactly what `"Always"` does
+    on the A+ fork (+97.32R against +142.17R).
+
+    Read off the Pine rather than asserted about the Python, because the Pine is the half that
+    has no test suite of its own and the `lStage == 0` term is the one a tidy-up would remove.
+    """
+    import re
+
+    for name in ("mpc_b_leg_strategy.pine", "mpc_b_leg_strategy_export.pine"):
+        src = (_ROOT / "indicators" / name).read_text()
+        hits = [ln for ln in src.splitlines()
+                if re.match(r"bool [ls]TimeUp = ", ln)]
+        assert len(hits) == 2, f"{name}: expected a long and a short time-stop line, got {len(hits)}"
+        for ln in hits:
+            stage = "lStage" if ln.startswith("bool lTimeUp") else "sStage"
+            assert f'execTimeStopMode == "Always" or {stage} == 0' in ln, \
+                f"{name}: the stage gate is gone from `{ln.split('=')[0].strip()}` — the clock " \
+                "would now cut winners too"
+
+
 def test_this_fork_redefaults_the_trail_step_and_the_staleness_cap():
     """Both are FORK PINS, not inherited values, and both would silently revert if somebody
     "reconciled" this config with its parent's.
@@ -189,6 +232,15 @@ def test_the_staleness_cap_default_is_reachable_on_its_own_pine_input():
         td = float(re.search(r"input\.float\(([\d.]+)", tl).group(1))
         assert td == BLegConfig().exec_trail_pct, f"{name}: Pine execTrailPct {td} != config"
 
+        # Same check for the time stop. It has a `minval` and no `maxval`, so only the floor
+        # is asserted — 8.0 sitting under a 0.25 minval would be the same unexpressable-config
+        # bug from the other end.
+        hl = next(ln for ln in src.splitlines() if ln.startswith("float execTimeStopHrs = input."))
+        hd = float(re.search(r"input\.float\(([\d.]+)", hl).group(1))
+        hlo = float(re.search(r"minval = ([\d.]+)", hl).group(1))
+        assert hd == BLegConfig().exec_time_stop_hrs, f"{name}: Pine execTimeStopHrs {hd} != config"
+        assert hd >= hlo, f"{name}: default {hd} is below its own minval {hlo}"
+
 
 def test_the_meta_descs_are_the_pine_tooltips_verbatim():
     """The lab row and the Pine input are ONE name and ONE explanation — the contract recorded
@@ -203,9 +255,12 @@ def test_the_meta_descs_are_the_pine_tooltips_verbatim():
                        / "mpc_bleg.meta.json").read_text())
     by_name = {p["name"]: p for p in meta["params"]}
     checked = 0
-    for field, var in (("bleg_max_days", "bLegMaxDays"), ("exec_trail_pct", "execTrailPct")):
-        line = next(ln for ln in pine if ln.startswith(f"float {var} = input."))
+    for field, ty, var in (("bleg_max_days", "float", "bLegMaxDays"),
+                           ("exec_trail_pct", "float", "execTrailPct"),
+                           ("exec_time_stop_hrs", "float", "execTimeStopHrs"),
+                           ("exec_time_stop_mode", "string", "execTimeStopMode")):
+        line = next(ln for ln in pine if ln.startswith(f"{ty} {var} = input."))
         tip = re.search(r'tooltip = "((?:[^"\\]|\\.)*)"', line).group(1)
         assert by_name[field]["desc"] == tip, f"{field}: meta desc has drifted from the Pine tooltip"
         checked += 1
-    assert checked == 2, "this test matched nothing — the params were renamed, not verified"
+    assert checked == 4, "this test matched nothing — the params were renamed, not verified"

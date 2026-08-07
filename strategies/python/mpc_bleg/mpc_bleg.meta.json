@@ -159,7 +159,7 @@
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
-      "desc": "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, inherited from the A+ fork where it was measured: there it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R. It has NOT been measured on B legs, which wait for a late retrace by construction, so treat any value here as untested until it is replayed. Off closes nothing.",
+      "desc": "Close a trade that has been open for the number of hours below. Before TP1 only fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss — so it cuts no winners. Always drops that gate and closes on the clock alone. Off closes nothing and is the worst of the three here. Measured on THIS fork over the full history with costs charged: Before TP1 only at 8h gives +17.56R and a 5.15R max drawdown, against +12.02R / 8.89R at 36h and +6.50R / 12.01R with it Off.",
       "choices": [
         "Off",
         "Before TP1 only",
@@ -174,7 +174,7 @@
       "name": "exec_time_stop_hrs",
       "group": "Exit ladder",
       "label": "Time stop (hours)",
-      "desc": "Calendar hours since the fill, weekends included — the same clock the swap is charged on. The 24h-to-40h plateau behind the 36 default was measured on the A+ fork, not on this one. A B leg waits for a LATE retrace by construction, so treat any value here as untested until it is replayed.",
+      "desc": "Calendar hours since the fill, weekends included — the same clock the swap is charged on. Re-defaulted 36 → 8 on 2026-08-06 after a sweep on this fork's own trades: 4h, 6h, 8h and 12h all land near a 5R max drawdown against 8.89R at 36h, so it is a plateau rather than a lucky point, and 8 is the best of it on every column and on both halves of the history. ⚠ Read the DRAWDOWN, not the R — +5.5R over 114 trades in 7.9 years is inside a noise band this strategy has never had measured.",
       "step": 0.25,
       "show_if": {
         "exec_time_stop_mode": [
