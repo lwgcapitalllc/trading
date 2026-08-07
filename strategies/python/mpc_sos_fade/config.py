@@ -306,6 +306,20 @@ class SosFadeConfig:
     #   ⚠ It was believed to be un-measurable because this repo's own docs said the broker served
     #   ~35 days of 1m. That was a guess and it is FALSE — real M1 runs back to 2018-09-14.
 
+    exec_sec_retrace: float = 0.382    # "Secondary entry retrace" — where the 1m limit rests
+    #   How far back into the 1m leg the re-entry's resting limit sits, as a fib ratio of that leg.
+    #   0.382 (default) = the shipped behaviour, byte-identical to the hardcoded constant it replaced.
+    #   0.0 = rest AT the leg extreme, i.e. enter ON the 1m SOS itself rather than waiting for a
+    #   pullback. Read ONLY when exec_secondary is on (see __post_init__).
+    #   ⚠ IT IS A TRADE-OFF, NOT A FREE KNOB, AND THE TWO HALVES PULL OPPOSITE WAYS. The stop is the
+    #   1m leg ORIGIN, so a shallower retrace is a WIDER stop: at 0.382 the stop distance is 0.618
+    #   of the leg, at 0.0 it is the whole leg. Smaller number = more setups actually fill (no
+    #   pullback required) and every one of them is sized SMALLER for the same risk, with less room
+    #   between the entry and the 15m targets it is aiming at. So expect more trades worth less each,
+    #   and do not read a change in trade COUNT as the answer.
+    #   ⚠ A number rather than a two-way switch on purpose — that is what lets the optimizer sweep
+    #   it, the same reasoning as exec_sl_custom.
+
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
 
@@ -376,6 +390,16 @@ class SosFadeConfig:
                 f"exec_time_stop_hrs must be > 0 when exec_time_stop_mode is "
                 f"{self.exec_time_stop_mode!r}, got {self.exec_time_stop_hrs!r}. "
                 "Set exec_time_stop_mode='Off' to disable the time stop."
+            )
+        if self.exec_secondary and not (0.0 <= self.exec_sec_retrace < 1.0):
+            # 1.0 is the leg ORIGIN, which is where the stop sits — an entry there has a zero stop
+            # distance, so the order is cancelled and the feature silently does nothing. Past 1.0
+            # the stop is on the wrong side of the entry entirely. Refusing states that; letting it
+            # through would report "the secondary took no trades" as though that were a finding.
+            raise ValueError(
+                f"exec_sec_retrace must be a fib ratio in [0, 1.0), got "
+                f"{self.exec_sec_retrace!r}. 0 rests at the 1m leg extreme (enter on the SOS "
+                "itself); 1.0 is the leg origin, where the stop is."
             )
         if self.exec_sl_level != "Custom":
             return

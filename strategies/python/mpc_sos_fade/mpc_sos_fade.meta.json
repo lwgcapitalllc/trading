@@ -597,6 +597,17 @@
       "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters, with a much tighter stop for the same 15m targets. Needs a 1m feed alongside the 15m, so it runs in the lab only — the live bot refuses it. Measured over the full 7.9 years it fired 10 times and its whole result is ONE trade: +25.56R total, of which April 2023 is +27.33R, so the other nine are −1.77R and the book's average R per trade ends up below baseline. Drawdown 45.6% → 50.7%. Off by default for that reason. Slow: a full-history run replays 2.7M 1m bars."
     },
     {
+      "name": "exec_sec_retrace",
+      "group": "Direction & sessions",
+      "widget": "number",
+      "label": "Secondary entry retrace",
+      "min": 0.0,
+      "max": 0.999,
+      "step": 0.001,
+      "show_if": {"exec_secondary": true},
+      "desc": "Where the 1-minute re-entry's limit rests, as a fib ratio of that 1m leg. 0.382 is the shipped default. 0 rests at the leg extreme, which is entering on the 1m shift of structure itself rather than waiting for a pullback. It is a trade-off, not a free knob: the stop is the leg ORIGIN either way, so a smaller number is a WIDER stop and a smaller position for the same risk, with less room to the 15m targets. Measured over the full 7.9 years, deeper is better and it is monotonic — 0.0 gives 12 re-entries and +14.48R, 0.382 gives 10 and +25.56R, 0.5 gives 9 and +30.17R — but every one of those totals is a single April 2023 trade, and with that trade removed all four are negative. Read the ranking as how big one winner got, not as which entry is better."
+    },
+    {
       "name": "exec_conf_sz",
       "group": "Direction & sessions",
       "widget": "toggle",

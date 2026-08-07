@@ -216,8 +216,12 @@ class SecondaryArm:
                    and not late and (not short_veto or not respect_veto))
 
         buf = cfg.exec_sl_buf_tk * cfg.mintick
-        l_edge = (self._l_hi - (self._l_hi - self._l_lo) * 0.382) if l_armed else None
-        s_edge = (self._s_lo + (self._s_hi - self._s_lo) * 0.382) if s_armed else None
+        # `exec_sec_retrace` (default 0.382 — the constant this replaced, so the shipped path is
+        # unchanged). 0.0 rests at the leg extreme, which is entering on the 1m SOS itself. The stop
+        # is the leg ORIGIN either way, so a shallower ratio is a WIDER stop and a smaller position.
+        ratio = cfg.exec_sec_retrace
+        l_edge = (self._l_hi - (self._l_hi - self._l_lo) * ratio) if l_armed else None
+        s_edge = (self._s_lo + (self._s_hi - self._s_lo) * ratio) if s_armed else None
         return SecArm(
             l_armed=l_armed, l_edge=l_edge,
             l_sl=(self._l_lo - buf) if l_armed else None,

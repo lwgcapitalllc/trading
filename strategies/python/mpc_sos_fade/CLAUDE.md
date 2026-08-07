@@ -497,6 +497,35 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   `_advance_stage`'s own source for `sig.<field>` and asserting the real `run_dual` supplies all of
   them — a hand-written list would have re-frozen exactly the assumption that failed. **Watched red
   against the bug, naming both missing fields.**
+- ⚠ **WHERE THE LIMIT RESTS IS NOW A NUMBER (`exec_sec_retrace`, default 0.382), AND SWEEPING IT
+  ANSWERS A QUESTION WORTH RECORDING FOR ITS SHAPE RATHER THAN ITS WINNER.** Aaron asked what
+  happens if the 38.2% retrace comes out and the re-entry simply takes the 1m SOS. The 0.382 was a
+  hardcoded constant; it is a config field now, byte-identical at the default (pinned by the suite)
+  and refused outside `[0, 1.0)` at construction — 1.0 is the leg ORIGIN, where the stop is, so an
+  entry there has a zero stop distance and the order is silently cancelled, which would report *the
+  secondary took no trades* as though that were a finding. ✅ **Four full-history replays, run in
+  parallel, with 0.382 as the CONTROL** (it reproduced 190 trades / +165.46R exactly, which is what
+  says the refactor moved nothing):
+
+  | retrace | trades | total R | avg R/trade | sec | sec R | its best | other 9+ | W/L |
+  |---|---|---|---|---|---|---|---|---|
+  | **0.000** (on the SOS) | 192 | +154.38 | +0.804 | 12 | +14.48 | +16.51 | −2.03 | 3/3 |
+  | 0.236 | 190 | +159.92 | +0.842 | 10 | +20.02 | +21.91 | −1.90 | 2/3 |
+  | **0.382** (shipped) | 190 | +165.46 | +0.871 | 10 | +25.56 | +27.33 | −1.76 | 2/3 |
+  | 0.500 | 189 | +170.07 | +0.900 | 9 | +30.17 | +34.01 | −3.84 | 1/4 |
+
+  🔴 **Entering on the SOS is the WORST row and the result is monotonic — deeper is better** — which
+  is mechanical rather than mysterious: **the stop is the 1m leg origin whatever the entry**, so at
+  0.382 the stop distance is 0.618 of the leg and at 0.0 it is the whole leg. A shallower entry is a
+  WIDER stop, hence a SMALLER position for the same risk, and less room between the fill and the 15m
+  targets. **You fill more often and each fill is worth less** — +2 trades for −11R. ⚠ **But the
+  ranking is one trade and the last two columns say so: strip each row's best and all four are
+  NEGATIVE (−2.03 / −1.90 / −1.76 / −3.84).** The sweep is not measuring which entry is better, it
+  is measuring how large that April 2023 winner grew as the stop tightened, which is arithmetic.
+  **The clincher is the bottom row — 0.5 posts the worst hit rate in the table (1 win, 4 losses of 9)
+  and the best total.** Drawdown is flat at 6.53R across all four, because it belongs to the primary
+  book. ⚠ **So: do not enter on the SOS, and equally do not read this as a reason to move off
+  0.382.** The lever does not change the verdict above; it changes the size of one fill.
 - **NOT USABLE LIVE** — `algos/live/bridge.py` REFUSES `exec_secondary` outright
   (`UnsupportedStrategyConfig`), because the live runner drives ONE timeframe and this needs the 1m
   stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
