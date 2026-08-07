@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ChevronDown, GitCommitHorizontal, Info, Lock,
+  AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronRight,
+  GitCommitHorizontal, HelpCircle, Info, Lock,
   PackageCheck, Snowflake, RotateCcw, SlidersHorizontal, Upload,
 } from 'lucide-react'
 import {
@@ -303,16 +304,247 @@ function Warn({ children }: { children: React.ReactNode }) {
   )
 }
 
-// `botKey` addresses the API and `botLabel` is what a human reads. They are separate props
-// on purpose: a display name is the field somebody eventually renames, and a control that
-// ACTS on a name acts on nothing the day it changes.
-function DeployCard({ botKey, botLabel }: { botKey: string; botLabel: string }) {
+// ── "am I behind, and by how much" — the headline the page never had ────────────
+//
+// 🔴 The version row on the card below read `v0`, and it always would have: `strategy_version`
+// is an int `algos/live/live_config.py` defaults to 0 and NOTHING writes. So the one question
+// the Configure tab exists to answer had no answer on it — Aaron, 2026-08-07: *"I just wanna
+// know what is the version that I have compiled in my backtester versus the version that is
+// deployed... and if I'm behind, there should be a big nice button."*
+//
+// A version here is the number of commits that have touched this bot's trees, so the two
+// numbers subtract to the work waiting to go out. Derivation and why not the lab's own
+// content-addressed registry: `backend/services/bot_versions.py`.
+//
+// ⚠ This is the ONLY promote entry point on the page. The card below used to carry its own,
+// and two controls firing one destructive action is two places for the confirmation copy, the
+// disabled state and the preview gate to drift apart — on the one control that changes what a
+// live account trades.
+function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string }) {
   const { data: v, isLoading } = useBotVersion(botKey)
   const preview = usePreviewPromote()
   const promote = usePromoteBot()
-  const [output, setOutput] = useState<string | null>(null)
+  // 🔴 This was a bare `output: string | null`, so a FINISHED deploy rendered under the
+  // preview's own caption ("nothing deployed yet") with the Deploy button still sitting
+  // there — Aaron pressed Deploy, it worked, and the page gave him no way to tell. **A
+  // panel that shows a result has to say which ACTION produced it**; the text alone cannot,
+  // because promote.py's own output reads much the same either way.
+  const [result, setResult] = useState<
+    { kind: 'preview' | 'deploy'; ok: boolean; restarted: boolean; output: string } | null
+  >(null)
+  const [showChanges, setShowChanges] = useState(false)
 
   const busy = preview.isPending || promote.isPending
+  const c = v?.compare ?? null
+
+  if (isLoading) {
+    return <div className="text-[11px] text-text-tertiary px-[14px] py-[12px]">checking versions…</div>
+  }
+
+  // Every state that makes this unanswerable has its own fix and none of them is "deploy", so
+  // the reason is rendered and no button is offered. A `0` here would read as UP TO DATE,
+  // which is the most reassuring answer available and the one most likely to be wrong.
+  if (!c || !c.comparable) {
+    return (
+      <div data-testid="version-banner"
+           className="flex items-start gap-[8px] text-[11px] leading-[1.5] text-text-secondary
+                      bg-bg-elevated border border-border-subtle rounded-lg px-[14px] py-[12px]">
+        <HelpCircle size={13} className="shrink-0 mt-[1px] text-text-tertiary" />
+        <span>
+          <strong className="text-text-primary">Version unknown.</strong>{' '}
+          {c?.reason || 'Could not work out how this bot compares to the repo.'}
+        </span>
+      </div>
+    )
+  }
+
+  const behind = c.versions_behind ?? 0
+  const dirty = c.uncommitted_files.length
+  // A pinned setting cannot move on a promote, so it is not part of "what would change" — it
+  // is listed separately, because *your bot is holding this still* is the reassuring half of
+  // the same question and dropping it makes "not affected" look like "not checked".
+  const willChange = c.setting_changes.filter(s => !s.stated)
+  const pinned = c.setting_changes.filter(s => s.stated)
+
+  const deployBtn = (
+    <button
+      onClick={() => {
+        setResult(null)
+        preview.mutate({ botName: botKey }, {
+          onSuccess: r => setResult({ kind: 'preview', ok: r.ok, restarted: false, output: r.output }),
+        })
+      }}
+      disabled={busy}
+      className={`inline-flex items-center gap-[6px] px-[14px] py-[7px] rounded-md font-medium
+                  disabled:opacity-40 ${behind > 0
+        ? 'text-[12px] bg-gold-text/20 text-gold-bright hover:bg-gold-text/30 border border-gold-text/40'
+        : 'text-[10px] text-text-tertiary hover:text-text-secondary'}`}
+    >
+      <Upload size={behind > 0 ? 13 : 10} />
+      {busy ? 'working…'
+        : behind > 0 ? `Deploy v${c.deployed_version} → v${c.local_version}`
+        : 'Re-deploy'}
+    </button>
+  )
+
+  return (
+    /* `data-testid` is a declared TEST SEAM, and it is load-bearing rather than convenience:
+       the Risk-per-trade card below carries its own `Deploy` button, so a page-wide
+       "no deploy button" assertion passes on a broken banner too — the vacuous-locator trap
+       this repo has now hit three times (`svg.first()` was the sidebar logo; a page-wide
+       Retry matched the page header's own). */
+    <div data-testid="version-banner"
+         className={`rounded-lg border px-[14px] py-[12px] ${behind > 0
+      ? 'bg-amber-400/[0.07] border-amber-400/30'
+      : 'bg-pos-muted/40 border-pos-text/25'}`}>
+
+      <div className="flex items-start justify-between gap-[16px] flex-wrap">
+        <div>
+          <p className={`flex items-center gap-[7px] text-[13px] font-semibold ${
+            behind > 0 ? 'text-amber-300' : 'text-pos-text'}`}>
+            {behind > 0 ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+            {behind > 0
+              ? `${botLabel} is ${behind} version${behind === 1 ? '' : 's'} behind`
+              : `${botLabel} is up to date`}
+          </p>
+          <div className="flex items-center gap-[22px] mt-[9px] text-[11px]">
+            <span className="text-text-tertiary">
+              Deployed{' '}
+              <span className="text-text-primary font-mono text-[13px]">v{c.deployed_version}</span>
+              {v?.promoted_at ? <span className="text-text-tertiary"> · {v.promoted_at}</span> : null}
+            </span>
+            <span className="text-text-tertiary">
+              Backtester{' '}
+              <span className="text-text-primary font-mono text-[13px]">v{c.local_version}</span>
+            </span>
+          </div>
+        </div>
+        {deployBtn}
+      </div>
+
+      {dirty > 0 && (
+        <p className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+           title={c.uncommitted_files.join('\n')}>
+          Your backtester also has <strong>{dirty} edited file{dirty === 1 ? '' : 's'}</strong>{' '}
+          {dirty === 1 ? 'that is' : 'that are'} not committed
+          {dirty === 1 ? <> (<span className="font-mono">{c.uncommitted_files[0]}</span>)</> : null}.
+          {' '}Not part of v{c.local_version}, and a promote refuses a dirty tree — commit or revert
+          first.
+        </p>
+      )}
+
+      {behind > 0 && (
+        <div className="mt-[11px] border-t border-amber-400/20 pt-[10px] space-y-[9px]">
+          {willChange.length > 0 ? (
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.4px] text-text-tertiary mb-[5px]">
+                {willChange.length} setting{willChange.length === 1 ? '' : 's'} would change on this bot
+              </p>
+              {willChange.map(s => (
+                <div key={s.name} className="flex items-baseline gap-[8px] text-[11px] py-[2px]" title={s.desc}>
+                  <span className="text-text-secondary min-w-[150px]">{s.label}</span>
+                  <span className="font-mono text-[10px] text-text-tertiary">
+                    {s.is_new ? <em className="not-italic">not in v{c.deployed_version}</em> : s.was}
+                  </span>
+                  <ArrowRight size={9} className="text-text-tertiary shrink-0" />
+                  <span className="font-mono text-[10px] text-amber-300">{s.now}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-text-secondary">
+              No settings change — this is a code update only.
+            </p>
+          )}
+
+          {pinned.length > 0 && (
+            <p className="text-[10px] text-text-tertiary leading-[1.5]">
+              {pinned.length} other setting{pinned.length === 1 ? '' : 's'} changed in the repo but{' '}
+              <strong>this bot pins {pinned.length === 1 ? 'it' : 'them'}</strong>, so{' '}
+              {pinned.length === 1 ? 'it' : 'they'} will not move:{' '}
+              {pinned.map(s => `${s.label} (${s.was} → ${s.now})`).join(', ')}.
+            </p>
+          )}
+
+          <button
+            onClick={() => setShowChanges(s => !s)}
+            className="inline-flex items-center gap-[4px] text-[10px] text-text-tertiary hover:text-text-secondary"
+          >
+            {showChanges ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            {c.changes.length} code change{c.changes.length === 1 ? '' : 's'}
+          </button>
+          {showChanges && (
+            <div className="max-h-[200px] overflow-y-auto space-y-[3px] pl-[14px]">
+              {c.changes.map(ch => (
+                <div key={ch.commit} className="text-[10px] leading-[1.45] text-text-secondary">
+                  <span className="text-text-tertiary font-mono mr-[6px]">{ch.date}</span>
+                  {ch.subject}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-[11px] border-t border-border-subtle/60 pt-[9px]">
+          {result.kind === 'deploy' ? (
+            <p className={`flex items-center gap-[6px] text-[12px] font-semibold mb-[6px] ${
+              result.ok ? 'text-pos-text' : 'text-neg-text'}`}>
+              {result.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+              {result.ok
+                ? `Deployed${result.restarted
+                    ? ` — ${botLabel} restarted and is running v${c.local_version}`
+                    : ` — restart ${botLabel} to pick it up`}`
+                : `Deploy failed — ${botLabel} is untouched and still on v${c.deployed_version}`}
+            </p>
+          ) : (
+            <p className="text-[10px] uppercase tracking-[0.4px] text-text-tertiary mb-[6px]">
+              Checked the code on the VPS — nothing deployed yet
+            </p>
+          )}
+          <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
+                          whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto
+                          bg-bg-base/60 rounded p-[8px]">{result.output}</pre>
+          <div className="flex items-center gap-[8px] mt-[9px] flex-wrap">
+            {/* The deploy button exists ONLY on the preview. Leaving it up after a successful
+                deploy is what made a finished promote read as a pending one. */}
+            {result.kind === 'preview' && (
+              /* The bot is NAMED on the button, not just above it. This is the one control on
+                 the page that changes what a live account trades, and the reader arrived here
+                 by clicking a rail row — the name is the thing being confirmed. */
+              <button
+                onClick={() => promote.mutate({ botName: botKey, restart: true }, {
+                  onSuccess: r => setResult({
+                    kind: 'deploy', ok: r.ok, restarted: r.restarted, output: r.output,
+                  }),
+                })}
+                disabled={busy}
+                className="inline-flex items-center gap-[5px] text-[11px] px-[12px] py-[5px]
+                           rounded bg-gold-text/20 text-gold-bright hover:bg-gold-text/30
+                           border border-gold-text/40 disabled:opacity-40"
+              >
+                <PackageCheck size={12} /> Deploy &amp; restart <span className="font-mono">{botLabel}</span>
+              </button>
+            )}
+            <button
+              onClick={() => setResult(null)}
+              className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
+            >
+              {result.kind === 'deploy' ? 'Close' : 'Cancel'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// `botKey` addresses the API and `botLabel` is what a human reads. They are separate props
+// on purpose: a display name is the field somebody eventually renames, and a control that
+// ACTS on a name acts on nothing the day it changes.
+function DeployCard({ botKey }: { botKey: string }) {
+  const { data: v, isLoading } = useBotVersion(botKey)
 
   if (isLoading) return <Card title="Deployed version"><Row label="">loading…</Row></Card>
   if (!v) return <Card title="Deployed version"><Row label="">unavailable</Row></Card>
@@ -320,22 +552,8 @@ function DeployCard({ botKey, botLabel }: { botKey: string; botLabel: string }) 
   const f = versionFlags(v)!
 
   return (
-    <Card
-      title="Deployed version"
-      right={
-        <button
-          onClick={() => { setOutput(null); preview.mutate({ botName: botKey }, {
-            onSuccess: r => setOutput(r.output) }) }}
-          disabled={busy}
-          className="inline-flex items-center gap-[4px] text-[9px] uppercase tracking-[0.4px]
-                     text-gold-text hover:text-gold-bright disabled:opacity-40"
-        >
-          <Upload size={9} /> {busy ? 'working…' : 'promote'}
-        </button>
-      }
-    >
+    <Card title="Deployed version">
       <Row label="Strategy">{fmt(v.strategy_package)}</Row>
-      <Row label="Version">v{fmt(v.strategy_version)}</Row>
       <Row label="Code hash" title={v.hash}>{v.hash ? v.hash.slice(0, 12) : '—'}</Row>
       <Row label="From commit">{fmt(v.commit)}</Row>
       <Row label="Deployed on">{fmt(v.promoted_at)}</Row>
@@ -371,42 +589,9 @@ function DeployCard({ botKey, botLabel }: { botKey: string; botLabel: string }) 
         </Warn>
       )}
 
-      {output && (
-        <div className="mt-[10px] border-t border-border-subtle/60 pt-[8px]">
-          <p className="text-[9px] uppercase tracking-[0.4px] text-text-tertiary mb-[6px]">
-            Preview — nothing deployed yet
-          </p>
-          <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
-                          whitespace-pre-wrap break-all max-h-[220px] overflow-y-auto
-                          bg-bg-base/60 rounded p-[8px]">{output}</pre>
-          <div className="flex items-center gap-[8px] mt-[8px] flex-wrap">
-            {/* The bot is NAMED on the button, not just above it. This is the one control on
-                the page that changes what a live account trades, and the reader arrived here
-                by clicking a rail row — the name is the thing being confirmed. */}
-            <button
-              onClick={() => promote.mutate({ botName: botKey, restart: true }, {
-                onSuccess: r => setOutput(r.output) })}
-              disabled={busy}
-              className="inline-flex items-center gap-[4px] text-[10px] px-[10px] py-[4px]
-                         rounded bg-gold-text/15 text-gold-bright hover:bg-gold-text/25
-                         disabled:opacity-40"
-            >
-              <PackageCheck size={11} /> Deploy &amp; restart <span className="font-mono">{botLabel}</span>
-            </button>
-            <button
-              onClick={() => setOutput(null)}
-              className="text-[10px] px-[10px] py-[4px] rounded text-text-tertiary
-                         hover:text-text-secondary"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
       <p className="text-[10px] text-text-tertiary mt-[8px] leading-[1.5] border-t border-border-subtle/60 pt-[8px]">
         This bot runs a frozen copy of its code. Pulling, backtesting or editing the repo does
-        not touch it — only promoting does.
+        not touch it — only promoting does. Deploy from the banner at the top of this page.
       </p>
     </Card>
   )
@@ -641,6 +826,13 @@ function BotPanel({ bot }: { bot: BotStatus }) {
   return (
     <div className="grid grid-cols-2 gap-4 items-start">
 
+      {/* FIRST, full width, and deliberately above the risk editor: "am I behind, and by how
+          much" is the question this tab is opened to answer, and it had no answer on the page
+          at all until 2026-08-07. It also carries the only Deploy control. */}
+      <div className="col-span-2">
+        <VersionBanner botKey={bot.key} botLabel={bot.name} />
+      </div>
+
       {/* Risk — the only thing on this page that can be changed */}
       <div className="col-span-2">
         <Card title="Risk per trade">
@@ -662,7 +854,7 @@ function BotPanel({ bot }: { bot: BotStatus }) {
         <Row label="Magic">{fmt(v.identity.magic)}</Row>
       </Card>
 
-      <DeployCard botKey={bot.key} botLabel={bot.name} />
+      <DeployCard botKey={bot.key} />
 
       <div className="col-span-2">
         <Card

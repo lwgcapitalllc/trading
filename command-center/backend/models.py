@@ -348,6 +348,51 @@ class BotParamsView(BaseModel):
     readme: Optional[str] = None
 
 
+class BotCodeChange(BaseModel):
+    """One commit sitting between the deployed version and the backtester's."""
+    commit: str
+    subject: str
+    date: str = ""
+    areas: list[str] = []        # which of the bot's trees it touched — NOT a claim about trades
+
+
+class BotSettingChange(BaseModel):
+    """A setting whose DEFAULT moved in the repo since this bot was deployed.
+
+    `stated` True means the bot's instance config pins it, so a promote will NOT move it.
+    Those rows are kept rather than filtered: *this changed and your bot is holding it still*
+    is the reassuring half of the same question, and dropping it leaves the reader unable to
+    tell "not affected" from "not checked".
+    """
+    name: str
+    label: str
+    group: str = ""
+    desc: str = ""
+    is_new: bool = False         # the deployed version had no such setting at all
+    was: str = ""                # empty exactly when `is_new` — not "Off", which is a value
+    now: str
+    stated: bool = False
+
+
+class BotVersionCompare(BaseModel):
+    """How far a bot's deployment is behind the code the backtester runs.
+
+    A version is the number of commits that have touched this bot's trees — see
+    `services/bot_versions.py` for why it is that and not the lab's content-addressed
+    registry. `comparable` False carries a plain-English `reason`; the page then renders no
+    number and no deploy button, because every state that makes this unanswerable has a
+    different fix and none of them is "press deploy".
+    """
+    deployed_version: Optional[int] = None
+    local_version: Optional[int] = None
+    versions_behind: Optional[int] = None
+    uncommitted_files: list[str] = []
+    comparable: bool = False
+    reason: str = ""
+    changes: list[BotCodeChange] = []
+    setting_changes: list[BotSettingChange] = []
+
+
 class BotDeployedVersion(BaseModel):
     """What a bot is ACTUALLY running, read off the VPS.
 
@@ -370,6 +415,9 @@ class BotDeployedVersion(BaseModel):
     snapshot_ok: bool = True     # on-disk hash still matches the record (tamper check)
     running_hash: str = ""       # what the live PROCESS reports, from bot_state.json
     params_drift: list[str] = []  # settings config.json now states differently from deployed
+    # `strategy_version` above is DEAD — `live_config.LiveConfig` defaults it to 0 and nothing
+    # writes it, so the card read v0 before a promote and v0 after. `compare` is the real one.
+    compare: Optional[BotVersionCompare] = None
 
 
 class BotPromoteRequest(BaseModel):

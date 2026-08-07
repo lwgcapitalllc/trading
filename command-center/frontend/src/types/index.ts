@@ -421,6 +421,43 @@ export interface BotParamsView {
  * A version display that can be wrong is worse than none: it is what you check before
  * deciding anything.
  */
+export interface BotCodeChange {
+  commit: string
+  subject: string
+  date: string
+  areas: string[]          // which of the bot's trees it touched — NOT a claim about trades
+}
+
+export interface BotSettingChange {
+  name: string
+  label: string            // the STRATEGY's own wording, from its meta file — never ours
+  group: string
+  desc: string
+  is_new: boolean          // the deployed version had no such setting at all
+  was: string              // empty exactly when `is_new` — not "Off", which is a value
+  now: string
+  stated: boolean          // the bot's config pins it, so a promote will NOT move it
+}
+
+/** How far the deployment is behind the code the backtester runs.
+ *
+ *  `strategy_version` on the card below is DEAD — nothing writes it, so it read v0 before a
+ *  promote and v0 after. These numbers are the real ones: a version is the count of commits
+ *  that have touched this bot's trees, so subtracting two of them IS the work waiting to go
+ *  out. `comparable` false means the question could not be answered (never promoted, commit
+ *  not fetched, no git) and carries a plain-English `reason` — render that, never a zero.
+ */
+export interface BotVersionCompare {
+  deployed_version: number | null
+  local_version: number | null
+  versions_behind: number | null
+  uncommitted_files: string[]
+  comparable: boolean
+  reason: string
+  changes: BotCodeChange[]
+  setting_changes: BotSettingChange[]
+}
+
 export interface BotDeployedVersion {
   frozen: boolean          // false = unpromoted, still importing from the repo tree
   hash: string
@@ -436,6 +473,7 @@ export interface BotDeployedVersion {
   snapshot_ok: boolean     // the snapshot still hashes to its record
   running_hash: string     // what the live PROCESS reports — may lag after a promote
   params_drift: string[]   // settings config.json now states differently
+  compare: BotVersionCompare | null
 }
 
 export interface BotPromoteResult {

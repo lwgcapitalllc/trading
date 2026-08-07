@@ -40,8 +40,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
-from services import bot_params, lab_db
+from models import BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from services import bot_params, bot_versions, lab_db
 from services import notify
 from services.alert_format import alert
 from services.notify import send_telegram
@@ -1059,9 +1059,17 @@ def get_bot_version(bot_name: str):
     # between "what the file says" and "what is trading", which is the whole point of this.
     drift: list[str] = []
     deployed_params = rec.get("strategy_params") or {}
+    # Read once and shared with the version comparison below, which needs to know which
+    # settings this bot PINS — a default that moved in the repo cannot reach a bot whose
+    # config states a value for it.
+    current_params: dict = {}
+    try:
+        current_params = _read_instance_config(bot_key).get("strategy_params", {}) or {}
+    except HTTPException:
+        pass
     if deployed_params:
         try:
-            current = _read_instance_config(bot_key).get("strategy_params", {})
+            current = current_params
             # Compared over the UNION of both key sets, through a sentinel.
             #
             # The old form was `deployed_params.get(k, v) != v` over `current` alone, which
@@ -1083,6 +1091,19 @@ def get_bot_version(bot_name: str):
         except HTTPException:
             pass
 
+    # How far behind the deployment is, in a number a human can act on. Computed against the
+    # LOCAL repo — this backend and the backtester run the same working tree, so "the version
+    # in my backtester" is a question only this machine can answer. It is best-effort: the
+    # version card is still worth rendering when git cannot be read.
+    try:
+        comparison = BotVersionCompare(**bot_versions.compare(
+            rec.get("strategy_package", ""),
+            rec.get("promoted_commit", ""),
+            current_params,
+        ))
+    except Exception:
+        comparison = None
+
     return BotDeployedVersion(
         frozen=bool(rec),
         hash=rec.get("strategy_source_hash", ""),
@@ -1098,6 +1119,7 @@ def get_bot_version(bot_name: str):
         snapshot_ok="SNAPSHOT MODIFIED" not in parts.get("show", ""),
         running_hash=running_hash,
         params_drift=drift,
+        compare=comparison,
     )
 
 

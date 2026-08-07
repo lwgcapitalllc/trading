@@ -1,0 +1,229 @@
+"""What a bot's VERSION means, and the ways this could report a number nobody should act on.
+
+The subject is `services/bot_versions.py`. Most of these are about REFUSING rather than
+computing: the page draws a big amber "you are N behind" banner with a deploy button under it,
+so a wrong N is a wrong destructive action, and a fabricated 0 is the most dangerous value in
+the file because it reads as *up to date*.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+import config as cfg
+from services import bot_versions as bv
+
+_REPO = Path(cfg.MONOREPO_ROOT)
+
+
+# ── the agreement with promote.py ───────────────────────────────────────────────
+
+def test_the_counted_trees_are_the_trees_promote_actually_copies():
+    """`trees_for` mirrors `algos/tools/promote.py::repo_trees`, checked by READING it.
+
+    A tree that is COPIED into the snapshot but not COUNTED here is a change that deploys
+    while the page says you are up to date — silent, and wrong in the reassuring direction.
+    The subsystem rule forbids importing across into `algos/`, so this greps the file the way
+    `test_notification_routing.py` greps the Telegram senders.
+    """
+    src = (_REPO / "algos" / "tools" / "promote.py").read_text(encoding="utf-8")
+    body = src.split("def repo_trees", 1)[1].split("\ndef ", 1)[0]
+    assert body.strip(), "could not find repo_trees in promote.py — the guard is vacuous"
+
+    # promote.py names the strategy tree via `cfg.strategy_package` and the rest as literals.
+    literals = set(re.findall(r'Path\("([a-z_]+)"\)', body)) | set(re.findall(r'"([a-z_]+)"\s*/', body))
+    shared = {t for t in literals if t not in {"strategies", "python"}}
+    assert shared, "found no shared tree literals in repo_trees — the parse broke, not the code"
+
+    counted = set(bv.trees_for("anything"))
+    for tree in shared:
+        assert tree in counted, (
+            f"promote.py copies {tree!r} into the snapshot and bot_versions does not count it, "
+            "so a change there would deploy while the page reads 'up to date'"
+        )
+    assert "strategies/python/anything" in counted
+
+
+def test_a_bot_with_no_strategy_package_counts_nothing():
+    """Not `["engines", "backtest"]` — a version for a bot whose strategy is unknown is a
+    number about somebody else's code."""
+    assert bv.trees_for("") == []
+
+
+# ── versions are real counts, not guesses ───────────────────────────────────────
+
+def test_a_version_is_the_count_of_commits_touching_the_trees():
+    trees = bv.trees_for("mpc_sos_fade")
+    out = subprocess.run(
+        ["git", "-C", str(_REPO), "rev-list", "--count", "HEAD", "--", *trees],
+        capture_output=True, text=True, check=True,
+    )
+    assert bv.version_at("HEAD", trees) == int(out.stdout.strip())
+
+
+def test_an_older_commit_has_a_lower_version_than_head():
+    """The whole banner rests on subtracting two of these, so the ordering is the contract."""
+    trees = bv.trees_for("mpc_sos_fade")
+    head = bv.version_at("HEAD", trees)
+    older = bv.version_at("HEAD~50", trees)
+    assert older is not None and head is not None
+    assert older < head
+
+
+def test_a_commit_this_clone_has_never_seen_is_None_not_zero():
+    """`0` would render as *up to date*. A fresh clone that has not fetched the deployed commit
+    must say it cannot answer — the same rule `mt5_link` and `grid_sensitivity_score` follow."""
+    assert bv.version_at("0" * 40, bv.trees_for("mpc_sos_fade")) is None
+
+
+def test_has_commit_is_false_for_a_commit_that_is_not_here():
+    assert bv.has_commit("0" * 40) is False
+    assert bv.has_commit("") is False
+    assert bv.has_commit("HEAD") is True
+
+
+# ── compare() refuses rather than reporting a comparison it cannot make ─────────
+
+def test_a_bot_that_has_never_been_promoted_is_not_comparable():
+    r = bv.compare("mpc_sos_fade", "", {})
+    assert r["comparable"] is False
+    assert r["versions_behind"] is None
+    assert "never been promoted" in r["reason"]
+
+
+def test_an_unfetched_deployed_commit_is_not_comparable_and_names_the_fix():
+    r = bv.compare("mpc_sos_fade", "0" * 40, {})
+    assert r["comparable"] is False
+    assert r["versions_behind"] is None
+    assert "Pull" in r["reason"]
+
+
+def test_a_bot_deployed_at_head_is_zero_behind_and_comparable():
+    r = bv.compare("mpc_sos_fade", "HEAD", {})
+    assert r["comparable"] is True
+    assert r["versions_behind"] == 0
+    assert r["changes"] == []
+
+
+def test_behind_never_goes_negative():
+    """A deployment AHEAD of this clone (somebody else promoted from a machine that had pulled)
+    must read 0, not a negative count — the banner's copy has no sensible form for -3."""
+    r = bv.compare("mpc_sos_fade", "HEAD~50", {})
+    assert r["versions_behind"] is not None and r["versions_behind"] > 0
+    r2 = bv.compare("mpc_sos_fade", "HEAD", {})
+    assert r2["versions_behind"] == 0
+
+
+def test_the_change_list_matches_the_version_gap():
+    """The number in the headline and the list under it are two renderings of one fact; if they
+    disagree the banner argues with itself."""
+    r = bv.compare("mpc_sos_fade", "HEAD~50", {})
+    assert r["comparable"] is True
+    assert len(r["changes"]) == r["versions_behind"]
+
+
+# ── the settings diff ───────────────────────────────────────────────────────────
+
+def test_a_changed_default_is_reported_with_both_values():
+    before = "@dataclass\nclass C:\n    a: str = 'Off'\n"
+    after = "@dataclass\nclass C:\n    a: str = 'On'\n"
+    assert bv._dataclass_defaults(before)["a"] == "Off"
+    assert bv._dataclass_defaults(after)["a"] == "On"
+
+
+def test_a_field_declared_twice_with_different_defaults_refuses_to_guess():
+    """`mpc_bleg` subclasses `mpc_sos_fade`'s config and overrides fields. Picking one silently
+    would describe the wrong bot, so the value becomes UNPARSED and renders as '?'."""
+    src = (
+        "@dataclass\nclass Base:\n    a: bool = False\n"
+        "@dataclass\nclass Sub(Base):\n    a: bool = True\n"
+    )
+    assert bv._dataclass_defaults(src)["a"] is bv._UNPARSED
+
+
+def test_a_field_declared_twice_with_the_SAME_default_is_not_poisoned():
+    src = (
+        "@dataclass\nclass Base:\n    a: bool = False\n"
+        "@dataclass\nclass Sub(Base):\n    a: bool = False\n"
+    )
+    assert bv._dataclass_defaults(src)["a"] is False
+
+
+def test_a_non_literal_default_is_refused_rather_than_evaluated():
+    """This parses source out of an arbitrary historical commit. `ast.literal_eval` cannot run
+    a call, and nothing here may fall back to `eval` — that would execute that commit's code."""
+    src = "@dataclass\nclass C:\n    a: dict = field(default_factory=dict)\n"
+    assert bv._dataclass_defaults(src)["a"] is bv._UNPARSED
+
+
+def test_the_parser_never_executes_the_source_it_reads():
+    """Belt and braces on the rule above: a module with a side effect at import time must not
+    fire. If this ever fails, something switched `ast` for `exec`/`import`."""
+    src = (
+        "import pathlib\n"
+        "pathlib.Path('/tmp/bot_versions_must_never_write_this').write_text('x')\n"
+        "@dataclass\nclass C:\n    a: int = 1\n"
+    )
+    assert bv._dataclass_defaults(src)["a"] == 1
+    assert not Path("/tmp/bot_versions_must_never_write_this").exists()
+
+
+def test_unparseable_source_is_empty_rather_than_raising():
+    assert bv._dataclass_defaults("class C:\n  this is not python\n") == {}
+
+
+def test_a_setting_the_config_pins_is_reported_as_stated():
+    """A pinned setting cannot move on a promote. It is still returned, because *your bot is
+    holding this still* is the reassuring half of the same question — and filtering it out
+    leaves the reader unable to tell 'not affected' from 'not checked'."""
+    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD",
+                                 {"exec_secondary": False})
+    assert changes is not None
+    pinned = [c for c in changes if c["name"] == "exec_secondary"]
+    if pinned:                                   # only if that default actually moved in-range
+        assert pinned[0]["stated"] is True
+
+
+def test_a_new_setting_says_it_is_new_rather_than_claiming_it_was_off():
+    """`was: ""` + `is_new` — the deployed version had no such lever at all, which is not the
+    same as having it switched off, and 'Off' would be a lie in the reassuring direction."""
+    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD", {})
+    assert changes is not None
+    for c in changes:
+        assert (c["was"] == "") == c["is_new"], c
+
+
+def test_setting_labels_come_from_the_strategys_own_meta_file():
+    """The page's wording is the STRATEGY's, copied. A name→sentence mapping written in this
+    app would be a second claim about what a setting does."""
+    meta = bv._param_meta("mpc_sos_fade")
+    assert meta, "the meta file did not parse — every label would silently fall back to the key"
+    assert meta["exec_time_stop_mode"]["label"] == "Time stop"
+
+
+def test_a_setting_with_no_meta_entry_falls_back_to_its_key_rather_than_blank():
+    changes = bv.setting_changes("mpc_sos_fade", "HEAD~50", "HEAD", {})
+    assert changes is not None
+    for c in changes:
+        assert c["label"], f"{c['name']} rendered a blank label"
+
+
+def test_an_unknown_package_refuses_instead_of_returning_an_empty_diff():
+    """`[]` means 'nothing changed'. A package whose config.py cannot be read must not say so."""
+    assert bv.setting_changes("no_such_package", "HEAD~50", "HEAD", {}) is None
+
+
+@pytest.mark.parametrize("value,expected", [
+    (True, "On"), (False, "Off"), (36.0, "36"), (0.382, "0.382"), ("Off", "Off"),
+])
+def test_values_render_the_way_the_banner_prints_them(value, expected):
+    assert bv._render(value) == expected
+
+
+def test_an_unparsed_value_renders_as_a_question_mark_not_as_a_number():
+    assert bv._render(bv._UNPARSED) == "?"
