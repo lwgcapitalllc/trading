@@ -670,15 +670,16 @@ color i_nyHLColor     = drawLiq ? color.black : color(na)
 var GRP_FIBO = "Fibs"
 bool   showFiboInput   = input.bool(true, "Show External Fib", group = GRP_FIBO, tooltip = "The retracement drawn on the current major swing leg. Its lines are tagged TP1/TP2/TP3 (Take Profit) and E1-E4 (Entry levels). FFT = the 0.5 line once price has traded back through it.", display = display.none)
 int    fiboLineExtend  = input.int(80, "External Fib Line Extension (bars)", group = GRP_FIBO, minval = 5, maxval = 500, active = showFiboInput, tooltip = "How far the External Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
-// Cycle Fib defaults OFF (Aaron, 2026-07-31). It draws EIGHT more horizontal lines,
-// each with its own price tag, over the eight the External Fib is already drawing — the
-// same ratios on a bigger leg, so the two ladders interleave and the labels stack down
-// the right edge. Everything else on the panel is now on by default, which is exactly
-// why this one has to come off: with the full chart showing, it is the tool that makes
-// the other tools harder to read. The toggle stays — it is a real read on the bigger
-// move — and the engine still tracks either way, so switching it on costs nothing.
-bool   showMacroFibInput = input.bool(false, "Show Cycle Fib", group = GRP_FIBO, tooltip = "Off by default — it draws a second full ladder over the External Fib's. The same retracement drawn on the whole cycle rather than one leg — the move from the last major low to the last major high. Same TP and E tags.", display = display.none)
-int    macroLineExtend = input.int(180, "Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = showMacroFibInput, tooltip = "How far the Cycle Fib lines run to the right of the last bar. Set it to suit your screen width.", display = display.none)
+// Cycle Fib defaults BACK ON (Aaron, 2026-08-06). It was switched off on 2026-07-31
+// because it drew eight more lines over the External Fib's eight, permanently, so the two
+// ladders interleaved and the labels stacked down the right edge. The reason is spent:
+// the ladder is now born on the SOS that ENDS a trend and retires once the retracement
+// resolves, so it is on screen only while price is actually inside a retracement of the
+// move it spans — which is the window it was wanted for. ⚠ A changed default reaches a
+// FRESH paste and nothing else; an existing chart keeps whatever is already set, so check
+// the panel rather than assuming it is live.
+bool   showMacroFibInput = input.bool(false, "Show Cycle Fib  —  OFF (being refined)", group = GRP_FIBO, active = false, tooltip = "Disabled 2026-08-06 and greyed out. The whole Cycle Fib block is commented out in the source while the anchoring rule is refined — ticking this would do nothing, so it is greyed rather than left looking live. The input itself is kept only so TradingView's saved settings do not shift; see the banner above the engine block.", display = display.none)
+int    macroLineExtend = input.int(180, "   ↳ Cycle Fib Line Extension (bars)", group = GRP_FIBO, minval = 10, maxval = 500, active = false, tooltip = "Disabled with its parent — see above.", display = display.none)
 bool   showSniperInput = input.bool(true, "Show Sniper Zone", group = GRP_FIBO, active = showFiboInput, tooltip = "SZ = Sniper Zone. A significant area that institutions come back to after a displacement.", display = display.none)
 bool   showBLeg        = input.bool(true, "Show BLEG SZ", group = GRP_FIBO, tooltip = "BLEG = B-Leg, a setup whose retrace arrives late. Shows the area it is waiting for price to come back to. 15m only.", display = display.none)
 
@@ -730,44 +731,46 @@ string fibo7Style    = "┈"
 f_fiboLineStyle(string opt) =>
     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
 
-//============================================================
-  // MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
-//============================================================
-bool showMacroFib = showFibTool and showMacroFibInput
-int  macroMaxTfMin = 30
-int  macroCycleTf  = 1
+// (Cycle Fib level constants — disabled, see the banner at the engine block.)
+// //============================================================
+//   // MACRO FIB (full-cycle retracement across multiple BOS, locks in on trend reversal)
+// //============================================================
+// bool showMacroFib = showFibTool and showMacroFibInput
+// int  macroMaxTfMin = 30
+// // (`macroCycleTf` was deleted 2026-08-06 with the 1-minute request.security adopt it was
+// //  the only reader of. The cycle is now driven off this chart's own structure engine.)
 
-bool   showMacro0        = true
-color  macro0Color       = #4caf50
-string macro0Style       = "─"
+// bool   showMacro0        = true
+// color  macro0Color       = #4caf50
+// string macro0Style       = "─"
 
-bool   showMacro382      = true
-color  macro382Color     = #4caf50
-string macro382Style     = "┈"
+// bool   showMacro382      = true
+// color  macro382Color     = #4caf50
+// string macro382Style     = "┈"
 
-bool   showMacro50       = true
-color  macro50Color      = #4caf50
-string macro50Style      = "┈"
+// bool   showMacro50       = true
+// color  macro50Color      = #4caf50
+// string macro50Style      = "┈"
 
-bool   showMacro618      = true
-color  macro618Color     = #2196F3
-string macro618Style     = "┈"
+// bool   showMacro618      = true
+// color  macro618Color     = #2196F3
+// string macro618Style     = "┈"
 
-bool   showMacro702      = true
-color  macro702Color     = #2196F3
-string macro702Style     = "┈"
+// bool   showMacro702      = true
+// color  macro702Color     = #2196F3
+// string macro702Style     = "┈"
 
-bool   showMacro786      = true
-color  macro786Color     = #2196F3
-string macro786Style     = "┈"
+// bool   showMacro786      = true
+// color  macro786Color     = #2196F3
+// string macro786Style     = "┈"
 
-bool   showMacro886      = true
-color  macro886Color     = #2196F3
-string macro886Style     = "┈"
+// bool   showMacro886      = true
+// color  macro886Color     = #2196F3
+// string macro886Style     = "┈"
 
-bool   showMacro100      = true
-color  macro100Color     = #2196F3
-string macro100Style     = "─"
+// bool   showMacro100      = true
+// color  macro100Color     = #2196F3
+// string macro100Style     = "─"
 
 //============================================================
   // SESSION VOLUME PROFILE (MV) — locked, driven by the Chart Tools toggle
@@ -4064,7 +4067,16 @@ if not na(pwc_line) and i_showPWC and i_showLiquidity
   // H4 LIQUIDITY SWEEP TRACKER
 //============================================================
 color H4_ACTIVE_COLOR = drawLiq ? #FF6B35 : color(na)
-color H4_SWEPT_COLOR  = drawLiq ? color.new(#999999, 45) : color(na)
+// A swept H4 level stays on the chart, greyed and dotted, rather than being hidden the way
+// every other liquidity tier is (`showMitLiq = false`) — so this colour is the only thing
+// carrying "this pool is gone but here is where it was".
+// ⚠ TRANSPARENCY IS THE LEVER, NOT THE HEX, and the distinction matters if this is tuned
+// again: dropping the alpha lifts it on ANY background, while darkening #999999 only helps
+// on a light chart and makes it WORSE on a dark one. 45 → 30 on 2026-08-06 (Aaron: still
+// faint, just readable). Lower = more solid; the useful range is roughly 20-55.
+// ⚠ The same colour drives the "H4 H"/"H4 L" TEXT as well as the line, and small text is
+// what actually goes unreadable first — so judge any future value off the label, not the line.
+color H4_SWEPT_COLOR  = drawLiq ? color.new(#999999, 30) : color(na)
 
 var float h4TrackHigh    = na
 var float h4TrackLow     = na
@@ -4508,7 +4520,7 @@ var int   fibo_dir     = 0
 
 // ── Touched tracking: each level goes grey until price reaches it ──
 color FIBO_GREY  = color.new(#888888, 0)
-color MACRO_GREY = color.new(#888888, 0)
+// color MACRO_GREY = color.new(#888888, 0)
 var bool fiboOriginChanged = false
 fiboOriginChanged := false   // reset every bar — only true on the specific bar origin changes
 var bool fibo1Touched  = false
@@ -4793,244 +4805,366 @@ if showFibo and not na(fibo_ash) and not na(fibo_asl) and fibo_dir != 0
 // (CE10117), so a dead branch is not free. Recover from git if the banded 1m view is
 // ever wanted back as an option.
 
-f_macroLineStyle(string opt) =>
-    opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
+// (Cycle Fib helpers — disabled with the block below.)
+// f_macroLineStyle(string opt) =>
+//     opt == "┈" ? line.style_dotted : opt == "╌" ? line.style_dashed : line.style_solid
 
-f_macroLabel(float val, string tpLabel, string entryLabel) =>
-    sharedLabelMode == "Both"        ? tpLabel + " " + str.tostring(val) + "  (" :
-     sharedLabelMode == "TP/Entry"   ? tpLabel    + "  (" :
-     str.tostring(val) + "  ("
+// f_macroLabel(float val, string tpLabel, string entryLabel) =>
+//     sharedLabelMode == "Both"        ? tpLabel + " " + str.tostring(val) + "  (" :
+//      sharedLabelMode == "TP/Entry"   ? tpLabel    + "  (" :
+//      str.tostring(val) + "  ("
 
-// ── 5m Cycle-Fib anchor engine (returns STATE, not edge events) ──
-// Runs the drawing-free MTF structure engine on 5m and returns the structure-locked
-// cycle's current [origin (1.0 = SOS-leg low), extreme (0.0 = last confirmed high),
-// visible]. Buy-cycle only — the SAME rule as the proven native engine: lock on a 5m
-// bull SOS, extend the top on each new 5m confirmed HH, reset on a 5m close below the
-// origin, hide on a 5m close back above the extreme. Read via request.security so every
-// chart up to macroMaxTfMin draws this one 5m-scale cycle instead of its own (which was
-// too big on 15m+). STATE is returned (not the bull_sos edge) so the lower-timeframe-in-
-// security read on a 15m/30m chart can never drop the lock/HH event on a non-final sub-bar.
-f_cycleState() =>
-    var mtf = MTFStruct.new(length = majorLength)
-    float ph = ta.pivothigh(high, majorLength, majorLength)
-    float pl = ta.pivotlow(low,  majorLength, majorLength)
-    mtf.processMTF(ph, pl)
-    var float m_origin  = na
-    var float m_extreme = na
-    var bool  m_locked  = false
-    var float m_lastCH  = na
-    var bool  m_vis     = false
-    if m_locked and not na(m_origin) and close < m_origin
-        m_origin := na, m_extreme := na, m_locked := false, m_lastCH := na, m_vis := false
-    if mtf.bull_sos and not m_locked and not na(mtf.bull_bos_low) and not na(mtf.last_conf_high)
-        m_origin := mtf.bull_bos_low, m_extreme := mtf.last_conf_high, m_locked := true, m_lastCH := mtf.last_conf_high, m_vis := true
-    if m_locked and not na(mtf.last_conf_high) and not na(m_lastCH) and mtf.last_conf_high > m_lastCH
-        m_extreme := mtf.last_conf_high, m_lastCH := mtf.last_conf_high, m_vis := true
-    if m_locked and m_vis and not na(m_extreme) and close > m_extreme
-        m_vis := false
-    [m_origin, m_extreme, m_vis]
-[cyc_origin, cyc_extreme, cyc_visible] = request.security(syminfo.tickerid, str.tostring(macroCycleTf), f_cycleState())
-
-// macro_dir tracks the OVERALL trend direction we are currently in.
-   // 1  = overall trend is up (we are accumulating the highest high of the whole up-cycle)
-  // -1  = overall trend is down (we are accumulating the lowest low of the whole down-cycle)
-// The origin (opposite anchor) is fixed only when the trend actually reverses (st.dir flips),
-// not on every internal BOS/SOS within the same direction. This lets the fib span multiple
-// BOS legs that all belong to the same larger move (e.g. wave 1->2->3 as one up-cycle).
-var float macro_origin      = na   // fixed anchor: the extreme of the PRIOR opposite cycle
-var float macro_extreme     = na   // running extreme of the CURRENT cycle (keeps extending across multiple BOS)
-
-var line  macroLine0   = na, var label macroLabel0   = na
-var line  macroLine382 = na, var label macroLabel382 = na
-var line  macroLine50  = na, var label macroLabel50  = na
-var line  macroLine618 = na, var label macroLabel618 = na
-var line  macroLine702 = na, var label macroLabel702 = na
-var line  macroLine786 = na, var label macroLabel786 = na
-var line  macroLine886 = na, var label macroLabel886 = na
-var line  macroLine100 = na, var label macroLabel100 = na
-
-// ── Macro fib touched tracking ──
-var bool macro0Touched    = false   // HH / 0.0
-var bool macro382Touched  = false   // TP2
-var bool macro50Touched   = false   // TP1 / FFT
-var bool macro618Touched  = false   // E1
-var bool macro702Touched  = false   // E2
-var bool macro786Touched  = false   // E3
-var bool macro886Touched  = false   // E4
-var bool macro100Touched  = false   // LL / 1.0
-var bool macro618EverReached = false  // gates TP checks from next bar after E1 hit
-var float macro_prev_extreme = na   // detects when extreme changes (new HH)
-
-// ── EXACT RULE (per latest instructions) ──
-// BOTTOM anchor (extreme LL):
-//   - Locks the instant st.asl is confirmed as a genuine LL (st.new_swing_low fires and the
-//     confirmed low is lower than the prior confirmed low).
-//   - Once locked, it NEVER moves again for this cycle -- not even if a deeper low occurs
-//     later while the top is still extending.
-//   - The ONLY way the bottom changes is if an even deeper confirmed LL prints later --
-//     that starts a BRAND NEW cycle (the old fib's top lock is discarded, a new bottom locks
-//     on the fresh LL, and the top starts over unlocked).
+// ══════════════════════════════════════════════════════════════════════════════════
+// ⛔ CYCLE FIB — COMMENTED OUT 2026-08-06 (Aaron). Nothing reads it and it needs
+//    refining. Four blocks are disabled and they must come back TOGETHER:
+//      1. the level colour/style constants          (~734-772)
+//      2. MACRO_GREY                                 (~4513)
+//      3. f_macroLineStyle / f_macroLabel            (~4798-4804)
+//      4. this block — the cycle engine + drawing
 //
-// TOP anchor (extreme HH):
-//   - Locks the first time a bearish SOS (st.bear_sos) fires alongside a confirmed HH
-//     (st.ash, confirmed via st.new_swing_high, higher than the prior confirmed high).
-//   - After that initial lock, it is allowed to extend FURTHER only when a subsequent
-//     bullish BOS (st.bull_bos) confirms an even higher high -- i.e. price comes back up,
-//     breaks structure again, and makes a new HH beyond the locked one.
-//   - It does NOT track every new high live -- only on these specific qualifying events.
+// ⚠ THE TWO INPUTS ARE LEFT DECLARED ON PURPOSE, greyed with `active = false`.
+//   Deleting an input SHIFTS TradingView's saved-value keying: it keys a chart's
+//   stored values off DECLARATION ORDER WITHIN EACH TYPE, so removing a bool and an
+//   int from the middle of the panel silently resets every later bool and int on every
+//   chart running this script. Left in place, no "Reset settings to defaults" is needed.
+//
+// ⚠ COMMENTED, NOT DELETED, AND THAT IS THE CHEAP OPTION HERE: Pine comments cost ZERO
+//   compile tokens, so this RELIEVES the CE10117 pressure this file has hit twice — a
+//   live-but-unused branch would not have. It is also why this was not left switched
+//   off behind a flag.
+//
+// ⚠ VERIFIED BEFORE CUTTING: all 54 references sit in ONE contiguous region and nothing
+//   outside it reads macro_origin / macro_extreme / macro_dir. Note this is NOT true of
+//   mpc_strategy.pine, where those two ARE the A+ sequence's HTF POI (poiLongNow /
+//   poiShortNow) — do not copy this cut across to that file.
+//
+// State of the design when it was parked, so the refinement does not start from zero:
+//   • A cycle is delimited by SOS events — the origin re-locks on every SOS. The two
+//     alternatives were both tried and both wrong: "between two SOS" with no live-ladder
+//     lock lets the pullback overwrite the ladder, and origin-locked-until-retraced is
+//     UNBOUNDED (gold never trades back through its 2020 low, so the ladder spanned the
+//     whole loaded history — this is the build Aaron pasted and called "way too big").
+//   • The v3 rule reproduces his hand-drawn fib (1.0 = 3942.79, 0.0 = 4202.55, 0.618 =
+//     4042.02) in simulation, but was NEVER READ ON A CHART. Treat it as unvalidated.
+//   • Open: whether 0.0 should be the raw wick extreme or the confirmed swing high —
+//     his hand-drawn 0 sat ~$25 below the visible high.
+// ══════════════════════════════════════════════════════════════════════════════════
+// // ── Cycle-Fib anchor engine — the WHOLE trend, in BOTH directions ──
+// // (Reworked 2026-08-06 to Aaron's spec.) The External Fib prices ONE leg. A trend is not
+// // one leg: it is HH/HL/HH/HL, and the reversal off it retraces the WHOLE move, not the
+// // last swing of it. So the 0.618/0.702 that matters is pulled from the cycle's origin low
+// // to its highest high — and mirrored for a down-cycle, which the old build could not do
+// // at all (it locked on `bull_sos` and nothing else, so half of "every trend" was missing).
+// //
+// // ⚠ IT DRAWS ONLY AFTER THE REVERSAL, AND THAT IS THE POINT.
+// // Nothing is drawn while the trend is still running, because the extreme is still moving
+// // and every level under it would move with it — a ladder that slides is a ladder nobody
+// // can rest an order on. The ladder is born by the COUNTER-trend SOS against a live cycle,
+// // frozen at that cycle's origin and whatever extreme it had reached, and retired once the
+// // retracement has resolved. So a ladder on the chart always means "price is inside a
+// // retracement of the move it spans", never "a trend is running".
+// //
+// // 🔴 ⚠ A CYCLE IS DELIMITED BY SOS EVENTS, AND THE ALTERNATIVE WAS SHIPPED AND MEASURED
+// // WRONG ON A REAL CHART. The first build defined a cycle as origin-locked — it ended only
+// // when price closed back THROUGH its origin — on the reasoning that "the entire trend"
+// // means the whole move and a move is not over until it is fully retraced. That reasoning
+// // is fine and the rule is UNBOUNDED: gold has never traded back through its 2020 low, so
+// // the origin sat on an ancient low, the extreme climbed to the all-time high, and the
+// // ladder spanned the entire loaded history instead of the trend on screen. Aaron's words
+// // were "way too big… not sticking to the market structure I'm seeing on my chart", and it
+// // took one paste to find what no amount of reading had.
+// // A trend here is therefore ONE UNINTERRUPTED RUN of HH/HL, which is exactly what an SOS
+// // delimits — so the origin re-locks on every SOS. Checked against his own hand-drawn fib:
+// // the rule reproduces 1.0 = 3942.79 and 0.0 = 4202.55, and its 0.618 lands on 4042.02,
+// // the price on his chart.
+// //
+// // ⚠ THE 1-MINUTE `request.security` ADOPT WAS DELETED WITH THIS, DELIBERATELY.
+// // It existed to shrink the cycle on 15m+ charts, which is the wrong fix for the wrong
+// // problem: it made a 15m chart draw a ONE-MINUTE-scale cycle that has nothing to do with
+// // the BOS/SOS labelled on the screen, so the one ladder a reader could not check against
+// // the chart was the one being drawn. Its own comments still said "5m" long after the
+// // constant went to 1, which is how long it had been going unread. The cycle is now the
+// // chart's own structure engine, `st` — the same stream that draws the labels beside it.
+// // ── The running cycle ──
+// // ⚠ A CYCLE IS *NOT* "THE RUN BETWEEN TWO SOS", AND GETTING THAT WRONG DELETES THIS
+// // FEATURE'S OWN OUTPUT. A healthy trend CONTAINS SOS events — the shakeout the D strategy
+// // is built to trade is exactly one — so an SOS-to-SOS cycle chops a single HH/HL/HH/HL
+// // trend into pieces and prices the retracement of a piece. Traced on Aaron's own July
+// // sequence: the pullback prints its own BOS, so it looks mature, and the SOS that resumes
+// // the trend would have birthed a fresh ladder ON THE PULLBACK and overwritten the one
+// // being watched, one step before that ladder was due to retire.
+// // A cycle here is therefore ORIGIN-LOCKED and ends only when price CLOSES BACK THROUGH
+// // its origin — i.e. the move is fully retraced and there is nothing left to retrace. That
+// // is the definition that makes "the entire trend" mean what it says, and it is the one
+// // the previous build already used for its bull side; what was missing was the mirror.
+// var int   cycDir = 0     // +1 = an up-cycle is running, -1 = a down-cycle is
+// var float cycOrg = na    // the trend's ORIGIN — the ladder's 1.0. Moves only on invalidation.
+// var float cycExt = na    // the trend's running extreme — the ladder's 0.0 when one is born.
+// var int   cycBos = 0     // BOS in the cycle's own direction since the origin locked
 
-var bool  macro_origin_locked  = false
-var bool  macro_visible        = false
+// // ⚠ Hardcoded, NOT an input. TradingView keys a chart's saved input values off declaration
+// // order within each type, so inserting an int here would shift every later int in this
+// // file and silently reset them on every chart running it.
+// int MACRO_MIN_TREND_BOS = 1
 
-// Cycle Fib TRACKING always runs (on 5m via security). Only the DRAWING is gated to
-// charts up to macroMaxTfMin (default 30 → 15m/30m draw it, 1h+ don't). Lower the input
-// to 15 to drop it off 30m too.
-bool macroFibAllowed = timeframe.in_seconds() <= macroMaxTfMin * 60
+// // The DRAWN ladder. Frozen at birth; these three never move while it is up.
+// var float macro_origin  = na   // the 1.0 — where the trend began
+// var float macro_extreme = na   // the 0.0 — the extreme it had reached when the reversal fired
+// var int   macro_dir     = 0    // +1 = an up-cycle (levels sit BELOW 0.0), -1 = mirrored
 
-// ── Cycle anchor source: HYBRID, split at macroCycleTf (the "Cycle Fib Timeframe" input) ──
-// Charts ABOVE macroCycleTf (e.g. 15m/30m when it's 5): adopt the macroCycleTf cycle via
-//   the security state (cyc_*) — the smaller cycle. Lowering macroCycleTf shrinks it.
-// Charts AT or BELOW macroCycleTf: that same security read comes back EMPTY at equal-or-
-//   faster resolution, so drive the cycle NATIVELY off the chart's own structure engine
-//   (st) — the same structure-locked rule, run inline, which renders reliably.
-bool _cycNative = timeframe.in_seconds() <= macroCycleTf * 60
-var float ncyc_origin = na, var float ncyc_extreme = na
-var bool  ncyc_locked = false, var float ncyc_lastCH = na, var bool ncyc_vis = false
-if _cycNative
-    if ncyc_locked and not na(ncyc_origin) and close < ncyc_origin
-        ncyc_origin := na, ncyc_extreme := na, ncyc_locked := false, ncyc_lastCH := na, ncyc_vis := false
-    if st.bull_sos and not ncyc_locked and not na(st.bull_bos_low) and not na(st.last_conf_high)
-        ncyc_origin := st.bull_bos_low, ncyc_extreme := st.last_conf_high, ncyc_locked := true, ncyc_lastCH := st.last_conf_high, ncyc_vis := true
-    if ncyc_locked and not na(st.last_conf_high) and not na(ncyc_lastCH) and st.last_conf_high > ncyc_lastCH
-        ncyc_extreme := st.last_conf_high, ncyc_lastCH := st.last_conf_high, ncyc_vis := true
-    if ncyc_locked and ncyc_vis and not na(ncyc_extreme) and close > ncyc_extreme
-        ncyc_vis := false
+// // ── The retirement latches ──
+// // Aaron's rule: "once there is a shift of structure from the zone followed by a break of
+// // structure, make the fib disappear." Read as three steps, because an SOS confirms ABOVE
+// // the zone by construction — it breaks a swing the retracement left behind — so "an SOS
+// // from the zone" can only mean price REACHED the zone and an SOS followed.
+// var bool macro_zoneHit = false   // price traded into 0.618 or deeper
+// var bool macro_sosSeen = false   // a with-trend SOS fired at or after that
 
-macro_origin        := _cycNative ? ncyc_origin  : cyc_origin
-macro_extreme       := _cycNative ? ncyc_extreme : cyc_extreme
-macro_visible       := _cycNative ? ncyc_vis     : cyc_visible
-macro_origin_locked := not na(macro_origin)
+// var line  macroLine0   = na, var label macroLabel0   = na
+// var line  macroLine382 = na, var label macroLabel382 = na
+// var line  macroLine50  = na, var label macroLabel50  = na
+// var line  macroLine618 = na, var label macroLabel618 = na
+// var line  macroLine702 = na, var label macroLabel702 = na
+// var line  macroLine786 = na, var label macroLabel786 = na
+// var line  macroLine886 = na, var label macroLabel886 = na
+// var line  macroLine100 = na, var label macroLabel100 = na
 
-// New cycle range (a fresh 5m lock or a new 5m HH moves macro_extreme) → reset touched flags.
-bool macroRangeChanged = not na(macro_extreme) and (na(macro_prev_extreme) or macro_extreme != macro_prev_extreme)
-if macroRangeChanged
-    macro0Touched   := false
-    macro382Touched := false
-    macro50Touched  := false
-    macro618Touched := false
-    macro702Touched := false
-    macro786Touched := false
-    macro886Touched := false
-    macro100Touched := false
-    macro618EverReached := false
+// // ── Touched tracking ──
+// var bool macro0Touched    = false   // TP3 / 0.0
+// var bool macro382Touched  = false   // TP2
+// var bool macro50Touched   = false   // TP1 / FFT
+// var bool macro618Touched  = false   // E1
+// var bool macro702Touched  = false   // E2
+// var bool macro786Touched  = false   // E3
+// var bool macro886Touched  = false   // E4
+// var bool macro100Touched  = false   // 1.0
+// var bool macro618EverReached = false  // gates the TP checks from the bar after E1 is hit
 
-// ── Macro touched tracking (chart high/low vs the adopted 5m anchors) ──
-if macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme) and not macroRangeChanged
-    float mH = macro_extreme
-    float mL = macro_origin
-    float mR = mH - mL
-    if mR > 0
-        float mP618 = mH - mR * 0.618
-        float mP702 = mH - mR * 0.702
-        float mP786 = mH - mR * 0.786
-        float mP886 = mH - mR * 0.886
-        float mP100 = mH - mR * 1.0
-        float mP50  = mH - mR * 0.5
-        float mP382 = mH - mR * 0.382
-        float mP0   = mH - mR * 0.0
-        bool macro618Reached = low <= mP618
-        if macro618Reached
-            macro618Touched := true
-            macro702Touched := f_checkTouch(macro702Touched, mP702, low <= mP702)
-            macro786Touched := f_checkTouch(macro786Touched, mP786, low <= mP786)
-            macro886Touched := f_checkTouch(macro886Touched, mP886, low <= mP886)
-            macro100Touched := f_checkTouch(macro100Touched, mP100, low <= mP100)
-        if macro618EverReached
-            macro50Touched  := f_checkTouch(macro50Touched,  mP50,  high >= mP50)
-            macro382Touched := f_checkTouch(macro382Touched, mP382, high >= mP382)
-            macro0Touched   := f_checkTouch(macro0Touched,   mP0,   high >= mP0)
-        if macro618Reached and not macro618EverReached
-            macro618EverReached := true
+// // Cycle Fib TRACKING always runs. Only the DRAWING is gated: charts up to macroMaxTfMin
+// // (default 30 → 15m/30m draw it, 1h+ don't) AND at or above 5m.
+// //
+// // ⚠ THE 5m FLOOR EXCLUDES THE 1m DELIBERATELY, AND IT MUST NOT BE MADE TO MATCH THE
+// // EXTERNAL FIB'S RULE. `_fibTfOk` hides fibs below 5m but EXEMPTS the 1m
+// // (`timeframe.in_seconds() == 60 or ...`), and that exemption is not a general "1m is
+// // fine" — it exists because the 1m is the ENTRY VIEW and the External Fib's SOS-leg fib
+// // IS the entry map there, which is why it is further gated by `fiboShowAligned`: a 1m SOS
+// // aligned with the 15m, after the REV setup has retraced. The Cycle Fib answers the
+// // opposite question — where a whole multi-day trend retraces to — so it has no business
+// // on the entry view at all (Aaron, 2026-08-06: nothing on the 1m unless it is tracking a
+// // 1m SOS entry for the REV setup, and this cannot be). Copying the exemption across would
+// // put a ladder spanning days on the chart used to time a single entry.
+// bool macroFibAllowed = timeframe.in_seconds() >= 300 and timeframe.in_seconds() <= macroMaxTfMin * 60
 
-macro_prev_extreme := macro_extreme
+// // ── 1. Extend the running cycle's extreme ──
+// // Runs FIRST, so the reversal bar's own extreme still belongs to the cycle it is ending.
+// // Raw wick, not the confirmed swing: "the entire move" is what price actually reached, and
+// // it is what a hand-drawn fib is dragged to. A confirmed high can also be a LOWER high if
+// // the cycle topped and rolled over before its reversal, which would anchor the 0.0 short of
+// // the real extreme and shift every level under it.
+// if cycDir == 1
+//     cycExt := math.max(nz(cycExt, high), high)
+// else if cycDir == -1
+//     cycExt := math.min(nz(cycExt, low), low)
 
-// ── Draw / update the macro fib ──
-bool macroDrawable = showMacroFib and macroFibAllowed and macro_visible and macro_origin_locked and not na(macro_origin) and not na(macro_extreme)
-// The 5m-adopt path has no per-event delete blocks, so retire the drawn lines here the
-// moment the cycle stops being drawable (5m hid it, closed past an anchor, or chart is
-// above the draw cap).
-if not macroDrawable and not na(macroLine0)
-    line.delete(macroLine0),   label.delete(macroLabel0)
-    line.delete(macroLine382), label.delete(macroLabel382)
-    line.delete(macroLine50),  label.delete(macroLabel50)
-    line.delete(macroLine618), label.delete(macroLabel618)
-    line.delete(macroLine702), label.delete(macroLabel702)
-    line.delete(macroLine786), label.delete(macroLabel786)
-    line.delete(macroLine886), label.delete(macroLabel886)
-    line.delete(macroLine100), label.delete(macroLabel100)
-    macroLine0 := na,   macroLabel0 := na
-    macroLine382 := na, macroLabel382 := na
-    macroLine50 := na,  macroLabel50 := na
-    macroLine618 := na, macroLabel618 := na
-    macroLine702 := na, macroLabel702 := na
-    macroLine786 := na, macroLabel786 := na
-    macroLine886 := na, macroLabel886 := na
-    macroLine100 := na, macroLabel100 := na
-if macroDrawable
-    float mHigh   = macro_extreme
-    float mLow    = macro_origin
-    float mRange  = mHigh - mLow
-    int   mStart  = math.max(0, bar_index - macroLineExtend)
-    int   mEnd    = bar_index + macroLineExtend
+// // ── 2. BIRTH: a COUNTER-trend SOS draws the cycle it just ended ──
+// // Reads the cycle BEFORE step 3 re-seeds it — that ordering is the whole mechanism, and
+// // swapping the two prices the ladder off the move that is only just starting.
+// //
+// // ⚠ A LADDER CAN ONLY BE BORN WHEN NONE IS LIVE, AND THAT LOCK IS WHAT MAKES AARON'S
+// // RETIREMENT RULE POSSIBLE. His rule needs the ladder to survive the with-trend SOS that
+// // resumes the trend — but that same SOS is a COUNTER-trend SOS against the pullback, so
+// // without the lock it births a fresh ladder ON THE PULLBACK and overwrites the one being
+// // watched, one bar before it was due to retire. Traced on his own July sequence. A
+// // maturity gate does NOT substitute for this and looked like it did: an ordinary pullback
+// // prints its own BOS, so it passes any `cycBos >= n` test.
+// // The lock cannot wedge, because step 5 has a death for every way a retracement can end —
+// // including price simply running away past the 0.0 without ever reaching the zone.
+// bool macroCtrSos = (st.bear_sos and cycDir == 1) or (st.bull_sos and cycDir == -1)
+// if macroCtrSos and macro_dir == 0 and cycBos >= MACRO_MIN_TREND_BOS and not na(cycOrg) and not na(cycExt) and cycExt != cycOrg
+//     macro_extreme := cycExt
+//     macro_origin  := cycOrg
+//     macro_dir     := cycDir
+//     macro_zoneHit := false
+//     macro_sosSeen := false
+//     macro0Touched   := false
+//     macro382Touched := false
+//     macro50Touched  := false
+//     macro618Touched := false
+//     macro702Touched := false
+//     macro786Touched := false
+//     macro886Touched := false
+//     macro100Touched := false
+//     macro618EverReached := false
 
-    if mRange > 0
-        float p0 = mHigh - mRange * 0.0
-        color cm0 = macro0Touched ? macro0Color : MACRO_GREY
-        string txm0 = f_macroLabel(0.0, "TP3", "TP3") + str.tostring(p0, format.mintick) + ")"
-        [nml0, nmlb0] = f_fibLevel(showMacro0, macroLine0, macroLabel0, mStart, p0, mEnd, cm0, f_macroLineStyle(macro0Style), txm0)
-        macroLine0 := nml0, macroLabel0 := nmlb0
+// // ── 3. RE-SEED the cycle on EVERY SOS ──
+// // 🔴 THIS IS THE FIX FOR "WAY TOO BIG", AND THE BUG IT REPLACES IS WORTH RECORDING.
+// // The first build locked the origin ONCE and moved it only when price closed back THROUGH
+// // it. On a trending instrument that never happens — gold has not traded back through its
+// // 2020 low — so `cycOrg` sat on an ancient low, `cycExt` climbed to the all-time high, and
+// // the ladder spanned the whole loaded history instead of the trend on screen. The rule read
+// // as principled ("a trend ends when it is fully retraced") and is unbounded in practice.
+// // A trend here is ONE UNINTERRUPTED RUN of HH/HL, which is exactly what an SOS delimits, so
+// // the origin re-locks on every SOS. The origin is the ENGINE's own break leg
+// // (st.bull_bos_low / st.bear_bos_high) — never a backwards scan for a low, because the
+// // engine already knows that price and a second derivation is a second claim that can
+// // disagree with the labels drawn beside it.
+// if st.bull_sos and not na(st.bull_bos_low)
+//     cycDir := 1, cycOrg := st.bull_bos_low, cycExt := high, cycBos := 0
+// else if st.bear_sos and not na(st.bear_bos_high)
+//     cycDir := -1, cycOrg := st.bear_bos_high, cycExt := low, cycBos := 0
 
-        float p382 = mHigh - mRange * 0.382
-        color cm382 = macro382Touched ? macro382Color : MACRO_GREY
-        string txm382 = f_macroLabel(0.382, "TP2", "TP2") + str.tostring(p382, format.mintick) + ")"
-        [nml382, nmlb382] = f_fibLevel(showMacro382, macroLine382, macroLabel382, mStart, p382, mEnd, cm382, f_macroLineStyle(macro382Style), txm382)
-        macroLine382 := nml382, macroLabel382 := nmlb382
+// // ── 4. Count the continuations ──
+// // ⚠ The `not st.*_sos` guard is load-bearing: the engine raises bull_bos on EVERY bull
+// // break including a bull SOS, so without it a cycle would count its own opening break as
+// // continuation and cycBos could never read 0.
+// if (st.bull_bos and not st.bull_sos and cycDir == 1) or (st.bear_bos and not st.bear_sos and cycDir == -1)
+//     cycBos += 1
 
-        float p50 = mHigh - mRange * 0.5
-        color cm50 = macro50Touched ? macro50Color : MACRO_GREY
-        string txm50 = (macro50Touched ? "FFT  (" : f_macroLabel(0.5, "TP1", "TP1")) + str.tostring(p50, format.mintick) + ")"
-        [nml50, nmlb50] = f_fibLevel(showMacro50, macroLine50, macroLabel50, mStart, p50, mEnd, cm50, f_macroLineStyle(macro50Style), txm50)
-        macroLine50 := nml50, macroLabel50 := nmlb50
+// // ── 5. The live ladder: touched tracking, and the three ways it retires ──
+// if not na(macro_origin) and not na(macro_extreme) and macro_dir != 0
+//     float mRng  = math.abs(macro_extreme - macro_origin)
+//     // ONE formula for both directions. dir +1: the extreme is the high and the levels fall
+//     // away below it. dir -1: the extreme is the low and they rise above it. A per-direction
+//     // branch is what lets a short's ladder quietly drift from a long's.
+//     float mP0   = macro_extreme
+//     float mP382 = macro_extreme - macro_dir * mRng * 0.382
+//     float mP50  = macro_extreme - macro_dir * mRng * 0.5
+//     float mP618 = macro_extreme - macro_dir * mRng * 0.618
+//     float mP702 = macro_extreme - macro_dir * mRng * 0.702
+//     float mP786 = macro_extreme - macro_dir * mRng * 0.786
+//     float mP886 = macro_extreme - macro_dir * mRng * 0.886
+//     float mP100 = macro_origin
+//     if mRng > 0
+//         // "Into the retracement" is a fall on an up-cycle and a rise on a down-cycle.
+//         bool m618Reached = macro_dir == 1 ? low <= mP618 : high >= mP618
+//         if m618Reached
+//             macro618Touched := true
+//             macro702Touched := f_checkTouch(macro702Touched, mP702, macro_dir == 1 ? low <= mP702 : high >= mP702)
+//             macro786Touched := f_checkTouch(macro786Touched, mP786, macro_dir == 1 ? low <= mP786 : high >= mP786)
+//             macro886Touched := f_checkTouch(macro886Touched, mP886, macro_dir == 1 ? low <= mP886 : high >= mP886)
+//             macro100Touched := f_checkTouch(macro100Touched, mP100, macro_dir == 1 ? low <= mP100 : high >= mP100)
+//         if macro618EverReached
+//             macro50Touched  := f_checkTouch(macro50Touched,  mP50,  macro_dir == 1 ? high >= mP50  : low <= mP50)
+//             macro382Touched := f_checkTouch(macro382Touched, mP382, macro_dir == 1 ? high >= mP382 : low <= mP382)
+//             macro0Touched   := f_checkTouch(macro0Touched,   mP0,   macro_dir == 1 ? high >= mP0   : low <= mP0)
+//         if m618Reached and not macro618EverReached
+//             macro618EverReached := true
 
-        float p618 = mHigh - mRange * 0.618
-        color cm618 = macro618Touched ? macro618Color : MACRO_GREY
-        string txm618 = f_macroLabel(0.618, "E1", "E1") + str.tostring(p618, format.mintick) + ")"
-        [nml618, nmlb618] = f_fibLevel(showMacro618, macroLine618, macroLabel618, mStart, p618, mEnd, cm618, f_macroLineStyle(macro618Style), txm618)
-        macroLine618 := nml618, macroLabel618 := nmlb618
+//         // ── RETIREMENT ──
+//         // The zone is 0.618 → 0.886, the same E1-E4 band the External Fib tags, entered
+//         // from the shallow end. Latched, never re-tested: price leaving the zone does not
+//         // un-happen it, and the SOS that resumes the trend necessarily fires outside it.
+//         if m618Reached
+//             macro_zoneHit := true
+//         // The resumption is a break in the DRAWN CYCLE's own direction. ⚠ The BOS test
+//         // must exclude the SOS bar for the same reason step 3 does — otherwise the SOS
+//         // counts as its own confirmation and the ladder dies one step early, every time.
+//         bool _mResumeSos = macro_dir == 1 ? st.bull_sos : st.bear_sos
+//         bool _mResumeBos = macro_dir == 1 ? (st.bull_bos and not st.bull_sos) : (st.bear_bos and not st.bear_sos)
+//         if macro_zoneHit and _mResumeSos
+//             macro_sosSeen := true
+//         // THREE deaths, and every one of them is also what releases the birth lock in step
+//         // 2 — so this list has to cover every way a retracement can end, or a ladder that
+//         // cannot die is a ladder that blocks every future one.
+//         //   1 RESOLVED — reached the zone, structure shifted out of it, a break confirmed
+//         //     it. Whatever this ladder had to say, it has said.
+//         //   2 VOIDED   — closed clean through the 1.0. Not a pullback any more; the trend
+//         //     it measured is gone.
+//         //   3 EXCEEDED — closed past the 0.0. The trend resumed WITHOUT ever reaching the
+//         //     zone, so this ladder's extreme is stale. ⚠ Without this one the lock wedges:
+//         //     a shallow dip followed by a run to new highs would leave a ladder up for ever
+//         //     and no reversal after it could ever draw one.
+//         bool _mResolved = macro_sosSeen and _mResumeBos
+//         bool _mVoided   = macro_dir == 1 ? close < mP100 : close > mP100
+//         bool _mExceeded = macro_dir == 1 ? close > mP0   : close < mP0
+//         if _mResolved or _mVoided or _mExceeded
+//             macro_origin  := na
+//             macro_extreme := na
+//             macro_dir     := 0
+//             macro_zoneHit := false
+//             macro_sosSeen := false
 
-        float p702 = mHigh - mRange * 0.702
-        color cm702 = macro702Touched ? macro702Color : MACRO_GREY
-        string txm702 = f_macroLabel(0.702, "E2", "E2") + str.tostring(p702, format.mintick) + ")"
-        [nml702, nmlb702] = f_fibLevel(showMacro702, macroLine702, macroLabel702, mStart, p702, mEnd, cm702, f_macroLineStyle(macro702Style), txm702)
-        macroLine702 := nml702, macroLabel702 := nmlb702
+// // ── Draw / update the macro fib ──
+// bool macroDrawable = showMacroFib and macroFibAllowed and macro_dir != 0 and not na(macro_origin) and not na(macro_extreme)
+// // The 5m-adopt path has no per-event delete blocks, so retire the drawn lines here the
+// // moment the cycle stops being drawable (5m hid it, closed past an anchor, or chart is
+// // above the draw cap).
+// if not macroDrawable and not na(macroLine0)
+//     line.delete(macroLine0),   label.delete(macroLabel0)
+//     line.delete(macroLine382), label.delete(macroLabel382)
+//     line.delete(macroLine50),  label.delete(macroLabel50)
+//     line.delete(macroLine618), label.delete(macroLabel618)
+//     line.delete(macroLine702), label.delete(macroLabel702)
+//     line.delete(macroLine786), label.delete(macroLabel786)
+//     line.delete(macroLine886), label.delete(macroLabel886)
+//     line.delete(macroLine100), label.delete(macroLabel100)
+//     macroLine0 := na,   macroLabel0 := na
+//     macroLine382 := na, macroLabel382 := na
+//     macroLine50 := na,  macroLabel50 := na
+//     macroLine618 := na, macroLabel618 := na
+//     macroLine702 := na, macroLabel702 := na
+//     macroLine786 := na, macroLabel786 := na
+//     macroLine886 := na, macroLabel886 := na
+//     macroLine100 := na, macroLabel100 := na
+// if macroDrawable
+//     // The SAME one-formula geometry the tracking block uses, so the drawn line and the
+//     // touched flag beside it can never describe different prices. mRange is ABSOLUTE and
+//     // macro_dir carries the sign — on a down-cycle macro_extreme is the LOW and every
+//     // level sits above it.
+//     float mExt    = macro_extreme
+//     float mDir    = macro_dir
+//     float mRange  = math.abs(macro_extreme - macro_origin)
+//     int   mStart  = math.max(0, bar_index - macroLineExtend)
+//     int   mEnd    = bar_index + macroLineExtend
 
-        float p786 = mHigh - mRange * 0.786
-        color cm786 = macro786Touched ? macro786Color : MACRO_GREY
-        string txm786 = f_macroLabel(0.786, "E3", "E3") + str.tostring(p786, format.mintick) + ")"
-        [nml786, nmlb786] = f_fibLevel(showMacro786, macroLine786, macroLabel786, mStart, p786, mEnd, cm786, f_macroLineStyle(macro786Style), txm786)
-        macroLine786 := nml786, macroLabel786 := nmlb786
+//     if mRange > 0
+//         float p0 = mExt - mDir * mRange * 0.0
+//         color cm0 = macro0Touched ? macro0Color : MACRO_GREY
+//         string txm0 = f_macroLabel(0.0, "TP3", "TP3") + str.tostring(p0, format.mintick) + ")"
+//         [nml0, nmlb0] = f_fibLevel(showMacro0, macroLine0, macroLabel0, mStart, p0, mEnd, cm0, f_macroLineStyle(macro0Style), txm0)
+//         macroLine0 := nml0, macroLabel0 := nmlb0
 
-        float p886 = mHigh - mRange * 0.886
-        color cm886 = macro886Touched ? macro886Color : MACRO_GREY
-        string txm886 = f_macroLabel(0.886, "E4", "E4") + str.tostring(p886, format.mintick) + ")"
-        [nml886, nmlb886] = f_fibLevel(showMacro886, macroLine886, macroLabel886, mStart, p886, mEnd, cm886, f_macroLineStyle(macro886Style), txm886)
-        macroLine886 := nml886, macroLabel886 := nmlb886
+//         float p382 = mExt - mDir * mRange * 0.382
+//         color cm382 = macro382Touched ? macro382Color : MACRO_GREY
+//         string txm382 = f_macroLabel(0.382, "TP2", "TP2") + str.tostring(p382, format.mintick) + ")"
+//         [nml382, nmlb382] = f_fibLevel(showMacro382, macroLine382, macroLabel382, mStart, p382, mEnd, cm382, f_macroLineStyle(macro382Style), txm382)
+//         macroLine382 := nml382, macroLabel382 := nmlb382
 
-        float p100 = mHigh - mRange * 1.0
-        color cm100 = macro100Touched ? macro100Color : MACRO_GREY
-        string txm100 = f_macroLabel(1.0, "1.0", "1.0") + str.tostring(p100, format.mintick) + ")"
-        [nml100, nmlb100] = f_fibLevel(showMacro100, macroLine100, macroLabel100, mStart, p100, mEnd, cm100, f_macroLineStyle(macro100Style), txm100)
-        macroLine100 := nml100, macroLabel100 := nmlb100
+//         float p50 = mExt - mDir * mRange * 0.5
+//         color cm50 = macro50Touched ? macro50Color : MACRO_GREY
+//         string txm50 = (macro50Touched ? "FFT  (" : f_macroLabel(0.5, "TP1", "TP1")) + str.tostring(p50, format.mintick) + ")"
+//         [nml50, nmlb50] = f_fibLevel(showMacro50, macroLine50, macroLabel50, mStart, p50, mEnd, cm50, f_macroLineStyle(macro50Style), txm50)
+//         macroLine50 := nml50, macroLabel50 := nmlb50
+
+//         float p618 = mExt - mDir * mRange * 0.618
+//         color cm618 = macro618Touched ? macro618Color : MACRO_GREY
+//         string txm618 = f_macroLabel(0.618, "E1", "E1") + str.tostring(p618, format.mintick) + ")"
+//         [nml618, nmlb618] = f_fibLevel(showMacro618, macroLine618, macroLabel618, mStart, p618, mEnd, cm618, f_macroLineStyle(macro618Style), txm618)
+//         macroLine618 := nml618, macroLabel618 := nmlb618
+
+//         float p702 = mExt - mDir * mRange * 0.702
+//         color cm702 = macro702Touched ? macro702Color : MACRO_GREY
+//         string txm702 = f_macroLabel(0.702, "E2", "E2") + str.tostring(p702, format.mintick) + ")"
+//         [nml702, nmlb702] = f_fibLevel(showMacro702, macroLine702, macroLabel702, mStart, p702, mEnd, cm702, f_macroLineStyle(macro702Style), txm702)
+//         macroLine702 := nml702, macroLabel702 := nmlb702
+
+//         float p786 = mExt - mDir * mRange * 0.786
+//         color cm786 = macro786Touched ? macro786Color : MACRO_GREY
+//         string txm786 = f_macroLabel(0.786, "E3", "E3") + str.tostring(p786, format.mintick) + ")"
+//         [nml786, nmlb786] = f_fibLevel(showMacro786, macroLine786, macroLabel786, mStart, p786, mEnd, cm786, f_macroLineStyle(macro786Style), txm786)
+//         macroLine786 := nml786, macroLabel786 := nmlb786
+
+//         float p886 = mExt - mDir * mRange * 0.886
+//         color cm886 = macro886Touched ? macro886Color : MACRO_GREY
+//         string txm886 = f_macroLabel(0.886, "E4", "E4") + str.tostring(p886, format.mintick) + ")"
+//         [nml886, nmlb886] = f_fibLevel(showMacro886, macroLine886, macroLabel886, mStart, p886, mEnd, cm886, f_macroLineStyle(macro886Style), txm886)
+//         macroLine886 := nml886, macroLabel886 := nmlb886
+
+//         float p100 = mExt - mDir * mRange * 1.0
+//         color cm100 = macro100Touched ? macro100Color : MACRO_GREY
+//         string txm100 = f_macroLabel(1.0, "1.0", "1.0") + str.tostring(p100, format.mintick) + ")"
+//         [nml100, nmlb100] = f_fibLevel(showMacro100, macroLine100, macroLabel100, mStart, p100, mEnd, cm100, f_macroLineStyle(macro100Style), txm100)
+//         macroLine100 := nml100, macroLabel100 := nmlb100
         //============================================================
   // INTERNAL FIB
 //============================================================
@@ -5312,7 +5446,20 @@ var int liq_nyh_bar = na, var int liq_nyl_bar = na
 // for a session/daily/H4 bias read: never stale, and never wiped before the
 // pool it belongs to has actually rolled. Aligns with when the drawn levels
 // themselves reset. Placed BEFORE the sweep-activation block so a sweep firing
-// on the very same refresh bar still registers. (H4 is handled per H4 bar below.)
+// on the very same refresh bar still registers.
+   // 🔴 H4 USED TO RESET *BELOW* THE ACTIVATION BLOCK, AND THAT IS WHY A SWEPT H4 HIGH
+   // COULD NOT REACH THE TABLE (Aaron, 2026-08-06). The rule stated two lines up was
+   // written for the daily and session tiers and H4 was the one tier doing it the other
+   // way round: a sweep registering on the first bar of a new H4 candle was set by the
+   // activation block and then wiped by the reset in the same bar, every time.
+   // ⚠ It bites on H4 far more often than on the other tiers for a structural reason —
+   // H4 rolls six times a day, and a trending market very frequently rolls into a new H4
+   // candle already trading above the previous H4 candle's high. The daily and session
+   // pools roll once each and rarely open already swept, which is why the identical bug
+   // sat in them unnoticed. Same fix, applied to all four.
+if h4BarChanged
+    liq_h4h := "", liq_h4h_bar := na
+    liq_h4l := "", liq_h4l_bar := na
    // Daily pool rolls at the exchange daily open (hasDailyTimeChanged), NOT NY
    // midnight — for gold that's ~17:00-18:00 NY.
 if hasDailyTimeChanged
@@ -5330,38 +5477,41 @@ if not inNY and inNY[1]
     liq_nyh := "", liq_nyh_bar := na
     liq_nyl := "", liq_nyl_bar := na
 
+// ⚠ THE GUARD IS `liq_* == ""`, NOT A RISING EDGE ON THE SWEEP FLAG, AND THE DIFFERENCE
+// IS THE SECOND HALF OF THE H4 BUG. Every one of these flags is reset to false when its
+// pool rolls and can be set true again by the SAME bar's mitigation check — so on a roll
+// bar the flag goes false -> true within one bar while `flag[1]` still holds the PREVIOUS
+// bar's true, and `flag and not flag[1]` never fires. Reading the RECORD instead of the
+// previous bar's flag asks the question that is actually meant — "swept, and not yet
+// written down" — and it cannot be defeated by a same-bar reset. The resets above run
+// first, so a roll clears the record and the sweep re-registers on its own terms.
 // ── Activate on sweep — stays active until replaced by next sweep or session reset ──
 if barstate.isconfirmed
     if i_showH4Sweep and i_showLiquidity
-        if h4HighSwept and not h4HighSwept[1] and not na(h4TrackHigh)
+        if h4HighSwept and liq_h4h == "" and not na(h4TrackHigh)
             liq_h4h := "BSL", liq_h4h_bar := bar_index
-        if h4LowSwept and not h4LowSwept[1] and not na(h4TrackLow)
+        if h4LowSwept and liq_h4l == "" and not na(h4TrackLow)
             liq_h4l := "SSL", liq_h4l_bar := bar_index
     if i_isDailyEnabled and i_showLiquidity
-        if d_hMit and not d_hMit[1]
+        if d_hMit and liq_dh == ""
             liq_dh := "BSL", liq_dh_bar := bar_index, liq_dh_t := time
-        if d_lMit and not d_lMit[1]
+        if d_lMit and liq_dl == ""
             liq_dl := "SSL", liq_dl_bar := bar_index, liq_dl_t := time
     if i_showAsiaHL and i_showLiquidity
-        if asiaHMit and not asiaHMit[1]
+        if asiaHMit and liq_ash == ""
             liq_ash := "BSL", liq_ash_bar := bar_index
-        if asiaLMit and not asiaLMit[1]
+        if asiaLMit and liq_asl == ""
             liq_asl := "SSL", liq_asl_bar := bar_index
     if i_showLondonHL and i_showLiquidity
-        if londonHMit and not londonHMit[1]
+        if londonHMit and liq_ldh == ""
             liq_ldh := "BSL", liq_ldh_bar := bar_index
-        if londonLMit and not londonLMit[1]
+        if londonLMit and liq_ldl == ""
             liq_ldl := "SSL", liq_ldl_bar := bar_index
     if i_showNYHL and i_showLiquidity
-        if nyHMit and not nyHMit[1]
+        if nyHMit and liq_nyh == ""
             liq_nyh := "BSL", liq_nyh_bar := bar_index
-        if nyLMit and not nyLMit[1]
+        if nyLMit and liq_nyl == ""
             liq_nyl := "SSL", liq_nyl_bar := bar_index
-
-// H4 resets on new H4 bar
-if h4BarChanged
-    liq_h4h := "", liq_h4h_bar := na
-    liq_h4l := "", liq_h4l_bar := na
 
 // ── 2. STRUCTURE slots — most recent external and internal ──
 var string ext_struct = ""
@@ -5749,11 +5899,34 @@ if st.bull_sos and not sessionGapBar
 // (TP3 done, fib flipped, 1.0 broken) is a real failure and does NOT arm a B leg.
 bool bLegArmL = not na(aplusL_sosBar) and not sessionGapBar and st.bull_bos and not st.bull_sos and not aplusL_half and not aplusL_618 and fibo_dir == 1 and not fibo7Touched
 bool bLegArmS = not na(aplusS_sosBar) and not sessionGapBar and st.bear_bos and not st.bear_sos and not aplusS_half and not aplusS_618 and fibo_dir == -1 and not fibo7Touched
+// ── TP3 KILLS THE LEG OFF THE A+'S OWN LATCH, NOT THE DRAWN FIB'S (Aaron, 2026-08-06) ──
+// The row was seen STUCK on "TAKE PROFIT SHORT · TP3 · close the rest" long after TP3
+// printed, on a short entered at 0.5. The completion death above reads `fibo7Touched`,
+// and that flag is GATED: the fib block only checks its three TP levels inside
+// `if fibo618EverReached`. An EARLY 0.5 entry never reaches 0.618, so on that leg
+// fibo618EverReached stays false, fibo7Touched can NEVER be set, and the completion
+// death is unreachable — the leg then survives until an opposite SOS or a continuation
+// BOS happens along, which can be hours.
+// Meanwhile the A+ engine's OWN TP3 latch fires perfectly well on that same leg, because
+// its gate is `aplusX_618[1] or aplusX_half[1]` — half is enough. So the row knew the
+// trade was finished and the death did not. Two flags for one event, and only one of them
+// works after a shallow entry.
+// aplusX_tp0 IS TP3 — it is set on price reaching fiboP7, the 0.0 leg origin, the same
+// level the drawn fib labels TP3 — so this is the identical death, read from the side
+// that can actually see it. `fibo7Touched` is KEPT: it still fires first on a deep entry
+// (it is checked in the fib block, which runs earlier in the bar), and it covers a leg
+// that returned to 0.0 without the A+ engine banking the rungs in order.
+// ⚠ It kills one bar LATE — this block runs BEFORE the TP tracking that sets the latch,
+// so the row carries a finished setup for one extra bar. Same lag `f_rev15` already
+// accepts for its own `or S_tp0`, and left the same way rather than adding a second
+// clear site that can drift from this one.
+// ⚠ It does NOT arm a B leg: bLegArmL/S above require the continuation-BOS branch and
+// `not aplusX_half and not aplusX_618`, so a leg that ran to TP3 cannot reach them.
 if not na(aplusL_sosBar) and not sessionGapBar
-    if (fibo_dir == 1 and fibo7Touched) or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
+    if (fibo_dir == 1 and fibo7Touched) or aplusL_tp0 or fibo_dir == -1 or (fibo_dir == 1 and not na(fiboP10) and close < fiboP10) or (st.bull_bos and not st.bull_sos)
         aplusL_sosBar := na, aplusL_sweepBar := na, aplusL_armTime := na, aplusL_swpArmT := na, aplusL_divArmT := na
 if not na(aplusS_sosBar) and not sessionGapBar
-    if (fibo_dir == -1 and fibo7Touched) or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10) or (st.bear_bos and not st.bear_sos)
+    if (fibo_dir == -1 and fibo7Touched) or aplusS_tp0 or fibo_dir == 1 or (fibo_dir == -1 and not na(fiboP10) and close > fiboP10) or (st.bear_bos and not st.bear_sos)
         aplusS_sosBar := na, aplusS_sweepBar := na, aplusS_armTime := na, aplusS_swpArmT := na, aplusS_divArmT := na
 
 // (CONT trigger + leg-resolution removed to save compile tokens — the CONT rows are
@@ -6311,6 +6484,14 @@ string _alTag  = "MPC A+ " + syminfo.ticker + " " + (_alLong ? "LONG " : "SHORT 
 string _alLvl = _alLong ? f_aplusEntryLvl(aplusL_half, aplusL_618, aplusL_702, aplusL_786, aplusL_886) : f_aplusEntryLvl(aplusS_half, aplusS_618, aplusS_702, aplusS_786, aplusS_886)
 float  _alEnt = _alLvl == "0.886" ? fiboP6 : _alLvl == "0.786" ? fiboP5 : _alLvl == "0.702" ? fiboP4 : _alLvl == "0.618" ? fiboP3 : fiboP2
 string _alPx  = na(_alEnt) or na(fiboP10) ? "" : " at " + str.tostring(_alEnt, format.mintick) + " SL " + str.tostring(fiboP10, format.mintick)
+// Did the leg that is ending end on a WIN — see the completion-death note above. Read at
+// [1] because the death block cleared the sos bar earlier THIS bar, which clears the TP
+// latches with it; the previous bar still holds the banked TP3. Direction is [1] for the
+// same reason _alLong is below: the other side may already own the row.
+// It exists because the death alert would otherwise announce a finished trade as
+// "SETUP DEAD - died at stage 4 of 4", which is the one message that must not go out on a
+// setup that paid.
+bool _alDone = _alLong[1] ? aplusL_tp0[1] : aplusS_tp0[1]
 if barstate.isconfirmed and timeframe.in_seconds() == 900
     // ENTRY leads the chain — it is the only branch that says DO something now, so it
     // must win any bar where a zone is reached and confirmed together.
@@ -6330,7 +6511,7 @@ if barstate.isconfirmed and timeframe.in_seconds() == 900
     // same bar, so the value lands on 1, not 0. Direction is read at [1] because by this
     // bar _alLong may already describe the side that replaced it.
     else if _alStg < 2 and _alStg[1] >= 2
-        alert("MPC A+ " + syminfo.ticker + " " + (_alLong[1] ? "LONG " : "SHORT ") + "SETUP DEAD - died at stage " + str.tostring(_alStg[1]) + " of 4", alert.freq_once_per_bar)
+        alert("MPC A+ " + syminfo.ticker + " " + (_alLong[1] ? "LONG " : "SHORT ") + (_alDone ? "COMPLETE - TP3 banked, leg closed" : "SETUP DEAD - died at stage " + str.tostring(_alStg[1]) + " of 4"), alert.freq_once_per_bar)
 
 if showConfTable and barstate.islast
     // Header
