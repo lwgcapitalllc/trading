@@ -260,6 +260,50 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **Stdlib only, on purpose** — it drives the engines directly and needs no pandas, so it runs on a
   bare interpreter. Run it: `python3 backtest/tools/trigger_edge.py` (~5s).
 
+- **`tools/bos_sweep.py`** — 🔴 **DO NOT QUOTE ITS NUMBERS. FALSIFIED 2026-08-07, the day it was
+  written.** On the same symbol, timeframe and window, with the config confirmed identical by the
+  Pine's own `[CFG]` echo, this tool reports **20 trades / 80% win / PF 2.97 / +102.5%** where the
+  TradingView Strategy Tester reports **24 trades / 66.67% win / PF 1.043 / +5.01%**. The Tester is
+  the ground truth. **Entries roughly agree; the EXIT LADDER does not** — this model extracts far
+  more from its winners than the Pine does. It is kept because its METHOD is sound and reusable
+  (matched drawdown budgets, paired jitter, resolvable-stop screening, matched random controls) and
+  because fixing it is cheaper than rewriting it. **Every result must be treated as unverified
+  until `compare_bos.py` is green.** See `docs/MPC_BOS_OPTIMIZATION.md` → Run 8.
+  ⚠ **Its own docstring warned it was a model rather than the strategy, and that was not enough** —
+  a table of numbers reads as a finding whatever caveat sits under it. The check that falsified it
+  was ONE Strategy Tester run, available the entire day it went unrun.
+  Added 2026-08-07; it chose that file's current defaults (Run 7 in `docs/MPC_BOS_OPTIMIZATION.md`), and it
+  exists so that answer is reproducible rather than asserted. Stdlib only, same as `trigger_edge.py`,
+  and it reuses that tool's `drop_coarse()` reasoning. Modes: `sensitivity` (one lever at a time),
+  `frontier` (the cartesian, ranked at a matched drawdown budget), `settle` (paired jitter
+  head-to-head). ~35,000 configurations over 186,384 M15 bars; `frontier` takes ~40s on 12 cores.
+  ⚠ **It models ONE POSITION SLOT, because the Pine is a `strategy()`.** Scoring setups
+  independently counts trades the strategy could never have taken and lets a winner and the trade it
+  would have blocked BOTH score — the queue effect this repo has now measured three times, and twice
+  the cheap estimate had the SIGN wrong.
+  ⚠ **It charges spread AND swap per night held**, and swap keeps MT5's sign, so gold's short-side
+  CREDIT stays a credit. A strategy that holds overnight cannot be ranked without it.
+  🔴 **Its load-bearing output is not the R column — it is the TIGHTEST-TENTH STOP printed beside
+  every row.** R = profit / stop, so a stop model that produces small stops inflates every R in the
+  book without one extra dollar being made. The first leaderboard this tool ever produced was
+  entirely configurations with a **median 74-cent stop** reading +250R to +450R, on an instrument
+  whose spread is $0.22 — numbers a 15-minute bar cannot even resolve, since inside one bar price
+  crosses that spread constantly. **Ranking on R alone cannot see this. Never rank a stop model on R.**
+  ⚠ **Configurations are compared at a MATCHED DRAWDOWN BUDGET** (`risk_for_dd`), not at equal risk:
+  summing R treats a 25R drawdown as three times worse than an 8R one, when at 10% risk it is the
+  difference between giving back 30% and giving back 93%. It is the only way a 55-trade book and a
+  600-trade one can be ranked together.
+  ⚠ **That budget metric is NOISY — a factor of two across jitter seeds on one configuration** — so
+  `settle` scores every finalist on the SAME jittered series and compares pairwise. Unpaired medians
+  had the old and new defaults tied (42.8x vs 42.3x) purely because the real price series is unlucky
+  for one and lucky for the other; pairing separated them 32-8.
+  ⚠ **Two look-ahead traps are deliberately avoided and both were made and caught here**: the VWAP
+  side is read off the PREVIOUS closed bar (reading it off the fill bar's own close selects bars that
+  recovered — worth a fake +9%), and the FILL BAR MAY NOT STAGE THE STOP, which is
+  `BUG_exit_fill_price_mismatch`.
+  ⚠ **It is a MODEL of the Pine, not the Pine.** No `compare_bos.py` exists yet, so nothing here has
+  been diffed against the strategy's own decision stream. Read its results as a strong prior.
+
 ## Portfolio stacking (`backtest/portfolio/`)
 
 Stack several strategies onto ONE shared account — one balance, one live risk budget the legs
