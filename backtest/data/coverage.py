@@ -15,6 +15,8 @@ import re
 from datetime import date, timedelta
 from pathlib import Path
 
+from .atomic import atomic_write_json, cache_lock
+
 
 def _safe(token: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", token).strip("_")
@@ -96,12 +98,17 @@ class RangeCoverage:
 
     def record(self, symbol: str, tf_name: str, start_date: str, end_date: str) -> None:
         """Add [start_date, end_date] to the coverage and merge overlapping/adjacent
-        intervals, then persist."""
-        intervals = self._load(symbol, tf_name)
-        intervals.append([start_date, end_date])
-        merged = _merge_intervals(intervals)
-        self.dir.mkdir(parents=True, exist_ok=True)
-        self.path(symbol, tf_name).write_text(json.dumps(merged), encoding="utf-8")
+        intervals, then persist.
+
+        Read-modify-write like `BarCache.save`, and locked for the same reason: without it, two
+        writers each read the same intervals and the second one's write DROPS the first one's
+        span. The bars would still be on disk and nothing would ever be asked to serve them —
+        the mirror image of the failure this sidecar exists to prevent.
+        """
+        with cache_lock(self.dir, symbol, tf_name):
+            intervals = self._load(symbol, tf_name)
+            intervals.append([start_date, end_date])
+            atomic_write_json(self.path(symbol, tf_name), _merge_intervals(intervals))
 
 
 def _day_after(iso: str) -> str:

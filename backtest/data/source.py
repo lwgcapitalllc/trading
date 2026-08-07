@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .atomic import cache_lock
 from .cache import BarCache
 from .coverage import RangeCoverage
 from .history import HistoryFloors, assert_bar_spacing
@@ -89,13 +90,25 @@ class BarSource:
             self.coverage.reset(symbol, base_tf)
         for gap_start, gap_end in self.coverage.missing(symbol, base_tf, start_date, end_date):
             fetched = self.agent.bars(symbol, base_tf, gap_start, gap_end)
-            # MERGES, never overwrites (`BarCache.save`) — which is what makes a partial fetch
-            # safe. Overwriting would let a one-day tail pull delete six years of cached bars.
-            self.cache.save(symbol, base_tf, fetched)
-            # Record what CAME BACK, never what was asked for — see `_covered_end`.
-            covered_to = _covered_end(fetched, gap_end)
-            if covered_to >= gap_start:
-                self.coverage.record(symbol, base_tf, gap_start, covered_to)
+            # The bars and the coverage that DESCRIBES them are written as ONE operation. The
+            # invariant that matters is not "each file is well-formed" but *coverage never claims
+            # more than the bars on disk* — and a save and a record that are individually atomic
+            # still leave a window between them where exactly that lie is true. Anything that
+            # crashes or interleaves in that window strands missing bars behind a cache HIT,
+            # permanently, because a covered range is never re-fetched.
+            #
+            # The lock is taken here rather than around the whole loop on purpose: the FETCH is
+            # the slow part and holding a lock across it would serialise two backtests for
+            # minutes. Two processes fetching the same range concurrently is merely wasteful —
+            # `save` MERGES, so both results survive.
+            with cache_lock(self.cache.dir, symbol, base_tf):
+                # MERGES, never overwrites (`BarCache.save`) — which is what makes a partial fetch
+                # safe. Overwriting would let a one-day tail pull delete six years of cached bars.
+                self.cache.save(symbol, base_tf, fetched)
+                # Record what CAME BACK, never what was asked for — see `_covered_end`.
+                covered_to = _covered_end(fetched, gap_end)
+                if covered_to >= gap_start:
+                    self.coverage.record(symbol, base_tf, gap_start, covered_to)
         return self.cache.load(symbol, base_tf)
 
 

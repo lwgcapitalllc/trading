@@ -32,6 +32,7 @@ from typing import Optional
 
 import pandas as pd
 
+from .atomic import atomic_write_csv, atomic_write_json, cache_lock
 from .resample import OHLC_COLS, VOLUME_COL
 
 _DEFAULT_DIR = Path(__file__).resolve().parent.parent / "cache"
@@ -135,16 +136,25 @@ class BarCache:
         A stale-version file is OVERWRITTEN rather than merged — `load` already refuses to read
         it, so merging would fold rows we've deemed unreadable back into a file we then stamp as
         current, laundering the bad data into the new version.
+
+        🔴 **The whole read-merge-write runs under `cache_lock`, and the write itself is atomic.**
+        This is a read-modify-write over the entire file, so two callers running it at once do not
+        lose a race — they interleave their bytes and produce a file that is two different frames
+        stitched together. **Measured twice on 2026-08-06** (M1 and M15), once producing a
+        mid-timestamp splice and once losing ~31,000 rows out of the middle of the file while the
+        coverage sidecar went on claiming the whole span. See `atomic.py` for why both mechanisms
+        are needed and why neither is sufficient alone.
         """
-        existing = _empty_bars() if self.is_stale(symbol, tf_name) else self.load(symbol, tf_name)
-        merged = self.merge(existing, bars)
-        self.dir.mkdir(parents=True, exist_ok=True)
-        merged.reset_index().to_csv(self.path(symbol, tf_name), index=False)
-        # `has_volume` describes the FILE as written, not the version's intent — see `has_volume`.
-        self.meta_path(symbol, tf_name).write_text(json.dumps({
-            "feed_version": FEED_VERSION,
-            "has_volume": VOLUME_COL in merged.columns,
-        }))
+        with cache_lock(self.dir, symbol, tf_name):
+            existing = _empty_bars() if self.is_stale(symbol, tf_name) \
+                else self.load(symbol, tf_name)
+            merged = self.merge(existing, bars)
+            atomic_write_csv(self.path(symbol, tf_name), merged.reset_index())
+            # `has_volume` describes the FILE as written, not the version's intent — see above.
+            atomic_write_json(self.meta_path(symbol, tf_name), {
+                "feed_version": FEED_VERSION,
+                "has_volume": VOLUME_COL in merged.columns,
+            })
 
     @staticmethod
     def merge(existing: pd.DataFrame, incoming: pd.DataFrame) -> pd.DataFrame:
