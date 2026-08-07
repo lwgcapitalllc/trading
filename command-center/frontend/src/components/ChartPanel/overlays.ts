@@ -337,6 +337,35 @@ export function registerChartOverlays(): void {
         ignoreEvent: true,
       })
 
+      // A SECONDARY trade is the 1m sniper RE-ENTRY on a leg the primary already traded, and it is
+      // the one fact about a trade that its shape on the chart cannot state. It has been drawn with
+      // a dashed box border since the layer shipped, which is invisible in practice: a dashed border
+      // only reads as "different" when a solid one is next to it, and re-entries are rare enough
+      // that there usually isn't one on screen.
+      //
+      // Tagged at the ENTRY rather than folded into the Won/Lost chip, deliberately. The question a
+      // reader has is "why is there a SECOND trade on this leg", which is a question about the
+      // entry; how it resolved is a separate fact that already has its own chip (Aaron's call,
+      // 2026-08-06: "win or lose doesn't matter").
+      //
+      // It sits beyond the arrow tip, on the side the arrow points away from, so it never lands on
+      // the candle the entry filled on.
+      const secTagFig = (): OverlayFigure => ({
+        type: 'text',
+        attrs: {
+          x: entry.x,
+          y: isLong ? entry.y + GAP + HEIGHT + 9 : entry.y - GAP - HEIGHT - 9,
+          text: 'SEC', align: 'center', baseline: 'middle',
+        },
+        styles: {
+          style: 'stroke_fill', color: arrowColor, size: 9, weight: 'bold',
+          backgroundColor: withAlpha(d.chipBg ?? '#0d0d1a', 0.82),
+          borderColor: withAlpha(arrowColor, 0.85), borderSize: 1, borderStyle: 'solid',
+          borderRadius: 3, paddingLeft: 4, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
+        },
+        ignoreEvent: true,
+      })
+
       // Each leg is {price, label} from chart_spec; tolerate a bare number too (older cached
       // specs) by auto-labelling in exit order (TP1, TP2, …, last = Exit).
       const legs = (d.profitLegs ?? [])
@@ -370,6 +399,10 @@ export function registerChartOverlays(): void {
               borderStyle: secondary ? 'dashed' : 'solid', borderDashedValue: [4, 4] },
             ignoreEvent: true },
           arrowFig(),
+          // Tagged on the data-poor path too. An NT8/MT5 trade cannot be a secondary today, but a
+          // marker that only appears on the rich path would read as "not a re-entry" rather than
+          // as "this renderer had less to work with" — the absence would be a claim.
+          ...(secondary ? [secTagFig()] : []),
         ]
       }
 
@@ -547,6 +580,11 @@ export function registerChartOverlays(): void {
           })
         }
       }
+
+      // Last, so it sits over the bands rather than under them. The rich path draws no entry arrow
+      // (the entry is a tick + dot + price chip), so the tag lands just past the entry price on the
+      // side the trade is heading away from.
+      if (secondary) figures.push(secTagFig())
 
       return figures
     },
