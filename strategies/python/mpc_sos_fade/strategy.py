@@ -170,7 +170,15 @@ class MpcSosFadeStrategy:
         from backtest.replay import EngineStack, iter_bars
         from .secondary import SecondaryArm, Structure1m
 
-        _Bar1mSig = namedtuple("_Bar1mSig", "index time_ms open high low close")
+        # `last_conf_high`/`last_conf_low` are the STRUCTURE runner trail's anchors, read by the
+        # shared `_advance_stage` on every managed bar — primary or secondary. They were missing
+        # here until 2026-08-06, so the FIRST 1m bar after any secondary fill raised
+        # `AttributeError`: the re-entry had never once opened a position on real data. They come
+        # from the last-CLOSED 15m signal, deliberately: the secondary's whole ladder is 15m fibs
+        # (TP1 0.5, TP2 0.382) and it shares the parent's exit ladder, so its runner must trail the
+        # same 15m confirmed swings the primary does. `Structure1m` is for the 1m SOS latch only.
+        _Bar1mSig = namedtuple(
+            "_Bar1mSig", "index time_ms open high low close last_conf_high last_conf_low")
         ny = ZoneInfo("America/New_York")
 
         if len(df15.index) > 1:
@@ -219,7 +227,8 @@ class MpcSosFadeStrategy:
                 arm = arm_sm.update(m1, last_sig, last_seq, last_close15, ny_hour,
                                     self.execution.is_flat, self.execution.be_sos_l,
                                     self.execution.be_sos_s)
-                sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close)
+                sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close,
+                                  last_sig.last_conf_high, last_sig.last_conf_low)
                 filled = self.execution.step_secondary(sig1m, arm)
                 if filled is not None:
                     arm_sm.mark_traded(filled)   # retire the just-filled 1m leg

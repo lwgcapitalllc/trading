@@ -594,7 +594,7 @@
         "off": "Primary only",
         "on": "Secondary on"
       },
-      "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters. Needs a RECENT window (the broker serves ~35 days of 1m). Rare — ~3 fires in 2 years."
+      "desc": "Add the 1-minute sniper re-entry: after the 15m primary reaches breakeven and price falls back into the zone, a 1m shift of structure re-enters, with a much tighter stop for the same 15m targets. Needs a 1m feed alongside the 15m, so it runs in the lab only — the live bot refuses it. Measured over the full 7.9 years it fired 10 times and its whole result is ONE trade: +25.56R total, of which April 2023 is +27.33R, so the other nine are −1.77R and the book's average R per trade ends up below baseline. Drawdown 45.6% → 50.7%. Off by default for that reason. Slow: a full-history run replays 2.7M 1m bars."
     },
     {
       "name": "exec_conf_sz",

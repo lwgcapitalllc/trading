@@ -219,3 +219,52 @@ def test_execution_fills_and_closes_a_secondary_trade():
     assert t.kind == "secondary" and t.dir == 1
     assert abs(t.entry_price - 102.618) < 1e-9
     assert t.pnl_usd < 0                                    # stopped for a loss
+
+
+# ── the 1m signal object PRODUCTION builds, not the one this file hand-rolls ──────────
+
+def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
+    """The bug this pins: `_bar1m` above is a TEST fixture, and it carries `last_conf_*` because
+    the person who wrote it knew the trail needs them. `run_dual` builds its OWN `_Bar1mSig`, and
+    until 2026-08-06 that one did NOT — so `_advance_stage` raised `AttributeError` on the first
+    1m bar after any secondary fill, and the re-entry had never opened a position on real data.
+
+    Every secondary test passed throughout, because they all fed the fixture rather than the
+    production object. So this test refuses to name the fields: it reads whatever `_advance_stage`
+    dereferences off `sig` straight out of its source, and demands the real object carry all of
+    them. Add a `sig.something` to `_advance_stage` and this fails until `run_dual` supplies it.
+    """
+    import inspect
+    import re
+
+    import pandas as pd
+
+    from strategies.python.mpc_sos_fade.execution import Execution
+    from strategies.python.mpc_sos_fade.strategy import MpcSosFadeStrategy
+
+    needed = set(re.findall(r"\bsig\.(\w+)", inspect.getsource(Execution._advance_stage)))
+    assert needed, "read no fields off _advance_stage — the regex or the method moved"
+
+    seen = []
+    orig = Execution.step_secondary
+
+    def capture(self, sig1m, arm):
+        seen.append(sig1m)
+        return orig(self, sig1m, arm)
+
+    def frame(minutes, n):
+        idx = pd.date_range("2024-01-01", periods=n, freq=f"{minutes}min", tz="UTC")
+        return pd.DataFrame({"open": 100.0, "high": 100.5, "low": 99.5, "close": 100.0}, index=idx)
+
+    Execution.step_secondary = capture
+    try:
+        MpcSosFadeStrategy(config=SosFadeConfig(exec_secondary=True, symbol="XAUUSD"),
+                           initial_capital=10_000.0).run_dual(frame(15, 40), frame(1, 600))
+    finally:
+        Execution.step_secondary = orig
+
+    assert seen, "run_dual never reached step_secondary — this test proved nothing"
+    missing = sorted(f for f in needed if not hasattr(seen[0], f))
+    assert not missing, (
+        f"run_dual's 1m sig is missing {missing}, which _advance_stage reads on every managed "
+        f"bar — any secondary trade surviving to its next 1m bar raises AttributeError")

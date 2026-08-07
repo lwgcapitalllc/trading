@@ -424,7 +424,7 @@ rather than an edge. Deepening the entry and loosening which gaps qualify are bo
 **Read the layer as "why didn't this trade", never as "here is missed money"** — full record and the
 three other routes in `mpc_sos_fade_optimization.md` → Run 12 / 12b.
 
-## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, NOT committed)
+## Secondary (1m sniper) re-entry — `exec_secondary` (built 2026-07-19, committed `c962601`)
 
 The 1-minute re-entry Aaron prototyped in Pine, built as the *exact* version here (Pine can only
 sample the 1m engine once per 15m bar — its own tooltip says "the exact version is the Python port").
@@ -447,9 +447,60 @@ re-entry per 1m leg; a re-entry is never the first trade on a leg.
   `tests/test_secondary.py`, and OFF parity was re-confirmed on the real M15/M1 cache (`run` ==
   `run_dual`, 40 trades byte-identical). `compare_strategy.py` (which runs `run`, not `run_dual`)
   stays the primary's gate.
-- **Sparse-data note:** the secondary is rare (a live leg + zone + a 1m SOS + div, all at once). Over
-  the ~4 days of local 1m cache it fired 0 times — expected, not a bug (see the arm trace). A real
-  visual verification needs a longer 1m window (broker serves ~35d direct; older via ticks).
+- ⚠ **UNMEASURED ON REAL DATA until 2026-08-06, and the reason it stayed that way was a WRONG NUMBER
+  IN THIS FILE.** The note here used to read *"broker serves ~35d direct; older via ticks"*, so the
+  only 1m window anyone thought was reachable was ~4 days of local cache, over which the secondary
+  fired 0 times — correctly read as "expected, the setup is rare", and never re-examined. 🔴 **That
+  35-day figure was a guess and it is false.** Probed against the live `MT5_Lab` terminal
+  (VantageMarkets-Demo): **real 1-minute XAUUSD runs back to 2018-09-14, ~2.8M bars, 7.9 years.**
+  Six windows sampled across the range (Sep 2018 / Jun 2020 / Jan 2023 / Mar 2025 / Jul 2026 / Aug
+  2026) all return **1,341-1,392 bars per day at exactly 1.0-minute spacing**, and a request for
+  Jun 2017 is REFUSED by the measured floor rather than silently served daily bars. ⚠ **Density is
+  the check, never the earliest timestamp** — `backtest/data/history.py` exists because MT5 answers
+  a too-deep intraday request with COARSER bars wearing the label you asked for. ⚠ **`backtest/cache/`
+  held NO M1 at all** (M5/M15/H1/H4 only), which is a second reason the feature looked unrunnable —
+  it is populated now, and on a machine where it is not, the first full-history run pays a one-off
+  download of ~2.4M bars (measured: ~10 min, quarter by quarter, over the SSH tunnel). **The standing lesson is this repo's own from 2026-08-06,
+  one layer earlier: a plausible guess written into a doc is not a cheap placeholder — it is a
+  signpost, and a wrong one costs more than no sign.** This one pointed at "there is no data" for
+  three weeks, and the real answer took one probe.
+- 🔴 **MEASURED 2026-08-06, AND IT DOES NOT EARN ITS PLACE — THE WHOLE CASE IS ONE TRADE.** Three
+  replays over 186,274 M15 + 2,744,333 M1 bars (2018-09-14 → 2026-08-05) at the shipped defaults:
+  **A** `run(df15)` = the baseline, **B** `run_dual` with the secondary OFF = the control, **C**
+  `run_dual` with it ON. **A 180 trades / +139.90R / maxDD 45.6% (5.61R) · C 190 / +165.46R / maxDD
+  50.7% (6.53R).** ✅ **B reproduced A exactly (180 trades, identical entries), so the 1m clock is
+  inert on its own** and C's delta is the re-entries and nothing else — without that control a
+  difference in C is a mix of *the re-entries made money* and *the 1m stream nudged the primary*,
+  and no arithmetic afterwards separates them, because the two share one position slot. ✅ **Zero
+  primaries displaced** (0 in A-not-C, 0 in C-not-A), so the one-slot queue effect did not fire.
+  🔴 **Ten re-entries in 7.9 years and 2023-04-03 is +27.33R of the +25.56R total — DELETE THAT ONE
+  TRADE AND THE OTHER NINE ARE −1.77R.** ⚠ **On the test that matters here it makes the book WORSE,
+  which the total hides**: average R per trade 0.777 → 0.871 with the outlier and **0.731 without**,
+  i.e. below baseline, and median R is unmoved (+0.030 → +0.031). **Nine trades that each earn less
+  than the average dilute the thing they are added to, and a rising total is exactly what that looks
+  like from outside.** ⚠ **It is bought with drawdown: 45.6% → 50.7%.** ⚠ **+25.56R is not evidence
+  either way** — the jitter audit put this strategy's run-to-run spread at **sd 15.06R**, so the
+  headline is under two standard deviations and rests on one fill. ⚠ **The fat-tail defence does not
+  rescue it, and it is worth stating because this repo's own philosophy invites it**: A+ is designed
+  to be tail-heavy (5 of 165 trades once made 47% of everything won), so "one trade made it all" is
+  not damning by itself — but the primary carries 180 trades and stays positive without any single
+  one, while these ten go negative without theirs. **Ten trades cannot tell a small edge from a small
+  negative one; that is the same verdict B-LEG got, for the same reason.** **Stays default OFF.**
+- ⚠ **IT HAD NEVER OPENED A POSITION ON REAL DATA BEFORE THAT RUN, AND THREE WEEKS OF GREEN TESTS
+  SAID OTHERWISE.** `run_dual` built its 1m signal as a namedtuple without `last_conf_high` /
+  `last_conf_low` — the STRUCTURE runner trail's anchors, which the shared `_advance_stage` reads on
+  **every** managed bar, primary or secondary — so the first 1m bar after any secondary fill raised
+  `AttributeError`. Not a wrong number: the run died. 🔴 **The reason no test caught it is the
+  transferable part: `tests/test_secondary.py` hand-builds its own 1m bar as a `SimpleNamespace`
+  carrying both fields.** The fixture was more complete than production, so every test exercised a
+  shape the code never produced. The regression test now DERIVES the required set by reading
+  `_advance_stage`'s own source for `sig.<field>` and asserting the real `run_dual` supplies all of
+  them — a hand-written list would have re-frozen exactly the assumption that failed. **Watched red
+  against the bug, naming both missing fields.**
+- **NOT USABLE LIVE** — `algos/live/bridge.py` REFUSES `exec_secondary` outright
+  (`UnsupportedStrategyConfig`), because the live runner drives ONE timeframe and this needs the 1m
+  stream alongside the 15m (`run_dual`). The lab can run it; the bot cannot. Building the dual feed
+  is a live-pipeline item, and it is correctly gated behind this being measured first.
 
 ## The exit ladder — every TP/SL lever, and which ones are switchable
 

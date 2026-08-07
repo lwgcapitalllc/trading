@@ -288,6 +288,23 @@ class SosFadeConfig:
     #   ON = also re-enter on the same 15m leg from the 1m chart (needs run_dual + a 1m feed).
     #   Full rules: docs/MPC_SOS_FADE_SECONDARY.md. There is NO Pine parity gate for it — the Pine
     #   is only the approximate version — so it is verified visually, not by compare_strategy.py.
+    #   ⚠ LAB ONLY. algos/live/bridge.py REFUSES this config: the live runner drives one timeframe
+    #   and this needs the 1m stream beside the 15m. Turning it on for a live bot is an error, by
+    #   design, rather than a silently-ignored setting.
+    #   🔴 MEASURED 2026-08-06 over the FULL history and it does NOT earn its place — the entire
+    #   case is one trade. 186,274 M15 + 2,744,333 M1 bars (2018-09-14 → 2026-08-05): baseline 180
+    #   trades / +139.90R / maxDD 45.6%, secondary ON 190 / +165.46R / maxDD 50.7%. Ten re-entries
+    #   in 7.9 years, and 2023-04-03 alone is +27.33R — DELETE IT AND THE OTHER NINE ARE −1.77R,
+    #   with the book's average falling BELOW baseline (+0.777 → +0.731 R/trade). It is bought with
+    #   drawdown (45.6% → 50.7%). It stays default OFF until something other than one trade argues
+    #   for it. ✅ Zero primaries displaced, and the 1m clock is inert with it off (a control run of
+    #   run_dual reproduced the baseline's 180 trades exactly) — so those numbers are the
+    #   re-entries and nothing else.
+    #   ⚠ Until 2026-08-06 this had never opened a position on real data at all: run_dual built a 1m
+    #   signal missing `last_conf_high`/`last_conf_low`, so the first 1m bar after any fill raised
+    #   AttributeError. Any figure predating that fix describes a feature that could not run.
+    #   ⚠ It was believed to be un-measurable because this repo's own docs said the broker served
+    #   ~35 days of 1m. That was a guess and it is FALSE — real M1 runs back to 2018-09-14.
 
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH

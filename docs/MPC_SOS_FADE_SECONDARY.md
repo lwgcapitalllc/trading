@@ -1,6 +1,7 @@
 # MPC SOS Fade — Secondary (1m sniper) re-entry
 
-**Status:** Design + build in progress (2026-07-19). The Python is the *exact* version of a
+**Status:** BUILT, committed (`c962601`) and unit-tested; **default OFF and never yet measured on
+real data** — see *Verification* below for what that means and what closes it. The Python is the *exact* version of a
 feature Aaron prototyped in `mpc_strategy.pine` (that Pine WIP is stashed:
 `git stash list` → "secondary-trade pine WIP"). Pine can only sample the 1m engine once per
 15m bar via `request.security`, so its timing is approximate; the Pine tooltip itself says
@@ -120,3 +121,66 @@ That drill-down is why the chart work happened first.
    1m at a re-entry: the 1m SOS, the retrace to 38.2%, the fill marker, the 15m TP levels.
 3. **Parity guard** — `compare_strategy.py` stays exit 0 with `exec_secondary` OFF (the default),
    proving the secondary is purely additive and the primary never moved.
+
+### Where it actually stands (2026-08-06)
+
+1 and 3 are DONE. **2 was never done, and the reason is worth recording because it was a false
+belief rather than a missing tool.** Both `strategies/python/mpc_sos_fade/CLAUDE.md` and the lab's
+own param description stated that the broker serves **~35 days** of 1-minute history, so the only
+window anyone believed was reachable was a few days of local cache — over which the secondary fired
+zero times, which is exactly what a rare setup does over four days. That reading was correct and the
+premise under it was not.
+
+🔴 **The 35-day figure was a guess and it is false. MEASURED against the live `MT5_Lab` terminal
+(VantageMarkets-Demo) on 2026-08-06: real 1-minute XAUUSD runs back to 2018-09-14 — ~2.8M bars,
+7.9 years**, the same depth the M15 history has. Six windows sampled across the range return
+1,341–1,392 bars/day at exactly 1.0-minute spacing, and a pre-floor request is refused rather than
+silently served daily bars.
+
+⚠ **Verify M1 depth by bar DENSITY, never by the earliest timestamp.** MT5 answers a too-deep
+intraday request with coarser bars still labelled as the timeframe you asked for — see
+`backtest/data/history.py`, which exists for precisely this and measured the floor above.
+
+**So there is no data obstacle and there never was.**
+
+### The measurement (2026-08-06) — it does not earn its place
+
+Three replays over **186,274 M15 + 2,744,333 M1 bars, 2018-09-14 → 2026-08-05**, shipped defaults:
+
+| | A `run(df15)` | C `run_dual` secondary ON |
+|---|---|---|
+| trades | 180 | 190 |
+| total R | +139.90 | +165.46 |
+| max drawdown | 45.6% (5.61R) | 50.7% (6.53R) |
+| avg R / trade | +0.777 | +0.871 |
+| **avg R / trade, best secondary removed** | **+0.777** | **+0.731** |
+
+**B — `run_dual` with the secondary OFF — reproduced A exactly (180 trades, identical entries).**
+That control is not ceremony: the two share one position slot, so without it a difference in C is a
+mix of *the re-entries made money* and *the 1m stream nudged the primary*, and nothing afterwards
+separates them. **Zero primaries displaced**, either direction.
+
+**Ten re-entries in 7.9 years:**
+
+```
+2019-11-07 L  -1.000R    2024-01-16 L  +0.082R    2024-12-03 L  +1.000R
+2020-09-15 S  +0.048R    2024-01-16 L  -1.000R    2025-01-29 S  +0.054R
+2022-03-06 S  -0.092R    2024-12-02 L  +0.144R    2025-08-21 S  -1.000R
+2023-04-03 L +27.327R
+```
+
+🔴 **2023-04-03 is +27.33R of the +25.56R total. Remove it and the other nine are −1.77R**, and the
+book's average R per trade falls **below** baseline. A rising total with a falling average is what
+dilution looks like from outside. ⚠ **+25.56R is not evidence either way** — the jitter audit puts
+this strategy's run-to-run spread at **sd 15.06R**. ⚠ **The fat-tail defence does not rescue it:**
+A+ is designed tail-heavy, but the primary stays positive without any single trade and these ten do
+not. Ten trades cannot tell a small edge from a small negative one — the same verdict, for the same
+reason, as B-LEG.
+
+**Stays default OFF.** What would change the answer is a reason to expect more than ten fires, not a
+better number from these ten.
+
+⚠ **Every figure above post-dates a fix on the same day.** `run_dual` built its 1m signal without
+`last_conf_high`/`last_conf_low`, which the shared `_advance_stage` reads on every managed bar, so
+the first 1m bar after any fill raised `AttributeError` — **the re-entry had never once opened a
+position on real data.** Any earlier claim about this feature describes code that could not run.
