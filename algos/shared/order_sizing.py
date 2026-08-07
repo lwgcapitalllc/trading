@@ -244,7 +244,7 @@ def plan_order(
                 "risk_not_authorised",
                 f"the order would risk {intended_risk:,.2f} but {risk_pct}% of the account's "
                 f"{account_equity:,.2f} is {authorised:,.2f}. The strategy is sizing off a "
-                f"balance the account does not have — most likely warm-up equity that "
+                f"balance the account does not have -- most likely warm-up equity that "
                 f"compounded away from the broker's.")
 
     # ── checks 1 and 2: two independent routes to the same lot count ──
@@ -257,7 +257,7 @@ def plan_order(
             f"({intended_risk:,.2f} over a {dist} stop at {spec.tick_value}/{spec.tick_size} "
             f"per lot) vs {lots_b:.6f} lots by units ({qty_units} / contract {spec.contract_size}). "
             f"A unit, a contract size, a point value or a quote currency is wrong. Refusing "
-            f"rather than picking one — the ratio here is {max(lots_a, lots_b) / max(min(lots_a, lots_b), 1e-12):,.1f}x.")
+            f"rather than picking one -- the ratio here is {max(lots_a, lots_b) / max(min(lots_a, lots_b), 1e-12):,.1f}x.")
 
     lots = round_down_to_step(lots_a, spec)
 
@@ -266,13 +266,13 @@ def plan_order(
         return SizingRefusal(
             "below_broker_minimum",
             f"{lots_a:.6f} lots rounds to {lots}, under {spec.symbol}'s minimum "
-            f"{spec.volume_min}. NOT rounding up — the minimum would risk "
+            f"{spec.volume_min}. NOT rounding up -- the minimum would risk "
             f"{value_per_lot(dist, spec) * spec.volume_min:,.2f} against an intended "
             f"{intended_risk:,.2f}. The account is too small for this setup's stop distance.")
     if lots > spec.volume_max:
         return SizingRefusal(
             "above_broker_maximum",
-            f"{lots} lots exceeds {spec.symbol}'s maximum {spec.volume_max}. NOT clamping — a "
+            f"{lots} lots exceeds {spec.symbol}'s maximum {spec.volume_max}. NOT clamping -- a "
             f"clamped order is a different position from the one the strategy is holding, and "
             f"the two would diverge silently.")
 
@@ -284,7 +284,7 @@ def plan_order(
             return SizingRefusal(
                 "margin_unknown",
                 f"the terminal would not compute the margin for {lots} lots of {spec.symbol}. "
-                f"'Cannot ask' is not 'affordable' — refusing rather than finding out at the "
+                f"'Cannot ask' is not 'affordable' -- refusing rather than finding out at the "
                 f"fill, which is exactly how the 2026-08-07 order died.")
         if free_margin is None:
             return SizingRefusal(
@@ -297,7 +297,7 @@ def plan_order(
                 "insufficient_margin",
                 f"{lots} lots of {spec.symbol} needs {margin:,.2f} margin; the cap is "
                 f"{ceiling:,.2f} ({margin_safety_pct:g}% of {float(free_margin):,.2f} free). "
-                f"NOT shrinking to fit — a smaller position is not the trade the strategy is "
+                f"NOT shrinking to fit -- a smaller position is not the trade the strategy is "
                 f"holding.")
 
     risk = value_per_lot(dist, spec) * lots
