@@ -136,3 +136,107 @@ test.describe('price chart — drill-down', () => {
     await expect(page.getByText(/showing M15/)).toBeVisible()
   })
 })
+
+/**
+ * The three drill-down paths that shipped in 8b50be7 REASONED THROUGH BUT NOT DRIVEN, named in
+ * `ChartPanel/CLAUDE.md` rather than left to look covered. Closing them here.
+ *
+ * Two are mocked, and that is the opposite call from the checks above — deliberately. Producing a
+ * broker's true data edge for real means scrolling 12,000 bars, and producing an empty answer means
+ * taking the MT5 terminal down; neither is a thing under test, they are just how you ARRIVE at the
+ * branch. The payloads are the shapes the live endpoint actually returns.
+ */
+test.describe('price chart — drill-down, the paths that were not driven', () => {
+  /**
+   * 🔴 **`drillNewer` — paging RIGHT toward the present — HAS NO CHECK HERE, and that is a
+   * deliberate outcome rather than an oversight.**
+   *
+   * It WORKS, and it was verified by hand: driving the real page and counting the candle requests,
+   * scrolling right issued **36 further requests at `tf=M5`** and carried the window from
+   * 2021-06-29 to 2024-11-26 — the drill timeframe throughout, never base-timeframe bars spliced in.
+   *
+   * What could not be built is a check that BITES. Three drafts:
+   *   - scroll from the landing → passed only while the view was wrongly parked on the applied right
+   *     edge, i.e. it would have gone GREEN ON THE DEFECT this suite exists to catch;
+   *   - compare `data-applied-hi` before/after → a race with how far the landing itself pages;
+   *   - park near the newest bar with `goToDate`, then scroll → the reader now lands mid-window with
+   *     ~9,000 M5 bars to their right, and no wheel loop in a test crosses that.
+   *
+   * A green test that cannot fail is worse than no test, because it reads as coverage. Recorded
+   * here instead, with the measurement, so the next person knows exactly what was and was not done.
+   */
+
+  /**
+   * ⚠ **This check pins the SHAPE, not the `edge` guard, and mutation proved the difference.**
+   * Deleting `drillOlder`'s `oldest <= cached.edge` early return leaves it GREEN — because without
+   * the guard the request still goes out, still comes back with nothing strictly older, still
+   * answers `more: false`, and the pager still stops in the right place. The guard saves a round
+   * trip; it is not what makes the pager terminate. Kept anyway, because "reaching the broker's
+   * limit stops the pager rather than looping on the same window for ever" is worth pinning and is
+   * a rule stated nowhere else — but it must not be read as covering the guard it sits beside.
+   */
+  test('the broker’s data edge stops the pager instead of asking for ever', async ({ page }) => {
+    test.setTimeout(360_000)
+    let start = 0
+    await page.route('**/backtests/runs/*/candles*', async route => {
+      const url = new URL(route.request().url())
+      const to = Number(url.searchParams.get('to_ms'))
+      // A feed with EXACTLY one window and nothing behind it: every request is answered from the
+      // same floor, flagged as the broker's true limit.
+      start = start || to - 3 * DAY
+      const candles = []
+      for (let t = start; t <= to; t += 5 * 60_000) {
+        candles.push({ time: t, open: 1800, high: 1801, low: 1799, close: 1800, volume: 10 })
+      }
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          instrument: 'XAUUSD', timeframe: 'M5', candles,
+          available: true, feed_error: null, data_start_ms: start, hard_edge: true,
+        }),
+      })
+    })
+    await openPriceTab(page)
+    await pickTf(page, 'M5')
+    await settleDrill(page)
+    const box = await page.locator('canvas').first().boundingBox()
+    if (!box) throw new Error('no canvas')
+    for (let i = 0; i < 300; i++) {
+      await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
+      await page.mouse.wheel(-400, 0)
+    }
+    await page.waitForTimeout(4000)
+    // `drillOlder` must refuse once the loaded oldest bar IS the reported edge. Without that guard
+    // it keeps requesting the same window for ever, prepending nothing each time.
+    expect((await applied(page)).lo).toEqual(start)
+  })
+
+  test('a drill-down that comes back empty does not freeze every later jump', async ({ page }) => {
+    test.setTimeout(360_000)
+    // 🔴 This is the failure mode that made the path worth closing: `drillTo` sets `jumpingRef`
+    // before the fetch, and `goToDate` returns immediately while it is set. If an empty answer does
+    // not release it, the chart refuses EVERY later jump and every page for the rest of the session
+    // — silently, with a perfectly healthy-looking chart.
+    let blockAll = true
+    await page.route('**/backtests/runs/*/candles*', async route => {
+      if (!blockAll) return route.continue()
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          instrument: 'XAUUSD', timeframe: 'M5', candles: [],
+          available: true, feed_error: null, data_start_ms: null, hard_edge: false,
+        }),
+      })
+    })
+    await openPriceTab(page)
+    await pickTf(page, 'M5')
+    await settleDrill(page)
+    // Back to a display timeframe, where a jump needs no feed at all — so if it still cannot move,
+    // the guard is stuck rather than the data missing.
+    blockAll = false
+    await pickTf(page, 'M15')
+    await page.waitForTimeout(2000)
+    await jumpTo(page, DATE)
+    expect(Math.abs((await viewCentre(page)) - TARGET)).toBeLessThan(2 * DAY)
+  })
+})

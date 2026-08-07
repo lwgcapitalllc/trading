@@ -1064,14 +1064,36 @@ export default function ChartPanel({
   // ⚠ **This is NOT the runaway-paging guard described below.** That one was written against a
   // 90-second freeze that turned out not to exist, and was removed. This is a positioning fix for a
   // behaviour that was measured, and it happens to use the same two refs.
+  // 🔴 **The release below is not belt-and-braces, and the check that found it is the one that
+  // matters most in this file.** `pendingJumpRef` is consumed by an effect keyed on `displayCandles`,
+  // and a timeframe switch does NOT always change that identity — going from a drill-down back to
+  // the run's own timeframe hands back the very same `baseCandles` array. So the effect never fires,
+  // the guard is never dropped, and `goToDate` returns immediately on every later call: **the chart
+  // silently refuses every jump and every page for the rest of the session, looking perfectly
+  // healthy.** Two frames is long enough for a real re-apply to have consumed it.
   const pickTimeframe = useCallback((min: number) => {
     const centre = viewCentreRef.current
     if (centre != null) {
       jumpingRef.current = true
       pendingJumpRef.current = centre
+      // ⚠ The hand-off is by SEQUENCE, not by comparing the pending timestamp — and the first
+      // version compared the timestamp, which broke the drill-down that had been working. Entering
+      // a drill-down, `drillTo` runs in an effect (before the frames below) and sets its own pending
+      // jump to the SAME instant, since both anchor on the viewport centre. So the value test could
+      // not tell "nobody handled it" from "the drill owns it now", and this fallback consumed the
+      // drill's landing mid-fetch — leaving the view parked on the applied right edge when the bars
+      // finally arrived.
+      const seq = drillSeqRef.current
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (drillSeqRef.current !== seq) return          // a drill-down took ownership
+        if (pendingJumpRef.current == null) return       // a redraw came and the flush handled it
+        pendingJumpRef.current = null
+        scrollToTs(centre, displayCandlesRef.current)
+        jumpingRef.current = false
+      }))
     }
     setSelectedMin(min)
-  }, [])
+  }, [scrollToTs])
 
   // ⚠ **A suspected runaway-paging freeze on a DISPLAY timeframe switch was investigated on
   // 2026-08-06 and NOT REPRODUCED — recorded here so the next reader does not re-derive it.** A
