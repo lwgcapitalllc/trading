@@ -222,15 +222,41 @@ def review_bot(bot_key: str, instance_dir: Path, state: dict,
         return [r for r in events if r.get("event") == name]
 
     # ── the bridge stopped placing orders, and nothing else can see this ─────
+    #
+    # ⚠ **Tense follows the CURRENT bridge state, not the record.** These findings are sticky by
+    # design — a Telegram line you scrolled past at 3am is gone, so `review.json` keeps a chip on
+    # the Bots page until it ages out of the window. That stickiness is what made the wording a
+    # real defect: a halt that ended hours ago went on saying *"the bot is placing nothing …
+    # Check the account"* in the present tense, so a recovered bot read as an open incident and
+    # the reader could not tell the two apart (Aaron, 2026-08-07, on exactly this).
+    #
+    # ⚠ **The KEY is unchanged either way**, and that is load-bearing rather than incidental: it
+    # is `halted:<the halt's own timestamp>`, so re-rendering the same incident in the past tense
+    # updates the chip WITHOUT re-announcing it. This is the split `_ts` (the key) and `_at` (the
+    # display) exist for — improving wording must never wake the channel up.
+    still_halted = bool(pulses) and str(pulses[-1].get("bridge_state", "")).lower() == "halted"
     for row in _of("halted"):
-        findings.append(Finding(
-            f"halted:{_ts(row)}", ALERT,
-            "Bridge HALTED — the bot is placing nothing",
-            f"It stopped placing orders at {_at(row)}: {row.get('reason', 'no reason recorded')}.\n"
-            f"It is still running and still looks healthy everywhere else — the watchdog and "
-            f"the Bots page both read RUNNING. Check the account."))
+        if still_halted:
+            findings.append(Finding(
+                f"halted:{_ts(row)}", ALERT,
+                "Bridge HALTED — the bot is placing nothing",
+                f"It stopped placing orders at {_at(row)}: "
+                f"{row.get('reason', 'no reason recorded')}.\n"
+                f"It is still running and still looks healthy everywhere else — the watchdog "
+                f"and the Bots page both read RUNNING. Check the account."))
+        else:
+            # Recovered. Still worth a standing chip — a halt is the most consequential thing
+            # this module reports and one that came and went unexamined is how the next one gets
+            # shrugged at — but it is WARN, and it says so in the past tense.
+            findings.append(Finding(
+                f"halted:{_ts(row)}", WARN,
+                "Bridge halted earlier — it is placing orders again now",
+                f"It stopped placing orders at {_at(row)}: "
+                f"{row.get('reason', 'no reason recorded')}.\n"
+                f"Its latest heartbeat says the bridge is live again, so this is a record of "
+                f"what happened rather than something to act on. Worth knowing WHY it halted."))
 
-    if pulses and str(pulses[-1].get("bridge_state", "")).lower() == "halted":
+    if still_halted:
         # 🔴 The key is the timestamp of the HALT, never of the pulse that reports it.
         #
         # It was `_ts(pulses[-1])` until 2026-08-07, and a pulse is written every 15 minutes —

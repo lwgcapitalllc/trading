@@ -1010,6 +1010,50 @@ whose child data is gone is left alone rather than being given a number nothing 
 
 ---
 
+## Stopping a bot ASKS it to stop (2026-08-07)
+
+🔴 **Every deliberate stop this app issued was a hard `wmic ... call terminate`, so the bot never
+reached the `finally` that writes its `shutdown` record — and the NEXT startup reported *"the
+previous run ended WITHOUT a shutdown record: it was killed, it crashed, or the box went down."***
+
+That sentence is the **silent-death detector** (`algos/CLAUDE.md` → *The daily record*): no shutdown
+record ⇒ the process was killed or the box died. **It only carries information if a DELIBERATE stop
+leaves one.** It did not, so it fired on every restart anybody performed on purpose, and the Bots
+page carried a permanent `NEEDS REVIEW` chip saying a healthy bot had crashed. Aaron read exactly
+that on 2026-08-07 and asked why. ⚠ **An alarm that fires when you press the button is one you learn
+to scroll past — the noise was not the cost, the signal it was burying was.**
+
+`_kill_bot` now writes `<instance>/stop.request`, polls for the process to go for
+`_GRACEFUL_STOP_SECONDS` (30, at `_STOP_POLL_SECONDS` 3), and terminates only a bot that ignored it.
+`runner._loop` checks for the file at the top of every pass and exits through the ordinary clean
+path. The return value names which path ran.
+
+⚠ **A FILE, not a signal.** Windows has no usable SIGTERM for a console process — `taskkill` without
+`/f` posts WM_CLOSE, which a Python console app never receives — and a file fits what that loop
+already is: something that polls its own instance directory every `poll_seconds` and already
+re-reads its config from there.
+
+⚠ **The escalation is not a fallback nobody exercises.** A wedged bot, one blocked in an MT5 call, or
+one running code that predates the file will never see it, and terminating those is the honest
+answer. It keeps the two-clause `wmic` match — see `tests/test_bot_kill_scope.py` for why each half
+is load-bearing.
+
+⚠ **THE ONE WAY THIS COULD BE WORSE THAN THE KILL IT REPLACES is a STALE request stopping a healthy
+bot seconds after boot** (left by a crash, a failed shutdown, an aborted SSH call). Four guards:
+`run()` clears the file BEFORE the loop, both sides delete it after use, an unreadable instance
+directory is never read as a stop request, and a clear that FAILS warns rather than refusing to
+start. **A trading bot that will not stay up is a far worse failure than a noisy chip.**
+
+⚠ **`_bot_is_running` answers True when the process list cannot be read**, so the caller escalates to
+a kill rather than reporting a stop that may not have happened. Of the two wrong answers, "kill a
+process that was already gone" is harmless and "report a live trading bot as stopped" is not.
+
+⚠ **The kill-scope suite needed a SECOND fixture for this.** Its whole subject is that the terminate
+command names both `python.exe` and `--bot <key>` — and after this change a healthy bot never
+reaches that command, so those tests would have passed against a `_kill_bot` that issued no kill at
+all. `stubborn_ssh` drives a bot that ignores its stop request. **A safety test whose scenario stops
+occurring passes for ever and protects nothing.**
+
 ## The "needs review" flag — the one thing this page could not see
 
 `BotStatus.review`, served from `<instance>/review.json` on the VPS, written hourly by

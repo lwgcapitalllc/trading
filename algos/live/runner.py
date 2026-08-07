@@ -672,6 +672,11 @@ class LiveRunner:
                           mt5_path=self.cfg.mt5_path,
                           previous_run_clean=prev_clean, pid=os.getpid())
 
+        # BEFORE anything else can take time. A stop request left behind by a previous run
+        # would otherwise stop this one seconds after boot, which reads as a bot refusing to
+        # start — see `clear_stop_request`.
+        self.clear_stop_request()
+
         if not self.connect():
             self.log.error("Could not connect to MT5 — see the attempts above.")
             return 3, "could not connect to MT5"
@@ -743,6 +748,11 @@ class LiveRunner:
 
         while not _stop_requested:
             try:
+                # A stop asked for from OUTSIDE this process. See `stop_requested_on_disk`.
+                if self._stop_file_present():
+                    self.log.info("Stop requested by file — shutting down cleanly.")
+                    break
+
                 # FIRST, before anything reads a bar. Every data call below returns an empty
                 # frame on a dead link, which is indistinguishable from a market that simply
                 # has not printed a bar yet — so asking the bars whether the terminal is alive
@@ -834,6 +844,9 @@ class LiveRunner:
             time.sleep(self.cfg.poll_seconds)
 
         self.log.info("Stop requested — shutting down.")
+        # Consume the request, so the file cannot outlive the stop it asked for. The startup
+        # clear is the real guard; this only keeps the instance directory honest between runs.
+        self.clear_stop_request()
         self._notify_health(alert(
             "⏹", "STOPPED", self.cfg.display_name,
             "Shut down cleanly. It will not come back on its own."))
@@ -845,6 +858,53 @@ class LiveRunner:
         # writing it here too would put two closing lines on the one clean exit and make the
         # count of runs disagree with the count of stops.
         return 0, "stop requested"
+
+    # ── being asked to stop, from outside this process ───────────────────────
+    #
+    # 🔴 **Why a FILE and not a signal.** Every deliberate stop in this system was a
+    # `wmic ... call terminate`, i.e. a hard kill — so the bot never wrote a `shutdown` record,
+    # and the NEXT startup reported *"the previous run ended WITHOUT a shutdown record — it was
+    # killed, it crashed, or the box went down."* That sentence is the silent-death detector,
+    # and it was firing on every single restart anybody performed on purpose. **An alarm that
+    # fires when you press the button is an alarm you stop reading**, and it was steadily
+    # eroding the one signal that tells you a bot died without saying so.
+    #
+    # Windows has no usable SIGTERM for a console process (`taskkill` without `/f` posts
+    # WM_CLOSE, which a Python console app never sees), so a file is the portable answer — and
+    # it fits what this loop already is: something that polls its own instance directory every
+    # `poll_seconds` and already re-reads its config from there.
+    #
+    # ⚠ **A STALE request must never kill a fresh bot**, which is the one way this could be
+    # worse than the kill it replaces: a stop file left behind by a crash, a failed shutdown or
+    # an aborted SSH call would stop every subsequent start seconds after boot, and the bot
+    # would look like it was refusing to run. `clear_stop_request()` is called at startup,
+    # BEFORE the loop, so the file only ever means "somebody asked while this process was
+    # alive".
+    STOP_FILE = "stop.request"
+
+    def stop_file_path(self) -> Path:
+        return self.cfg.instance_dir / self.STOP_FILE
+
+    def clear_stop_request(self) -> None:
+        """Remove any stop request left over from a previous run. Always safe to call."""
+        try:
+            p = self.stop_file_path()
+            if p.exists():
+                p.unlink()
+                self.log.info(f"Cleared a stale {self.STOP_FILE} from a previous run.")
+        except OSError as e:
+            # Not fatal, and deliberately not a refusal to start: the worst case is one clean
+            # shutdown immediately after boot, which is visible and recoverable. Refusing to
+            # start a trading bot because a marker file would not delete is worse.
+            self.log.warning(f"Could not clear {self.STOP_FILE}: {e}")
+
+    def _stop_file_present(self) -> bool:
+        try:
+            return self.stop_file_path().exists()
+        except OSError:
+            # An unreadable instance directory is not a stop request. Guessing True here would
+            # let a transient filesystem error take a live bot down.
+            return False
 
     def _maybe_pulse(self, *, link_up: bool | None, balance: float | None) -> None:
         """Write a `pulse` to the health stream on a fixed cadence.

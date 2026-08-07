@@ -23,6 +23,7 @@ would leave the engines carrying a market history that never happened.
 """
 
 import sys
+import tempfile
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -115,7 +116,12 @@ def _runner(monkeypatch, *, account_info):
     r.cfg = SimpleNamespace(bot_key="bot", display_name="Bot", account=1, symbol="XAUUSD.s",
                             timeframe="M15", poll_seconds=0, strategy_version="1.0.0",
                             strategy_package="demo_pkg", promoted_commit="abc1234",
-                            promoted_at="2026-08-04", is_frozen=True)
+                            promoted_at="2026-08-04", is_frozen=True,
+                            # A real, empty directory: the loop checks it every pass for a
+                            # stop request. A stand-in that does not exist would also work
+                            # today and would stop testing the moment the check does anything
+                            # more than `.exists()`.
+                            instance_dir=Path(tempfile.mkdtemp()))
     r.dry_run = True
     r.source_hash = "0123456789abcdef"
     r.ledger = _Ledger()

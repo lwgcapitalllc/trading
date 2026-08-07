@@ -776,8 +776,52 @@ _LOCK_PATH  = r"C:\trading\algos\mt5_connect.lock"
 _STARTUP_TN = "SYS_STARTUP"
 
 
+# How long a bot gets to notice its stop file and shut itself down before it is killed.
+# It polls every `poll_seconds` (10 on the live bot) and then has to disconnect MT5 and write
+# its records, so this is roughly three polls plus slack. Long enough that the graceful path is
+# the one that normally runs; short enough that Stop still feels like a button.
+_GRACEFUL_STOP_SECONDS = 30
+_STOP_POLL_SECONDS = 3
+
+
+def _instance_dir(bot_key: str) -> str:
+    return f"C:\\trading\\algos\\markets\\fx\\instances\\{bot_key}"
+
+
+def _bot_is_running(bot_key: str) -> bool:
+    """Is this bot's runner process alive on the VPS right now?
+
+    ⚠ An unreadable process list answers **True**, so the caller escalates to a kill rather
+    than reporting a stop that may not have happened. Of the two wrong answers here, "kill a
+    process that was already gone" is harmless and "report a live trading bot as stopped" is not.
+    """
+    try:
+        out = _ssh(
+            f"wmic process where \"name='python.exe' and commandline like "
+            f"'%--bot {bot_key}%'\" get processid 2>nul"
+        )
+    except Exception:
+        return True
+    return any(ch.isdigit() for ch in out)
+
+
 def _kill_bot(bot_key: str) -> str:
-    """Terminate ONE bot, matched on the `--bot <key>` in its process commandline.
+    """Stop ONE bot — by ASKING first, and killing only if it does not go.
+
+    🔴 **Why asking matters, and it is not politeness.** This used to be a bare
+    `wmic ... call terminate`, i.e. a hard kill, so the bot never got to write its `shutdown`
+    record — and the next startup dutifully reported *"the previous run ended WITHOUT a
+    shutdown record: it was killed, it crashed, or the box went down."* That sentence is the
+    **silent-death detector** (`algos/CLAUDE.md` → *The daily record*), and it was firing on
+    every restart anybody performed deliberately. **An alarm that fires when you press the
+    button is one you learn to scroll past**, and the thing it exists to catch is the one
+    failure in this system that leaves no other trace. Aaron read exactly that chip on
+    2026-08-07 and asked why a healthy bot was flagged.
+
+    So: write `<instance>/stop.request`, wait for the process to go, and escalate to the kill
+    only on a bot that ignored it (wedged, blocked in an MT5 call, or running code that predates
+    the file). The escalation is not a fallback nobody exercises — it is the honest answer for a
+    bot that cannot shut itself down, and the return value says which path ran.
 
     **Never `taskkill /f /im python.exe`.** That kills every Python process on the VPS: the
     trading bot, the Telegram bot, the MT5 backtest agent and the NT8 agent. It is how Stop
@@ -790,10 +834,27 @@ def _kill_bot(bot_key: str) -> str:
     alone cannot tell two of them apart. Verified on the VPS 2026-08-04: this terminated the
     bot and left the Telegram bot and both agents running on their original PIDs.
     """
-    return _ssh(
+    steps = [_ssh(f"echo stop > {_instance_dir(bot_key)}\\stop.request")]
+
+    waited = 0
+    while waited < _GRACEFUL_STOP_SECONDS:
+        _time.sleep(_STOP_POLL_SECONDS)
+        waited += _STOP_POLL_SECONDS
+        if not _bot_is_running(bot_key):
+            steps.append(f"{bot_key} shut down cleanly after {waited}s")
+            # ⚠ Remove the request even on the happy path. The bot clears it too, but a stop
+            # file that outlives its stop would halt the NEXT start seconds after boot, and a
+            # bot that will not stay up is a far worse failure than a slow Stop.
+            steps.append(_ssh(f"del {_instance_dir(bot_key)}\\stop.request 2>nul"))
+            return "\n".join(s for s in steps if s).strip()
+
+    steps.append(f"{bot_key} did not stop within {_GRACEFUL_STOP_SECONDS}s — terminating")
+    steps.append(_ssh(
         f"wmic process where \"name='python.exe' and commandline like '%--bot {bot_key}%'\" "
         f"call terminate 2>nul"
-    )
+    ))
+    steps.append(_ssh(f"del {_instance_dir(bot_key)}\\stop.request 2>nul"))
+    return "\n".join(s for s in steps if s).strip()
 
 
 def _stop_procs(clear_lock: bool = True) -> str:

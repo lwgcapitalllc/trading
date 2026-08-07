@@ -84,9 +84,19 @@ def test_a_healthy_record_produces_no_findings(tmp_path):
 def test_a_halted_bridge_is_an_alert(tmp_path):
     """🔴 THE reason this module exists. The process is alive and stamping, so the watchdog is
     happy, the dead-man's switch is happy and the Bots page says RUNNING — while the bot places
-    nothing at all."""
-    _write(tmp_path, _healthy() + [_event("halted", "2026-08-05T17:00:00+00:00",
-                                          reason="emulator and broker disagree")])
+    nothing at all.
+
+    ⚠ The last pulse has to say `halted` too, and that is not fixture noise — it is what the
+    real file looks like. A bridge NEVER returns to live without a restart, so a halt event
+    followed by live pulses means somebody restarted it in between, which is a recovered halt
+    and is reported in the past tense (see the recovered-halt test below). Before 2026-08-07
+    this fixture read as an alert either way, which is precisely the bug: the finding could not
+    tell an open incident from one that ended hours ago.
+    """
+    rows = _healthy() + [_event("halted", "2026-08-05T17:00:00+00:00",
+                                reason="emulator and broker disagree")]
+    rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
+    _write(tmp_path, rows)
     found = lr.review_bot("b", tmp_path, RUNNING, now=NOW)
 
     assert "halted" in _keys(found)
@@ -347,3 +357,62 @@ def test_findings_print_on_a_cp1252_console(tmp_path, monkeypatch, capsys):
 
     assert lr.main(["--dry-run"]) == 0
     assert "REVIEW" in capsys.readouterr().out
+
+
+# ── a halt that RECOVERED reads as history, not as an open incident ───────────
+def test_a_recovered_halt_is_reported_in_the_past_tense(tmp_path):
+    """🔴 Watched red against HEAD.
+
+    These findings are sticky by design — `review.json` keeps a chip on the Bots page so a
+    Telegram line you scrolled past at 3am is not the only record. That stickiness is exactly
+    what made the wording a defect: a halt that ended hours ago went on saying *"the bot is
+    placing nothing … Check the account"*, so a recovered bot was indistinguishable from a
+    broken one. Aaron read that chip on 2026-08-07 and asked why a running bot was flagged.
+    """
+    rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="they disagree")]
+    _write(tmp_path, rows)                       # the LAST pulse still says bridge_state live
+    found = [f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+             if f.key.startswith("halted:")]
+
+    assert len(found) == 1
+    assert found[0].level == lr.WARN             # not ALERT: nothing to act on right now
+    assert "again" in found[0].title
+    assert "is placing nothing" not in found[0].detail
+    # ...and the reason is still carried, because "why did it halt" is the open question.
+    assert "they disagree" in found[0].detail
+
+
+def test_a_halt_that_is_STILL_halted_keeps_the_urgent_wording(tmp_path):
+    """The other half. Softening a live halt would be far worse than the noise being fixed —
+    this is the one finding nothing else in the system can see."""
+    rows = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="they disagree")]
+    rows[-2] = _pulse(rows[-2]["ts"], bridge_state="halted")
+    _write(tmp_path, rows)
+    found = [f for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+             if f.key.startswith("halted:")]
+
+    assert len(found) == 1
+    assert found[0].level == lr.ALERT
+    assert "is placing nothing" in found[0].title
+
+
+def test_the_key_is_the_SAME_whether_it_recovered_or_not(tmp_path):
+    """⚠ Load-bearing, not incidental. The tense follows the CURRENT bridge state, so the same
+    incident is rendered both ways over its life — and if the key moved with the wording, the
+    moment a bot recovered it would re-announce a halt you had already been told about.
+
+    This is the `_ts` / `_at` split doing its job: the key names the occurrence, the text
+    describes it. Improving wording must never wake the channel up.
+    """
+    halted = _healthy() + [_event("halted", "2026-08-05T14:00:00+00:00", reason="x")]
+    recovered = list(halted)
+    halted[-2] = _pulse(halted[-2]["ts"], bridge_state="halted")
+
+    _write(tmp_path, halted)
+    a = {f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+         if f.key.startswith("halted:")}
+    _write(tmp_path, recovered)
+    b = {f.key for f in lr.review_bot("b", tmp_path, RUNNING, now=NOW)
+         if f.key.startswith("halted:")}
+
+    assert a == b

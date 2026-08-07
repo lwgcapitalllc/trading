@@ -134,3 +134,4 @@ def test_a_strategy_that_is_not_built_yet_is_a_no_op():
     r.strategy = None
     r.reanchor_equity("after warm-up")            # must not raise
     assert r.ledger.kinds() == []
+

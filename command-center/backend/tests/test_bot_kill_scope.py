@@ -27,12 +27,36 @@ from routers import bots
 
 @pytest.fixture
 def ssh(monkeypatch):
-    """Capture every command the router sends, and send nothing."""
+    """Capture every command the router sends, and send nothing.
+
+    The bot answers the liveness probe as GONE, so the graceful stop succeeds and no kill is
+    issued — see `stubborn_ssh` for the escalation path. `_time.sleep` is neutered so the
+    30-second grace window costs nothing here.
+    """
     sent: list[str] = []
 
     def fake_ssh(cmd: str) -> str:
         sent.append(cmd)
-        return ""
+        return ""              # `get processid` with no digits = the process is gone
+
+    monkeypatch.setattr(bots, "_ssh", fake_ssh)
+    monkeypatch.setattr(bots, "_notify_telegram", lambda *_a, **_k: None)
+    monkeypatch.setattr(bots._time, "sleep", lambda *_a: None)
+    return sent
+
+
+@pytest.fixture
+def stubborn_ssh(monkeypatch):
+    """A bot that ignores its stop request, so every route escalates to the kill.
+
+    This is the fixture the SCOPE tests need: the safety property they protect is about the
+    terminate command, and after 2026-08-07 a healthy bot never reaches it.
+    """
+    sent: list[str] = []
+
+    def fake_ssh(cmd: str) -> str:
+        sent.append(cmd)
+        return "ProcessId\n9620\n" if "get processid" in cmd else ""
 
     monkeypatch.setattr(bots, "_ssh", fake_ssh)
     monkeypatch.setattr(bots, "_notify_telegram", lambda *_a, **_k: None)
@@ -51,33 +75,76 @@ def _assert_scoped(cmd: str, bot_key: str) -> None:
 
 # ── The routes ────────────────────────────────────────────────────────────────
 
-def test_stop_bot_kills_only_this_bots_python_process(ssh):
+def test_stop_bot_kills_only_this_bots_python_process(stubborn_ssh):
     bots.stop_bot("MPC SOS Fade")
-    kills = _kills(ssh)
+    kills = _kills(stubborn_ssh)
     assert len(kills) == 1
     _assert_scoped(kills[0], "mpc_sos_fade_demo")
 
 
-def test_restart_bot_kills_only_this_bots_python_process(ssh):
+def test_restart_bot_kills_only_this_bots_python_process(stubborn_ssh):
     bots.restart_bot("MPC SOS Fade")
-    kills = _kills(ssh)
+    kills = _kills(stubborn_ssh)
     assert len(kills) == 1
     _assert_scoped(kills[0], "mpc_sos_fade_demo")
 
 
-def test_stop_all_kills_only_registered_bots_python_processes(ssh):
+def test_stop_all_kills_only_registered_bots_python_processes(stubborn_ssh):
     bots.stop_bots()
-    kills = _kills(ssh)
+    kills = _kills(stubborn_ssh)
     assert kills, "stop-all issued no kill at all"
     for cmd in kills:
         _assert_scoped(cmd, "mpc_sos_fade_demo")
 
 
-def test_the_suppress_write_happens_before_the_kill(ssh):
-    """Order matters — the crash monitor alerts on a bot that dies unannounced."""
+# ── asking first (2026-08-07) ────────────────────────────────────────────────
+#
+# 🔴 Stop was a hard kill, so the bot never wrote its `shutdown` record and the NEXT startup
+# reported "the previous run ended WITHOUT a shutdown record: it was killed, it crashed, or the
+# box went down." That is the silent-death detector, and it fired on every deliberate restart.
+
+def test_a_bot_that_shuts_itself_down_is_never_killed(ssh):
+    """The whole point. A clean stop must leave no terminate command behind at all — otherwise
+    the bot is killed a moment after it exited and the record is ambiguous again."""
     bots.stop_bot("MPC SOS Fade")
-    suppress = next(i for i, c in enumerate(ssh) if "stop_suppress.json" in c)
-    kill     = next(i for i, c in enumerate(ssh) if "call terminate" in c)
+    assert _kills(ssh) == []
+
+
+def test_the_stop_request_is_written_before_anything_waits(ssh):
+    """Order matters as much as it does for the suppress marker: waiting first would just be a
+    30-second pause in front of a kill."""
+    bots.stop_bot("MPC SOS Fade")
+    writes = [i for i, c in enumerate(ssh) if "stop.request" in c and "del " not in c]
+    assert writes, "no stop request was written"
+    probes = [i for i, c in enumerate(ssh) if "get processid" in c]
+    assert not probes or writes[0] < probes[0]
+
+
+def test_the_request_file_is_removed_on_the_clean_path(ssh):
+    """⚠ A stop file that outlives its stop would halt the NEXT start seconds after boot, and a
+    bot that will not stay up is a far worse failure than the noisy chip this replaces. The bot
+    clears it at startup too; this is the belt to that brace."""
+    bots.stop_bot("MPC SOS Fade")
+    assert any("del " in c and "stop.request" in c for c in ssh)
+
+
+def test_the_request_file_is_removed_after_an_escalation_too(stubborn_ssh):
+    """The path where the bot never noticed. Leaving the file here is the likelier of the two —
+    the bot that ignored it is also the bot that will not clear it."""
+    bots.stop_bot("MPC SOS Fade")
+    assert any("del " in c and "stop.request" in c for c in stubborn_ssh)
+
+
+def test_the_suppress_write_happens_before_the_kill(stubborn_ssh):
+    """Order matters — the crash monitor alerts on a bot that dies unannounced.
+
+    ⚠ Uses the STUBBORN fixture, because after 2026-08-07 a healthy bot is never killed and
+    there would be no kill to order against. The suppression still has to precede it on the one
+    path that still terminates something.
+    """
+    bots.stop_bot("MPC SOS Fade")
+    suppress = next(i for i, c in enumerate(stubborn_ssh) if "stop_suppress.json" in c)
+    kill     = next(i for i, c in enumerate(stubborn_ssh) if "call terminate" in c)
     assert suppress < kill
 
 
@@ -111,18 +178,15 @@ def test_no_call_site_builds_its_own_terminate_command():
     )
 
 
-def test_kill_bot_carries_both_clauses():
-    cmd = None
+def test_kill_bot_carries_both_clauses(stubborn_ssh):
+    """The escalation command itself, in isolation.
 
-    def capture(c: str) -> str:
-        nonlocal cmd
-        cmd = c
-        return ""
-
-    real = bots._ssh
-    bots._ssh = capture
-    try:
-        bots._kill_bot("some_bot_key")
-    finally:
-        bots._ssh = real
-    _assert_scoped(cmd, "some_bot_key")
+    ⚠ It selects the terminate command by name rather than taking the last thing sent. It used
+    to take the last, which was the kill — it is now the `del` of the stop request, and a test
+    that reads position rather than content starts asserting the wrong string the moment the
+    sequence grows.
+    """
+    bots._kill_bot("some_bot_key")
+    kills = _kills(stubborn_ssh)
+    assert len(kills) == 1
+    _assert_scoped(kills[0], "some_bot_key")
