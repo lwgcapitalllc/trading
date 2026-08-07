@@ -37,7 +37,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
-from services import lab_db, ohlc_fetcher
+from services import history_limits, lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.ob_overlays import GROUP_OB, build_ob_overlays
@@ -767,6 +767,37 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
     }
 
 
+# How close the oldest bar returned must sit to the broker's measured floor before we will call it
+# the broker's own limit. The floor is a DATE and the bar is a timestamp, and history starts
+# mid-session on the first day (Vantage XAUUSD M15 opens 2018-09-13 with 38 bars), so the comparison
+# needs a day or so of slack in each direction — but nothing like enough to cover a cache hole,
+# which is what this exists to refuse.
+_FLOOR_SLOP_MS = 3 * 86_400_000
+
+
+def _is_broker_floor(instrument: str, timeframe: str, data_start_ms: int, runner: str) -> bool:
+    """Is this oldest-bar timestamp the broker's REAL start of history for this timeframe?
+
+    Answers False whenever it cannot be sure — an unmeasurable floor, a runner with no floor
+    concept, or an unreachable terminal. See the `hard_edge` note in `build_run_candles`: the
+    caller turns True into a red "nothing older exists" line AND into a signal to stop paging,
+    so a wrong True is unrecoverable while a wrong False costs one request.
+    """
+    try:
+        limit = history_limits.limits_for(
+            instrument, "Minute", _TF_MIN.get(timeframe.upper(), 15), runner
+        )
+    except Exception:
+        return False
+    earliest = (limit or {}).get("earliest_date")
+    if not earliest:
+        return False
+    floor_ms = int(
+        datetime.fromisoformat(earliest).replace(tzinfo=timezone.utc).timestamp() * 1000
+    )
+    return data_start_ms - floor_ms <= _FLOOR_SLOP_MS
+
+
 def build_run_candles(
     run_id: str, timeframe: str, from_ms: int, to_ms: int,
 ) -> Optional[dict]:
@@ -818,8 +849,36 @@ def build_run_candles(
     candles = [c for c in candles if from_ms <= c["time"] <= to_ms]
     data_start_ms = candles[0]["time"] if candles else None
     # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
-    # weekend/holiday gap), and OUR cap didn't clip the request.
-    hard_edge = bool(candles) and not clamped and (data_start_ms - from_ms) > _HARD_EDGE_SLOP_MS
+    # weekend/holiday gap), OUR cap didn't clip the request, AND that oldest bar is sitting on the
+    # broker's MEASURED history floor.
+    #
+    # 🔴 **That last clause was missing until 2026-08-07, and without it this inferred a fact about
+    # the BROKER from a fact about OUR CACHE.** Aaron drilled to M1 and got ~100 bars flagged
+    # "No earlier M1 data — all the broker still has", on a symbol whose real M1 history runs back
+    # to 2018-09-14. The cache had a 45-day hole its `ranges.json` claimed to cover
+    # (`backtest/data/source.py::covered_spans`), so the fetch honestly returned nothing older —
+    # and this turned "we have no more" into "there IS no more". The frontend then STOPS PAGING on
+    # a hard edge, so the claim was self-sealing: nothing would ever ask for the missing bars again.
+    #
+    # ⚠ **An unknown floor answers False, never True.** No measurement means no claim — the pager
+    # pays one extra round trip at the real edge and gets an empty answer, which is the honest way
+    # to find a boundary. That is also why NT8/MT5 never report a hard edge here: `limits_for` is
+    # python-only by design (those runners read history from their own terminals), so there is no
+    # measured floor to check against and a confident red line would be pure invention.
+    #
+    # ⚠ **The flag is now RARELY true in practice, and that is the fix working rather than the flag
+    # dying.** MEASURED against the live backend after the cache repair: a python drill-down that
+    # reaches the real floor is refused by `BarSource.load`'s own floor guard BEFORE any fetch, so
+    # it returns `available: false` carrying the measured sentence ("XAUUSD has no real 1-minute
+    # history before 2018-09-14 on VantageMarkets-Demo"), which the chart prints — strictly better
+    # than a red line with no explanation. The pager stops either way, since a page with no bars
+    # answers `more: false`. Do not delete the flag because it seldom fires.
+    hard_edge = (
+        bool(candles)
+        and not clamped
+        and (data_start_ms - from_ms) > _HARD_EDGE_SLOP_MS
+        and _is_broker_floor(instrument, timeframe, data_start_ms, runner)
+    )
     out = {
         "instrument": instrument,
         "timeframe": timeframe.upper(),

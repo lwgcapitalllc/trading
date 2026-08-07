@@ -52,7 +52,7 @@ def test_recording_extends_coverage(tmp_path):
 
 # ── missing(): the GAPS, so a near-miss costs a near-miss ────────────────────────
 # `covered()` answers yes/no, and `_load_base` used to turn a No into a full refetch of the
-# whole window. Since `_covered_end` deliberately never claims today, a window ending today
+# whole window. Since `covered_spans` deliberately never claims today, a window ending today
 # is never fully covered — so every request re-pulled everything to obtain one day. Measured
 # on the live cache: 27.8s vs 0.39s for the same span ending yesterday.
 

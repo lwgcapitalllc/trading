@@ -82,7 +82,7 @@ class BarCache:
         and the chart's VWAP layer is permanently and silently absent for that symbol.
 
         The sidecar records what CAME BACK rather than what the version implies, which is this
-        package's own rule (`_covered_end`: never record what you requested as though it were what
+        package's own rule (`covered_spans`: never record what you requested as though it were what
         you received). `False` here is the marker to re-pull: delete the pair's `.csv` and
         `.meta.json`, or bump `FEED_VERSION` again.
 

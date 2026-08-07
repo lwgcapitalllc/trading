@@ -76,7 +76,7 @@ class BarSource:
         this" while the cache says "not in a form you can use", and the caller gets nothing.
 
         🔴 **This asked `covered()` and refetched the WHOLE window on False until 2026-08-06,
-        and that turned the deliberate never-mark-today rule into a 72x tax.** `_covered_end`
+        and that turned the deliberate never-mark-today rule into a 72x tax.** `covered_spans`
         will not mark today as covered, on purpose — a day still filling looks exactly like a
         complete one — so a window ending today is *never* fully covered, and every single
         request re-pulled the entire history to obtain the one missing day. **Measured on the
@@ -105,52 +105,100 @@ class BarSource:
                 # MERGES, never overwrites (`BarCache.save`) — which is what makes a partial fetch
                 # safe. Overwriting would let a one-day tail pull delete six years of cached bars.
                 self.cache.save(symbol, base_tf, fetched)
-                # Record what CAME BACK, never what was asked for — see `_covered_end`.
-                covered_to = _covered_end(fetched, gap_end)
-                if covered_to >= gap_start:
-                    self.coverage.record(symbol, base_tf, gap_start, covered_to)
+                # Record what CAME BACK, never what was asked for — see `covered_spans`.
+                for span_start, span_end in covered_spans(fetched, gap_start, gap_end):
+                    self.coverage.record(symbol, base_tf, span_start, span_end)
         return self.cache.load(symbol, base_tf)
 
 
-def _covered_end(fetched: pd.DataFrame, end_date: str) -> str:
-    """The last date this fetch may honestly claim to have covered.
+# The longest stretch of consecutive days on which this market legitimately prints NO bars.
+# MEASURED rather than chosen: over the whole cached XAUUSD history (2018-09-14 → 2026-08-06,
+# 186,366 M15 bars and the same span at H1) the longest no-bar run is **2 days** — a weekend, or
+# Good Friday plus its weekend (2026-04-02 → 2026-04-05, 2020-04-09 → 2020-04-12). 4 is that
+# measurement plus headroom for a holiday landing beside a weekend on some other instrument.
+#
+# It is the one number separating *the market was shut* from *the fetch did not deliver*, and it
+# only has to be good enough to tell 2 days from the 45-day hole that prompted it. Widening it
+# past a week would start swallowing real losses; tightening it below 3 would make every Easter
+# refetch for ever.
+_MAX_CLOSURE_DAYS = 4
 
-    🔴 **This exists because recording the REQUESTED window silently truncated every later
-    run.** `_load_base` used to `coverage.record(start_date, end_date)` straight after the
-    fetch, whatever came back. Ask for bars up to a date the broker does not have yet — which
-    every `--end today` and every `end = last_bar + 1 day` does — and that date is marked
-    fetched forever. The next request reads as a cache HIT and returns a frame that stops
-    where the old fetch stopped, with no error, no warning, and no way to tell from the
-    result. **Measured on the live cache 2026-08-04: the sidecar claimed history through
-    2026-08-06 while the file held nothing past 2026-08-03 03:45**, and the agent was serving
-    the missing 170 bars on request the whole time.
 
-    That is this repo's recurring shape — the system quietly answers a NARROWER question than
-    the one asked — and it is the same failure as the hardcoded history floor, arriving from
-    the other end of the window.
+def covered_spans(
+    fetched: pd.DataFrame, gap_start: str, gap_end: str
+) -> list[tuple[str, str]]:
+    """The date ranges this fetch may honestly claim to have covered — DESCRIBING the bars that
+    came back, never the window that was asked for.
 
-    Two clamps, and the second is the one that is easy to miss:
+    🔴 **The predecessor, `_covered_end`, answered with one END date and therefore always claimed
+    from `gap_start`, whatever arrived — so a PARTIAL serve was recorded as a complete one.** Its
+    single clamp is *never past the last bar returned*, and there was no mirror for the first, so a
+    request for 45 days that came back with one day's bars was written down as 45 days fetched. A
+    fetch with a HOLE in it is the same defect one step in: bars either side, nothing between, one
+    span claimed straight across.
 
-    1. **Never past the last bar returned.** If the data stops earlier than the request, the
-       request over-reached.
-    2. **Never into today.** A day that is still filling looks identical to a complete one from
-       the bars alone — a frame ending 00:15 on the last day is either "the broker stops here"
-       or "it is 00:20 right now", and nothing in the frame distinguishes them. So the recent
-       edge is never marked covered and simply refetches until it is genuinely in the past.
+    ⚠ **`Mt5Agent.bars` produces exactly those shapes on its own** — it CHUNKS a long window (M1
+    past ~60,000 bars needs several) and stitches the results, and an empty chunk beside a served
+    one is deliberately not an error. So a partial serve needs no bug anywhere else; it is the
+    documented behaviour of a request that half-succeeded.
 
-    A window that ends in the past is unaffected, so no historical run does extra work. The cost
-    is one agent call per run that reaches the live edge, which is the correct price for never
-    handing a backtest a short frame it cannot detect.
+    ⚠ **A WHOLLY empty fetch returns `[]` here as defence in depth, not as the observed cause** —
+    today it never reaches this function, because `BarCache.save` raises on a frame with no columns
+    and the whole load fails loudly first. That is the right outcome and it is also incidental;
+    coverage should not depend on a different module crashing to stay honest.
+
+    ✅ **MEASURED on the live cache 2026-08-07, which is what found this:** `XAUUSD__M1.ranges.json`
+    claimed `2018-09-14 → 2026-08-06` while the CSV held **nothing at all between 2026-06-22 and
+    2026-08-05** — 45 days, ~62,000 bars, gone. The broker was serving them the whole time (asked
+    directly for 2026-07-15 → 2026-07-17 it returned 4,013 bars). Because a covered range is never
+    re-fetched, that hole was permanent, and because the M1 drill-down reads the same cache, the
+    price chart reported the hole's edge as *"No earlier M1 data — all the broker still has"*.
+
+    So coverage is now a description of what is on disk: the days that actually carry bars, joined
+    across stretches no longer than `_MAX_CLOSURE_DAYS` (a weekend or a holiday genuinely has no
+    bars and must not split a span, or every Easter would refetch for ever). A stretch longer than
+    that is not a closure — it is missing data, and it stays missing so the next load re-fetches it.
+
+    The `gap_start` edge is extended back to the request only when the first bar is within that
+    same tolerance, which is what keeps a window opening on a Saturday from re-fetching its weekend
+    on every single load.
+
+    ⚠ **The end keeps BOTH of the clamps it already had**, and the second is the one that is easy
+    to miss: never past the last bar returned, and **never into today** — a day still filling looks
+    identical to a complete one from the bars alone, so the live edge is never marked covered and
+    simply refetches until it is genuinely in the past.
     """
     import datetime as _dt
 
-    end = end_date
-    if not fetched.empty:
-        last = str(pd.Timestamp(fetched.index[-1]).date())
-        if last < end:
-            end = last
+    if fetched.empty:
+        # Nothing came back, so nothing was covered. This is the branch that lost 45 days of M1.
+        return []
+
+    days = sorted({str(pd.Timestamp(t).date()) for t in fetched.index})
+    spans: list[list[str]] = [[days[0], days[0]]]
+    for day in days[1:]:
+        if _days_between(spans[-1][1], day) <= _MAX_CLOSURE_DAYS:
+            spans[-1][1] = day
+        else:
+            spans.append([day, day])
+
+    # Only the FIRST span may reach back to the request, and only over a plausible closure.
+    if _days_between(gap_start, spans[0][0]) <= _MAX_CLOSURE_DAYS and gap_start < spans[0][0]:
+        spans[0][0] = gap_start
+
     yesterday = str(_dt.date.today() - _dt.timedelta(days=1))
-    return min(end, yesterday)
+    out: list[tuple[str, str]] = []
+    for lo, hi in spans:
+        hi = min(hi, gap_end, yesterday)
+        if lo <= hi:
+            out.append((lo, hi))
+    return out
+
+
+def _days_between(earlier: str, later: str) -> int:
+    import datetime as _dt
+
+    return (_dt.date.fromisoformat(later) - _dt.date.fromisoformat(earlier)).days
 
 
 def _slice(bars: pd.DataFrame, start_date: str, end_date: str) -> pd.DataFrame:

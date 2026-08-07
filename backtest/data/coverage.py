@@ -56,7 +56,7 @@ class RangeCoverage:
 
         🔴 **This exists because `covered` alone made every near-miss cost a full refetch.**
         `_load_base` only asked *is the whole window covered*, and on `False` re-pulled the
-        entire window from the broker. `_covered_end` deliberately never marks TODAY as
+        entire window from the broker. `covered_spans` deliberately never marks TODAY as
         covered (a day still filling is indistinguishable from a complete one), so a run whose
         window ends today can never be fully covered — and every request re-downloaded the lot.
         **Measured 2026-08-06 on the live cache: 27.8s to load 155,776 XAUUSD M15 bars for

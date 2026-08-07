@@ -191,7 +191,7 @@ def test_today_is_never_recorded_as_covered_even_when_bars_reach_it(tmp_path):
 
 
 # ── a near-miss must cost a near-miss, not a full refetch ────────────────────────
-# 🔴 Found 2026-08-06. `_covered_end` above deliberately never marks TODAY as covered, so a
+# 🔴 Found 2026-08-06. `covered_spans` above deliberately never marks TODAY as covered, so a
 # window ending today is never fully covered — and `_load_base` answered that by re-pulling
 # the ENTIRE window to obtain the one missing day. Measured on the live cache: 27.8s to load
 # 155,776 XAUUSD M15 bars for 2020-01-01 -> today, against 0.39s for the same span ending
@@ -275,3 +275,98 @@ def test_a_fetch_that_returns_nothing_usable_records_no_coverage_at_all(tmp_path
     except Exception:
         pass
     assert not src.coverage.covered("XAUUSD", "M15", fut_a, fut_b)
+
+
+# ---------------------------------------------------------------------------------------------
+# `covered_spans` — coverage must DESCRIBE the bars received, never the window requested.
+#
+# 🔴 Found 2026-08-07 on the live cache. `XAUUSD__M1.ranges.json` claimed 2018-09-14 → 2026-08-06
+# while the CSV held NOTHING between 2026-06-22 and 2026-08-05 — 45 days, ~62,000 bars — and the
+# broker was serving them the whole time. A covered range is never re-fetched, so the loss was
+# permanent, and the price chart drew the hole's edge as "No earlier M1 data".
+#
+# Both branches below reproduce it, and both were reachable from one transient agent failure.
+# ---------------------------------------------------------------------------------------------
+
+class SilentAgent:
+    """Answers with an EMPTY frame — a tunnel down, a terminal restarting, an agent mid-deploy."""
+
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def bars(self, symbol, tf_name, start_date, end_date):
+        self.calls.append((symbol, tf_name, start_date, end_date))
+        return pd.DataFrame()
+
+
+class TailOnlyAgent(FakeAgent):
+    """Answers a long request with only its last day — a partial serve, no error."""
+
+    def bars(self, symbol, tf_name, start_date, end_date):
+        full = super().bars(symbol, tf_name, start_date, end_date)
+        return full[full.index >= f"{end_date} 00:00"]
+
+
+def test_a_fetch_that_returns_nothing_claims_nothing(tmp_path):
+    # ⚠ DEFENCE IN DEPTH, and it does NOT bite today — `BarCache.save` raises on a frame with no
+    # columns, so a wholly-empty fetch fails the load loudly before it can reach here. Kept
+    # because coverage must not depend on another module crashing in order to stay honest, and
+    # labelled so nobody reads it as the cause of the incident above. The reachable defect is the
+    # PARTIAL serve in the two tests below.
+    from backtest.data.source import covered_spans
+    assert covered_spans(pd.DataFrame(), "2026-06-22", "2026-08-05") == []
+
+
+def test_a_fetch_that_returns_only_its_tail_claims_only_that_tail(tmp_path):
+    # The mirror of the clamp that already existed. Asking for 45 days and getting one back is
+    # one day of coverage, not 45.
+    from backtest.data.source import covered_spans
+    idx = pd.date_range("2026-08-05 00:00", "2026-08-05 23:45", freq="15min", name="time")
+    got = covered_spans(pd.DataFrame({"open": [1.0] * len(idx)}, index=idx),
+                        "2026-06-22", "2026-08-05")
+    assert got == [("2026-08-05", "2026-08-05")]
+
+
+def test_a_hole_in_the_middle_of_a_fetch_splits_the_coverage(tmp_path):
+    # The M15 corruption shape: bars either side, nothing in between. Claiming one span across
+    # it is how a cache comes to vouch for bars it does not hold.
+    from backtest.data.source import covered_spans
+    a = pd.date_range("2026-06-01 00:00", "2026-06-03 23:45", freq="15min", name="time")
+    b = pd.date_range("2026-07-20 00:00", "2026-07-22 23:45", freq="15min", name="time")
+    idx = a.append(b)
+    got = covered_spans(pd.DataFrame({"open": [1.0] * len(idx)}, index=idx),
+                        "2026-06-01", "2026-07-22")
+    assert got == [("2026-06-01", "2026-06-03"), ("2026-07-20", "2026-07-22")]
+
+
+def test_a_weekend_inside_a_fetch_does_not_split_it(tmp_path):
+    # ⚠ PASSES against the old code too (which claimed everything, so it could not over-split) —
+    # this is a guard on the NEW code, not a catch. The other direction, and the reason `_MAX_CLOSURE_DAYS` is not zero: the market really is
+    # shut at weekends, and splitting there would refetch every weekend on every single load.
+    # MEASURED: the longest no-bar run in 7.9 years of cached XAUUSD is 2 days.
+    from backtest.data.source import covered_spans
+    a = pd.date_range("2026-06-04 00:00", "2026-06-05 23:45", freq="15min", name="time")  # Thu-Fri
+    b = pd.date_range("2026-06-08 00:00", "2026-06-09 23:45", freq="15min", name="time")  # Mon-Tue
+    idx = a.append(b)
+    got = covered_spans(pd.DataFrame({"open": [1.0] * len(idx)}, index=idx),
+                        "2026-06-04", "2026-06-09")
+    assert got == [("2026-06-04", "2026-06-09")]
+
+
+def test_a_window_opening_on_a_weekend_still_covers_its_weekend(tmp_path):
+    # ⚠ Also passes against the old code, and guards the same new risk. Without this the leading empty days are never covered, so every load re-requests them —
+    # the 72x refetch tax this package already fixed once, returning in miniature.
+    from backtest.data.source import covered_spans
+    idx = pd.date_range("2026-06-08 00:00", "2026-06-09 23:45", freq="15min", name="time")
+    got = covered_spans(pd.DataFrame({"open": [1.0] * len(idx)}, index=idx),
+                        "2026-06-06", "2026-06-09")
+    assert got == [("2026-06-06", "2026-06-09")]
+
+
+def test_a_tail_only_serve_is_re_asked_for_the_days_it_missed(tmp_path):
+    # A partial serve leaves the rest genuinely missing, so it must still be a GAP next time.
+    cache = BarCache(tmp_path)
+    BarSource(agent=TailOnlyAgent(), cache=cache).load("XAUUSD", "15", "2024-01-02", "2024-01-10")
+    src2 = BarSource(agent=FakeAgent(), cache=BarCache(tmp_path))
+    bars = src2.load("XAUUSD", "15", "2024-01-02", "2024-01-10")
+    assert str(bars.index[0].date()) == "2024-01-02", "the un-served days were never re-fetched"
