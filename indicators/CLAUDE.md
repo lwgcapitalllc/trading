@@ -30,6 +30,175 @@
 
 ---
 
+## 2026-08-07 — 🟢 `mpc_bos_strategy.pine` COMPILES, AND ITS DEFAULTS MOVED OFF THE SPEC BECAUSE THE FVG ENTRY IS THE LOSING HALF
+
+Aaron pasted the file, it compiled (the `CE10117` risk from putting VWAP back did not materialise),
+and he asked for the parameters to be optimized into something profitable. **That exact request had
+already been run and failed** — `strategies/python/mpc_bos/` swept **82 configurations on 2026-07-31
+and found profit factor below 1.0 in every one**, then was deleted on 2026-08-04 as an unvalidated
+port. So the grid was not re-searched. What was asked instead is what had CHANGED, and one thing
+had: the session VWAP filter added the day before, which was in none of those runs.
+
+⚠ **That is the reusable move, not the result: before optimizing anything in this repo, find out
+whether it has been optimized already and what the answer was.** The old log survives at `1946f8b^`
+and it reframed the whole task — Run 3 had concluded *"every input the strategy has describes the
+SETUP... what separated winners from losers was the state of the MARKET, which no existing input
+can express."* VWAP is exactly that missing axis, which is why it was worth one more sweep.
+
+✅ **The result — 564 configurations, 186,384 true-M15 bars, scored +2R-before-−1R against a control
+matched on direction AND stop distance:** a **fib 0.786 entry with the leg-origin stop and VWAP on**
+measures **+14.5% over control (+4.1σ, n=201, PF 1.76, positive in 9 of 9 years)**, where **what
+shipped before measured +2.8% at 1.7σ — not distinguishable from random.**
+
+🔴 **The headline is that `bosUseFvg` now defaults OFF, and the FVG entry was the SPEC'S CORE IDEA.**
+Entry depth turned out to be a bigger lever than the filter. **Two independent measurements, seven
+days and two implementations apart, agree**: the deleted Python sweep found the FVG entry was *"98
+trades for −15.1R with no tail at all"* while the rest of the book broke even, and this run found a
+plain deep fib beats it four-fold. **The gap decides WHERE the limit rests, and it rests too shallow
+for a continuation trade.** ⚠ It does NOT vindicate Run 1's proposed fix, which was to go SHALLOWER
+still (the Sniper-Zone pocket) — Run 2 had already withdrawn that, and the measured answer is deeper.
+
+🔴 **THE TOP ROW OF THE SWEEP WAS DISCARDED AND THAT IS THE PART WORTH CARRYING.** Ranked on
+expectancy alone the winner was a 0.786 entry against an **0.886 stop at +0.563R**. Its **median stop
+is $0.74**, so at a $0.22 spread **30% of R is gone before the trade starts**, and the deepest tenth
+rest stops under **$0.31** — untradeable. The leg-origin stop's median is $1.73 (12.7% of R). **Net
+of the spread the ranking INVERTS**, +0.265R against +0.276R. ⚠ **Standing rule: rank on expectancy
+NET of the spread, never on expectancy** — on this strategy the two orderings disagree at the top and
+the gross one picks the configuration you cannot trade. It is also the collapsing-stop hazard the A+
+file already records, arriving by a third route: there it inflated sum-R through position sizing,
+here it inflates win rate through an unpayable stop.
+
+⚠ **The strongest evidence is a direction check, not a significance figure: shorts +17.7% beat longs
++12.3%.** Gold tripled across this window, so a drift artefact shows up as longs carrying everything
+— and Run 3 had flagged its own longs-vs-shorts slice as confounded and unusable for that reason.
+This one points the other way, which is what a real effect looks like on a trending instrument.
+
+⚠ **VWAP was tested PAIRED across the whole grid rather than read off the winners: 276 matched
+on/off pairs, better in 210, median ΔexpR +0.054.** A filter judged only from the top of a sorted
+list is judged on the rows it was selected into.
+
+⚠ **564 configurations is real multiple-comparison exposure and is stated as such in the log.** The
+defences are the 9-of-9 years, a half-split on time (the test that killed Run 3's volatility rule and
+Run 4's regime labels), the direction check, the smooth degradation across every switch, and the
+paired VWAP test. Decent; not proof.
+
+⚠ **THE MEASUREMENT IS A SKELETON, NOT THE STRATEGY.** `backtest/tools/trigger_edge.py` drives the
+canonical engines with a plain fib limit and a flat +2R/−1R score. It models none of the file's
+30/30/20 TP ladder, staged stop or runner. **Direction transfers, magnitude does not** — `+0.276R per
+trade` must never be quoted as this strategy's expectancy. ⚠ **Aaron confirmed the Strategy Tester
+agrees, DIRECTIONALLY ONLY: the three numbers were not recorded, so no figure in this repo describes
+a real TradingView run at these settings.** ⚠ **And there is still no `compare_bos.py`** — the last
+port was deleted for exactly that gap.
+
+Full record, grid and caveats: `docs/MPC_BOS_OPTIMIZATION.md` → Run 5. ⚠ **`docs/MPC_BOS_SPEC.md`
+§4/§5 now describe the ORIGINAL DESIGN rather than the shipped behaviour**, and its Status block says
+so — a spec that silently stops matching the file is worse than no spec.
+
+**The standing lesson is about what "optimize the parameters" can and cannot buy.** The parameter
+search had already been run exhaustively and lost; what changed the answer was adding a variable that
+was not in the parameter set at all. ⚠ **And the second half matters as much: the winning row of a
+564-config sort was the one to throw away.** A sweep hands you the configuration that scored best
+under the metric you happened to write down — here that metric ignored the spread, and the spread is
+30% of the winner's R. **Before believing a sweep's top row, price it.**
+
+---
+
+## 2026-08-06 — 🟢 THE VWAP WENT INTO THE BOS STRATEGY INSTEAD, BECAUSE THE MEASUREMENT SAID D'S TRIGGER HAS NO EDGE
+
+Aaron asked which combination of the two continuation strategies to pursue — `mpc_bos_strategy.pine`
+(fibs + FVG) or `mpc_d_strategy.pine` (structure + fake shift + VWAP) — and asked for diagnostics
+rather than an opinion. **Neither has a Python port, so neither could be swept.** The question
+underneath it did not need one: replay the canonical `market_structure` + `vwap` engines over the
+cached bars, find the bar each trigger would actually be IN on, and ask whether price reaches +2R
+before −1R. No sizing, no ladder, no costs. **186,384 true-M15 XAUUSD bars, 2018-09-13 → 2026-08-07.**
+
+🔴 **THE CONTROL IS THE LOAD-BEARING PART AND IT IS WHY THE ANSWER IS TRUSTWORTHY.** Gold went
+1,200 → 4,300 across this window, so a long-side "edge" is free and any harness without a control
+will find one. Every set is scored against **random entries matched on direction AND stop distance**.
+The control lands on **33.3% with expectancy 0.000** — exactly the theoretical breakeven at 2R — so
+the harness is measurably unbiased before any result is read off it.
+
+| trigger | n | win rate | vs control | expectancy |
+|---|---|---|---|---|
+| **CONT** — with-trend BOS → 0.5 retrace | 778 | 37.5% | **+4.4% (+2.5σ)** | +0.125R |
+| **D** — counter-SOS → VWAP reclaim | 833 | 33.1% | −0.4% (−0.3σ) | −0.007R |
+| D — VWAP side only, no reclaim | 838 | 33.5% | −0.0% (−0.0σ) | +0.004R |
+
+🔴 **D's trigger measures as RANDOM** — not losing, indistinguishable from a coin flip on 833 events
+across eight years. ⚠ **And the reclaim latch built for it that same afternoon is worth nothing:**
+−0.4% with it, −0.0% without. It is neither the problem nor the fix. ⚠ **At longer targets D goes
+significantly NEGATIVE** (−2.8%, −2.1σ at 4R), which is the sharper statement: its entries catch
+moves that die, so it is not merely edgeless, it is anti-selected for runners.
+
+⚠ **The mechanical reason is the stop, and it is structural rather than tunable.** Median stop:
+**CONT $3.43, D $7.24.** D's stop must sit beyond the whole shakeout extreme, so it is 2.1× wider —
+same R buys half the position and needs price to travel twice as far.
+
+✅ **VWAP IS A REAL FILTER, AND IT BELONGS ON CONT.** Pro-trend side: **39.9%, +6.8% (+2.8σ)**, median
+stop **1.11 ATR**. Wrong side: 34.9%, +2.0% (+0.8σ), stop 1.80 ATR. It roughly doubles the trigger's
+edge and cuts the stop 38% — **and the stop is the half that matters more**, because a tighter stop is
+more size per unit of risk and is a mechanical gain rather than a statistical one.
+
+🔴 **THE FIRST RUN OF THAT NUMBER WAS +15.9% AT +5.0σ AND IT WAS LOOK-AHEAD.** VWAP side was read off
+the close of the bar the limit *fills* on, which selects bars that recovered by their close. Reading
+the PREVIOUS closed bar halved it to +6.8%. **The transferable lesson is that the bug's symptom was
+being too good, not erroring** — a filter evaluated on the same bar it acts on is look-ahead until
+proven otherwise, and the flattering number is the one that survives a careless review.
+
+✅ **Both robustness checks were run rather than skipped.** Across R targets the edge is +5.0% / +6.5%
+/ +6.8% / +6.5% / +4.7% at 1R / 1.5R / 2R / 3R / 4R — stable, so not an artefact of the 2R choice —
+and expectancy GROWS with distance (+0.094R → +0.257R at 3R), which is what a runner ladder is for.
+By year, 7 of 9 positive; 2021 worst (−5.6%), 2022 and 2025 strongest. No single year carries it.
+
+**What was then built:** `bosVwapReq` (F10) in `mpc_bos_strategy.pine` — a pro-trend-side gate,
+default ON, ANDed into `longArmed`/`shortArmed`, with block code 7 so a refusal shows on the pink
+Blocked tag and in the diag log. Full write-up in `docs/MPC_BOS_SPEC.md` §4b.
+
+⚠ **A STATE, not a cross**, per Aaron's standing call — and re-read on every bar the limit rests, so
+price closing back through VWAP *pulls* a resting order. A one-shot check at arming time would let a
+setup fill hours later on the wrong side of the very line that qualified it.
+
+⚠ **`na` VWAP returns FALSE, never true** — "cannot ask" and "no" must not be the same value, and for
+a gate about to place money the safe answer is refusal. Costs at most one bar a day.
+
+⚠ **IT IS A DROPDOWN, NOT A CHECKBOX, AND THAT IS THE INTERESTING CONSTRAINT.** TradingView keys saved
+input values off declaration order *within each type*. The last `input.bool` in that file sits ~800
+lines BELOW the use site, so a bool could not be appended (Pine needs declaration first) and inserting
+one would have shifted `execDiagLog` and silently reset it on every chart. **There is no `input.string`
+after that point, so a string shifts nothing.** Verified by scanning last-declaration-line per type
+before and after. **The paste is safe on a tuned chart and needs no "Reset settings to defaults".**
+Generalise it: when a new input must be READ early but must not DISTURB saved values, pick the type
+whose last declaration precedes your insertion point.
+
+⚠ **F10, not F9 — and the collision was nearly shipped.** `docs/MPC_BOS_SPEC.md` §4 already used F9
+for staleness (`bosMaxDays`), while the Pine's inline comments only went up to F8, so "F9" looked
+free from inside the file. Caught by reading the spec's table rather than the code's comments. **A
+gate's number is a shared label across two documents; free in one is not free.**
+
+⚠ **VWAP had been REMOVED from this file 2026-07-25 under `CE10117` (101,484 > 100,256 tokens)**, and
+what came back is deliberately only the VALUE plus one `plot()` — not the settings block, colours and
+styles that were cut. The old VWAP spent tokens DRAWING something nothing read; this one is read by
+the arming condition. **If CE10117 returns, delete the `plot()` first and the gate last.**
+
+⚠ **NO SLOPE TEST.** `mpc_d_strategy.pine` carries `execVwapSlope`/`execVwapSlopeBars`; only the SIDE
+test was measured. Adding an unmeasured lever beside a measured one is how the measured one stops
+being trustworthy.
+
+⚠ **NOT COMPILED, and the measurement is on a SKELETON.** The probe replayed a plain with-trend BOS →
+0.5 retrace → 0.886 stop — **not** this file's FVG-priced entry, the Sniper Zone, F1–F9 or the real
+exit ladder. **+6.8% is a strong prior for the filter, never this strategy's own number.** The next
+measurement is whether the FVG requirement adds to that edge or merely cuts the sample.
+
+**The standing lesson is about what a diagnostic is FOR.** The request was "which combination should I
+use", and the honest answer needed no strategy port at all — the canonical engines plus a control were
+enough to say that one trigger has edge, the other does not, and the tool being brought to the table
+belongs on the first one. ⚠ **The control is what made it an answer rather than an opinion**: without
+it, D's 33.1% and CONT's 37.5% are both just numbers, and gold's own drift would have made the
+long-side halves of BOTH look like edges. **Before believing any trigger study in this repo, find the
+control — and if there isn't one, the study is a description of gold, not of the trigger.**
+
+---
+
 ## 2026-08-06 — `mpc_d_strategy.pine`, and why "an SOS then an opposite SOS" is not a signal
 
 Aaron specified a new setup from four hand-marked charts (two long, two short) and named it the
@@ -158,7 +327,7 @@ would hide the refusals worth seeing, which is the same rule stated at that file
 reports the GATES rather than just the outcome, so a quiet market can be told apart from a gate
 set too tight — those need opposite responses.
 
-### 2026-08-07 — 🔴 THE VWAP ENTRY HAD NO RECLAIM IN IT, SO IT WAS NEVER THE SETUP ON THE CHART
+### 2026-08-06 (later still) — 🔴 THE VWAP ENTRY HAD NO RECLAIM IN IT, SO IT WAS NEVER THE SETUP ON THE CHART
 
 Aaron pasted the D strategy with `execEntryMode = "VWAP side"` shipped as the default (set the
 previous day) and read the trades off a real chart: *"they were not accurate… I specifically sent

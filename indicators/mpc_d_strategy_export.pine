@@ -27,8 +27,12 @@
 // leg, so the entry is at the expensive end and the stop is the whole leg away. That is the
 // same problem A+ solves by resting a limit on the retrace instead of buying the break, so
 // "Retrace" is offered as an entry mode. Which one pays is a MEASUREMENT, not an argument.
-// The default stays "SOS close" because it marks exactly what Aaron drew, and the tool has
-// to be checked against the examples before anything is changed.
+// 🔴 THE DEFAULT IS NOW "VWAP side" (Aaron, 2026-08-06), OFF A MARKED-UP CHART, AND IT
+// MOVES EVERY RESULT. He marked the trade this mode exists to catch — XAUUSD 19-23 Aug:
+// bullish structure, a bear SOS printing the LL at ~3,996 (the shakeout), price basing
+// along VWAP, then a close back above it at ~4,012, stop behind the LL, run to 4,166.
+// `execSlMode` stays "Sweep extreme", which is that stop. ⚠ Pin "SOS close" with rungs
+// 30/30/40 and TP3 = 3 to reproduce the 218-trade / +14.03R baseline of the same morning.
 //
 // The structure engine below (type SMCStructure through the external execution block) is
 // lifted BYTE-FOR-BYTE from indicators/structure_engine.pine, itself the external half of
@@ -57,7 +61,15 @@
 // percent-of-equity risk model sizes past a cash account, and TradingView REJECTS an order
 // it cannot margin rather than shrinking it — so leverage set too low shows up as a strategy
 // that quietly takes fewer trades, never as an error.
-strategy("MPC D Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, process_orders_on_close = true, margin_long = 0.2, margin_short = 0.2)
+// ⚠ max_bars_back IS NOT COSMETIC AND MUST NOT BE DROPPED. `dVwapSlope` reads
+// `dVwap[execVwapSlopeBars]` — a history offset taken from an INPUT, not a literal — and Pine
+// sizes each series' history buffer by watching the offsets it sees on the first bars. At the
+// shipped 4 it would size for 4, so raising the slope input toward its own maxval of 200 would
+// throw "the requested historical offset is beyond the historical buffer's limit" AT RUNTIME,
+// on a knob a reader turns precisely while tuning. 300 covers the whole declared range.
+// The failure is the shape this repo keeps recording: correct at the default, broken the first
+// time somebody uses the lever the default exists to be tuned away from.
+strategy("MPC D Strategy Export", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, process_orders_on_close = true, margin_long = 0.2, margin_short = 0.2, max_bars_back = 300)
 //============================================================
 //  SMC SETTINGS (hardcoded)
 //============================================================
@@ -652,7 +664,7 @@ var GRP_EXEC = "Strategy Execution"
 bool  execLongs   = input.bool(true,  "Trade longs",  group = GRP_EXEC, tooltip = "On = long setups may trade. Off = shorts only. Read at the SIGNAL, not at the order, so a disabled side draws nothing either — what is on the chart is what was traded.")
 bool  execShorts  = input.bool(true,  "Trade shorts", group = GRP_EXEC, tooltip = "On = short setups may trade. Off = longs only.")
 
-string execEntryMode = input.string("SOS close", "Entry", options = ["SOS close", "Retrace", "VWAP side"], group = GRP_EXEC, tooltip = "SOS close = enter at the close of the bar that confirms the with-trend SOS. Always fills, and is the expensive end of the leg. Retrace = rest a limit at a fib of the reclaim leg instead: better price, tighter stop, and it misses the setups that never come back. VWAP side = do not wait for the SOS at all — after the shakeout, enter on the first close back on the trend's own side of VWAP. Measured on the four reference examples, SOS close returns 0.5R to 1.2R — every one directionally right, only one past 1R — because an SOS confirms at the TOP of the reclaim. ⚠ VWAP side is a DIFFERENT TRADE, not a cheaper one: the with-trend SOS is the only evidence the shakeout failed, and this drops it. Which mode pays is a measurement, not an argument.")
+string execEntryMode = input.string("VWAP side", "Entry", options = ["SOS close", "Retrace", "VWAP side"], group = GRP_EXEC, tooltip = "VWAP side (DEFAULT) = do not wait for the with-trend SOS at all: after the shakeout, enter on the first close back on the trend's own side of VWAP. Earlier, and far cheaper — an SOS confirms at the TOP of the reclaim leg, which is why SOS close returned only 0.5R to 1.2R on the four reference examples. SOS close = enter at the close of the bar that confirms the with-trend SOS; always fills, expensive end. Retrace = rest a limit at a fib of the reclaim leg; better price again, and it misses the setups that never come back. ⚠ VWAP side is a DIFFERENT TRADE, not a cheaper D — the with-trend SOS is the only evidence the shakeout failed and this drops it, so its result must never be quoted as SOS close's.")
 float execRetraceFib = input.float(0.5, "   ↳ Retrace level", group = GRP_EXEC, minval = 0.1, maxval = 0.9, step = 0.05, active = execEntryMode == "Retrace", tooltip = "How deep into the reclaim leg the limit rests, measured from the reclaim extreme back toward the shakeout extreme. 0.5 is the midpoint.")
 int   execLimitBars = input.int(20, "   ↳ Cancel an unfilled limit after N bars", group = GRP_EXEC, minval = 1, active = execEntryMode == "Retrace", tooltip = "A resting entry price never came back to is a setup that did not happen. Without this the order stays on the book and can fill days later on a move with nothing to do with this sequence. It is also cancelled if price reaches the STOP first, or if a newer SOS supersedes the sequence.")
 
@@ -689,14 +701,22 @@ float execFixedQty = input.float(1.0, "   ↳ Contracts", group = GRP_EXEC, minv
 
 float execTp1R = input.float(1.0, "TP1 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "First target, as a multiple of the entry-to-stop distance. The PRICE matters even at 0% size — touching it is what moves the stop to breakeven.")
 float execTp2R = input.float(2.0, "TP2 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "Second target, in R. Touching it lifts the stop to its floor and hands the runner to the trail.")
-float execTp3R = input.float(3.0, "TP3 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "Where the runner's limit sits. 0 = no limit at all, so the runner is resolved by the trailing stop alone.")
+float execTp3R = input.float(0, "TP3 distance (R)", group = GRP_EXEC, minval = 0, step = 0.25, tooltip = "Where the runner's limit sits. 0 (DEFAULT) = no limit at all, so the runner is resolved by the trailing stop alone and nothing caps the tail. Any value above 0 is a hard ceiling on the trade in R — at the old 3.0 the blended result could not exceed 2.10R however far price ran.")
 // ⚠ A RUNG SIZED 0% IS SKIPPED, NEVER PLACED. strategy.exit() reads qty_percent = 0 as
 // "unspecified" and falls back to closing the WHOLE position at that limit — the exact
-// opposite of "bank nothing here". mpc_strategy.pine ships both at 0 because riding the
-// whole position to the runner tested best there; that is NOT measured on this strategy,
-// so these ship as a real scale-out and the mpc result is stated in the tooltip instead.
-float execTp1Pct = input.float(30, "   ↳ TP1 size %", group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. 0 = bank nothing and ride the whole position to the runner, which is what tested best on the A+ bot over 6.6 years — untested here. The TP1 price still moves the stop to breakeven at 0.")
-float execTp2Pct = input.float(30, "   ↳ TP2 size %", group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much the TP2 limit banks, as a percent of the ORIGINAL position. Whatever is left rides to TP3 or the trailing stop.")
+// opposite of "bank nothing here", and it is REACHABLE now that these ship at 0 — the
+// guard is the only thing between this default and every trade closing whole at TP1.
+// 🔴 BOTH RUNGS WENT 30 → 0 AND TP3 3.0 → 0 (Aaron, 2026-08-06), because the ladder was
+// the binding constraint, not the entry. Measured over 8.3 years the largest winner was
+// +2.11R against the rungs' own arithmetic ceiling of 0.3x1 + 0.3x2 + 0.4x3 = 2.10, with
+// 16 trades sitting exactly on it. Re-measured on Aaron's own marked chart: 1R is $16,
+// the move was worth 9.62R, and the shipped ladder took 2.10R of it — 7.53R left on the
+// table on the one trade the strategy exists to catch. D pairs a CONTINUATION premise
+// with a scale-out exit; A+ ships 0/0 for exactly this reason, because its money is in
+// the tail. ⚠ The TP1 and TP2 PRICES still do their work at 0% — TP1 stages the stop to
+// breakeven and TP2 hands the runner to the trail — so execTp1R/execTp2R must stay > 0.
+float execTp1Pct = input.float(0, "   ↳ TP1 size %", group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much of the position the TP1 limit banks. 0 (DEFAULT) = bank nothing and ride the whole position to the runner trail — the same call A+ makes, because a continuation trade's money is in the tail. Raise it to take a partial and cap that tail. ⚠ The TP1 PRICE still moves the stop to breakeven at 0, so this is purely about size.")
+float execTp2Pct = input.float(0, "   ↳ TP2 size %", group = GRP_EXEC, minval = 0, maxval = 100, tooltip = "How much the TP2 limit banks, as a percent of the ORIGINAL position. 0 (DEFAULT) = bank nothing; the whole position rides to the trailing stop. ⚠ The TP2 PRICE still hands the runner to the trail at 0, so this is purely about size.")
 float execBeBufTk = input.float(30, "Breakeven buffer (ticks)", group = GRP_EXEC, minval = 0, tooltip = "The breakeven stop sits this far past the entry, so a scratch still covers costs. It is also why the Strategy Tester reports no true breakevens — the exit books a few cents and files as a winner. The Result Stats band below counts them honestly.")
 string execTp2StopMode = input.string("TP1 price", "TP2 → stop floor", options = ["TP1 price", "Breakeven", "One trail step behind"], group = GRP_EXEC, tooltip = "What the stop floor becomes the instant TP2 is reached, before the runner trail takes over. TP1 price is tight and can scratch the runner on the first pullback. Breakeven gives it the most room. One trail step behind keeps it under the high-water mark and never drops below breakeven. The trail can still tighten past this floor.")
 
@@ -777,6 +797,29 @@ int execVwapSlopeBars = input.int(4, "   ↳ slope measured over N bars", group 
 // defect is two places disagreeing about one number while both look right. Showing the exact
 // series the gate reads makes the two impossible to confuse on the chart.
 bool execShowVwap = input.bool(true, "Draw the VWAP line", group = GRP_EXEC, tooltip = "Plots the exact session VWAP the entry mode and the filter read. Off hides the line; it changes no decision. Leave it on whenever VWAP is gating anything — a rule you cannot see is a rule you cannot check.")
+// ── THE RECLAIM (Aaron, 2026-08-06) — this is what makes it the setup on the chart ──
+// ⚠ DECLARED HERE, AFTER THE LAST input.bool IN THE FILE, AND IT MUST STAY THERE.
+// TradingView keys a chart's saved input values off DECLARATION ORDER WITHIN EACH TYPE, so
+// a bool inserted up beside its siblings in GRP_EXEC would silently reset every later bool
+// on every chart running this script. Appended, nothing shifts and no "Reset settings to
+// defaults" is needed.
+//
+// WHAT IT FIXES, and it is the difference between the picture and what the file shipped:
+// "VWAP side" tested only whether the close was CURRENTLY on the trend's side of the line.
+// A 15m shakeout SOS very often prints while price is still above VWAP, so the state was
+// already true on the bar after the counter-SOS and the trade opened THERE — no basing, no
+// reclaim, nothing that looks like the setup. Every bar for the next dCtrBarsMax got the
+// same free look, so a trade could also open a day later on an unrelated bar that happened
+// to close on the right side.
+// The setup is a ROUND TRIP: price must LOSE the line (base on it) and then CLOSE BACK
+// across it. That is two events on two different bars, so it needs a latch.
+//
+// ⚠ A LATCH, NOT ta.crossover, and the distinction is load-bearing. A crossover is true on
+// exactly ONE bar, so any other gate refusing that bar — a stop too tight, a position still
+// open — would lose the setup for good. The latch remembers that VWAP was lost and lets the
+// entry fire on the first bar the rest of the gates also agree, which is what "wait for the
+// reclaim" actually means.
+bool execVwapReclaim = input.bool(true, "   ↳ VWAP side: require the RECLAIM, not just the side", group = GRP_EXEC, active = execEntryMode == "VWAP side", tooltip = "ON (default) is the setup on the chart: after the shakeout, price must first CLOSE on the WRONG side of VWAP — losing the line, basing on it — and only the close back across it is the entry. OFF is the old behaviour and it is almost always a different trade: a shakeout that never lost VWAP passes on the bar after the counter-SOS, with no pullback to enter on. Applies to the 'VWAP side' entry mode only.")
 
 color D_LONG  = #00E676
 color D_SHORT = #FF5252
@@ -816,6 +859,14 @@ var float dSosLvl = na
 // moment the trade closes. A sequence that stopped out would immediately re-enter at a worse
 // price, and keep doing it until the bar cap expired. Released only by the shift below.
 var bool dSeqTaken = false
+// Has price CLOSED on the WRONG side of VWAP since the counter-SOS — the first half of the
+// reclaim. Latched once, cleared only by the shift below, so the two halves may land any
+// number of bars apart: price loses the line on Monday's shakeout and takes it back on
+// Tuesday's open, and that is still one round trip. See execVwapReclaim for the reasoning.
+// It is tracked UNCONDITIONALLY, whatever execVwapReclaim is set to — a latch that only
+// runs while its own switch is on cannot be switched on mid-chart without lying about the
+// bars it never watched, and the state panel reads it either way.
+var bool dVwapLost = false
 
 if not na(dSosBar)
     if na(dLegLo) or low < dLegLo
@@ -1084,6 +1135,18 @@ if st.bull_sos or st.bear_sos
     // A new SOS is a new sequence, so the once-per-sequence latch is released here and
     // NOWHERE else — same place, same bar, as every other piece of sequence state.
     dSeqTaken := false
+    // The reclaim latch is sequence state too, so it clears in the same place. Losing VWAP
+    // during the PREVIOUS shakeout says nothing about this one.
+    dVwapLost := false
+
+// ── The first half of the reclaim: did price LOSE the line ──
+// Runs AFTER the shift on purpose, so on an SOS bar it reads the direction that bar just
+// established rather than the one it killed. That ordering is what lets the shakeout's own
+// SOS candle count as the start of losing VWAP, which is usually exactly where it starts.
+// Evaluated on EVERY bar, including SOS bars, because a round trip is a fact about price
+// and not about which bar happens to carry a structure event.
+if dTrendDir != 0 and not na(dVwap) and (dTrendDir == 1 ? close < dVwap : close > dVwap)
+    dVwapLost := true
 
 // ── THE VWAP-SIDE ENTRY: the sequence taken WITHOUT waiting for the with-trend SOS ──
 // This is the only block in the file that can open a trade on an ORDINARY bar, and that is
@@ -1110,7 +1173,11 @@ if execEntryMode == "VWAP side" and not (st.bull_sos or st.bear_sos) and not dSe
     // The trigger. Unlike the SOS path there is no event to hang a candidate on, so a bar on
     // the wrong side of the line is simply not a candidate — see the note on code 9 above
     // for why it is not reported as a refusal.
-    if f_dVwapOk(nDir) and not na(ctrExt) and not na(rclExt)
+    // ⚠ `dVwapLost` is the RECLAIM half and it is what makes this the setup on the chart
+    // rather than "the first bar after the shakeout that happens to close on the right side".
+    // A sequence that never loses VWAP now takes no trade at all, which is correct: there was
+    // no pullback, so there was nothing to enter on. See execVwapReclaim.
+    if (not execVwapReclaim or dVwapLost) and f_dVwapOk(nDir) and not na(ctrExt) and not na(rclExt)
         float e     = close
         float sAnch = na(dSosLvl) ? ctrExt : dSosLvl
         float sBase = switch execSlMode
@@ -1542,18 +1609,24 @@ if showStatePanel and barstate.islast
     // "price is above VWAP", which the reader would then have to combine with the direction
     // themselves and would get wrong on exactly the short setups.
     bool vwapOkNow = dTrendDir == 0 ? false : f_dVwapOk(dTrendDir)
-    string vwapTxt = na(dVwap) ? "no data" : dTrendDir == 0 ? "—" : (vwapOkNow ? "pro-trend" : "wrong side")
+    // "reclaimed" is the state the entry actually needs — price is on the trend's side AND
+    // it had lost the line first. "pro-trend" alone means the side is right but the round
+    // trip never happened, which under execVwapReclaim is NOT a trade. Naming them the same
+    // thing is what let the old build look armed when it had nothing to enter on.
+    string vwapTxt = na(dVwap) ? "no data" : dTrendDir == 0 ? "—" : (vwapOkNow ? (dVwapLost ? "reclaimed" : "pro-trend") : "wrong side")
     f_dCell(dTbl, 4, "VWAP", vwapTxt, na(dVwap) ? D_MUTED : dTrendDir == 0 ? D_MUTED : vwapOkNow ? D_LONG : D_SHORT)
     // ⚠ The VWAP term is listed LAST in this chain and that mirrors the block-code
     // precedence deliberately: the panel and the tag must never name different reasons for
     // one refusal. It is also only shown when VWAP can actually refuse something — under the
     // other two modes with the filter off, VWAP is being displayed, not consulted.
     bool vwapGates = execEntryMode == "VWAP side" or execVwapReq
-    string dWait = dTrendDir == 0 ? "Warming up" : dTrendBos < dTrendBosMin ? "Trend too young" : dCurBos > dCtrBosMax ? "Shakeout became a trend" : not na(dSosBar) and bar_index - dSosBar > dCtrBarsMax ? "Shakeout stale" : (vwapGates and not vwapOkNow) ? "Waiting on VWAP" : dSeqTaken ? "Sequence already taken" : execEntryMode == "VWAP side" ? (dTrendDir == 1 ? "Armed - long on VWAP" : "Armed - short on VWAP") : dTrendDir == 1 ? "Armed - need bull SOS" : "Armed - need bear SOS"
+    // The two VWAP waits are DIFFERENT states and the panel must not merge them: "lose" means
+    // the pullback has not happened yet, "reclaim" means it has and price has not come back.
+    // One of them is early in the setup and one is the bar before the entry.
+    bool needLose = execEntryMode == "VWAP side" and execVwapReclaim and not dVwapLost
+    string dWait = dTrendDir == 0 ? "Warming up" : dTrendBos < dTrendBosMin ? "Trend too young" : dCurBos > dCtrBosMax ? "Shakeout became a trend" : not na(dSosBar) and bar_index - dSosBar > dCtrBarsMax ? "Shakeout stale" : needLose ? "Waiting for price to lose VWAP" : (vwapGates and not vwapOkNow) ? (dVwapLost ? "Waiting on VWAP reclaim" : "Waiting on VWAP") : dSeqTaken ? "Sequence already taken" : execEntryMode == "VWAP side" ? (dTrendDir == 1 ? "Armed - long on VWAP reclaim" : "Armed - short on VWAP reclaim") : dTrendDir == 1 ? "Armed - need bull SOS" : "Armed - need bear SOS"
     f_dCell(dTbl, 5, "State", dWait, str.startswith(dWait, "Armed") ? #ffde59 : D_MUTED)
     f_dCell(dTbl, 6, "Position", strategy.position_size == 0 ? "Flat" : (tDir == 1 ? "LONG " : "SHORT ") + "stage " + str.tostring(tStage), strategy.position_size == 0 ? D_MUTED : (tDir == 1 ? D_LONG : D_SHORT))
-
-//============================================================================
 //  PARITY / ANALYSIS EXPORT — per-bar DECISION STREAM
 //============================================================================
 // This file is `mpc_d_strategy.pine` + THIS appended block, and NOTHING else changed.

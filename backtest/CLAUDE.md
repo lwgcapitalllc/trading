@@ -228,6 +228,38 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   of each demo campaign then ~monthly, and any time trades look off vs the chart. Needs the MT5 agent
   + tunnel; the alignment math is unit-tested offline. Full rationale + cadence: `docs/MPC_SOS_FADE_BUILD_PLAN.md`.
 
+- **`tools/trigger_edge.py`** — **does a TRIGGER carry edge, before any strategy is built?** Added
+  2026-08-06 to answer "which of the two continuation setups is worth pursuing" when NEITHER has a
+  Python port, so neither could reach `optimizer.py`. It replays the canonical `market_structure` +
+  `vwap` engines, finds the bar a trigger would actually be IN on, and asks only whether price reaches
+  `+NR` before `-1R`. No sizing, no ladder, no costs; R is each trigger's own structural stop.
+  🔴 **THE CONTROL IS THE TOOL.** Gold went 1,200 → 4,300 across the cached window, so a long-side
+  "edge" is free and any harness without a control will find one. Every set is scored against random
+  entries **matched on direction AND stop distance**, and the control landing on the theoretical
+  breakeven with expectancy ~0.000 is what certifies the harness before any result is read off it.
+  **If you add a trigger here, add its control in the same commit.**
+  ✅ **Findings 2026-08-06** (186,384 true-M15 XAUUSD bars, 2018-09-13 → 2026-08-07): the with-trend
+  BOS → 0.5 retrace trigger is **+4.4% over control (+2.5σ, n=778)**; adding the **pro-trend session
+  VWAP side** takes it to **+6.8% (+2.8σ, n=404)** with the median stop **38% tighter** (1.80 → 1.11
+  ATR); the D strategy's counter-SOS → VWAP-reclaim trigger is **−0.4% (−0.3σ, n=833)**, i.e.
+  indistinguishable from random, and goes significantly negative at long targets (−2.8%, −2.1σ at 4R).
+  That is what put VWAP into `mpc_bos_strategy.pine` (F10) rather than leaving it in the D file.
+  ⚠ **It measures SKELETONS, not the shipped strategies** — no FVG requirement, no Sniper Zone, no
+  session filter, no min-stop guard, no real exit ladder. A result here is a prior for a TRIGGER,
+  never a strategy's own number.
+  🔴 **The look-ahead trap it already fell into, recorded because the symptom was being TOO GOOD
+  rather than erroring:** reading the VWAP side off the close of the bar its limit FILLS on selects
+  bars that recovered by their close, and reported the filter at **+15.9% / +5.0σ**; reading the
+  PREVIOUS closed bar gives +6.8%. **Anything evaluated on the bar it acts on is look-ahead until
+  proven otherwise** — see `prev_side`.
+  ⚠ **It drops the coarse head of the cache before measuring.** `XAUUSD__M15.csv` opens with
+  HOURLY bars — MT5 serving coarser data where it has no M15 history, exactly the silent-substitution
+  trap this file documents below — so `drop_coarse()` keeps only the contiguous tail whose median
+  spacing really is 15 minutes. Measuring the raw file would score eight years of one trigger against
+  a different bar size.
+  ⚠ **Stdlib only, on purpose** — it drives the engines directly and needs no pandas, so it runs on a
+  bare interpreter. Run it: `python3 backtest/tools/trigger_edge.py` (~5s).
+
 ## Portfolio stacking (`backtest/portfolio/`)
 
 Stack several strategies onto ONE shared account — one balance, one live risk budget the legs

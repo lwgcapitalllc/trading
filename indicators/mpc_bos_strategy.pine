@@ -31,18 +31,52 @@
 // Each BOS is a fresh continuation leg, and each leg gives a retracement you can
 // buy (or sell) into. A+ fades the shift; this rides what the shift started.
 // Not every BOS is real — some are the last poke before the reversal — so this
-// is deliberately a FILTERED setup (F1-F9), not a "take them all" setup.
+// is deliberately a FILTERED setup (F1-F10), not a "take them all" setup.
 //
-// THE DEFAULT SETUP, 2026-07-31 (Aaron's spec, superseding the bare baseline
-// below). An SOS opens a regime; a BOS with CLEAN DISPLACEMENT arms a leg; that
-// break leaves an FVG; price retraces into 0.5-0.886 and taps the gap. That tap
-// is the entry. The Sniper Zone is optional and can price a leg with no gap. No
-// HTF bias gate — the daily does NOT have to agree.
-// Four switches carry that: bosUseFvg ON, execReqFVG ON, execConfSZ2 ON,
+// THE DEFAULT SETUP, 2026-08-07 — MEASURED, and it REPLACES the 2026-07-31 spec
+// defaults kept below. An SOS opens a regime; EVERY BOS in that direction arms a
+// leg; a limit rests at fib 0.786 of that leg's retrace; the tap is the entry.
+// The stop is the leg origin (fib 1.0) and price must be closing on the trend's
+// own side of the session VWAP. No gap requirement, no displacement floor, no
+// HTF bias gate.
+// Six switches carry it: bosUseFvg OFF · bosEntryFib 0.786 · bosWhich "All" ·
+// bosMinDispAtr 0.0 · bosSlModel "Fib 1.0 (leg origin)" · bosVwapReq "Trend's side".
+// Measured +14.5% over a matched random control (+4.1σ, 201 trades, PF 1.76,
+// positive in 9 of 9 years) where the OLD defaults measured +2.8% at 1.7σ — i.e.
+// what shipped before today was not distinguishable from random. Full record and
+// every caveat: docs/MPC_BOS_OPTIMIZATION.md.
+//
+// 🔴 THE BIGGEST CHANGE IS THAT THE GAP ENTRY IS OFF, and it is the one to argue
+// with first, because the FVG was the whole point of the 2026-07-31 spec. Two
+// independent measurements say it is the losing half: the Python sweep found it
+// 98 trades for −15.1R with no tail, and the engine study found a plain deep fib
+// beats it four-fold. The gap decides WHERE the limit rests, and it rests too
+// shallow for a continuation trade.
+//
+// THE PREVIOUS DEFAULT SETUP, 2026-07-31 (Aaron's spec), kept because the §10b
+// numbers are its. An SOS opens a regime; a BOS with CLEAN DISPLACEMENT arms a
+// leg; that break leaves an FVG; price retraces into 0.5-0.886 and taps the gap.
+// That tap is the entry. The Sniper Zone is optional and can price a leg with no
+// gap. Four switches carried it: bosUseFvg ON, execReqFVG ON, execConfSZ2 ON,
 // bosMinDispAtr 0.5. The remaining filters (F1/F3/F4/F5/F6/F8) stay OFF as open
 // questions, each switchable alone. See the block at GRP_EXEC for the reasoning.
-// ⚠ NO RUN HAS BEEN TAKEN AT THESE DEFAULTS. Every number quoted below was
-// measured at the previous ones and describes a different strategy.
+// ⚠ F10 (session VWAP, 2026-08-06) is the ONE exception to "filters default OFF",
+// and the exception has a reason rather than a preference behind it: every other
+// filter here is an untested idea, and F10 is the only one that was MEASURED
+// before it was switched on — 186,384 real M15 bars, +4.4% -> +6.8% edge over a
+// matched random control, with the median stop 38% tighter. A filter with a
+// measurement defaults on; a filter with an argument defaults off.
+// ⚠ THE MEASUREMENT BEHIND TODAY'S DEFAULTS IS A SKELETON REPLAY, NOT THIS FILE.
+// backtest/tools/trigger_edge.py drives the canonical structure + VWAP engines
+// with a plain with-trend BOS, a fib limit and a fib stop, scored +2R-before-−1R.
+// It does NOT model this file's TP ladder, its staged stop or its runner — so the
+// DIRECTION transfers and the magnitude does not. The Strategy Tester is the only
+// thing that can price the real ladder, and on 2026-08-07 Aaron confirmed the new
+// defaults beat the old ones on his own chart. ⚠ That confirmation is DIRECTIONAL
+// ONLY — the three numbers were not recorded, so no figure in this file describes
+// a real TradingView run at these settings. Fill that in on the next run.
+// ⚠ Everything in the §10b block further down was measured at the PREVIOUS
+// defaults and describes a different strategy.
 //
 // THE PREVIOUS DEFAULT, 2026-07-29, kept because the numbers below are its. An
 // SOS opens a regime; every BOS after it arms a leg; a limit rests at fib 0.618
@@ -78,8 +112,12 @@
 //     the structure engine's own anchors — but `_snTrack` sits behind showFibo, so
 //     turning it off silently removes the no-FVG entry path.
 // Liquidity is not read at all — this setup has no sweep arm.
-// Everything else (Sessions, VWAP, MV, Order Blocks, Internal/Cycle Fib, Sniper,
+// Everything else (Sessions, MV, Order Blocks, Internal/Cycle Fib, Sniper,
 // structure labels) is cosmetic and defaults OFF.
+// ⚠ VWAP IS NO LONGER IN THAT LIST. Since 2026-08-06 the session VWAP is a live
+// GATE (F10, "Session VWAP filter" in Strategy Execution, default "Trend's side")
+// and it refuses trades. It is the one formerly-cosmetic feature that now costs
+// money when it is wrong. Set it to "Off" to reproduce any earlier run.
 // ============================================================================
 strategy("MPC BOS Strategy", overlay = true, max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, max_bars_back = 2000, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false, commission_type = strategy.commission.cash_per_contract, commission_value = 0, slippage = 0, margin_long = 0.2, margin_short = 0.2)
 // (The "Confirmation Table" group — 3 inputs + f_tablePosition + f_tableSize —
@@ -124,7 +162,13 @@ f_swingCol(color c) =>
 //  execution layer — verified by grep: zero references after the STRATEGY
 //  EXECUTION header. The B-LEG fork dropped the same three on 2026-07-24 for
 //  the same reason. They live on in mpc_assistant.pine if the drawing is ever
-//  wanted back.)
+//  wanted back.
+//  ⚠ VWAP PARTLY CAME BACK 2026-08-06, and the distinction is the point: what
+//  returned is one `ta.vwap(hlc3)`, one gate and one plot() in the F10 block of
+//  the execution layer — NOT the settings block, colours and styles that were
+//  cut here. The old VWAP cost tokens to DRAW something nothing read; the new
+//  one costs almost none and is read by the arming condition. If CE10117
+//  returns, delete the plot() first and the gate last.)
 //============================================================
 //  FAIR VALUE GAPS (FVG) INPUTS
 //============================================================
@@ -3291,8 +3335,8 @@ bool   execShorts  = input.bool(true,  "Trade shorts", group = GRP_EXEC)
 // ── 2. WHAT ARMS IT (the break) ────────────────────────────────────────────
 // Spec §4 calls these F1/F2/F3/F4/F6/F9. The numbers are kept in comments only —
 // the panel reads in plain English, like mpc_strategy.pine's does.
-string bosWhich    = input.string("1st only", "Which break after the shift", options = ["1st only", "1st + 2nd", "All"], group = GRP_EXEC, tooltip = "The 1st break after a shift of structure is the EXPANSION; the 2nd and later are CONTINUATIONS. Default '1st only' — trade the first break's retrace and nothing else. Every trade's label records which number it was, so you can read off the chart whether the later ones would have been worth taking. ⚠ A 2nd break still CANCELS a 1st-break setup that is still waiting for its pullback — the newest break always owns the leg.")
-float  bosMinDispAtr = input.float(0.5, "   Break must clear the swing by (x ATR)", minval = 0, maxval = 5, step = 0.1, group = GRP_EXEC, tooltip = "How far the breaking candle must CLOSE past the swing it broke, measured in ATR. A one-tick poke through a high is a liquidity grab, not a break. 0 = accept any break. Try 0.25 / 0.5 / 1.0 and compare.")
+string bosWhich    = input.string("All", "Which break after the shift", options = ["1st only", "1st + 2nd", "All"], group = GRP_EXEC, tooltip = "The 1st break after a shift of structure is the EXPANSION; the 2nd and later are CONTINUATIONS. Default 'All' since 2026-08-07 — it was '1st only', and taking every break measured better at the 0.786 entry depth (see docs/MPC_BOS_OPTIMIZATION.md). Every trade's label records which number it was, so you can read off the chart whether the later ones were worth taking. ⚠ A 2nd break still CANCELS a 1st-break setup that is still waiting for its pullback — the newest break always owns the leg.")
+float  bosMinDispAtr = input.float(0.0, "   Break must clear the swing by (x ATR)", minval = 0, maxval = 5, step = 0.1, group = GRP_EXEC, tooltip = "How far the breaking candle must CLOSE past the swing it broke, measured in ATR. A one-tick poke through a high is a liquidity grab, not a break. 0 = accept any break. Try 0.25 / 0.5 / 1.0 and compare.")
 float  bosMinLegAtr  = input.float(0.0, "   Break leg must be at least (x ATR)", minval = 0, maxval = 10, step = 0.25, group = GRP_EXEC, tooltip = "Minimum size of the break leg. A tiny leg's entry band is inside the noise — the stop is too tight to survive and the targets are inside the spread. 0 = no minimum.")
 float  bosMaxDays  = input.float(3.0, "   Drop an armed break after (days)", minval = 0.25, maxval = 10, step = 0.25, group = GRP_EXEC, tooltip = "How long an armed break waits for its pullback before the setup is dropped. Counted in bars rather than clock time, so weekends and the daily close don't use it up.")
 int    bosMaxPerRegime = input.int(10, "   Max trades between shifts", minval = 1, maxval = 20, group = GRP_EXEC, tooltip = "Stop taking new trades after this many fills since the last shift of structure, until the next shift. 10 = effectively off. Lower it to 2 or 3 to stop the strategy stacking losses into one choppy run.")
@@ -3307,13 +3351,13 @@ bool   bosReqHold    = input.bool(false, "   Broken level must hold", group = GR
 // whole gap path off, so nesting them is the honest reading.
 string bosFibAnchor = input.string("Expansion leg", "Measure levels on", options = ["Expansion leg", "Break leg"], group = GRP_EXEC, tooltip = "Which leg the entry band, the stop and the targets are measured on. 'Expansion leg' = from the leg's origin to the high it is still making, so the levels keep moving until the pullback confirms. 'Break leg' = frozen at the moment of the break. On a leg that ran a long way past the level it broke, these two sit far apart.")
 string bosEntryTop = input.string("0.5", "Shallowest the entry may rest", options = ["0.5", "0.382"], group = GRP_EXEC, tooltip = "The SHALLOW end of the entry band — how little of a pullback the strategy will accept. Default 0.5 = the band is 0.5-0.886 and nothing may rest above it; a gap sitting between 0.382 and 0.5 is pushed down to 0.5 or ignored. Set 0.382 to open the band to 0.382-0.886, so a gap in that shallower pocket prices the entry at its own edge. ⚠ Shallow entries fill far more often and pay far less per trade: with the default Fib 1.0 stop, a 0.382 entry risks ~0.62 of the leg to make ~0.15 to TP1 — under 0.25R — so the whole ladder compresses and only the runner earns. The deep end (0.886) does not move. NOT MEASURED — this is a lever to test, not a tuned value.")
-bool bosUseFvg    = input.bool(true, "Price the entry off a gap", group = GRP_EXEC, tooltip = "ON = the limit is placed on a fair value gap (or the Sniper Zone) inside the entry band — the gap the break left behind IS the entry. OFF = a plain fib limit with nothing behind it, and the five settings below grey out. This is the single biggest lever on how often the strategy trades.")
+bool bosUseFvg    = input.bool(false, "Price the entry off a gap", group = GRP_EXEC, tooltip = "ON = the limit is placed on a fair value gap (or the Sniper Zone) inside the entry band — the gap the break left behind IS the entry. OFF (default since 2026-08-07) = a plain fib limit at the level below, and the five settings under this one grey out. ⚠ THIS DEFAULTED ON UNTIL 2026-08-07 AND IT WAS THE LOSING HALF OF THE BOOK. Two independent measurements say so: the 2026-07-31 Python sweep found the FVG entry was 98 trades for −15.1R with no tail at all (nothing bigger than +3.3R) while the rest of the book broke even, and the 2026-08-06 engine study found a plain 0.786 fib beats it by +14.5% over a matched random control where the gap-priced 0.5 band manages +3.7%. The mechanism is that the GAP decides where the limit rests, and it rests too shallow — see docs/MPC_BOS_OPTIMIZATION.md.")
 bool execReqFVG   = input.bool(true, "   ↳ ...and require one (no gap = no trade)", group = GRP_EXEC, active = bosUseFvg, tooltip = "ON = if no gap qualifies, the setup does not trade at all. OFF = it still trades, at the fallback fib further down. Note the Sniper Zone counts as a gap here, so a leg that has a zone is not refused.")
 bool execFvgDeepOnly = input.bool(true, "   ↳ ...gap must sit fully past the shallow end", group = GRP_EXEC, active = bosUseFvg, tooltip = "ON = the WHOLE gap has to be on the deep side of the band's shallow end (the level set above — 0.5 by default, 0.382 if you opened the band). OFF = a gap lying across that line also qualifies. Deeper entries are better prices but get reached less often.")
 bool execDeepFib  = input.bool(true, "   ↳ ...deep gap enters at the nearest fib", group = GRP_EXEC, active = bosUseFvg, tooltip = "For a gap sitting deeper than 0.618: rest the limit at the nearest fib just SHALLOWER than the gap — the price you reach first — instead of chasing the gap's own edge, which price may never tap.")
 bool execConfSZ2  = input.bool(true,  "   ↳ ...Sniper Zone counts as a gap", group = GRP_EXEC, active = bosUseFvg, tooltip = "Lets the Sniper Zone (the 0.382-0.5 pocket of the break leg) price a leg that had no qualifying gap. OFF = a real gap is strictly required. The zone can stand in for a gap; it is never something the trade waits for.")
 bool execFvg50    = input.bool(false, "   ↳ ...gap across the shallow end enters at it", group = GRP_EXEC, active = bosUseFvg, tooltip = "Last-resort entry: a gap lying ACROSS the band's shallow end (0.5, or 0.382 if you opened the band) rests the limit exactly AT that line. Ranked below every other source, so it only ever prices a leg nothing better could.")
-string bosEntryFib = input.string("0.618", "Fallback entry level", options = ["0.382", "0.5", "0.618", "0.702", "0.786", "0.886"], group = GRP_EXEC, active = not (bosUseFvg and execReqFVG), tooltip = "The plain limit price used when no gap is required. Greyed out at the defaults, because a gap IS required there — it only comes alive if you turn off 'require one' or the gap entry entirely. Clamped by 'Shallowest the entry may rest' above: picking 0.382 while that is set to 0.5 just gives you 0.5.")
+string bosEntryFib = input.string("0.786", "Fallback entry level", options = ["0.382", "0.5", "0.618", "0.702", "0.786", "0.886"], group = GRP_EXEC, active = not (bosUseFvg and execReqFVG), tooltip = "The plain limit price the trade rests at. ⚠ SINCE 2026-08-07 THIS IS THE PRIMARY ENTRY, NOT A FALLBACK — 'Price the entry off a gap' now defaults OFF, so this level is what actually gets traded. The name is kept because the setting is unchanged; only its default and its importance moved. 0.786 measured +14.5% over a matched random control (+4.1σ, 201 trades, 9 of 9 years positive) against +3.7% for the old 0.5-band gap entry. ⚠ DEPTH IS THE BIGGER LEVER THAN THE VWAP FILTER and the two compound. ⚠ Do NOT pair a deep entry with a tighter stop model: 0.786 against a 0.886 stop scored higher on paper and is a trap — its median stop is $0.74, so the spread alone eats 30% of R, and the deepest tenth of those trades have stops under $0.31. Keep the stop on 'Fib 1.0 (leg origin)'. Clamped by 'Shallowest the entry may rest' above: picking 0.382 while that is set to 0.5 just gives you 0.5.")
 
 // ── 4. WHAT CAN REFUSE IT (filters) ────────────────────────────────────────
 bool bosRespectVeto  = input.bool(false, "Divergence blocks a new entry", group = GRP_EXEC, tooltip = "ON = a long will not open while a bearish divergence is live or RSI is extremely overbought, and the mirror for shorts. Re-checked on every bar, so a divergence appearing while the setup waits PULLS the resting order; if it goes stale the order can be placed again. For a continuation trade an opposing divergence is the fakeout signature.")
@@ -3352,6 +3396,14 @@ float  execLabelOff = input.float(6, "   ↳ label distance from price (ATR)", g
 bool   execShowPosBox = input.bool(false, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing to the right while it is open. On close it paints the result: green from entry to the furthest price actually filled, red to the stop fill if it lost, an orange line at entry for a scratch. Off greys out the band labels below.")
 bool   execShowExitLines = input.bool(false, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, active = execShowPosBox, tooltip = "Tags each banked exit at its REAL fill price on the right edge of the trade. Off = the coloured bands still paint, just untagged. The prices are always in the entry label's tooltip either way.")
 bool showBlockTag = input.bool(false, "Mark blocked trades (pink)", group = GRP_EXEC, tooltip = "Drops a pink tag whenever a setup was completely ready to place its order and one of YOUR OWN settings stopped it. These are the only trades invisible everywhere else — no order is placed, so the Strategy Tester cannot know they existed. Hover for the reason and the price the limit would have rested at. This is how you find out whether a filter is saving money or costing it: count the tags, turn the filter off, re-run, compare.")
+
+// ⚠ DECLARED HERE, AT THE END OF GRP_EXEC, AND IT IS A DROPDOWN RATHER THAN A CHECKBOX
+// FOR ONE REASON: TradingView keys a chart's saved input values off DECLARATION ORDER
+// WITHIN EACH TYPE. The last `input.bool` in this file sits ~800 lines below, so adding a
+// bool here would shift it and silently reset it on every chart this script is on. There is
+// no `input.string` after this point, so a string added here shifts NOTHING — the paste is
+// safe on a tuned chart and needs no "Reset settings to defaults".
+string bosVwapReq = input.string("Trend's side", "Session VWAP filter", options = ["Off", "Trend's side"], group = GRP_EXEC, tooltip = "Refuse a setup while price is not closing on the trend's own side of the session VWAP — above it for a long, below for a short. A STATE, not a cross: it never asks whether price crossed the line, only which side of it the bar closed. MEASURED 2026-08-06 on 186,384 real M15 bars: it roughly doubles this trigger's edge over a matched random control (+4.4% -> +6.8%) and cuts the median stop distance 38% (1.80 -> 1.11 ATR), which is the half that matters more, because a tighter stop is more size per unit of risk. ⚠ That measurement was taken on a SKELETON of this setup — a with-trend BOS retraced to 0.5, stop at 0.886 — not on this file's FVG entry, so treat it as a strong prior and not as this strategy's own number. Set 'Off' to reproduce anything measured before the filter existed.")
 
 var GRP_STATS = "Result Stats"
 float execBeBandR = input.float(0.15, "Breakeven band (R)", group = GRP_STATS, minval = 0, step = 0.05, tooltip = "A closed trade landing within this many R of flat is counted as a BREAKEVEN rather than a win or a loss — price went out, came back to entry, and the trade paid nothing. Only affects how results are LABELLED, never the trades themselves.")
@@ -3712,6 +3764,42 @@ f_htfReqBlock(string req, string state, bool isLong) =>
 bool htfBiasBlockLong  = f_htfReqBlock(execHtfWeekly, wEstState, true)  or f_htfReqBlock(execHtfDaily, dEstState, true)
 bool htfBiasBlockShort = f_htfReqBlock(execHtfWeekly, wEstState, false) or f_htfReqBlock(execHtfDaily, dEstState, false)
 
+// F10 — SESSION VWAP, the pro-trend side. Added 2026-08-06.
+// (F9 is STALENESS / bosMaxDays in docs/MPC_BOS_SPEC.md §4 — this is F10, not F9.)
+// ⚠ IT IS THE SESSION VWAP AND DELIBERATELY THE ONE ON THE CHART. `ta.vwap(hlc3)` is the
+// single line mpc_assistant.pine draws and the one engines/vwap/ is the canonical Python
+// port of — session-anchored, re-anchored at the trading-day open, volume-weighted.
+// Anchoring a private VWAP at the break instead would be a SECOND VWAP implementation,
+// which CLAUDE.md forbids outright, and it would not be the line anyone is looking at.
+// ⚠ It needs the bar's VOLUME. On XAUUSD that is tick volume, which is what Pine reads, so
+// it is free here — but a symbol with no volume data makes ta.vwap RAISE rather than return
+// na, and the whole script dies with it. This is the one line that ties the file to a
+// volume-bearing feed.
+// ⚠ VWAP was removed from this file 2026-07-25 for compile tokens, and what came back is
+// only the VALUE plus one line of plot — NOT the settings block, the colours or the styles
+// that were cut with it. If CE10117 returns, the drawing is what goes again, never the gate.
+float bosVwap = ta.vwap(hlc3)
+
+// ⚠ A `na` VWAP (no volume yet on the session's first bar) returns FALSE, never true.
+// "cannot ask" and "no" must not be the same value, and of the two available answers the
+// safe one for a gate about to place money is the refusal. It costs at most one bar a day.
+// ⚠ THE TEST IS THE BAR'S CLOSE, WHICH IS WHY IT IS FREE OF LOOK-AHEAD. `longArmed` is
+// recomputed at every bar's close and rests or cancels the limit for the NEXT bar, so the
+// side being read is always a closed bar's, never the side of the bar the fill happens on.
+// Reading the fill bar's own close would select bars that recovered by their close — that
+// error inflated the measured edge from +6.8% to +15.9% before it was caught.
+f_bosVwapOk(bool isLong) =>
+    na(bosVwap) ? false : (isLong ? close > bosVwap : close < bosVwap)
+
+bool vwapBlockLong  = bosVwapReq != "Off" and not f_bosVwapOk(true)
+bool vwapBlockShort = bosVwapReq != "Off" and not f_bosVwapOk(false)
+
+// ⚠ The line BREAKS at each trading-day anchor on its own — ta.vwap returns na across the
+// reset — which is correct, and is why this is a plot() rather than a polyline. Drawn only
+// while the filter is live: a rule you cannot see is a rule you cannot check, and an
+// always-on line would clutter the chart of somebody running the filter Off.
+plot(bosVwapReq != "Off" ? bosVwap : na, title = "Session VWAP", color = color.new(#00E5FF, 25), linewidth = 1)
+
 //============================================================
 //  ORDERS
 //============================================================
@@ -3755,8 +3843,14 @@ f_bosSl(bool isLong, float entryPx, float p6, float p10, float brokenLvl) =>
 int longTier  = na(longEdge)  ? 1 : longEdge  <= lP3 ? 2 : longEdge  > lP2 ? 0 : 1
 int shortTier = na(shortEdge) ? 1 : shortEdge >= sP3 ? 2 : shortEdge < sP2 ? 0 : 1
 
-bool longArmed  = execLongs  and bosL_on and lFibsReady and not na(longEdge)  and not lateDayBlock and not htfBiasBlockLong  and (not bosVetoL or not bosRespectVeto) and bosTrdL < bosMaxPerRegime and strategy.position_size == 0 and (na(tradedBosL) or bosL_bar != tradedBosL)
-bool shortArmed = execShorts and bosS_on and sFibsReady and not na(shortEdge) and not lateDayBlock and not htfBiasBlockShort and (not bosVetoS or not bosRespectVeto) and bosTrdS < bosMaxPerRegime and strategy.position_size == 0 and (na(tradedBosS) or bosS_bar != tradedBosS)
+// ⚠ `vwapBlock*` is re-read on every bar the limit rests, exactly like the divergence kill
+// above it — so price closing back through VWAP PULLS a resting order, and closing back on
+// the trend's side lets it be placed again while the leg is otherwise alive. That is the
+// deliberate reading of a STATE: the filter describes where price is now, not something it
+// did once. A one-shot check at arming time would let a setup fill hours later on the wrong
+// side of the very line that qualified it.
+bool longArmed  = execLongs  and bosL_on and lFibsReady and not na(longEdge)  and not lateDayBlock and not htfBiasBlockLong  and not vwapBlockLong  and (not bosVetoL or not bosRespectVeto) and bosTrdL < bosMaxPerRegime and strategy.position_size == 0 and (na(tradedBosL) or bosL_bar != tradedBosL)
+bool shortArmed = execShorts and bosS_on and sFibsReady and not na(shortEdge) and not lateDayBlock and not htfBiasBlockShort and not vwapBlockShort and (not bosVetoS or not bosRespectVeto) and bosTrdS < bosMaxPerRegime and strategy.position_size == 0 and (na(tradedBosS) or bosS_bar != tradedBosS)
 
 // One label per trade, and the BOS ORDINAL is on it — that is what makes the F1
 // cutoff readable straight off the run instead of guessed at.
@@ -3842,8 +3936,12 @@ color BLK_PINKL = color.new(#FF2E9A, 0)
 
 // Reason PRECEDENCE — the first rule that would refuse the order is the one
 // reported, so a tag can never blame a downstream gate for an upstream refusal.
-f_blkCode(bool dirOff, bool late, bool veto, bool htfBias, bool capped, bool tight) =>
-    dirOff ? 1 : late ? 2 : veto ? 3 : htfBias ? 4 : capped ? 5 : tight ? 6 : 0
+// ⚠ Code 7 is APPENDED rather than slotted in at its precedence position, so codes 1-6 keep
+// the meaning every earlier run and every screenshot already gave them. Only its place in
+// the ternary moved — VWAP is a market-context refusal, so it is reported alongside the HTF
+// bias gate and ahead of the counting gates below it.
+f_blkCode(bool dirOff, bool late, bool veto, bool htfBias, bool vwap, bool capped, bool tight) =>
+    dirOff ? 1 : late ? 2 : veto ? 3 : htfBias ? 4 : vwap ? 7 : capped ? 5 : tight ? 6 : 0
 
 f_blkWhy(int c) =>
     switch c
@@ -3853,6 +3951,7 @@ f_blkWhy(int c) =>
         4 => "HTF bias requirement — your Weekly / Daily bias gate is not satisfied."
         5 => "Max trades per regime reached — standing down until the next SOS."
         6 => "Minimum stop distance — the stop sits closer to the entry than your floor, so this position would be oversized and noise-sensitive."
+        7 => "Session VWAP — price is not closing on the trend's own side of the line. Re-checked every bar, so this setup can still arm if price closes back across before the leg dies."
         => ""
 
 // Trailing `int _blkDone = 0` stops the drawing chain becoming the function's
@@ -3879,8 +3978,8 @@ float lBlkDist = na(longEdge)  ? na : longEdge - f_bosSl(true,  longEdge,  lP6, 
 float sBlkDist = na(shortEdge) ? na : f_bosSl(false, shortEdge, sP6, sP10, bosS_low) - shortEdge
 bool  lBlkTight = not na(lBlkDist) and lBlkDist > 0 and lBlkDist < f_minStopFloor(longEdge)
 bool  sBlkTight = not na(sBlkDist) and sBlkDist > 0 and sBlkDist < f_minStopFloor(shortEdge)
-int   lBlkCode = f_blkCode(not execLongs,  lateDayBlock, bosVetoL and bosRespectVeto, htfBiasBlockLong,  bosTrdL >= bosMaxPerRegime, lBlkTight)
-int   sBlkCode = f_blkCode(not execShorts, lateDayBlock, bosVetoS and bosRespectVeto, htfBiasBlockShort, bosTrdS >= bosMaxPerRegime, sBlkTight)
+int   lBlkCode = f_blkCode(not execLongs,  lateDayBlock, bosVetoL and bosRespectVeto, htfBiasBlockLong,  vwapBlockLong,  bosTrdL >= bosMaxPerRegime, lBlkTight)
+int   sBlkCode = f_blkCode(not execShorts, lateDayBlock, bosVetoS and bosRespectVeto, htfBiasBlockShort, vwapBlockShort, bosTrdS >= bosMaxPerRegime, sBlkTight)
 
 f_blkTag(blkKeys, 0, true,  lBlkReady, lBlkCode, bosL_bar, longEdge,  _tagLo)
 f_blkTag(blkKeys, 1, false, sBlkReady, sBlkCode, bosS_bar, shortEdge, _tagHi)

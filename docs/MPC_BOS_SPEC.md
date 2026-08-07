@@ -1,8 +1,24 @@
 # MPC BOS — Break-of-Structure Continuation Strategy (v1 spec)
 
-**Status:** **§10 step 1 BUILT 2026-07-29** — `indicators/mpc_bos_strategy.pine` exists and implements
-this spec. NOT yet compiled on TradingView and NOT yet backtested, so no number in this repo describes
-it. Steps 2-4 (baseline + sweeps, the export Pine + `compare_bos.py`, the Python port) are open.
+**Status:** **§10 step 1 BUILT 2026-07-29 · COMPILES AND RUNS ON TRADINGVIEW SINCE 2026-08-07.**
+🔴 **THE SHIPPED DEFAULTS NO LONGER MATCH §4/§5 OF THIS SPEC, DELIBERATELY.** Measurement on
+2026-08-07 moved four of them — most importantly **`bosUseFvg` is now OFF**, so the FVG-priced entry
+that §5 describes as the core of the setup is not what the file trades. The entry is a plain fib
+0.786 limit with a leg-origin stop and the VWAP filter on. Two independent measurements found the
+gap entry to be the losing half of the book. **Read `docs/MPC_BOS_OPTIMIZATION.md` → Run 5 before
+this spec's §4/§5**, and treat those sections as the ORIGINAL DESIGN rather than the current
+behaviour. Steps 2-4 (the export Pine + `compare_bos.py`, the Python port) are still open — and the
+last Python port was deleted 2026-08-04 for being unvalidated, so nothing here has a parity gate.
+⚠ **Aaron confirmed the new defaults beat the old ones in the Strategy Tester, DIRECTIONALLY ONLY —
+the numbers were not recorded, so no figure in this repo describes a real run at these settings.**
+**2026-08-06 — F10, the session VWAP filter, added and defaulted ON (§4b).** It is the first thing in
+this file with a measurement behind it: 186,384 real M15 bars say the pro-trend-side test roughly
+doubles this trigger's edge over a matched random control (+4.4% → +6.8%) and cuts the median stop
+38%. ⚠ **That measurement is on a SKELETON of the setup — a with-trend BOS retraced to 0.5, stop at
+0.886 — not on this file's FVG-priced entry**, so it is a prior for the filter and not this strategy's
+own result. ⚠ **The file is still NOT COMPILED**, and VWAP was removed from it in July under
+`CE10117`, so the paste is where that risk lands. Set `bosVwapReq = "Off"` to reproduce anything
+described before this date.
 **Target file:** `indicators/mpc_bos_strategy.pine` (a strategy fork, same pattern as
 `mpc_b_leg_strategy.pine`).
 **Engine source:** `indicators/mpc_assistant.pine` — the engine block is copied byte-identical
@@ -124,8 +140,8 @@ one is an input so it can be swept, and the defaults below are the starting mode
 
 | # | Filter | Input | Default | Why |
 |---|---|---|---|---|
-| **F1** | **Which break after the SOS.** 1st (expansion) only / 1st + 2nd / all. | `bosWhich` | `All` | The hunch is that the 3rd+ break of a run is where exhaustion and the terminal fakeout live. It is only a hunch, so v1 trades all of them and the results set the cutoff. Every trade logs its BOS ordinal so the split is readable straight off the run. |
-| **F2** | **Displacement.** The breaking bar must close beyond the broken swing by ≥ N × ATR(14). | `bosMinDispAtr` | `0.0` (off) | A one-tick poke through a swing high is a liquidity grab, not a break. Off by default so v1 measures the unfiltered baseline first. |
+| **F1** | **Which break after the SOS.** 1st (expansion) only / 1st + 2nd / all. | `bosWhich` | `All` (re-confirmed by measurement 2026-08-07) | The hunch is that the 3rd+ break of a run is where exhaustion and the terminal fakeout live. It is only a hunch, so v1 trades all of them and the results set the cutoff. Every trade logs its BOS ordinal so the split is readable straight off the run. |
+| **F2** | **Displacement.** The breaking bar must close beyond the broken swing by ≥ N × ATR(14). | `bosMinDispAtr` | **`0.0` (off) — measured 2026-08-07: the filter costs more than it saves** | A one-tick poke through a swing high is a liquidity grab, not a break. Off by default so v1 measures the unfiltered baseline first. |
 | **F3** | **Leg size.** The break leg range (`bos_high − bos_low`) must be ≥ N × ATR(14). | `bosMinLegAtr` | `1.0` | A micro leg's 0.5–0.886 band is inside the noise. Its stop is too tight to survive and its targets are inside the spread. |
 | **F4** | **The broken level must hold.** A close back through `bos_high` kills the setup. | `bosReqHold` | `true` | The whole premise of a continuation is that broken resistance becomes support. If it does not hold, the break was the fakeout. This is the single most important filter. |
 | **F5** | **Opposing divergence veto** — see §4a. | `bosRespectVeto` | `true` | **Aaron's explicit requirement.** |
@@ -133,6 +149,77 @@ one is an input so it can be swept, and the defaults below are the starting mode
 | **F7** | **Final hour block.** No new entries 16:00–17:00 NY. | `execNoLateDay` | `true` | Gold closes 17:00 NY. Reused verbatim from the A+/B-LEG files. |
 | **F8** | **HTF bias.** Weekly / Daily requirement, four-way dropdown each (Ignore / Must agree / Must not oppose / Must oppose). | `execHtfWeekly`, `execHtfDaily` | `Ignore` | Reused verbatim. For a continuation, "Must agree" is the natural tuning candidate — the opposite of how the A+ reversal uses it. |
 | **F9** | **Staleness.** The armed leg expires after N days (converted to bars). | `bosMaxDays` | `1.25` | Same construction and default as the B-LEG. |
+| **F10** | **Session VWAP, pro-trend side.** Refuse while price is not closing above VWAP (long) / below it (short). | `bosVwapReq` | **`Trend's side` (ON)** | **The only filter here that was measured before it was switched on — see §4b.** |
+
+### 4b. F10 — the session VWAP filter (added 2026-08-06, and the only MEASURED default)
+
+🔴 **This is the one filter in §4 that defaults ON, and the reason is evidence rather than
+preference.** Every other filter in that table is an untested idea shipped Off as an open
+question. F10 was measured first.
+
+**What it is.** At each bar, price must be closing on the trend's own side of the session
+VWAP — above for a long, below for a short. `ta.vwap(hlc3)`, the same line
+`mpc_assistant.pine` draws and `engines/vwap/` is the canonical Python port of.
+
+⚠ **A STATE, not a cross.** It never asks whether price *crossed* the line, only which side
+the bar closed on. This is Aaron's standing call on VWAP tests, and it is why a leg that
+never lost VWAP qualifies on the same terms as one that reclaimed it.
+
+⚠ **It is re-read on every bar the limit rests**, exactly like the divergence kill — so price
+closing back through VWAP *pulls* a resting order, and closing back across lets it be placed
+again while the leg is alive. A one-shot check at arming time would let a setup fill hours
+later on the wrong side of the very line that qualified it.
+
+**The measurement.** 186,384 real M15 XAUUSD bars, 2018-09-13 → 2026-08-07, scored as
+"+2R before −1R" against a **random control matched on direction and stop distance** — the
+control is load-bearing, because gold went 1,200 → 4,300 in this window and an unmatched
+long-side "edge" is free. Control lands on 33.3% with expectancy 0.000, i.e. the harness is
+unbiased.
+
+| set | n | win rate | vs control | median stop |
+|---|---|---|---|---|
+| with-trend BOS → 0.5 retrace, no filter | 778 | 37.5% | +4.4% (+2.5σ) | 1.34 ATR |
+| …**pro-trend side of VWAP** | 404 | 39.9% | **+6.8% (+2.8σ)** | **1.11 ATR** |
+| …wrong side of VWAP | 374 | 34.9% | +2.0% (+0.8σ) | 1.80 ATR |
+
+✅ **The stop distance is the half that matters more.** A 38% tighter stop is more size per
+unit of risk, and it is a *mechanical* gain rather than a statistical one.
+
+✅ **Robustness, both checks run.** The edge holds at every R target — +5.0% at 1R, +6.5% at
+1.5R, +6.8% at 2R, +6.5% at 3R, +4.7% at 4R — so it is not an artefact of the 2R choice, and
+expectancy *grows* with distance (+0.094R → +0.257R at 3R), which is what a runner ladder is
+built for. By year, 7 of 9 positive; 2021 is the bad one (−5.6%), 2022 and 2025 strongest.
+No single year carries it.
+
+⚠ **THE MEASUREMENT IS ON A SKELETON, NOT ON THIS FILE.** It replayed the canonical structure
+and VWAP engines with a plain with-trend BOS → 0.5 retrace → 0.886 stop. It did **not** include
+this file's FVG-priced entry, the Sniper Zone, F1–F9, or the real exit ladder. Treat +6.8% as a
+strong prior for the filter, **never as this strategy's own number.** The obvious next
+measurement is whether the FVG requirement adds to that edge or merely cuts the sample.
+
+🔴 **A look-ahead bug inflated this before it was caught, and it is worth recording because the
+wrong number was the believable one.** The first run read VWAP side off the close of the bar
+the limit *fills* on — selecting bars that recovered by their close — and reported **+15.9% at
++5.0σ**. Reading the *previous* closed bar instead halved it to +6.8%. In the Pine this is
+structurally safe (`longArmed` is computed at a bar's close and gates the *next* bar's fill),
+but the general lesson stands: **a filter evaluated on the same bar it acts on is look-ahead
+until proven otherwise, and it fails by being too good rather than by erroring.**
+
+⚠ **Deliberately NOT added: a slope test.** `mpc_d_strategy.pine` carries
+`execVwapSlope`/`execVwapSlopeBars`, and only the SIDE test was measured here. Adding an
+unmeasured lever alongside a measured one is how the measured one stops being trustworthy.
+
+⚠ **Token cost.** VWAP was removed from this file 2026-07-25 under `CE10117` (101,484 >
+100,256 compiled tokens). What came back is one `ta.vwap`, one helper, two booleans and one
+`plot()` — not the settings block, colours and styles that were cut. **If CE10117 returns,
+delete the `plot()` first and the gate last.**
+
+⚠ **Panel placement.** `bosVwapReq` is a two-option **dropdown**, not a checkbox, and it sits
+at the end of the Strategy Execution group. TradingView keys saved input values off
+declaration order *within each type*; the last `input.bool` in this file is ~800 lines below
+the use site, so a new bool would have shifted it and silently reset it on every chart. There
+is no `input.string` after this point, so a string shifts nothing. **The paste is safe on a
+tuned chart and needs no "Reset settings to defaults".**
 
 ### 4a. The divergence KILL (required, default ON)
 

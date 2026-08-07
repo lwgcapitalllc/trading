@@ -138,6 +138,34 @@ the four examples the counter leg printed a genuine LL or HH that stayed. This i
 wick-through-and-reclaim event the word "sweep" normally describes, and it is much rarer.
 Building the wick version would be a different strategy.
 
+### 🔴 THE COUNTER-SOS *IS* THE SWEEP — settled 2026-08-06, and it deleted a feature
+
+Aaron's own description of this strategy is *"a liquidity sweep and a fake break of
+structure"*, and reading that as two separate things is the mistake. It was very nearly
+built as one: a liquidity-pool port (previous day / week high-low, H4, session high-low,
+EQH/EQL) gating the shakeout on having *taken* something, roughly 500 lines lifted out of
+`mpc_strategy.pine`.
+
+**None of it is needed, because the counter-SOS already is that event.** It closes through
+the trend's last protected swing — the HL in an uptrend, the LH in a downtrend — and a
+protected swing is *precisely* where the stops rest. So the break and the sweep are one
+bar, not two conditions: price takes the liquidity, prints the LL, and then fails. "Fake
+break of structure" is the same sentence read from the other end.
+
+Two consequences worth carrying:
+
+- **`dSosLvl` is the swept level.** It is captured at the counter-SOS from the engine's own
+  `st.bull_bos_high` / `st.bear_bos_low`, so the `Counter-SOS line` stop anchor is literally
+  "the stop goes back above the liquidity that was taken". It is not re-derived from prices.
+- **A pool test would have been a SECOND claim about one event**, and the pools disagree
+  with structure constantly — a shakeout can break the trend's HL without reaching the
+  previous day's low, and that setup is still the setup. Gating on the pool would have
+  refused it while looking like a quality filter.
+
+⚠ **It also means D needs no liquidity engine at all**, which is why this file embeds only
+`structure_engine.pine`. Do not add one. If a future variant wants HTF pool confluence,
+that is a new gate with its own measurement, not a correction to this one.
+
 ---
 
 ## Inputs
@@ -315,10 +343,127 @@ a refused setup — reporting it would write one refusal per bar for the whole w
   `dCurBos` can be incremented by a plain BOS on a non-SOS bar. The columns now copy the
   parent's `dCand*` record. **Plot count 48 → 51.**
 
+### The worked VWAP example — Aaron's chart, 2026-08-06
+
+He marked one, and it is the reference this mode should be checked against before anything
+is tuned. XAUUSD, 19→23 Aug: bullish structure (HL → HH → BOS → HH), then a **bearish SOS
+printing the LL at ~3,996** — the shakeout. Price bases along VWAP for a dozen-plus bars and
+then **closes back above it at ~4,012**. Stop behind the LL. The move ran to **4,166**.
+
+| | |
+|---|---|
+| stop anchor (the LL = sweep extreme) | 3,996 |
+| VWAP-reclaim entry | ~4,012 |
+| 1R | **$16** |
+| the full run | **9.62R** |
+
+**The settings that express it are already shipped:** `execEntryMode = "VWAP side"` with
+`execSlMode = "Sweep extreme"` (the default). Nothing had to be built — the mode written on
+2026-08-06 is this trade.
+
+### 🔴 And the exit ladder would have taken 2.10R of it
+
+At the shipped rungs — TP1 1R / TP2 2R / TP3 3R at 30% / 30% / 40% — the targets are 4,028,
+4,044 and 4,060. **All three fill on 21 Aug**, and the 4,060 → 4,166 leg never happens.
+Blended result **2.10R against 9.62R available: 7.53R left on the table**, on the one trade
+picked out as the thing the strategy exists to catch.
+
+That is not a surprise, it is the ladder's arithmetic ceiling — `0.3×1 + 0.3×2 + 0.4×3` —
+and *The first measurement* already found it BINDING over 8.3 years: max R **+2.11**, with
+16 trades sitting exactly on it. What the chart adds is the size of the miss.
+
+⚠ **So "catch the entire run" is an EXIT change, not an entry one**, and it is the same
+answer A+ reached: that bot ships both rungs at **0/0** and rides the whole position to the
+runner trail, precisely because its money lives in the tail. D currently pairs a
+continuation premise with a scale-out exit. ⚠ **Do not read 9.62R as the achievable number**
+— a structure trail exits on the turn, not at the high, so somewhere around 5–7R is the
+honest expectation on this trade. Still ~3× the ladder.
+
+### The shipped defaults now ARE this configuration
+
+Set 2026-08-06 at Aaron's request, so a fresh paste is the run rather than something to re-key:
+
+| input | was | now |
+|---|---|---|
+| `execEntryMode` | SOS close | **VWAP side** |
+| `execTp3R` | 3.0 | **0** (no limit — the trail resolves the runner) |
+| `execTp1Pct` | 30 | **0** |
+| `execTp2Pct` | 30 | **0** |
+
+`execSlMode` was already **Sweep extreme** — the stop Aaron drew. The trail
+(`Structure + % ratchet`), `execRiskPct` 1.0, `execMinStopMode` `% of price` 0.08 and the
+36h `Before TP1 only` time stop are untouched, so the exit change is attributable on its own.
+
+⚠ **THE BASELINE MOVED.** Pin `execEntryMode = "SOS close"` with 30/30/40 and `execTp3R = 3.0`
+to reproduce the 218-trade / +14.03R run. That pinned config is the A/B against this one.
+⚠ **Values and tooltip strings only** — no input added, removed or reordered (verified: all 45
+`input.*` declarations diff byte-identical to HEAD on type, order and title), so no
+*Reset settings to defaults* is needed and **an existing chart keeps whatever it already has**.
+⚠ `execTp1R`/`execTp2R` stay above 0: at 0% size the TP *prices* are still what stage the stop
+to breakeven and hand the runner to the trail.
+
+### 🔴 The reclaim — the rule the VWAP mode was missing, found on a real chart 2026-08-06
+
+Aaron ran the shipped defaults and read the trades: *"they were not accurate… I specifically sent
+you an image of the type of setups I would like to have, that pro trend."*
+
+**The mode had no reclaim in it.** `f_dVwapOk()` tests only whether the close is CURRENTLY on the
+trend's side of the line. Nothing tracked whether price had ever been on the wrong side, so:
+
+| | what the picture requires | what the code did |
+|---|---|---|
+| after the counter-SOS | price falls, **bases on VWAP** | — |
+| the trigger | the **close back across** the line | close already on the right side |
+| when it fires | the reclaim bar | **the bar after the SOS**, usually |
+
+On 15m a bearish shakeout SOS very often confirms while price is still above VWAP, so the state
+was already true and the trade opened at the top of the shakeout with no pullback to enter on.
+⚠ **And the block gets a fresh look every bar for `dCtrBarsMax` — 133 bars, ~33 hours — so a
+trade could also open a day and a half later on an unrelated bar.** That is the rest of "I don't
+know why some of those trades would take on".
+
+✅ **`execVwapReclaim` (new, default ON) + a `dVwapLost` latch.** Price must close on the wrong
+side of VWAP after the counter-SOS before a close back across it counts as an entry. Off restores
+the old behaviour, which is kept only so the difference can be measured — it is not a mode anyone
+should trade.
+
+⚠ **A latch, not `ta.crossover`.** A crossover is true on exactly one bar, so any other gate
+refusing that bar would lose the setup for good; the latch lets the entry fire on the first bar
+every gate agrees. The SIDE test is still a state — what was added is a memory.
+
+⚠ **The input is declared after the LAST `input.bool` in the file and must stay there** —
+TradingView keys saved values off declaration order within each type. Verified: 45 HEAD inputs
+identical in type, order and title, exactly one appended, so **no *Reset settings to defaults*.**
+
 ### Status
 
 **Not compiled, not run, not measured.** Everything above is construction, and the only number
 this strategy has is the `SOS close` baseline in *The first measurement*.
+
+⚠ **Two settings to check before blaming the entry rule again, and neither is a defect.**
+`dCtrBarsMax = 133` is **pinned for 15m** — it is ~33h there and ~5.5 DAYS on 1H, so running this
+file on another timeframe measures a different strategy. And `dTrendBosMin = 1` accepts a "trend"
+that printed a single continuation, which is much looser than the multi-leg run in the reference
+image; **2 is the honest value for that picture**, and it is a tuning decision rather than a fix.
+
+🔴 **One defect was found by READING it, 2026-08-06, and it is latent at the default and live
+the moment you tune.** `dVwapSlope` is `dVwap - dVwap[execVwapSlopeBars]` — a history offset
+taken from an **input**, not a literal. Pine sizes a series' history buffer from the offsets it
+observes on the first bars, so at the shipped 4 it sizes for 4, and raising the slope input
+toward its own `maxval` of 200 throws *"the requested historical offset is beyond the historical
+buffer's limit"* **at runtime** — on the exact knob the default exists to be tuned away from.
+Fixed with `max_bars_back = 300` on the `strategy()` call in both files, which covers the whole
+declared range. ⚠ It is not cosmetic and must not be dropped as noise on a future regen.
+
+⚠ **A second hazard is NOT fixed and has to be watched in the trade list.** The VWAP entry
+fires on the first qualifying bar after the counter-SOS, and nothing requires the shakeout to
+have *developed* first — so if price is already on the pro-trend side of the session VWAP one
+bar after the break, the entry fires there with `ctrExt` only a bar or two old. That is the
+smallest stop this strategy can produce, and `qty = risk / dist` makes it the largest position.
+Aaron's example based for a dozen-plus bars first, so it did not bite there. The only guard is
+`execMinStopMode` at 0.08% — **$3.20 on $4,000 gold, and measured on A+, never here.** Read the
+trade list for any position whose 1R is under about $5; if they appear, the fix is a minimum
+shakeout length, not a bigger stop floor.
 
 ## Where the stop goes
 
