@@ -24,7 +24,7 @@ chart). A frame with no volume column therefore cannot answer the gate; see `_vw
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +56,22 @@ def fib_price(ext: Optional[float], org: Optional[float], ratio: float) -> Optio
 
 @dataclass(frozen=True)
 class BosLeg:
-    """One armed break, frozen at its BOS bar. `None` everywhere when nothing is armed."""
+    """One armed break, frozen at its BOS bar.
+
+    🔴 A DEAD LEG KEEPS ITS NUMBERS. Only `on` flips. That mirrors the Pine exactly, and it
+    is not cosmetic: `bosL_high` / `bosL_low` / `bosL_bar` / `bosL_n` / `bosL_half` are all
+    `var` there and are reassigned ONLY when a new break arms, so after a death the export's
+    `px_l_ext` / `px_l_org` / `px_ord_l` and `lFibsReady` still carry the last leg's values.
+    This class cleared them until 2026-08-07, and the first real parity run went RED on the
+    first compared bar with `py=None pine=4584.26` — a divergence in every bar after the
+    first dead leg.
+
+    It is behaviour-neutral on BOTH sides, which is the only reason the stale values are
+    safe: every consumer of the ladder ANDs with `on` first (`_death`, `_entry_edges`,
+    `long_armed`, `_record_bos_blocks`), exactly as the Pine's do. Do NOT "tidy" this into
+    clearing the fields — that reintroduces the divergence and nothing in the strategy's own
+    behaviour will tell you.
+    """
 
     on: bool = False
     high: Optional[float] = None      # the break leg's high (bull) / the leg's high (bear)
@@ -65,6 +80,10 @@ class BosLeg:
     ordinal: int = 0                  # this break's number since the SOS (1 = the expansion)
     half: bool = False                # the per-anchor 0.5 latch (see the cycle-complete death)
     why: str = ""                     # why the LAST arm died — reporting only
+
+    def disarmed(self, why: str) -> "BosLeg":
+        """This leg with the FLAG off and every number kept — the Pine's `bosL_on := false`."""
+        return replace(self, on=False, why=why)
 
 
 @dataclass(frozen=True)
@@ -206,16 +225,12 @@ class BosTracker:
                 possible artifact costs one setup; keeping it costs a wrong-way trade.
         """
         if sig.bear_sos:
-            if self._leg_l.on:
-                self._leg_l = BosLeg(why="opposite SOS — the bullish regime is over")
-            else:
-                self._leg_l = BosLeg(why=self._leg_l.why)
+            self._leg_l = self._leg_l.disarmed(
+                "opposite SOS — the bullish regime is over" if self._leg_l.on else self._leg_l.why)
             self._reg_l = False
         if sig.bull_sos:
-            if self._leg_s.on:
-                self._leg_s = BosLeg(why="opposite SOS — the bearish regime is over")
-            else:
-                self._leg_s = BosLeg(why=self._leg_s.why)
+            self._leg_s = self._leg_s.disarmed(
+                "opposite SOS — the bearish regime is over" if self._leg_s.on else self._leg_s.why)
             self._reg_s = False
         if sig.bull_sos and not sig.session_gap_bar:
             self._reg_l, self._cnt_l, self._trd_l = True, 0, 0
@@ -244,11 +259,16 @@ class BosTracker:
                   and sig.bear_bos_high is not None and sig.bear_bos_low is not None
                   and sig.bear_bos_high > sig.bear_bos_low)
 
+        # ⚠ A REFUSED BREAK DISARMS AND KEEPS THE OLD LEG'S NUMBERS. Pine sets `bosL_on := false`
+        # and only assigns `bosL_high` / `bosL_low` / `bosL_bar` / `bosL_n` / `bosL_half` INSIDE
+        # the `if _okWhich and _okDisp and _okLeg` block — so a break the filters turn down leaves
+        # the previous leg's values standing. Building a blank `BosLeg` here wiped them and put
+        # the parity gate red on every bar after the first refusal. See BosLeg's docstring.
         if fire_l:
             self._cnt_l += 1
             why = ("re-anchored — a newer BOS on this side took the setup"
                    if self._leg_l.on else self._leg_l.why)
-            self._leg_l = BosLeg(why=why)
+            self._leg_l = self._leg_l.disarmed(why)
             if self._arm_ok(self._cnt_l, sig.close - sig.bull_bos_high,
                             sig.bull_bos_high - sig.bull_bos_low, atr):
                 self._leg_l = BosLeg(on=True, high=sig.bull_bos_high, low=sig.bull_bos_low,
@@ -258,7 +278,7 @@ class BosTracker:
             self._cnt_s += 1
             why = ("re-anchored — a newer BOS on this side took the setup"
                    if self._leg_s.on else self._leg_s.why)
-            self._leg_s = BosLeg(why=why)
+            self._leg_s = self._leg_s.disarmed(why)
             if self._arm_ok(self._cnt_s, sig.bear_bos_low - sig.close,
                             sig.bear_bos_high - sig.bear_bos_low, atr):
                 self._leg_s = BosLeg(on=True, high=sig.bear_bos_high, low=sig.bear_bos_low,
@@ -355,9 +375,10 @@ class BosTracker:
                 why = "F4 — closed back through the broken swing"
             elif leg.bar is not None and sig.index - leg.bar > max_bars:
                 why = "stale — the day cap expired before the retrace arrived"
-            self._leg_l = BosLeg(why=why) if why else BosLeg(
-                on=True, high=leg.high, low=leg.low, bar=leg.bar,
-                ordinal=leg.ordinal, half=half, why=leg.why)
+            # The half-latch is written EITHER WAY — Pine assigns `bosL_half := true` before the
+            # death chain runs, so a leg that dies on the same bar it tapped the band still
+            # carries the latch afterwards.
+            self._leg_l = replace(leg, on=not why, half=half, why=why or leg.why)
 
         leg = self._leg_s
         if leg.on:
@@ -371,9 +392,7 @@ class BosTracker:
                 why = "F4 — closed back through the broken swing"
             elif leg.bar is not None and sig.index - leg.bar > max_bars:
                 why = "stale — the day cap expired before the retrace arrived"
-            self._leg_s = BosLeg(why=why) if why else BosLeg(
-                on=True, high=leg.high, low=leg.low, bar=leg.bar,
-                ordinal=leg.ordinal, half=half, why=leg.why)
+            self._leg_s = replace(leg, on=not why, half=half, why=why or leg.why)
 
     # ── F10 — the session VWAP gate ─────────────────────────────────────────────
     def _vwap_gate(self, sig, bar):

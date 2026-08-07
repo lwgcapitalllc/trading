@@ -7,8 +7,9 @@ that §5 describes as the core of the setup is not what the file trades. The ent
 0.786 limit with a leg-origin stop and the VWAP filter on. Two independent measurements found the
 gap entry to be the losing half of the book. **Read `docs/MPC_BOS_OPTIMIZATION.md` → Run 5 before
 this spec's §4/§5**, and treat those sections as the ORIGINAL DESIGN rather than the current
-behaviour. Steps 2-4 (the export Pine + `compare_bos.py`, the Python port) are still open — and the
-last Python port was deleted 2026-08-04 for being unvalidated, so nothing here has a parity gate.
+behaviour. Steps 2-4 are CLOSED: the export Pine, `compare_bos.py` and the Python port all landed
+2026-08-07 and **the gate exits 0** (6,300 bars, warmups 900+). ⚠ It is green at the SHIPPED
+defaults only, which have the gap entry OFF — so §4/§5's FVG ladder is still unverified.
 ⚠ **Aaron confirmed the new defaults beat the old ones in the Strategy Tester, DIRECTIONALLY ONLY —
 the numbers were not recorded, so no figure in this repo describes a real run at these settings.**
 **2026-08-06 — F10, the session VWAP filter, added and defaulted ON (§4b).** It is the first thing in
@@ -400,7 +401,7 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
 3. ~~`indicators/mpc_bos_strategy_export.pine` + a `compare_bos.py` harness~~ — **BOTH DONE.**
    The export twin landed 2026-08-07 (59 plots: the full decision stream, the two anchor
    endpoints, every input as `cfg_*`); `strategies/python/mpc_bos/tools/compare_bos.py` landed
-   the same day and is unit-tested. ⚠ **It has never been RUN** — see step 4.
+   the same day and is unit-tested. ✅ **RUN 2026-08-07 and GREEN** — see below.
 4. ~~Only then the Python port under `strategies/python/mpc_bos/`~~ — **BUILT 2026-08-07, and
    the order in this list was deliberately broken.** The rule ("port only after a real export
    has passed exit 0") assumes the export is the cheap half; here the CSV is a human step nobody
@@ -410,17 +411,24 @@ Listed so they don't get smuggled in, and so the next iteration has somewhere to
    ⚠ **That is a defensible trade only because the gate was written in the same pass.** A port
    with no harness is what got the last one deleted (`1946f8b`, 2026-08-04).
 
-**The one step left, and only a human can do it:** open
-`indicators/mpc_bos_strategy_export.pine` on XAUUSD 15m in TradingView, *⋮ → Export chart data →
-Bar data and indicator values*, then
+**5. The gate — RUN 2026-08-07, exit 0.** Aaron took the export;
+`compare_bos.py` compared **6,300 bars with no divergence** at warmups 900 / 1000 / 2000 / 3000
+over 7,200 closed M15 bars (2026-04-21 → 2026-08-07).
 
 ```bash
-python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 500
+python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 900
 ```
 
-Exit 0 and every number in `docs/MPC_BOS_OPTIMIZATION.md` becomes trustworthy. ⚠ Read the tool's
-COVERAGE table before believing the exit code — with `bosUseFvg` off (today's default) the four
-gap-entry rules never run, and a green gate is only green about the branches both sides entered.
+🔴 **It went RED first, and the three defects it found are the argument for step 5 existing at
+all** — a dead leg that cleared numbers the Pine keeps, a harness column that had been comparing
+a constant, and the still-forming last bar raising an error that blamed the bar feed. Full
+write-up in `strategies/python/mpc_bos/CLAUDE.md`.
+
+⚠ **Green does not backdate.** The port changed to get green, so nothing in
+`docs/MPC_BOS_OPTIMIZATION.md` is retroactively trustworthy — re-measure what matters.
+⚠ **And the green is narrow:** with `bosUseFvg` off (today's default) the gap-entry rules,
+Method 3 and the Sniper Zone never ran on either side, block codes 1/3/4/5/6 never fired, and 6
+trades closed in the window. A green gate is only green about the branches both sides entered.
 
 ### 10b. Run 1 (2026-07-29) — and the F4 design conflict it exposed
 

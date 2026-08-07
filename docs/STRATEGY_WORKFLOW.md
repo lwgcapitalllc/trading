@@ -101,36 +101,45 @@ commit. A lab row saying something different from the chart is how a rule gets r
 |---|---|---|---|---|---|---|---|
 | **A+ SOS Fade** (`mpc_sos_fade`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **B-LEG** (`mpc_bleg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
-| **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ❌ **none on disk** | ✅ | ⚠ **built, never run** | **Not yet — one CSV away** |
+| **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
 | **D** (`mpc_d`) | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | No — and its one measurement was indistinguishable from zero |
 | **H4 sweep** | study only | ✅ | ❌ | ❌ | ❌ | ❌ | No |
 
-### BOS — one human step away
+### BOS — green as of 2026-08-07, and what that is worth
 
-Stages 1, 2, 3, 5 and 6 all landed on 2026-08-07. `strategies/python/mpc_bos/` is built and
-runs (a real 2-year sweep across four `bos_sl_atr` values takes ~33s), and
-`tools/compare_bos.py` is written and unit-tested.
+All six stages landed on 2026-08-07. Aaron took the CSV and
+`compare_bos.py` exits 0: **6,300 bars compared, no divergence**, at warmups 900 / 1000 / 2000
+/ 3000 over 7,200 closed M15 bars (2026-04-21 → 2026-08-07).
 
-**What is left is stage 4, and only a human can do it:**
+```bash
+python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 900
+```
 
-> In TradingView, put `indicators/mpc_bos_strategy_export.pine` on XAUUSD 15m, then
-> *⋮ → Export chart data → Bar data and indicator values*. Save the CSV. Then:
->
-> ```bash
-> python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 500
-> ```
+🔴 **Stage 4 is worth the five minutes precisely because the run went RED first.** Three
+defects came out of it that 54 green unit tests could not see — a dead leg that cleared its
+own numbers where the Pine keeps them, a harness column that had been comparing a **constant**
+for its whole life, and the still-forming last bar killing the run with an error that blamed
+the bar feed. Full write-up: `strategies/python/mpc_bos/CLAUDE.md` → *The three defects the
+first real gate run found*.
 
-That command is the whole gate. Exit 0 and every BOS number becomes trustworthy; a mismatch
-names the first bar and field that diverged.
+⚠ **THE GREEN IS NARROW, and the tool says so.** `bos_use_fvg` is OFF at the shipped defaults,
+so the entire gap ladder — rules 1–5, Method 3, the Sniper Zone — **never ran on either side**.
+Block codes 1/3/4/5/6 never fired, the minimum-stop floor refused nothing, and 6 trades closed
+in the window. Take a second export with `bosUseFvg` ON before trusting a gap-priced result.
 
-⚠ **Until it is green, every BOS number in this repo is unvalidated** — all of
-`docs/MPC_BOS_OPTIMIZATION.md` and everything `backtest/tools/bos_sweep.py` prints. That tool
-was *actively falsified* by one Strategy Tester run: 20 trades / PF 2.97 from the tool against
-24 / PF 1.04 from TradingView, same config. Read the direction, never the decimals.
+⚠ **Green does not backdate.** The port CHANGED to get green, so everything measured before
+2026-08-07 describes different code — all of `docs/MPC_BOS_OPTIMIZATION.md`, and everything
+`backtest/tools/bos_sweep.py` prints. That tool was *actively falsified* by one Strategy Tester
+run (20 trades / PF 2.97 from the tool against 24 / PF 1.04 from TradingView, same config) and
+nothing has re-checked it since.
 
 ⚠ **Read the tool's COVERAGE table before believing its exit code.** It prints which branches
 the run actually reached and warns when one was never taken, because a green run is only green
 about the branches both sides entered.
+
+⚠ **Below warmup 900 this export is RED on the BOS ordinal alone** — genuine structure-engine
+cold start, not a mask: an SOS at bar 856 resets both counters, which is exactly where the
+disagreement ends.
 
 ⚠ There **was** a `strategies/python/mpc_bos/` — deleted 2026-08-04 as a half-built port with no
 parity harness (commit `1946f8b`). The rebuild deliberately dropped its eight research dials

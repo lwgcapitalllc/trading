@@ -242,7 +242,7 @@ _INT_FIELDS = (
 )
 
 
-def _py_row(dec, bos, execution) -> dict:
+def _py_row(dec, bos, stage: int) -> dict:
     """One bar of the PYTHON stream, in the export's own vocabulary."""
     lv, sv = bos.l_levels, bos.s_levels
     return {
@@ -258,11 +258,52 @@ def _py_row(dec, bos, execution) -> dict:
         "l_ext": lv.get(0.0), "l_org": lv.get(1.0),
         "s_ext": sv.get(0.0), "s_org": sv.get(1.0),
         "vwap": bos.vwap,
-        "ordinal_l": bos.long.ordinal if bos.long.on else 0,
-        "ordinal_s": bos.short.ordinal if bos.short.on else 0,
-        "stage": execution._stage if execution._pos_dir != 0 else 0,
+        # RAW, not zeroed when disarmed. Pine plots `bosL_n` unconditionally and that var keeps
+        # the last armed leg's ordinal after a death — this used to read `... if bos.long.on
+        # else 0`, which was the harness quietly agreeing with a port that cleared its legs.
+        "ordinal_l": bos.long.ordinal,
+        "ordinal_s": bos.short.ordinal,
+        # 🔴 The stage RECORDED on this bar, never `execution._stage`. This loop runs after the
+        # replay, so reading the live object gave every bar the run's FINAL stage — a constant,
+        # 0 because the run ends flat, which is why this column diffed clean for its whole life
+        # and then failed only where the Pine said 1 or 2. A harness reading live state after
+        # the fact is not reading the bar it names.
+        "stage": stage,
         "closed_r": dec.closed_r,
     }
+
+
+def _drop_forming_tail(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop the still-forming bars TradingView appends at the end of an export.
+
+    A bar that has not closed has no plotted values — `px_struct`, `px_arm`, `px_volume`,
+    every one of them exports as blank — so it is a NON-BAR, not a bar on which the Pine
+    decided nothing. `compare_strategy.py` has flagged the same rows since it was written;
+    this drops them instead, because the volume column feeds the REPLAY here and a NaN
+    reaches the VWAP engine long before the compare loop could skip it.
+
+    ⚠ Only a TRAILING run is dropped, and the count is printed. A blank row in the MIDDLE
+    is a different animal — a truncated or edited CSV — and silently trimming around it is
+    how a harness ends up answering a narrower question than the one asked.
+    """
+    present = (df["px_struct"].notna() & df["px_arm"].notna()).to_numpy()
+    if present.all():
+        return df
+    tail = 0
+    while tail < len(present) and not present[len(present) - 1 - tail]:
+        tail += 1
+    keep = len(present) - tail
+    if keep == 0 or not present[:keep].all():
+        blanks = [int(i) for i in (~present[:keep]).nonzero()[0][:5]]
+        raise ExportIncomplete(
+            f"the export has {len(present) - keep} blank trailing rows and "
+            f"{len(blanks)} blank rows INSIDE it (e.g. {blanks or 'all of them'}). Only a "
+            "still-forming tail is expected to be blank, so this is a truncated or edited CSV "
+            "rather than a live last bar. Re-export rather than letting the tool guess which "
+            "rows are real."
+        )
+    print(f"dropping {tail} still-forming bar(s) from the end of the export")
+    return df.iloc[:keep]
 
 
 def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
@@ -271,6 +312,7 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
                   "px_l_ext", "px_l_org", "px_s_ext", "px_s_org", "px_ord_l", "px_ord_s",
                   "px_tier_l", "px_tier_s", "px_blk_l", "px_blk_s", "px_stage", "px_vwap",
                   "px_closed_r", "px_src"))
+    df = _drop_forming_tail(df)
     cfg = config_from_export(df)
     eng = engine_config_from_export(df)
 
@@ -297,11 +339,12 @@ def compare(csv_path: Path, warmup: int, price_tol: float, r_tol: float) -> int:
     coverage = Counter()
     compared = 0
 
-    for i, (dec, bos) in enumerate(zip(strat.decisions, strat.bos_states)):
+    for i, (dec, bos, stage) in enumerate(
+            zip(strat.decisions, strat.bos_states, strat.exit_stages)):
         if i < warmup:
             continue
         row = df.iloc[i]
-        py = _py_row(dec, bos, strat.execution)
+        py = _py_row(dec, bos, stage)
         compared += 1
 
         _tally(coverage, py, row)

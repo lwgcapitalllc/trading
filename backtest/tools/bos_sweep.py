@@ -17,12 +17,13 @@ at PF 1.043 implies winners roughly HALF the size of losers. The fault is somewh
 stop, the structure trail, or how the position leaves at TP3.
 
 It is kept because the METHOD is sound and reusable and fixing it is cheaper than rewriting it.
-Every result is unverified until the parity gate is green. That gate now EXISTS —
-`strategies/python/mpc_bos/tools/compare_bos.py`, landed 2026-08-07 beside a rebuilt
-`strategies/python/mpc_bos/` — and has never been run, because it needs a TradingView CSV export
-of `indicators/mpc_bos_strategy_export.pine` that nobody has taken. That is the whole remaining
-step. (This line named `backtest/tools/compare_bos.py` until 2026-08-07; a parity harness belongs
-to the STRATEGY, beside `compare_strategy.py` and `compare_bleg.py`, not to this package.)
+Every result HERE is still unverified, and the 2026-08-07 parity green does NOT change that.
+`strategies/python/mpc_bos/tools/compare_bos.py` now exits 0 against a real export — but it
+validates `strategies/python/mpc_bos/`, which is a DIFFERENT implementation from this file's
+model. Nothing has re-checked this tool since the Strategy Tester falsified it. Use the ported
+strategy for anything that has to be right. (This line named `backtest/tools/compare_bos.py`
+until 2026-08-07; a parity harness belongs to the STRATEGY, beside `compare_strategy.py` and
+`compare_bleg.py`, not to this package.)
 Full record: docs/MPC_BOS_OPTIMIZATION.md -> Run 8.
 
 ⚠ The docstring below already said this was a MODEL rather than the strategy. That was true, it

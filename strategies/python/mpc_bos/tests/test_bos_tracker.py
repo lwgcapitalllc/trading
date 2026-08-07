@@ -245,6 +245,67 @@ def test_the_staleness_cap_is_counted_in_bars_not_clock_time():
     assert not t.update(sig(1 + 97, close=105.5), bar()).long.on
 
 
+def test_a_dead_leg_keeps_its_numbers_and_only_the_flag_goes_off():
+    """Pine sets `bosL_on := false` and touches NOTHING else — `bosL_high` / `bosL_low` /
+    `bosL_bar` / `bosL_n` / `bosL_half` are `var` and are reassigned only when a NEW break
+    arms. So `px_l_ext`, `px_l_org`, `px_ord_l` and `lFibsReady` all keep the last leg's
+    values after a death.
+
+    🔴 This is the defect the first real parity run found (2026-08-07). The port built a blank
+    `BosLeg` on death, so every bar after the first dead leg diverged —
+    `l_ext: py=None pine=4584.26` on the FIRST compared bar at warmup 2000.
+
+    ⚠ The stale numbers are safe only because every consumer ANDs with `.on` first, in both
+    implementations. This test pins the persistence; `test_a_dead_leg_prices_nothing` pins the
+    other half, and neither is sufficient alone.
+    """
+    t = BosTracker(BosConfig(bos_vwap_req="Off", bos_max_days=1.0), tf_seconds=900)
+    t.update(sig(0, bull_sos=True), bar())
+    t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
+    st = t.update(sig(1 + 97, close=105.5), bar())            # stale — past the day cap
+    assert not st.long.on
+    assert (st.long.high, st.long.low) == (110, 100), "the leg's prices must survive its death"
+    assert st.long.bar == 1 and st.long.ordinal == 1
+
+
+def test_a_break_the_filters_refuse_leaves_the_previous_leg_standing():
+    """Pine assigns the leg's fields INSIDE `if _okWhich and _okDisp and _okLeg`, so a refused
+    break flips `bosL_on` off and leaves every number from the break before it.
+
+    The ORDINAL is the readable half: `bosCntL` counts refused breaks (that is deliberate — a
+    trade reports its true position in the run) while `bosL_n` does not move, so after a
+    refusal the two legitimately disagree.
+    """
+    t = BosTracker(BosConfig(bos_vwap_req="Off", bos_which="1st only"))
+    t.update(sig(0, bull_sos=True), bar())
+    t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
+    st = t.update(sig(2, bull_bos=True, bull_hi=120, bull_lo=112), bar())   # #2 — refused
+    assert not st.long.on
+    assert (st.long.high, st.long.low) == (110, 100), "the refused break must not overwrite"
+    assert st.long.ordinal == 1, "bosL_n stays on the last ARMED leg"
+    assert st.count_l == 2, "bosCntL counts the refused break"
+
+
+def test_the_ladder_is_still_priced_and_ready_on_the_bar_AFTER_the_death():
+    """The other half of the persistence rule, and the reason the stale numbers are safe: the
+    ladder is still computed and still `ready` long after the leg died, and the execution layer
+    must still refuse, because it reads `.on` first.
+
+    ⚠ It has to step PAST the death bar. `update()` computes the ladder BEFORE `_death` runs, so
+    on the death bar itself the pre-fix code reported the live leg's levels too — a version of
+    this test that stopped there passed against the defect and proved nothing. The divergence
+    starts on the NEXT bar.
+    """
+    t = BosTracker(BosConfig(bos_vwap_req="Off", bos_max_days=1.0), tf_seconds=900)
+    t.update(sig(0, bull_sos=True), bar())
+    t.update(sig(1, bull_bos=True, bull_hi=110, bull_lo=100), bar())
+    t.update(sig(1 + 97, close=105.5), bar())                 # the leg dies here
+    st = t.update(sig(1 + 98, close=105.5), bar())            # and the levels must survive it
+    assert not st.long.on
+    assert st.l_ready, "lFibsReady reads the stale ladder in the Pine, so it must here too"
+    assert st.l_levels[0.0] == 110 and st.l_levels[1.0] == 100
+
+
 def test_f4_is_off_by_default_and_kills_the_leg_when_switched_on():
     """Pine 3599-3600 + spec §10b: F4 fights the entry, because the 0.5-0.886 band sits BELOW
     the broken swing on almost every leg — so price cannot reach the limit without first

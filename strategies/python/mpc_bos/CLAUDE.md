@@ -5,11 +5,50 @@
 backtest infrastructure (`backtest/`), the lab that runs it (`command-center/`), or the A+ bot
 it subclasses (`strategies/python/mpc_sos_fade/` — read that one's `## The exit ladder` before
 touching an exit).
-**Status:** 🔴 **PORTED, RUNNING, AND NOT PARITY-VALIDATED.** Built 2026-08-07 from
-`indicators/mpc_bos_strategy_export.pine`. `tools/compare_bos.py` exists and **has never been
-run**, because no TradingView CSV export of that Pine is on disk. Until it is green, every
-number this bot produces is a LAB FINDING — read the direction, never the decimals.
-**Last reviewed:** 2026-08-07 — the rebuild, plus the volume fix below.
+**Status:** 🟢 **PARITY GREEN 2026-08-07 — and read the coverage caveat below before quoting
+anything.** Built 2026-08-07 from `indicators/mpc_bos_strategy_export.pine`, and
+`tools/compare_bos.py` now exits 0 on a real export: **6,300 bars compared, no divergence**,
+at warmups 900 / 1000 / 2000 / 3000. ⚠ **It is green about the SHIPPED defaults only** — the
+run had `bos_use_fvg` OFF, so the entire gap-entry ladder is still unverified, and 6 trades
+closed inside the window. See *The parity run* below.
+**Last reviewed:** 2026-08-07 — the rebuild, the volume fix, and the first real gate run.
+
+---
+
+## The parity run — what is proven and what is not
+
+```
+python strategies/python/mpc_bos/tools/compare_bos.py 'engines/VANTAGE_XAUUSD, 15_ee770.csv' --warmup 900
+```
+
+**GREEN, 6,300 bars, 2026-08-07.** The export is 7,200 closed M15 bars, 2026-04-21 → 2026-08-07,
+taken off `mpc_bos_strategy_export.pine` at the shipped defaults, and the Python was configured
+FROM the export's own `cfg_*` columns: `sl=ATR(1.3) · entry=0.786 · anchor=Break leg ·
+useFvg=False · vwap=Trend's side · which=All · tp=0/0/100 · minStop=% of price 0.10`.
+
+✅ **What the run exercised:** 1,220 armed bars · 1,932 priced bars · 6,040 VWAP refusals
+(block code 7) · 520 final-hour refusals (code 2) · 6 trades, entry / stop / all three TP
+prices / stage / closed R agreeing on every one.
+
+🔴 **What it did NOT exercise, and none of this is green:**
+
+- **The whole gap ladder.** `bos_use_fvg` is OFF at the defaults, so rules 1–5, Method 3 and
+  the Sniper Zone branch never ran on either side. A green gate says nothing about a branch
+  neither side entered — and the Sniper Zone half **cannot** be checked at all until the Pine
+  re-adds `px_sz_top` / `px_sz_bot`, which it says so itself.
+- **Block codes 1, 3, 4, 5 and 6 never fired.** The minimum-stop floor is ON and refused
+  nothing; the tool says so out loud, and that is the exact shape of the 2026-08-04 min-stop
+  incident.
+- **Six trades.** The arming and pricing evidence is thousands of bars deep; the exit ladder's
+  is six trades in one 3½-month window.
+
+⚠ **Below warmup 900 it is RED, on the BOS ordinal alone, and that is genuine engine cold
+start rather than a mask.** The two sides disagree about how many breaks printed before the
+structure engine had converged; an SOS at bar 856 resets both counters, which is exactly where
+the disagreement ends. Verified by reading the SOS bars out of the export, not assumed.
+
+⚠ **Re-run the gate after ANY change here, and re-run it on an export taken with
+`bosUseFvg` ON before trusting a gap-priced result.**
 
 🔴 **The first real export was REFUSED by the gate, and the refusal was right.** Aaron took a
 7,154-bar CSV off the export Pine on 2026-08-07; every decision and config column was present,
@@ -57,24 +96,26 @@ BarState --SignalAdapter--> Signals --SosFadeSequence--> SeqState
 
 ## 🔴 Read this before quoting any number from this bot
 
-**No `compare_bos.py` run has ever been green.** The gate needs a TradingView "Export chart
-data" CSV of `indicators/mpc_bos_strategy_export.pine`, which is a five-minute human step
-nobody has done. Everything downstream is unverified until it is:
+**The gate is green as of 2026-08-07, and that does NOT retroactively validate anything
+measured before it.** The port changed in three places to GET green (see below), so every
+figure produced by an earlier build describes different code:
 
-- `docs/MPC_BOS_OPTIMIZATION.md` — every run in it, Runs 1–8.
-- `backtest/tools/bos_sweep.py` — **actively falsified.** On the same symbol, timeframe, window
-  and config it reported 20 trades / PF 2.97 / +102.5% where the TradingView Strategy Tester
-  reported 24 / PF 1.043 / +5.01%. Entries roughly agreed; the exit ladder did not.
-- Anything this package prints.
+- `docs/MPC_BOS_OPTIMIZATION.md` — every run in it, Runs 1–8. **Re-run anything that still
+  matters.**
+- `backtest/tools/bos_sweep.py` — **actively falsified and still is.** On the same symbol,
+  timeframe, window and config it reported 20 trades / PF 2.97 / +102.5% where the TradingView
+  Strategy Tester reported 24 / PF 1.043 / +5.01%. Entries roughly agreed; the exit ladder did
+  not. Nothing in this pass re-checked it.
+- Anything this package printed before today.
 
 **The previous port was DELETED on 2026-08-04** (commit `1946f8b`) for exactly this: an
 82-configuration sweep produced by a port nobody could check. This one exists to not repeat
 that, and the gate is the whole difference.
 
-### What to do with the export when it arrives
+### Running the gate
 
 ```bash
-python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 500
+python strategies/python/mpc_bos/tools/compare_bos.py '<export>.csv' --warmup 900
 ```
 
 ⚠ **Read the COVERAGE table before believing the exit code.** The tool prints how many bars each
@@ -170,6 +211,40 @@ money the safe one is the refusal. It costs at most one bar a day.
 
 ---
 
+## The three defects the first real gate run found
+
+All three were invisible to 54 green unit tests, and each one is a different way of being
+wrong.
+
+**1. A DEAD LEG KEEPS ITS NUMBERS. The port cleared them.** Pine's `bosL_on := false` touches
+nothing else — `bosL_high` / `bosL_low` / `bosL_bar` / `bosL_n` / `bosL_half` are `var` and are
+reassigned only when a NEW break arms, so `px_l_ext`, `px_ord_l` and `lFibsReady` all carry the
+last leg's values after a death. `BosLeg` was rebuilt blank instead, and the run went red on the
+FIRST compared bar with `l_ext: py=None pine=4584.26`. It is behaviour-neutral on both sides —
+every consumer ANDs with `.on` first — which is the only thing that makes stale numbers safe,
+and also the reason nothing in the strategy's own behaviour would ever have told you.
+
+**2. THE HARNESS COMPARED A CONSTANT FOR ITS WHOLE LIFE.** `compare_bos.py` read
+`strat.execution._stage` inside its compare loop, which runs AFTER the replay — so every bar was
+diffed against the run's FINAL stage. The run ends flat, so that constant was 0, and the column
+checked nothing at all until a Pine bar happened to report 1 or 2. The stage is sampled per bar
+into `MpcBosStrategy.exit_stages` now. ⚠ **This is the sharper lesson of the three: a harness
+that reads live state after the fact is not reading the bar it names, and the failure mode is a
+column that looks like it is passing.**
+
+**3. THE STILL-FORMING LAST BAR KILLED THE RUN AND BLAMED THE FEED.** TradingView appends the
+live bar to every export with all its plotted series blank — including `px_volume` — so the NaN
+reached the VWAP engine and raised `VolumeUnavailable`, whose message points at the bar feed.
+`_drop_forming_tail` trims it and says how many, and REFUSES on a blank row in the middle,
+because only a trailing run is a live bar.
+
+⚠ **And one shape worth naming on its own: the harness had an accommodation written to match
+the PORT rather than the Pine** — `ordinal_l` read `bos.long.ordinal if bos.long.on else 0`,
+which is exactly the zeroing defect #1 introduced. A comparator that agrees with the thing it is
+checking is not a comparator. Before trusting a parity column, ask what it is compared AGAINST.
+
+---
+
 ## Rules with teeth (each one is a bug someone will otherwise reintroduce)
 
 - **A shift bar is not its own first continuation.** The structure engine sets `bull_bos = True`
@@ -185,6 +260,9 @@ money the safe one is the refusal. It costs at most one bar a day.
   untradeable.
 - **The ordinal counts refused breaks**, so the number a trade reports is its true position in
   the run. And a refused newer break still CANCELS the older arm — the newest break owns the leg.
+  ⚠ **`count_l` and `leg.ordinal` legitimately disagree after a refusal**: the Pine bumps
+  `bosCntL` outside the filter block and assigns `bosL_n` inside it, so a turned-down break
+  advances the counter and leaves the armed leg's number where it was.
 - **Entry depth is DERIVED, never chosen.** The tier rule exists to guarantee TP1 is never a
   level the entry already rests at, or the trade "hits TP1" on its own fill bar, stages to
   breakeven and dies a scratch.

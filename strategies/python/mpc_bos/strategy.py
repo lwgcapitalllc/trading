@@ -57,6 +57,10 @@ class MpcBosStrategy(MpcSosFadeStrategy):
         # where every BOS rule lives, and a bug there shows as a wrong LEG many bars before it
         # becomes a wrong trade. Without it a mismatch says "a trade differs" and nothing more.
         self.bos_states: List = []
+        # The exit ladder's stage PER BAR, parallel to `decisions`. Sampled here because the
+        # execution object holds one live `_stage` and reading it after the run is reading the
+        # last bar — see `_exit_stage`.
+        self.exit_stages: List[int] = []
 
     @staticmethod
     def engine_config():
@@ -108,15 +112,28 @@ class MpcBosStrategy(MpcSosFadeStrategy):
         setattr(sig, "bos_atr14", self.execution.prime_atr(sig))
         bos = self.tracker.update(sig, bar)
         dec = self.execution.step(sig, seq, bos)
-        return dec, bos
+        return dec, bos, self._exit_stage()
+
+    def _exit_stage(self) -> int:
+        """The EXIT ladder's stage on THIS bar — Pine's `px_stage` (0 flat / 1 TP1 / 2 TP2).
+
+        🔴 It has to be sampled per bar and stored. `compare_bos.py` used to read
+        `strat.execution._stage` inside its compare loop, which runs AFTER the whole replay —
+        so every bar was diffed against the run's FINAL stage, a constant. The run ends flat,
+        so that constant was 0, and the column silently compared nothing at all until a Pine
+        bar happened to report 1 or 2. A harness that reads live state after the fact is not
+        reading the bar it claims to.
+        """
+        return self.execution._stage if self.execution._pos_dir != 0 else 0
 
     def step(self, bar_state) -> Decision:
         if self.tracker is None:
             self.tracker = BosTracker(self.config)
             self.execution._tracker = self.tracker
-        dec, bos = self._step_bar(bar_state, bar_state.bar)
+        dec, bos, stage = self._step_bar(bar_state, bar_state.bar)
         self.decisions.append(dec)
         self.bos_states.append(bos)
+        self.exit_stages.append(stage)
         return dec
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "MpcBosStrategy":
@@ -148,10 +165,11 @@ class MpcBosStrategy(MpcSosFadeStrategy):
         stack = EngineStack(engine_config or self.engine_config())
         for bar in iter_bars(df):
             state = stack.step(bar)
-            dec, bos = self._step_bar(state, bar)
+            dec, bos, stage = self._step_bar(state, bar)
             if bar.index >= warmup:
                 self.decisions.append(dec)
                 self.bos_states.append(bos)
+                self.exit_stages.append(stage)
         return self
 
     def run_dual(self, *args, **kwargs):

@@ -278,3 +278,42 @@ def test_the_moving_stop_can_only_ever_tighten():
     ex._stage = 1                                   # staged to breakeven
     assert ex._move_stop() == pytest.approx(85.0)   # far looser than breakeven
     assert ex._current_stop() > 100.0, "the loose moving stop must not pull breakeven down"
+
+
+# ── the per-bar exit stage ───────────────────────────────────────────────────────
+def test_the_exit_stage_is_a_snapshot_and_the_three_bar_lists_stay_aligned():
+    """🔴 `compare_bos.py` used to read `strat.execution._stage` INSIDE its compare loop, which
+    runs after the whole replay — so every bar was diffed against the run's FINAL stage. The
+    run ends flat, so that constant was 0, and the column compared nothing at all until a Pine
+    bar happened to report 1 or 2. The stage is now sampled per bar into `exit_stages`.
+
+    ⚠ This test pins the two properties a future edit can break silently — that the value is a
+    SNAPSHOT (a later close cannot rewrite it) and that the three parallel lists stay the same
+    length, which is what fails if someone appends in one place and forgets another. It is NOT
+    the evidence that the fix works: that is the parity run, which went from RED at bar 1704 to
+    GREEN over 6,200 bars.
+    """
+    from mpc_bos import MpcBosStrategy
+
+    s = MpcBosStrategy(BosConfig(bos_vwap_req="Off"))
+    s.execution._pos_dir, s.execution._stage = -1, 1
+    s.exit_stages.append(s._exit_stage())
+    s.execution._stage = 2
+    s.exit_stages.append(s._exit_stage())
+    s.execution._pos_dir, s.execution._stage = 0, 0           # the trade closes later
+    s.exit_stages.append(s._exit_stage())
+
+    assert s.exit_stages == [1, 2, 0], "a later bar must not rewrite an earlier bar's stage"
+
+
+def test_a_flat_bar_reports_stage_zero_rather_than_the_last_trades_stage():
+    """Pine plots `px_stage` as `na` off-position and the harness reads a flat bar as 0, so the
+    Python must zero it on `_pos_dir == 0` — carrying the last trade's stage forward would
+    diverge on every flat bar after a runner."""
+    from mpc_bos import MpcBosStrategy
+
+    s = MpcBosStrategy(BosConfig(bos_vwap_req="Off"))
+    s.execution._pos_dir, s.execution._stage = 1, 2
+    assert s._exit_stage() == 2
+    s.execution._pos_dir = 0
+    assert s._exit_stage() == 0

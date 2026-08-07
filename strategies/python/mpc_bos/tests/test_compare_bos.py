@@ -225,3 +225,44 @@ def test_a_pine_na_int_column_reads_as_zero_not_as_a_match():
     assert not cb._int_differs(0, float("nan"))
     assert cb._int_differs(2, float("nan"))
     assert cb._int_differs(1, 2)
+
+
+# ── the still-forming last bar ───────────────────────────────────────────────────
+def test_the_still_forming_last_bar_is_dropped_rather_than_replayed(tmp_path):
+    """TradingView appends the LIVE bar to every export and leaves its plotted series blank —
+    `px_struct`, `px_arm`, `px_volume`, all of them. That is a NON-BAR, not a bar on which the
+    Pine decided nothing.
+
+    🔴 It has to be dropped rather than skipped in the compare loop, because `px_volume` feeds
+    the REPLAY: a NaN reaches the VWAP engine long before the loop could ignore the row, and
+    the run dies with `VolumeUnavailable` naming the feed — which sends the reader at the
+    innocent half of the system. Measured on the first real export: exactly 1 trailing blank.
+    """
+    path = _write_export(tmp_path, rows=4)
+    df = pd.read_csv(path)
+    for col in list(_PX_BITFIELDS) + ["px_volume"]:
+        df.loc[df.index[-1], col] = float("nan")
+    df.to_csv(path, index=False)
+
+    out = cb._drop_forming_tail(cb.load_export(path))
+    assert len(out) == 3
+    assert cb._bars_from(out)["volume"].notna().all()
+
+
+def test_a_blank_row_in_the_MIDDLE_refuses_instead_of_being_trimmed_around(tmp_path):
+    """Only a TRAILING run is a live bar. A hole in the middle is a truncated or edited CSV,
+    and quietly trimming around it is how a harness ends up answering a narrower question than
+    the one asked — this repo's most-repeated defect."""
+    path = _write_export(tmp_path, rows=5)
+    df = pd.read_csv(path)
+    df.loc[df.index[2], "px_struct"] = float("nan")
+    df.to_csv(path, index=False)
+
+    with pytest.raises(cb.ExportIncomplete, match="INSIDE"):
+        cb._drop_forming_tail(cb.load_export(path))
+
+
+def test_an_export_with_no_blank_tail_is_returned_untouched(tmp_path):
+    """The half that keeps the trim honest: a complete export must lose no bars."""
+    df = cb.load_export(_write_export(tmp_path, rows=4))
+    assert len(cb._drop_forming_tail(df)) == 4
