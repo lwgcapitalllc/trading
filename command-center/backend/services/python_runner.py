@@ -243,15 +243,20 @@ def _execute(job_id: str, spec: dict) -> None:
 
     if getattr(config, "exec_secondary", False):
         # Secondary (1m sniper) re-entry is on → replay 15m PRIMARY + 1m SECONDARY on one clock
-        # (strategy.run_dual). Needs a 1m feed alongside the base frame; the broker serves ~35 days
-        # of M1, so a secondary run must be a recent window (an old one loads no 1m → clear error).
+        # (strategy.run_dual). Needs a 1m feed alongside the base frame.
+        # ⚠ This used to say the broker serves ~35 days of M1 and to pick a recent window. That
+        # was a GUESS nobody had checked and it is FALSE — measured against the live terminal on
+        # 2026-08-06, Vantage XAUUSD M1 runs back to 2018-09-14, the same depth as the M15. The
+        # cost of the wrong figure was not a bad run, it was that this feature went unmeasured
+        # for three weeks because the only windows anyone believed reachable were too short for a
+        # setup this rare to fire in. A 1m window is SLOW to load and replay, not unavailable.
         _set(job_id, pct=8, message=f"loading {symbol} 1m bars for the secondary…")
         df1m = BarSource().load(symbol, 1, spec["start_date"], spec["end_date"])
         if df1m.empty:
             raise ValueError(
                 f"exec_secondary is on but no 1m bars loaded for {symbol} over "
-                f"[{spec['start_date']}, {spec['end_date']}] — the broker serves ~35 days of M1, "
-                f"so choose a more recent window (or turn the secondary off).")
+                f"[{spec['start_date']}, {spec['end_date']}] — check the broker serves 1m history "
+                f"for this window (or turn the secondary off).")
         _set(job_id, pct=15, message=f"replaying {len(df):,} × 15m + {len(df1m):,} × 1m…")
 
         def _prog(i: int, n: int) -> None:
