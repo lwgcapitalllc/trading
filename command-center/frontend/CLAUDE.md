@@ -1219,7 +1219,10 @@ somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runna
 **66 tests in 5 files**, run with `npm test` from `frontend/`.
 
 **`tests/candle-reversals.spec.ts` (5, ~28s) — added 2026-08-08 with the Candlestick Reversals
-layer.** It drives the REAL backend, because the marks come from a server-side engine replay over
+layer.** ⚠ **Its `RUN` and `DATE_WITH_A_MARK` constants are tied to real data and drift**: the layer
+went 424 marks → 153 → **820** in one day as its anchor rule was corrected twice, and a date that had
+a mark under one rule need not under the next. When a check here goes red, ask what the run actually
+draws now before touching the assertion. It drives the REAL backend, because the marks come from a server-side engine replay over
 the run's own candles and a mocked spec would be testing the mock. ⚠ **A fail-watch against HEAD is
 vacuous for a layer that did not exist** — every check would go red on the element being absent,
 which proves the locator and nothing else — so four are proven by MUTATION and the other is

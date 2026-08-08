@@ -406,14 +406,35 @@ def reversal_anchors(
     "which candle turned it" to ask. `of > 0` guards a record that states no score at all rather
     than letting `0 >= 0` admit it.
 
-    The third element is the hold END, and only a WINNER has one: its search runs entry → exit to
-    find where price stopped going against it ("the ultimate reversal point before the trade went
-    into my favour"). A loser never had such a point, so `None` gives it the short window at its
-    entry and it answers the other question — what was printing when I took this.
+    **Each anchor is `(start, direction, end)` and it is a SPAN, not a point** — the layer paints
+    every pattern candle from `start` to wherever price ran furthest against the setup inside it.
+
+      - a TRADE spans its ENTRY to its EXIT, win or lose. Aaron: *"you don't only have to give me
+        the deepest candle — you could give me all the candles that would have shown a possible
+        reversal all the way up to the deepest one … I could see, wow, I could have taken a trade
+        at 0.702 or 0.786."* The span is the retracement he entered into, so the marks in it are
+        the fib levels that had a reversal candle behind them.
+      - a 3/3 MISS spans its RETRACE — the bar price first tagged the zone, to the deepest bar of
+        that visit. Aaron: *"I'm expecting it to be that price got into the zone for the trade, and
+        there was a reversal candle, but maybe there was a missing confluence point."*
+
+    🔴 **A miss anchors on `zoneTime`/`zoneTurn`, NEVER on `time`, and that distinction is this
+    function's reason to exist.** `time` is the bar the setup DIED, which is a median 18 and up to
+    718 bars after the retrace it was waiting on and, measured on the reference run, leaves price a
+    median $22 and up to $205 from the setup's own entry edge. Anchoring there painted candles in a
+    part of the chart the setup had nothing to do with — reported off a real screen as marks
+    printing "on the opposite side". ⚠ **`time` is not usable as the span's END either**: over a
+    718-bar range the deepest price routinely belongs to a completely different move, which is why
+    the strategy records the turn rather than letting this derive it.
+
+    A run made before the strategy recorded those fields yields NO miss anchors at all, and that is
+    deliberate — drawing nothing is honest about a question the run cannot answer, and drawing it in
+    the old place is not. Rerun the backtest to get them.
     """
     return (
-        [(t["entryTime"], t["dir"], t["exitTime"] if t["pnl"] > 0 else None) for t in trades]
-        + [(m["time"], m["dir"], None) for m in misses if m["of"] > 0 and m["met"] >= m["of"]]
+        [(t["entryTime"], t["dir"], t["exitTime"]) for t in trades]
+        + [(m["zoneTime"], m["dir"], m["zoneTurn"]) for m in misses
+           if m["of"] > 0 and m["met"] >= m["of"] and m.get("zoneTime") and m.get("zoneTurn")]
     )
 
 
@@ -462,9 +483,16 @@ def _build_misses(run_dir: Path, candles: list[dict]) -> tuple[list[dict], list[
                 all_labels.append(r["label"])
             if is_near:
                 near_labels.add(r["label"])
+        ms = lambda v: int(v) if isinstance(v, (int, float)) else None
         out.append({
             "id": f"M{i}",
             "time": int(t),
+            # The RETRACE — first bar in the zone, and the deepest bar of that visit. The only
+            # honest bracket for anything asking what price DID here, because `time` is the bar
+            # the setup died. Absent on a run made before the strategy recorded them, and absent
+            # means absent.
+            "zoneTime": ms(m.get("zone_time_ms")),
+            "zoneTurn": ms(m.get("zone_turn_ms")),
             "dir": "short" if str(m.get("direction", "")).lower().startswith("s") else "long",
             "price": float(m.get("edge") or 0.0),
             "met": int(m.get("met") or 0),

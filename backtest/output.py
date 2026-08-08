@@ -371,8 +371,17 @@ def build_missed_setups(missed: Optional[Sequence[Any]]) -> list[dict]:
             {"label": str(labels[i]), "reason": str(texts[i] if i < len(texts) else "")}
             for i in range(len(labels))
         ]
+        # The RETRACE this setup was waiting on: when price first reached the zone, and the
+        # deepest bar of that visit. A consumer asking "which candle turned it" anchors on those,
+        # never on `time_ms` — that is the bar the setup DIED, a median 18 and up to 718 bars
+        # later and tens of dollars away. `None` = price never got there, and stays `None`: a zero
+        # would read as the epoch, and a fallback to `time_ms` would put the answer back exactly
+        # where it was wrong.
+        ms = lambda v: int(v) if isinstance(v, (int, float)) else None
         out.append({
             "time_ms":   int(getattr(m, "time_ms", 0)),
+            "zone_time_ms": ms(getattr(m, "zone_time_ms", None)),
+            "zone_turn_ms": ms(getattr(m, "zone_turn_ms", None)),
             "direction": "Long" if getattr(m, "dir", 0) > 0 else "Short",
             "met":       int(getattr(m, "met", 0)),
             "of":        _MISS_OF,

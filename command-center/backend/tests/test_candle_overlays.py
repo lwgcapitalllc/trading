@@ -124,18 +124,32 @@ def test_price_running_further_before_it_turns_marks_the_turn_not_the_anchor():
     assert out[0]["t"] == candles[40]["time"], "the mark should be on the reversal, not the anchor"
 
 
-def test_with_two_patterns_in_the_window_the_one_at_the_TURN_wins():
-    """⚠ The test above does NOT prove this and was written believing it did: its window holds only
-    one pattern bar, so 'nearest the extreme' and 'earliest' give the same answer and a mutation to
-    either survives it. This is the one that separates them — a doji sits on the anchor bar and the
-    hammer at the low is three bars later, so picking the earliest would take the doji."""
+def test_EVERY_pattern_in_the_span_is_marked_not_only_the_one_at_the_turn():
+    """Aaron's ask, and the reason this layer stopped picking a winner: *"you don't only have to give
+    me the deepest candle — you could give me all the candles that would have shown a possible
+    reversal all the way up to the deepest one … I could see, wow, I could have taken a trade at
+    0.702 or 0.786."* A doji sits on the anchor bar and the hammer at the low is two bars later;
+    BOTH are entries he could have taken, so both are drawn.
+
+    ⚠ Watch it go red by marking only the turn — that is exactly what this used to do."""
     bars = _flat(60)
     bars[38] = _bar(38, 100.0, 100.5, 99.5, 100.0)   # a doji, well above the low
     bars[40] = _hammer_at(40)                        # the turn
     assert _fired(bars, 38) and _fired(bars, 40), "both bars must fire or this proves nothing"
     out = build_candle_overlays(bars, [(bars[38]["time"], "long", None)])
-    assert len(out) == 1
-    assert out[0]["t"] == bars[40]["time"], "the mark belongs on the turn, not the earlier pattern"
+    assert [o["t"] for o in out] == [bars[38]["time"], bars[40]["time"]]
+
+
+def test_nothing_is_marked_PAST_the_turn():
+    """The span stops at the deepest adverse bar. After it price is moving the setup's way, and a
+    reversal candle there is a different subject — drawing it would put marks on the profitable half
+    of a winner and read as the layer having no rule at all."""
+    bars = _flat(60)
+    bars[40] = _hammer_at(40)                        # the turn (the low of the whole window)
+    bars[45] = _bar(45, 100.0, 100.5, 99.5, 100.0)   # a doji AFTER it, well above the low
+    assert _fired(bars, 40) and _fired(bars, 45), "both bars must fire or this proves nothing"
+    out = build_candle_overlays(bars, [(bars[38]["time"], "long", bars[55]["time"])])
+    assert [o["t"] for o in out] == [bars[40]["time"]]
 
 
 def test_the_window_does_not_reach_past_its_own_length():
@@ -189,21 +203,23 @@ def _neutral_and_opposing(with_neutral: bool = True) -> list[dict]:
     return bars
 
 
-def test_a_neutral_candle_at_the_turn_beats_an_OPPOSING_one_nearer_it():
-    """The reference defect, reduced: ranking on nearness alone put the Bearish Engulfing on a long.
-    ⚠ Watch this one go red by moving `_alignment` out of `_pick_reversal_bar`'s sort key."""
+def test_a_neutral_candle_and_an_OPPOSING_one_are_both_drawn():
+    """The reference defect is gone by construction rather than by ranking: selecting one candle is
+    what let a Bearish Engulfing be the sole mark on a long that WON. Both bars are setups he could
+    have read, so both are drawn and each is named for itself."""
     bars = _neutral_and_opposing()
     assert _fired(bars, 150) and _fired(bars, 152), "both bars must fire or this proves nothing"
     assert bars[152]["low"] < bars[150]["low"], "152 must be the adverse extreme of the window"
     out = build_candle_overlays(bars, [(bars[150]["time"], "long", None)])
-    assert len(out) == 1
-    assert out[0]["t"] == bars[150]["time"], "a neutral candle outranks an opposing one at the turn"
-    assert out[0]["patternDir"] == 0
+    assert [(o["t"], o["patternDir"]) for o in out] == [
+        (bars[150]["time"], 0), (bars[152]["time"], -1),
+    ]
 
 
 def test_with_NOTHING_but_an_opposing_candle_it_is_still_marked():
-    """The other half, and the half worth defending: *'if not, it will show me why I was wrong.'*
-    Preference must never become a filter — remove the neutral bar and the bearish one is the answer."""
+    """The half worth defending: *'if not, it will show me why I was wrong.'* Direction orders the
+    NAME on a bar and must never decide whether the bar is painted — remove the neutral candle and
+    the bearish one is still the answer."""
     bars = _neutral_and_opposing(with_neutral=False)
     out = build_candle_overlays(bars, [(bars[150]["time"], "long", None)])
     assert len(out) == 1
@@ -251,23 +267,24 @@ def test_a_winning_hold_finds_a_turn_far_beyond_the_short_window():
     assert out[0]["t"] == candles[40]["time"]
 
 
-def test_a_pattern_far_from_the_holds_extreme_is_NOT_called_its_reversal():
-    """Without the tolerance a long hold would offer up whatever pattern was nearest its extreme,
-    hours away, and report it as the candle that turned price."""
+def test_a_pattern_mid_hold_IS_drawn_even_though_it_is_far_from_the_turn():
+    """The counterpart of the test above, and the rule that replaced the old ±2-bar tolerance: a
+    pattern 20 bars before the turn is not "the reversal", but it IS a level the retracement offered
+    on the way down, which is the whole question. ⚠ The tolerance used to DELETE it — the span
+    covers it now, and the marks between the entry and the turn are the answer he asked for."""
     bars = _flat(60)
     bars[30] = _hammer_at(30)                        # a pattern, mid-hold
-    # The extreme AND its tolerance band must be pattern-free, which took two goes to build and is
-    # why the assertions below exist. ⚠ A long lower wick made the extreme a Hammer (3 patterns), and
-    # a lone bearish bar after bullish filler made its neighbours a Morning/Evening Star — a
-    # three-bar pattern is a property of the bars AROUND the one you are placing.
+    # ⚠ A lone bearish bar after bullish filler makes its NEIGHBOURS a Morning/Evening Star — a
+    # three-bar pattern is a property of the bars AROUND the one you are placing — so the turn is
+    # built with plain bodies either side and asserted quiet.
     for j in range(46, 56):
         bars[j] = _bar(j, 101.5, 101.9, 100.5, 100.9)      # plain bearish bodies
     bars[50] = _bar(50, 100.0, 100.05, 80.0, 80.05)        # one long body, almost no wick
-    assert _fired(bars, 30), "the distant pattern must really fire or this test is vacuous"
+    assert _fired(bars, 30), "the mid-hold pattern must really fire or this test is vacuous"
     for j in range(48, 53):
         assert not _fired(bars, j), f"bar {j} is at the turn and must carry NO pattern"
     out = build_candle_overlays(bars, [(bars[20]["time"], "long", bars[55]["time"])])
-    assert out == [], "a pattern 20 bars from the turn is not the turn"
+    assert [o["t"] for o in out] == [bars[30]["time"]]
 
 
 def test_an_exit_before_the_entry_degrades_to_the_short_window():

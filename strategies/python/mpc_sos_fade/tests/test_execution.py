@@ -72,6 +72,27 @@ def _seq_long_stage2(sos_bar=1):
     return s
 
 
+def _seq_short_ready(sos_bar=1):
+    """The short mirror of `_seq_long_ready` — used where a rule reads the DIRECTION and getting it
+    backwards would be silent (the adverse extreme is the highest high on a short, not the lowest
+    low), so a long-only fixture cannot see the bug."""
+    return SeqState(
+        l_stage=0, s_stage=4, l_sos_bar=None, s_sos_bar=sos_bar,
+        l_half=False, l_618=False, s_half=True, s_618=True,
+        l_poi=False, s_poi=False, l_fvg=False, s_fvg=False,
+        sos_l_swp=False, sos_l_div=False, sos_s_swp=False, sos_s_div=True,
+        new_sweep_l=False, new_div_l=False, new_sweep_s=False, new_div_s=False,
+        retro_link_l=False, retro_link_s=False, s_arm_src="DIV",
+    )
+
+
+def _seq_short_dead():
+    s = _seq_flat()
+    s.sos_s_div = True
+    s.s_arm_src = "DIV"
+    return s
+
+
 def _seq_long_dead():
     """The bar AFTER a long setup dies. `sos_l_div` survives the death in the real sequence
     (`_clear_long` never touches it — only the next SOS reassigns it), so the fixture keeps it
@@ -391,6 +412,78 @@ def test_a_setup_that_never_retraced_is_a_2_of_3_and_is_NOT_a_near_miss():
     assert (m.met, m.code) == (2, 2)
     assert m.labels == ["No retrace"] and m.near is False
     assert m.met_lines == ["Arm — RSI divergence", "SOS — confirmed"]
+
+
+# --- the RETRACE a miss was waiting on (`zone_time_ms` / `zone_turn_ms`, 2026-08-08) ---
+# `time_ms` is the bar the setup DIED. On the reference run that is a median 17 and up to 717 bars
+# after the retrace, leaving price a median $22 from the setup's own edge — so a consumer asking
+# "which candle turned this" has to be told, not left to derive it. The band here is fiboP2 105.0
+# (0.5) to fiboP6 101.14 (0.886).
+
+def test_a_miss_records_the_retrace_it_was_waiting_on_not_just_its_death():
+    ex = Execution(_cfg())
+    # ⚠ Every bar stays ABOVE the 103.82 entry edge — dip under it and the limit FILLS, the setup
+    # becomes a trade and there is no miss to inspect at all.
+    ex.step(_sig(0, 104.6, 104.9, 104.5, 104.7), _seq_long_ready())   # in the band
+    ex.step(_sig(1, 104.3, 104.4, 103.9, 104.0), _seq_long_ready())   # deeper — the turn
+    ex.step(_sig(2, 104.3, 104.8, 104.2, 104.6), _seq_long_ready())
+    ex.step(_sig(3, 104.5, 104.9, 104.4, 104.7), _seq_long_dead())
+    m = ex.misses[0]
+    assert m.time_ms == 3 * 900_000, "the record still marks where the setup died"
+    assert (m.zone_time_ms, m.zone_turn_ms) == (0, 1 * 900_000)
+
+
+def test_the_visit_is_measured_off_the_BAND_not_off_the_latch():
+    """🔴 The one that matters. `zone_hit` is `l_half or l_618` — a LATCH: once price tags 0.5 it
+    stays true for every bar until the leg resets. Tracking the visit off it made the retrace read
+    as 717 bars on a real run and painted a quarter of a week of chart.
+
+    Here price tags the band, LEAVES it upwards for two bars, and comes back deeper. Off the latch
+    that is one 5-bar visit whose extreme is the final low; off the band it is two visits and the
+    deeper one wins — same answer for the turn, but the SPAN starts at bar 3, not bar 0.
+
+    ⚠ Watch it go red by testing `zone_hit` instead of the bar's own range."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.7, 104.9, 104.6, 104.8), _seq_long_ready())     # in the band
+    ex.step(_sig(1, 106.0, 106.5, 105.9, 106.2), _seq_long_ready())     # ABOVE 0.5 — out
+    ex.step(_sig(2, 106.0, 106.5, 105.2, 106.2), _seq_long_ready())     # still out
+    ex.step(_sig(3, 104.6, 104.8, 104.2, 104.4), _seq_long_ready())     # back in, deeper
+    ex.step(_sig(4, 104.2, 104.3, 103.9, 104.0), _seq_long_ready())     # the turn
+    ex.step(_sig(5, 104.5, 104.9, 104.4, 104.7), _seq_long_dead())
+    m = ex.misses[0]
+    assert (m.zone_time_ms, m.zone_turn_ms) == (3 * 900_000, 4 * 900_000)
+
+
+def test_the_DEEPEST_visit_is_the_one_reported():
+    """A setup can tag the zone, leave, and come back — those are different retraces, and the one
+    worth reporting is the one that came closest to filling. The first visit here is shallow."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.8, 104.95, 104.7, 104.9), _seq_long_ready())    # shallow visit
+    ex.step(_sig(1, 106.0, 106.5, 105.9, 106.2), _seq_long_ready())     # out
+    ex.step(_sig(2, 104.4, 104.6, 103.9, 104.1), _seq_long_ready())     # deep visit
+    ex.step(_sig(3, 104.5, 104.9, 104.4, 104.7), _seq_long_dead())
+    assert ex.misses[0].zone_turn_ms == 2 * 900_000
+
+
+def test_a_SHORT_setups_turn_is_its_HIGHEST_high():
+    """A short retraces UP into the band, so the deepest point against it is the high. Getting this
+    backwards would report the shallowest bar of every short as its turn."""
+    ex = Execution(_cfg(exec_shorts=True))
+    ex.step(_sig(0, 102.0, 102.5, 101.9, 102.2, dir=-1), _seq_short_ready())
+    ex.step(_sig(1, 102.0, 104.9, 101.9, 104.5, dir=-1), _seq_short_ready())   # highest
+    ex.step(_sig(2, 102.0, 102.5, 101.9, 102.2, dir=-1), _seq_short_ready())
+    ex.step(_sig(3, 102.0, 102.5, 101.9, 102.2, dir=-1), _seq_short_dead())
+    assert ex.misses[0].zone_turn_ms == 1 * 900_000
+
+
+def test_a_setup_that_never_reached_the_zone_records_NO_retrace():
+    """`None` means price never got there. A fallback to `time_ms` would put the answer back exactly
+    where it was wrong, and a 0 would anchor it on the epoch."""
+    ex = Execution(_cfg())
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_stage2())
+    ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
+    m = ex.misses[0]
+    assert m.met == 2 and (m.zone_time_ms, m.zone_turn_ms) == (None, None)
 
 
 def test_a_setup_armed_by_a_disabled_source_names_that_source():

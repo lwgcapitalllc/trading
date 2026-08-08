@@ -300,7 +300,23 @@ class MissedSetup:
     `near` mirrors the Pine's "near miss" test (`debug23Filter`'s default view): a miss worth
     looking at is one that met all three and still did not fill, or that got price into the zone
     and failed only on the FVG. Everything else is the ordinary outcome of most setups, and is
-    what floods a chart — the lab records it anyway and lets the reader filter."""
+    what floods a chart — the lab records it anyway and lets the reader filter.
+
+    ⚠ **`time_ms` is the bar the setup DIED, and it is nowhere near where the setup was.** The
+    watch accumulates for as long as the leg lives, so on 32 of the 35 three-of-three misses in the
+    reference run price sits a median $22 (and up to $205) away from `edge` on that bar. That is
+    correct for a marker saying *this setup is now over*, and useless for any consumer asking
+    *where was price when this setup was live* — which is why `zone_time_ms` and `zone_turn_ms`
+    exist. They bracket the RETRACE: the first bar price tagged the 0.5-0.886 band, and the deepest
+    bar it reached while in it. Both are `None` if price never got there (a 2-of-3 miss on the
+    zone), and both are recorded rather than derived — searching back from the death bar for a bar
+    that traded through `edge` finds one for all 35 of the reference run's three-of-three misses,
+    *including the ten where price provably never reached the limit*, because price crosses that
+    level at unrelated moments. Reporting only.
+
+    ⚠ **`zone_turn_ms` is deliberately not "the extreme between the zone touch and the death"** —
+    the watch outlives the visit by a median 18 and up to 718 bars, and over that range the extreme
+    routinely belongs to a different move entirely."""
 
     dir: int              # +1 long, -1 short
     index: int            # bar index the miss was booked on (the bar the setup died)
@@ -310,6 +326,8 @@ class MissedSetup:
     arm_text: str         # what armed it, in words: "Sweep · Day Low" / "RSI divergence"
     arm_met: bool         # ...and whether that source is one you have enabled
     zone: bool            # price tagged the 0.5-0.886 band
+    zone_time_ms: Optional[int]   # WHEN it first did — see below
+    zone_turn_ms: Optional[int]   # ...and the deepest bar of that visit
     fvg: bool             # ...and a gap was live while it was there
     edge: float           # where the limit would have rested
     near: bool
@@ -352,6 +370,16 @@ class _MissWatch:
     arm_src: str = ""                 # "SWP" / "DIV" — which source actually armed it
     swp_nm: str = ""                  # the swept level's name, e.g. "Day Low"
     zone: bool = False
+    # The DEEPEST visit to the band, and the visit currently in progress. A setup can tag the zone,
+    # leave, and come back hundreds of bars later — those are different retraces, and the one worth
+    # reporting is the one that came closest to filling.
+    zone_ms: Optional[int] = None        # first bar of the deepest visit
+    zone_turn_ms: Optional[int] = None   # ...and its most adverse bar
+    zone_turn_px: Optional[float] = None
+    run_bar: Optional[int] = None        # last bar of the visit in progress (contiguity test)
+    run_ms: Optional[int] = None
+    run_turn_ms: Optional[int] = None
+    run_turn_px: Optional[float] = None
     fvg: bool = False
     edge: Optional[float] = None      # first entry edge seen while alive
     fib: Optional[float] = None       # 0.618 fallback, kept fresh
@@ -362,7 +390,42 @@ class _MissWatch:
     def open(self, sos_bar: Optional[int], arm_src: str, swp_nm: str) -> None:
         self.watch, self.sos_bar, self.arm_src, self.swp_nm = True, sos_bar, arm_src, swp_nm
         self.zone = self.fvg = self.blk_v = self.blk_l = self.blk_h = False
-        self.edge = self.fib = None
+        self.edge = self.fib = self.zone_ms = None
+        self.zone_turn_ms = self.zone_turn_px = None
+        self.run_bar = self.run_ms = self.run_turn_ms = self.run_turn_px = None
+
+    def visit(self, sig, is_long: bool) -> None:
+        """Track the RETRACE — which bars price actually spent in the 0.5-0.886 band, and how deep
+        each visit ran. `zone_ms` / `zone_turn_ms` end up bracketing the DEEPEST visit, i.e. the one
+        that came closest to filling.
+
+        ⚠ **It must not be driven off the caller's `zone_hit`, which is a LATCH** (`l_half or
+        l_618`): once price tags 0.5 that stays true until the leg resets, so every bar to the death
+        reads as "in the zone" and the visit measures 717 bars on a real run. This asks the bar
+        directly — does its range overlap `[0.5, 0.886]` — which is the question the latch was
+        answering once and then remembering.
+
+        A bar with no fib band yet extends the visit in progress rather than opening or closing one:
+        the band is momentarily unknown, which is not the same as price having left it.
+        """
+        p2, p6 = sig.fibo_p2, sig.fibo_p6
+        if p2 is None or p6 is None:
+            return
+        band_lo, band_hi = (p2, p6) if p2 <= p6 else (p6, p2)
+        if sig.low > band_hi or sig.high < band_lo:
+            return
+        px = sig.low if is_long else sig.high
+        if self.run_bar is None or sig.index != self.run_bar + 1:
+            self.run_ms = self.run_turn_ms = sig.time_ms   # a new visit
+            self.run_turn_px = px
+        elif (px < self.run_turn_px) if is_long else (px > self.run_turn_px):
+            self.run_turn_px, self.run_turn_ms = px, sig.time_ms
+        self.run_bar = sig.index
+        if self.zone_turn_px is None or (
+                (self.run_turn_px < self.zone_turn_px) if is_long else
+                (self.run_turn_px > self.zone_turn_px)):
+            self.zone_ms, self.zone_turn_ms = self.run_ms, self.run_turn_ms
+            self.zone_turn_px = self.run_turn_px
 
 
 # ── the fib leg a trade was priced off (reporting only) ─────────────────────────
@@ -874,6 +937,7 @@ class Execution:
                 if m.edge is None and edge is not None:
                     m.edge = edge
                 if zone_hit:
+                    m.visit(sig, is_long)
                     m.zone = True
                     m.fvg = m.fvg or edge is not None
                     m.blk_v = m.blk_v or veto
@@ -911,7 +975,8 @@ class Execution:
             self.misses.append(MissedSetup(
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
                 met=met_n, code=code, arm_text=arm_text, arm_met=arm_met,
-                zone=m.zone, fvg=m.fvg, edge=float(price),
+                zone=m.zone, zone_time_ms=m.zone_ms, zone_turn_ms=m.zone_turn_ms,
+                fvg=m.fvg, edge=float(price),
                 near=met_n == 3 or (m.zone and not zone_met),
             ))
 

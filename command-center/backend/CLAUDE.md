@@ -1978,6 +1978,15 @@ emitter turns it into a list of strings, and the panel hides those on first rend
 lists them with their counts, so nothing is hidden silently, and one click brings any of them back —
 which the Pine's radio buttons cannot do.
 
+⚠ **A miss's `time` is the bar the setup DIED, and nothing may read it as "where the setup was".**
+`zoneTime` / `zoneTurn` carry that instead — the retrace it was waiting on, recorded by the strategy
+(2026-08-08). ✅ **Measured on the reference run: on 32 of the 35 three-of-three misses, price sits a
+median $22 and up to $205 from the setup's own entry edge on the death bar, and the death bar is a
+median 17 and up to 717 bars after the turn.** The Candlestick Reversals layer read `time` for one
+day and painted marks in the wrong part of the chart because of it. Both are `None` when price never
+reached the zone, and `None` must stay `None` — a fallback to `time` is the defect, a `0` is the
+epoch.
+
 Same on-disk-shape discipline as the blocks: a record missing `near` reads as `near: True`, so a
 file written before the flag existed does not have every one of its reasons filed as noise and
 hidden on open (which would make an old run look like it had no misses at all). Locked by
@@ -2210,8 +2219,9 @@ looks like it proved something.**
 trying to see if these candle patterns line up with my reversal where I took the trades, or the
 ultimate reversal point before the trade went into my favour"* — so that he can later ask whether
 candlestick patterns are worth adding as a confluence. The canonical `engines/candlesticks/` engine
-is replayed over the run's own candles and ONE candle is repainted navy per anchor. Never a second
-engine — bare-name import, public events only, the same shim as regime / news / structure / fvg / ob.
+is replayed over the run's own candles and every pattern candle in a setup's SPAN is repainted navy.
+Never a second engine — bare-name import, public events only, the same shim as regime / news /
+structure / fvg / ob.
 
 **It is read at `CHART_PRESET`, NOT the engine's defaults** (trend 117 / doji 0.01 / eleven
 patterns). Those are Aaron's brother's TradingView inputs, taken off a real export's own `cfg_*`
@@ -2236,35 +2246,68 @@ places that we didn't take trades or missed 3/3 trades."* ✅ **Measured: 518 an
 candle turned it* to ask; `of > 0` guards a record that counted no confluences at all, because
 `0 >= 0` would otherwise admit the least informative record there is.
 
+🔴 **A 3/3 MISS ANCHORS ON ITS RETRACE, NOT ON ITS OWN `time` — the second thing this layer got
+wrong, reported the same day.** A miss is booked on the bar the setup DIED, and that bar is nowhere
+near the setup: ✅ **measured on the reference run, price sits a median $22 and up to $205 from the
+setup's own entry edge by then, on 32 of the 35.** So the marks landed in a part of the chart the
+setup had nothing to do with — read off the screen as *"the reversal candle printed on the opposite
+side, which doesn't make sense … I'm expecting it to be that price got into the zone for the trade
+and there was a reversal candle."* The strategy now records the retrace (`zoneTime` / `zoneTurn`, see
+`strategies/python/mpc_sos_fade/CLAUDE.md`) and the span runs between them. ✅ **MEASURED, old vs
+new: the nearest mark to the setup's own entry edge goes from a median $20.67 to $3.16, and 21 of 35
+misses get a mark where 9 did.**
+
+🔴 **It CANNOT be derived here, which is why the strategy had to change.** The obvious cheap fix —
+scan back from the death bar for a bar that traded through `edge` — finds one for **all 35**,
+including the ten where price provably never reached the limit, because price crosses that level at
+unrelated moments. It would have been confidently wrong and silent. ⚠ **A run made before the
+strategy recorded those fields yields NO miss anchors at all, deliberately: drawing nothing is
+honest about a question the run cannot answer, and drawing it in the old place is not. Rerun to get
+them.**
+
 ⚠ **The parameter list is the guard.** There is no value you can pass that produces a block-anchored
 mark, so the only way blocks return is somebody adding the argument — and a signature test fails in
 front of them with the reason.
 
-### The window is split by OUTCOME
+### An anchor is a SPAN, and every pattern candle in it is drawn
 
-A **WINNER** is searched over its whole hold, entry → exit, and the answer must land within
-`_TURN_TOLERANCE_BARS` (2) of the deepest ADVERSE price of that hold. ✅ **MEASURED on run
-`997c14cc53bc`, 106 winners: the adverse extreme sits a median of 2 bars past entry, but p90 is 27
-and the worst is 112** — so the obvious fixed short window finds the real turn on barely half of
-them. ⚠ **The tolerance is what stops a 112-bar hold offering up whichever pattern happened to be
-nearest its extreme and calling it the reversal candle.** No pattern at the turn is a real answer.
+`(start, direction, end)` → every bar from `start` to the bar price ran FURTHEST AGAINST the setup
+inside it. That last bar is the turn; everything before it is the retracement the setup was entered
+into. **A trade spans entry → exit, win or lose; a 3/3 miss spans its retrace.**
 
-A **LOSER or a 3/3 MISS** gets `_WINDOW_BARS` (3) from the anchor. A loser never reversed in his
-favour, so it has no such point and the only question it can answer is *what was printing when I
-took this*; searching its hold would put the mark on its stop-out, which explains nothing.
+🔴 **It painted ONE candle per anchor until 2026-08-08 and that lost the whole question.** Aaron:
+*"you don't only have to give me the deepest candle — you could give me all the candles that would
+have shown a possible reversal all the way up to the deepest one … so let's say I entered at the
+fifty, but there was no reversal candles until 0.702, and then maybe 0.786. I could see, wow, I
+could have taken a trade at 0.702 or 0.786."* Read with the **Fibs** layer on, each mark sits on a
+rung, so the layer answers *which entry level had a candle behind it* — which a single mark can
+never say. ✅ **MEASURED: 194 anchors → 820 marks (was 153).** Trades: median span 5 bars / 1 mark,
+p90 13, max 43. Misses: median 3 bars / 1 mark, max 32.
 
-### Direction is a PREFERENCE, never a filter
+⚠ **Nothing is drawn PAST the turn.** After it price is moving the setup's way, and a reversal candle
+there is a different subject — drawing it would put marks all over the profitable half of a winner
+and read as the layer having no rule at all.
 
-Candidates are ranked **aligned → neutral → opposing** BEFORE nearness. 🔴 **Ranking on nearness
-alone is what put a `Bearish Engulfing` on a LONG that won** — reported from the screen: *"we should
-have plotted a bullish candle if one was present."* Nearness is now the tie-break WITHIN a tier.
+⚠ **A LOSER carries its exit too, and it used to carry `None`** and get a 3-bar window. Its span is
+the retracement it was entered into on the way to the stop, which is the same question. ✅ **MEASURED
+on 106 winners: the adverse extreme sits a median of 2 bars past entry, p90 27, worst 112** — so a
+fixed short window truncates the retracement on half of them.
 
-⚠ **The opposing tier is KEPT, and it is half the point of the layer**: *"if I'm trying to take a
-short with a bullish candle printed, and that's why price reversed, yeah, highlight that … if it
-lines up with my trades, then great. If not, it will show me why I was wrong."* An opposing candle
-is shown only when there is no aligned or neutral one at the turn — the honest answer to what was
-actually printing, never a filter that hides it. ✅ **MEASURED across the 194 anchors: 89 aligned,
-49 neutral, 15 against, 41 with no pattern at the turn.**
+⚠ **`_TURN_TOLERANCE_BARS` is GONE, and it was doing real damage.** It kept only patterns within 2
+bars of the extreme, so on a long retracement it deleted every earlier entry level — exactly the
+ones the request is about.
+
+### Direction orders the NAME on a bar, and never whether it is painted
+
+🔴 **Selecting one candle per anchor is what put a `Bearish Engulfing` on a LONG that won** —
+reported from the screen: *"we should have plotted a bullish candle if one was present."* That class
+of error is gone by construction: nothing is selected, so nothing is suppressed. What direction still
+decides is the NAME, in three tiers — **aligned → neutral → opposing**.
+
+⚠ **An opposing candle is drawn like any other, and that is half the point of the layer**: *"if I'm
+trying to take a short with a bullish candle printed, and that's why price reversed, yeah, highlight
+that … if it lines up with my trades, then great. If not, it will show me why I was wrong."* ✅
+**MEASURED across the 820 marks: 346 neutral, 259 bearish, 215 bullish.**
 
 ⚠ **The NEUTRAL tier is what does most of the work, and the reason is in the source Pine.** Ten of
 its fifteen rules gate on a `trend`-bar lookback, so in an uptrend the bullish rules cannot fire at
@@ -2278,11 +2321,11 @@ on a long.
 
 ### Tests
 
-`tests/test_candle_overlays.py` (22) + `tests/test_chart_spec_reversal_anchors.py` (8). ⚠ **A
-fail-watch against HEAD is vacuous for a new module**, so non-vacuity is by MUTATION — six of them,
-each turning a distinct test red: dropping the tolerance, ignoring `hold_end`, picking the earliest
-instead of the nearest, dropping the dedupe, dropping the direction tier, and dropping the label
-reorder. A seventh — making direction a FILTER rather than a preference — turns
+`tests/test_candle_overlays.py` (23) + `tests/test_chart_spec_reversal_anchors.py` (9). ⚠ **A
+fail-watch against HEAD is vacuous for a new module**, so non-vacuity is by MUTATION — each turning
+a distinct test red: marking only the turn, running the span past the turn, anchoring a miss on its
+death bar again, giving losers back their `None`, ignoring `hold_end`, dropping the dedupe, and
+dropping the label reorder. Making direction a FILTER rather than an ordering turns
 `test_with_NOTHING_but_an_opposing_candle_it_is_still_marked` red, which is the half worth guarding.
 
 ⚠ **Every fixture builds bars that make a REAL pattern fire and asserts that it did.** A test that

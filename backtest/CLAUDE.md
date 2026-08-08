@@ -143,6 +143,13 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   downstream knows what a "confluence" is — a strategy scoring out of four just ships `of=4`. `near`
   is the strategy's own "worth looking at" flag and must pass through UNTOUCHED: the chart derives
   its opening view from it, so defaulting or dropping it silently changes what a reader sees first.
+  ⚠ **`zone_time_ms` / `zone_turn_ms` (added 2026-08-08) bracket the RETRACE, and `time_ms` is NOT a
+  substitute for either** — that is the bar the setup DIED, a median 17 and up to 717 bars later and
+  a median $22 from the setup's own `edge` (measured). A consumer that read `time_ms` as "where the
+  setup was" put marks in the wrong part of a chart for a day; see
+  `strategies/python/mpc_sos_fade/CLAUDE.md` → *The RETRACE a miss was waiting on*. **`None` means
+  price never reached the zone and stays `None`** — a fallback to `time_ms` is the defect itself, and
+  a `0` is the epoch.
   Full path: `command-center/backend/CLAUDE.md` → *Missed setups*.
   **`fib`** (added 2026-08-02, `_trade_fib`) is the newest optional key on an equity-curve POINT:
   the fib LEG a trade was priced off, as `{start_ms, levels: [[ratio, price], …]}`, and absent

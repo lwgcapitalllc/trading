@@ -376,6 +376,48 @@ instead, in the Pine's precedence: veto → final hour → HTF → "the limit re
 touched it" (codes 4-7). `reasons` is still exposed as a one-item LIST purely so a miss and a block
 read identically all the way downstream.
 
+### The RETRACE a miss was waiting on (`zone_time_ms` / `zone_turn_ms`, 2026-08-08)
+
+🔴 **`MissedSetup.time_ms` is the bar the setup DIED, and something downstream read it as "where
+the setup was".** The lab's Candlestick Reversals layer anchored its marks there and painted them in
+a part of the chart the setup had nothing to do with — Aaron, off the screen: *"the reversal candle
+printed on the opposite side, which doesn't make sense … I'm expecting it to be that price got into
+the zone for the trade and there was a reversal candle."*
+
+✅ **MEASURED on the reference run (2020-01-01 → 2026-08-06, 155,807 M15 bars, 35 three-of-three
+misses): on 32 of the 35, price sits a median $22 and up to $205 from the setup's own `edge` on the
+death bar, which is a median 17 and up to 717 bars after the retrace.** That is correct for a marker
+saying *this setup is now over* and useless for anything asking *where was price when it was live*.
+
+`MissedSetup` therefore carries the retrace itself: `zone_time_ms` (the first bar of the visit) and
+`zone_turn_ms` (its most adverse bar). Both `None` when price never reached the band.
+
+🔴 **IT CANNOT BE DERIVED DOWNSTREAM, which is the reason this had to change here rather than in the
+consumer.** The cheap fix — scan back from the death bar for a bar that traded through `edge` —
+finds one for **all 35**, including the ten whose whole reason for existing is that price never
+reached the limit, because price crosses that level at unrelated moments. It would have been
+confidently wrong and silent.
+
+🔴 **It must NOT be driven off the caller's `zone_hit`, and that is the subtle half.** `zone_hit` is
+`l_half or l_618` — a **LATCH**: once price tags 0.5 it stays true until the leg resets, so every bar
+to the death reads as "in the zone" and the visit measures 717 bars. `_MissWatch.visit()` asks the
+BAR instead — does its range overlap `[fibo_p2, fibo_p6]` — which is the question the latch answered
+once and then remembered. ✅ **That one change took the median span 17 bars → 3.**
+
+⚠ **The DEEPEST visit is reported, not the first or the last.** A setup can tag the zone, leave, and
+come back — those are different retraces, and the one worth reporting is the one that came closest to
+filling.
+
+⚠ **REPORTING ONLY, and proven so rather than argued**: the strategy replayed at HEAD and at the
+working tree over the full **155,807 M15 bars** produces a byte-identical 159-trade list (same
+SHA-256 over every entry time, direction, entry price, exit price, R and exit reason).
+
+✅ **6 new tests in `tests/test_execution.py`, three MUTATION-proven** — dropping the band test (the
+latch bug restored), reporting the first visit instead of the deepest, and flipping the direction
+each turn a different one red. `_seq_short_ready` / `_seq_short_dead` were added for the last of
+those: the adverse extreme is the highest high on a short, and a long-only fixture cannot see it
+being backwards.
+
 **Three deliberate deviations from the Pine, all reporting-side:**
 
 1. **Every miss is recorded; nothing is filtered at write time.** The Pine has three view filters

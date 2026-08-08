@@ -20,8 +20,13 @@ def _trade(t: int, pnl: float, *, exit_t: int = 0, direction: str = "long") -> d
     return {"entryTime": t, "exitTime": exit_t or t + 1000, "pnl": pnl, "dir": direction}
 
 
-def _miss(t: int, met: int, of: int, direction: str = "long") -> dict:
-    return {"time": t, "met": met, "of": of, "dir": direction}
+def _miss(t: int, met: int, of: int, direction: str = "long",
+          *, zone=500, turn=560) -> dict:
+    """`time` is the bar the setup DIED; `zoneTime`/`zoneTurn` bracket the RETRACE. They are far
+    apart on purpose — on the reference run the death bar is a median 17 and up to 717 bars after
+    the turn, which is the whole reason the layer stopped anchoring on it."""
+    return {"time": t, "met": met, "of": of, "dir": direction,
+            "zoneTime": zone, "zoneTurn": turn}
 
 
 def test_a_trade_is_an_anchor_whether_it_won_or_lost():
@@ -29,18 +34,30 @@ def test_a_trade_is_an_anchor_whether_it_won_or_lost():
     assert [a[0] for a in out] == [100, 200]
 
 
-def test_a_winner_carries_its_exit_and_a_loser_does_NOT():
-    """The hold end is what switches the search from "3 bars past the entry" to "the whole hold".
-    A loser never reversed in his favour, so searching its hold would mark its stop-out."""
+def test_every_trade_spans_entry_to_EXIT_win_or_lose():
+    """The span is the retracement the trade was entered into, and a LOSER has one too — its marks
+    are the levels that offered a reversal on the way to the stop. ⚠ A loser used to carry `None`
+    and get a 3-bar window, which could not reach the deeper entries Aaron asked to see."""
     won, lost = reversal_anchors([_trade(100, 5.0, exit_t=900), _trade(200, -1.0, exit_t=950)], [])
-    assert won[2] == 900
-    assert lost[2] is None
+    assert (won[0], won[2]) == (100, 900)
+    assert (lost[0], lost[2]) == (200, 950)
 
 
-def test_a_three_of_three_miss_is_an_anchor():
+def test_a_three_of_three_miss_spans_its_RETRACE_not_its_death_bar():
+    """🔴 The reported defect. `time` (300) is the bar the setup DIED — measured on the reference
+    run, price sits a median $22 and up to $205 from the setup's own entry edge by then, so marks
+    anchored there landed in a part of the chart the setup had nothing to do with. The span is the
+    zone touch to the deepest bar of that visit."""
     out = reversal_anchors([], [_miss(300, 3, 3)])
-    assert [a[0] for a in out] == [300]
-    assert out[0][2] is None, "a miss has no hold to search"
+    assert [(a[0], a[2]) for a in out] == [(500, 560)]
+
+
+def test_a_miss_with_no_recorded_retrace_is_NOT_an_anchor():
+    """A run made before the strategy recorded the zone bars cannot answer where price was, and
+    drawing nothing is the honest answer. ⚠ Falling back to `time` is exactly the defect — the old
+    place — and defaulting to 0 would anchor on the epoch."""
+    assert reversal_anchors([], [_miss(300, 3, 3, zone=None, turn=None)]) == []
+    assert reversal_anchors([], [_miss(300, 3, 3, turn=None)]) == []
 
 
 def test_a_two_of_three_miss_is_NOT_an_anchor():

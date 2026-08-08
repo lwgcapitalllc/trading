@@ -34,14 +34,15 @@
 import { expect, test, type Page } from '@playwright/test'
 
 // The longest python run in the lab: 2020-01-01 → 2026-08-06 at M15. Its anchor set is 159 trades
-// + 35 three-of-three misses = 194, of which 153 carry a pattern at their turn — so the layer is
-// exercised on a real set rather than a handful. (It was 518 anchors and 424 marks until blocked
-// setups were dropped on 2026-08-08; see `services/chart_spec.reversal_anchors`.)
+// + 35 three-of-three misses = 194, and each anchor is a SPAN, so it draws ~820 marks — the layer
+// is exercised on a real set rather than a handful. (It was 518 anchors / 424 marks until blocked
+// setups were dropped, and 194 / 153 while each anchor drew a single candle; both on 2026-08-08.
+// See `services/chart_spec.reversal_anchors`.)
 const RUN = '997c14cc53bc'
 
-// A date this run has a mark on — 2026-07-30 06:00, an Inverted Hammer at the turn of a winning
-// long. Needed because 153 marks over 6.5 years means the newest bars usually have none on screen,
-// and a pixel check on an empty viewport reads exactly like a layer that does not draw.
+// A date this run has a mark on — 2026-07-30 05:30, a Bearish Engulfing inside a trade's span.
+// Needed because the newest bars often carry none, and a pixel check on an empty viewport reads
+// exactly like a layer that does not draw.
 const DATE_WITH_A_MARK = '2026-07-30'
 
 const LAYER = 'Candlestick Reversals'
@@ -118,7 +119,7 @@ test('the layer is offered with its count and starts switched OFF', async ({ pag
   await toggleAnalysis(page)
   const row = page.getByRole('button', { name: new RegExp(LAYER) })
   await expect(row).toBeVisible()
-  // The count is what makes a layer legible before you switch it on — 424 marks and 4 read very
+  // The count is what makes a layer legible before you switch it on — 820 marks and 4 read very
   // differently. It is the anchor set's answer, so it must be a real number, never blank.
   await expect(row).toContainText(/\d/)
 })
@@ -126,8 +127,8 @@ test('the layer is offered with its count and starts switched OFF', async ({ pag
 test('ticking it repaints candles, and unticking it puts them back', async ({ page }) => {
   await openPriceTab(page)
   // ⚠ Go somewhere a mark EXISTS before measuring. This check used to read the opening viewport,
-  // which worked only while blocked setups were anchors and the run carried 424 marks; at 153 the
-  // newest bars have none, and an empty viewport is pixel-identical to a layer that never draws.
+  // which worked only while blocked setups were anchors and the run carried 424 marks; an empty
+  // viewport is pixel-identical to a layer that never draws.
   await goToDate(page, DATE_WITH_A_MARK)
   const off = await navyPixels(page)
   expect(off).toBe(0)
@@ -176,7 +177,7 @@ test('the pattern name is off by default and comes on from Chart settings', asyn
   await toggleAnalysis(page)
   await page.getByRole('button', { name: new RegExp(LAYER) }).click()
   await toggleAnalysis(page)
-  // 153 marks over 6.5 years, so the newest bars carry none — go where one is.
+  // The newest bars often carry none — go where one is.
   await goToDate(page, DATE_WITH_A_MARK)
   await expect.poll(() => navyPixels(page), { timeout: 30_000 }).toBeGreaterThan(0)
 
