@@ -64,3 +64,14 @@
 2026-08-07 16:49:10,512 [INFO] Warmed 5000 bars (2026-05-24 22:15:00+00:00 → 2026-08-07 16:30:00+00:00) in 5.3s
 2026-08-07 16:49:10,520 [INFO] Equity re-anchored to the account after warm-up: 3,966.26 → 1,992.50
 2026-08-07 16:49:11,507 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-07 18:36:11,078 [INFO] Stop requested by file — shutting down cleanly.
+2026-08-07 18:36:11,079 [INFO] Stop requested — shutting down.
+2026-08-07 18:36:11,082 [INFO] Cleared a stale stop.request from a previous run.
+2026-08-07 18:36:12,184 [INFO] MT5 disconnected.
+2026-08-07 18:36:23,040 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash 556bf70c18b7 | commit a9bf348 | frozen | LIVE
+2026-08-07 18:36:23,570 [INFO] Connected | #700107749 | $1,992.50 | PUPrime-Demo
+2026-08-07 18:36:23,570 [INFO] MT5 connection lock released
+2026-08-07 18:36:23,630 [INFO] Sizing against account balance $1,992.50
+2026-08-07 18:36:27,614 [INFO] Warmed 5000 bars (2026-05-25 00:00:00+00:00 → 2026-08-07 18:15:00+00:00) in 3.7s
+2026-08-07 18:36:27,616 [INFO] Equity re-anchored to the account after warm-up: 3,966.26 → 1,992.50
+2026-08-07 18:36:28,161 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
