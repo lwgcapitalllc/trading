@@ -217,8 +217,13 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
                   {it.section}
                 </div>
               )}
+              {/* Every row here is a TOGGLE, and its on-state was carried only by a colour dot and a
+                  tick glyph — so nothing outside the pixels could read it. `aria-pressed` states it
+                  for a screen reader and, equally, for a browser check: a test that has to infer a
+                  toggle's state from an icon is asserting the icon. */}
               <button
                 onClick={it.toggle}
+                aria-pressed={it.on}
                 className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
               >
                 <span
@@ -1383,16 +1388,53 @@ export default function ChartPanel({
     if (next.has(label)) next.delete(label); else next.add(label)
     return next
   })
+
+  // SCORE sub-toggles — "3 of 3" / "2 of 3" (Aaron, 2026-08-08: *"sometimes I just want to see 2/3
+  // vs 3/3 because they are legit different"*). A 3/3 had every confluence and still did not trade;
+  // a 2/3 never got there. Reading one is a different question from reading the other, and the
+  // reason list could not express it: the labels map onto the scores in THIS strategy, so the
+  // filter existed, but only for a reader who already knew which of the seven labels meant which.
+  //
+  // ⚠ Derived from the data and OPAQUE, exactly like the reason rows — the panel does not know what
+  // a confluence is, only that a miss carries `met`/`of`. A strategy scoring out of four lists
+  // "3 of 4" here without this file changing, which is the same contract `of` already had.
+  const missScores = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const m of misses) {
+      if (!m.of) continue      // a record that counted nothing cannot be filed under a score
+      const k = `${m.met}/${m.of}`
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    // Best score first — a 3/3 is the one worth opening on, and a descending list puts it at the top
+    // whatever the denominator.
+    return Array.from(counts, ([key, count]) => ({ key, count }))
+      .sort((a, b) => Number(b.key.split('/')[0]) - Number(a.key.split('/')[0]))
+  }, [misses])
+  // All scores start SHOWN. The layer's opening view is the emitter's `missNoise` recommendation and
+  // this must not quietly narrow it — a second default would be a second answer to "what do I see
+  // first", and the reader would have no way to tell which one hid a marker.
+  const [hiddenMissScores, setHiddenMissScores] = useState<Set<string>>(() => new Set())
+  useEffect(() => { setHiddenMissScores(new Set()) }, [spec.misses])
+  const toggleMissScore = (key: string) => setHiddenMissScores(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
+
+  // Score AND reason. Two independent axes, so unticking "2 of 3" must not also decide anything
+  // about the reasons — that is the whole point of splitting them.
   const missVisible = useCallback(
-    (m: ChartMiss) => m.reasons.some(r => !hiddenMissReasons.has(r.label)),
-    [hiddenMissReasons],
+    (m: ChartMiss) => !hiddenMissScores.has(`${m.met}/${m.of}`)
+      && m.reasons.some(r => !hiddenMissReasons.has(r.label)),
+    [hiddenMissReasons, hiddenMissScores],
   )
   const shownMissCount = useMemo(
     () => misses.reduce((n, m) => n + (missVisible(m) ? 1 : 0), 0),
     [misses, missVisible],
   )
 
-  useEffect(() => { setMarkerTip(null) }, [blocks, blocksOn, hiddenReasons, misses, missesOn, hiddenMissReasons])
+  useEffect(() => { setMarkerTip(null) },
+    [blocks, blocksOn, hiddenReasons, misses, missesOn, hiddenMissReasons, hiddenMissScores])
 
   // Portfolio-stack layers. The roster is DERIVED from the trades themselves (`layer`/`layerName`/
   // `layerColor`), so the panel stays strategy-agnostic — it sees layers as data, exactly like
@@ -2805,7 +2847,17 @@ export default function ChartPanel({
                 // Blocked because it's the same question one step earlier in the setup's life,
                 // and only when the run reports any (an NT8/MT5 run reports none).
                 ...(misses.length > 0 ? [{ key: 'misses', label: 'Missed', color: MISS_COLOR, on: missesOn, toggle: () => setMissesOn(o => !o), count: shownMissCount }] : []),
-                // …one sub-toggle per MISSING confluence, same shape as Blocked's. Some start
+                // …the SCORE first, because it is the coarser cut and the one that separates two
+                // genuinely different questions: a 3/3 had every confluence and still did not
+                // trade, a 2/3 never got there. All start ON, so this narrows nothing until it is
+                // used. Listed above the reasons deliberately — reason answers "why", score answers
+                // "how close", and the reader picks the axis before the value.
+                ...(missesOn ? missScores.map(s => ({
+                  key: `mis-score-${s.key}`, label: `${s.key.replace('/', ' of ')}`, color: MISS_COLOR,
+                  on: !hiddenMissScores.has(s.key), toggle: () => toggleMissScore(s.key),
+                  sub: true, count: s.count,
+                })) : []),
+                // …then one sub-toggle per MISSING confluence, same shape as Blocked's. Some start
                 // OFF — the ones the strategy flagged as routine (see `spec.missNoise`) — so the
                 // layer opens on the misses worth studying rather than every setup that simply
                 // never retraced. Their counts are still listed, so nothing is hidden silently.

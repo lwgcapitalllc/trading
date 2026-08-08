@@ -1218,7 +1218,7 @@ real browser", done by hand, which is why the Overview's twelve defects each sur
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
 **66 tests in 5 files**, run with `npm test` from `frontend/`.
 
-**`tests/candle-reversals.spec.ts` (5, ~28s) — added 2026-08-08 with the Candlestick Reversals
+**`tests/candle-reversals.spec.ts` (6, ~32s) — added 2026-08-08 with the Candlestick Reversals
 layer.** ⚠ **Its `RUN` and `DATE_WITH_A_MARK` constants are tied to real data and drift**: the layer
 went 424 marks → 153 → **820** in one day as its anchor rule was corrected twice, and a date that had
 a mark under one rule need not under the next. When a check here goes red, ask what the run actually
@@ -1235,7 +1235,11 @@ held a mark only while the run carried 424 of them.** At 153 the newest bars hav
 empty viewport is pixel-identical to a layer that never draws** — so both now jump to a date that has
 one. **A pixel check has to be pointed at something before it means anything.** ⚠ The label check
 counts the mark's lighter EDGE colour, not the navy body: the body is drawn either way, so a
-`navyPixels` assertion would pass against a mark with no tag. ⚠ The Chart settings gear is a TOGGLE —
+`navyPixels` assertion would pass against a mark with no tag. ⚠ **Check 6 (the Missed layer's SCORE
+filter) lives here rather than in a Missed-layer spec because this is the only suite that drives that
+dropdown, and it reads the layer's COUNT rather than pixels — a pixel check cannot tell 35 markers
+from 179.** ⚠ **Its "every score starts shown" assertion is what makes it non-vacuous: without it a
+mutation defaulting `2/3` hidden PASSED.** ⚠ The Chart settings gear is a TOGGLE —
 a second click closes the panel — and closing it via `.getByRole('button').last()` inside the panel
 picks up the fib editor's own delete buttons instead.
 

@@ -683,8 +683,29 @@ here**, so the chart shows exactly what the strategy saw.
     a panel whose one rule is that it has none; hiding them by an emitter-supplied list of opaque
     strings does not. The hidden reasons are still listed with their counts, so nothing vanishes
     silently, and one click restores any of them.
+  - **It filters by SCORE as well as by reason** (2026-08-08, Aaron: *"sometimes I just want to see
+    2/3 vs 3/3 because they are legit different"*). A 3/3 had every confluence and still did not
+    trade; a 2/3 never got there. **The reason list could already express that split — the seven
+    labels map onto the two scores in this strategy — but only for a reader who already knew which
+    was which**, which is the friction: a filter that requires you to hold the mapping in your head
+    is not a filter, it is a lookup table you perform by hand.
+    - **Derived and OPAQUE, exactly like the reason rows.** The panel does not know what a
+      confluence is, only that a miss carries `met` / `of`; a strategy scoring out of four lists
+      "3 of 4" here without this file changing, which is the contract `of` already had.
+    - **Score AND reason — two independent axes.** Unticking "2 of 3" says nothing about the
+      reasons, which is the point of splitting them. Score is listed FIRST because it is the
+      coarser cut: reason answers *why*, score answers *how close*, and the reader picks the axis
+      before the value.
+    - ⚠ **Every score starts SHOWN, and that is load-bearing.** The layer's opening view is
+      `missNoise`'s recommendation; a score defaulting to hidden would be a SECOND answer to "what
+      do I see first" and a reader would have no way to tell which of the two had hidden a marker.
+      The browser check asserts it — **without that assertion a mutation defaulting `2/3` hidden
+      passed**, which is what the fail-watch was for.
   - Everything else — per-reason filters with ANY-of semantics, clipping to the loaded candles,
     default OFF, listed only when the run reports any — is the Blocked layer's, unchanged.
+  - ⚠ **Every row in the Analysis menu now carries `aria-pressed`.** Its on-state used to live only
+    in a colour dot and a tick glyph, so nothing outside the pixels could read it — and a test that
+    infers a toggle's state from an icon is asserting the icon.
 - **Fair value gaps** (`Fair Value Gaps` overlay group, backend `services/fvg_overlays.py`) — **the
   gaps that were LIVE when something happened.** The canonical `engines/fair_value_gaps/` engine is
   replayed server-side over the run's candles and a gap is emitted **only if it was in the engine's

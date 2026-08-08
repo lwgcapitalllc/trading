@@ -217,3 +217,45 @@ test('the setting explains itself from the ⓘ, not from a paragraph under its l
   await page.getByText('Name the pattern').locator('xpath=../..').locator('span.cursor-help').hover()
   await expect(page.getByText(HELP)).toBeVisible()
 })
+
+test('the Missed layer filters by SCORE as well as by reason', async ({ page }) => {
+  // Aaron, 2026-08-08: *"sometimes I just want to see 2/3 vs 3/3 because they are legit
+  // different"*. A 3/3 had every confluence and still did not trade; a 2/3 never got there.
+  //
+  // ⚠ It reads the layer's own COUNT rather than pixels, deliberately — the miss markers are DOM-
+  // free canvas draws like everything else here, but the count is what the filter is for and a
+  // pixel check could not tell 35 markers from 179. Proven by MUTATION: dropping the score clause
+  // from `missVisible` leaves the count unmoved and turns this red.
+  await openPriceTab(page)
+  await toggleAnalysis(page)
+  const missed = page.getByRole('button', { name: /^Missed/ })
+  await missed.click()                                   // switch the layer on to reveal its filters
+
+  // ⚠ Every score starts SHOWN, and this assertion is why the check is not vacuous. The layer's
+  // opening view is the emitter's `missNoise` recommendation; a score defaulting to hidden would be
+  // a SECOND answer to "what do I see first", and a reader would have no way to tell which of the
+  // two had hidden a marker. Without this, a mutation defaulting `2/3` hidden passes.
+  for (const s of ['3 of 3', '2 of 3']) {
+    await expect(page.getByRole('button', { name: new RegExp(`^${s}`) })).toHaveAttribute(
+      'aria-pressed', 'true')
+  }
+
+  const count = async () => Number((await missed.textContent())!.replace(/\D/g, ''))
+  const all = await count()
+  expect(all).toBeGreaterThan(0)
+
+  // Hiding one score must leave strictly fewer, and hiding both must leave none — the second half
+  // is what proves the filter is doing the work rather than the layer being off.
+  await page.getByRole('button', { name: /^2 of 3/ }).click()
+  const threeOnly = await count()
+  expect(threeOnly).toBeGreaterThan(0)
+  expect(threeOnly).toBeLessThan(all)
+
+  await page.getByRole('button', { name: /^3 of 3/ }).click()
+  await expect.poll(count).toBe(0)
+
+  // ...and back, because a filter that cannot be undone is a narrowing, not a filter.
+  await page.getByRole('button', { name: /^3 of 3/ }).click()
+  await page.getByRole('button', { name: /^2 of 3/ }).click()
+  expect(await count()).toBe(all)
+})
