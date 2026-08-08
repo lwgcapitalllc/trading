@@ -131,7 +131,9 @@
       "Bash(sqlite3 data/lab.db \"PRAGMA table_info\\(backtest_runs\\)\")",
       "Bash(sqlite3 -header -line data/lab.db \"select run_id, strategy_id, instrument, bar_value, start_date, end_date, status, trade_count, net_pnl, max_drawdown_pct, cost_layers, broker_profile, sizing_mode, created_at from backtest_runs where run_id like 'e51d95f212e3%'\")",
       "Bash(sqlite3 data/lab.db \"select trades_path, equity_curve_path from backtest_runs where run_id like 'e51d95f212e3%'\")",
-      "Bash(sqlite3 data/lab.db \"select params from backtest_runs where run_id like 'e51d95f212e3%'\")"
+      "Bash(sqlite3 data/lab.db \"select params from backtest_runs where run_id like 'e51d95f212e3%'\")",
+      "Bash(echo \"diff-exit=$?\")",
+      "Bash(python3 -m pytest candlesticks/tests/ -q)"
     ],
     "additionalDirectories": [
       "/private/tmp",

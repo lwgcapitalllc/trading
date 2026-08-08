@@ -1,0 +1,105 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+// © repo32 (the pattern rules below) — instrumentation by this repo
+//@version=6
+// ============================================================================
+//  CANDLESTICK EXPORT — parity harness for engines/candlesticks/
+// ============================================================================
+// Instrumented copy of the FIFTEEN PATTERN RULES from candle_sticks.pine, with ALL
+// DRAWING REMOVED — no plotshape, no alertcondition, no colour inputs. It adds px_*
+// columns so a TradingView CSV export can be diffed bar-by-bar against the Python
+// CandlestickEngine by engines/candlesticks/tools/compare_candles.py.
+//
+// 🔴 IT WAS NOT BUILT THIS WAY FIRST, AND THE FIRST TWO ATTEMPTS BOTH FAILED WITH
+// **RE10140** — an undocumented TradingView runtime error, raised with a clean compile
+// and NO calculation spinner, i.e. at INITIALIZATION before a bar was processed.
+//
+//   Attempt 1: the parent verbatim + `overlay = false, max_bars_back = 500`. Both
+//              extras were mine, both were removed — max_bars_back guarded a hazard
+//              that does not exist (the `open[trend]` offset is on the BUILT-IN open
+//              series, which carries ~10,000 bars natively) while allocating a buffer
+//              for every series in the script; overlay was pure cosmetics.
+//   Attempt 2: the parent verbatim, title-only diff. STILL RE10140.
+//
+// So the deviations were never the whole story, and what was left is the thing this
+// file had that NO OTHER export harness in this repo has: it DREW. 15 `plotshape`
+// calls each carrying multi-line `text`, plus 15 `alertcondition` calls — on a chart
+// already carrying fifteen other scripts. fvg_export.pine runs 40 plot columns on the
+// same chart without complaint, so the column COUNT was never the problem; the drawing
+// was the only real difference. ⚠ That is also the convention every sibling harness
+// already follows and this file broke: an export exists to EMIT COLUMNS, and nobody
+// ever looks at its chart, so every shape it draws is cost with no reader.
+//
+// ⚠ THE VERIFICATION CONTRACT CHANGED WITH IT, AND THE NEW ONE IS THE ONE THAT MATTERS.
+// This is no longer a byte-identical twin, so `diff` against the parent is meaningless.
+// What must hold is that the SIXTEEN LOGIC LINES are byte-identical, and that is
+// checkable in one command — run it after ANY edit to either file:
+//
+//   R='^(doji|bearHarami|bullHarami|bearEng|bullEng|piercing|lower|bullBelt|bullKick|bearKick|hangingMan|eveningStar|morningStar|shootingStar|hammer|invHammer) ='
+//   diff <(grep -E "$R" candle_sticks_export.pine) <(grep -E "$R" candle_sticks.pine)
+//
+// must print NOTHING. A harness whose rules have drifted from the file it mirrors
+// reports a correct engine as red — see fvg_export.pine's 2026-08-03 stale-cap
+// incident, where exactly that happened.
+//
+// NOTE: transparent COLOUR (alpha 100), never `display = display.none`. TradingView's
+// "Export chart data" drops display.none series from the CSV — the trap every export
+// in this repo records — so a hidden column simply never reaches the file.
+//
+// The pattern flags are the whole decision stream: this source has no state machine,
+// so a bar's fifteen booleans ARE its output. `px_lower` is a diagnostic, not a
+// decision — it is the one intermediate value a reader cannot recompute from the CSV's
+// own OHLC without knowing whether Pine returned `na` early, which is exactly the
+// assumption engines/candlesticks/engine.py names in its docstring.
+// ============================================================================
+indicator("Candlestick Patterns Export", overlay = true)
+
+// The two settings the rules read, verbatim from the parent. The six colour inputs are
+// deliberately NOT carried: they feed drawing only, and an unused input is a control
+// that invites somebody to change it and expect something to happen.
+trend = input.int(5, minval = 1, title = "Trend in Bars")
+dojiSize = input.float(0.05, minval = 0.01, title = "Doji size")
+
+// ── The fifteen rules, byte-identical to candle_sticks.pine (see the check above). ──
+doji = math.abs(open - close) <= (high - low) * dojiSize
+bearHarami = close[1] > open[1] and open > close and open <= close[1] and open[1] <= close and open - close < close[1] - open[1] and open[trend] < open
+bullHarami = open[1] > close[1] and close > open and close <= open[1] and close[1] <= open and close - open < open[1] - close[1] and open[trend] > open
+bearEng = close[1] > open[1] and open > close and open >= close[1] and open[1] >= close and open - close > close[1] - open[1] and open[trend] < open
+bullEng = open[1] > close[1] and close > open and close >= open[1] and close[1] >= open and close - open > open[1] - close[1] and open[trend] > open
+piercing = close[1] < open[1] and open < low[1] and close > close[1] + ((open[1] - close[1]) / 2) and close < open[1] and open[trend] > open
+lower = ta.lowest(10)[1]
+bullBelt = low == open and open < lower and open < close and close > ((high[1] - low[1]) / 2) + low[1] and open[trend] > open
+bullKick = open[1] > close[1] and open >= open[1] and close > open and open[trend] > open
+bearKick = open[1] < close[1] and open <= open[1] and close <= open and open[trend] < open
+hangingMan = (high - low > 4 * math.abs(open - close)) and ((close - low) / (0.001 + high - low) >= 0.75) and ((open - low) / (0.001 + high - low) >= 0.75) and open[trend] < open and high[1] < open and high[2] < open
+eveningStar = close[2] > open[2] and math.min(open[1], close[1]) > close[2] and open < math.min(open[1], close[1]) and close < open
+morningStar = close[2] < open[2] and math.max(open[1], close[1]) < close[2] and open > math.max(open[1], close[1]) and close > open
+shootingStar = open[1] < close[1] and open > close[1] and high - math.max(open, close) >= math.abs(open - close) * 3 and math.min(close, open) - low <= math.abs(open - close)
+hammer = (high - low > 3 * math.abs(open - close)) and ((close - low) / (0.001 + high - low) > 0.6) and ((open - low) / (0.001 + high - low) > 0.6)
+invHammer = (high - low > 3 * math.abs(open - close)) and ((high - close) / (0.001 + high - low) > 0.6) and ((high - open) / (0.001 + high - low) > 0.6)
+
+// ── Parity columns ──
+plot(doji         ? 1.0 : 0.0, "px_doji",          color = color.new(color.gray, 100))
+plot(bearHarami   ? 1.0 : 0.0, "px_bear_harami",   color = color.new(color.gray, 100))
+plot(bullHarami   ? 1.0 : 0.0, "px_bull_harami",   color = color.new(color.gray, 100))
+plot(bearEng      ? 1.0 : 0.0, "px_bear_eng",      color = color.new(color.gray, 100))
+plot(bullEng      ? 1.0 : 0.0, "px_bull_eng",      color = color.new(color.gray, 100))
+plot(piercing     ? 1.0 : 0.0, "px_piercing",      color = color.new(color.gray, 100))
+plot(bullBelt     ? 1.0 : 0.0, "px_bull_belt",     color = color.new(color.gray, 100))
+plot(bullKick     ? 1.0 : 0.0, "px_bull_kick",     color = color.new(color.gray, 100))
+plot(bearKick     ? 1.0 : 0.0, "px_bear_kick",     color = color.new(color.gray, 100))
+plot(hangingMan   ? 1.0 : 0.0, "px_hanging_man",   color = color.new(color.gray, 100))
+plot(eveningStar  ? 1.0 : 0.0, "px_evening_star",  color = color.new(color.gray, 100))
+plot(morningStar  ? 1.0 : 0.0, "px_morning_star",  color = color.new(color.gray, 100))
+plot(shootingStar ? 1.0 : 0.0, "px_shooting_star", color = color.new(color.gray, 100))
+plot(hammer       ? 1.0 : 0.0, "px_hammer",        color = color.new(color.gray, 100))
+plot(invHammer    ? 1.0 : 0.0, "px_inv_hammer",    color = color.new(color.gray, 100))
+
+// Diagnostic: ta.lowest(10)[1], the only intermediate `bullBelt` reads. na before ten
+// bars exist, which is what makes a belt impossible there on BOTH sides.
+plot(lower, "px_lower", color = color.new(color.gray, 100))
+
+// ── cfg_* columns: the exact settings this export ran with, so compare_candles.py
+//    configures the Python engine FROM the file rather than from a hardcoded guess.
+//    Constant every bar; the tool reads them once and REFUSES an export missing them. ──
+plot(trend,    "cfg_trend",     color = color.new(color.gray, 100))
+plot(dojiSize, "cfg_doji_size", color = color.new(color.gray, 100))
