@@ -331,6 +331,27 @@ def main(argv=None) -> int:
         print(f"  terminal   {path}")
         print(f"  account    {acct.login} / {acct.server} / {acct.currency} "
               f"/ balance {acct.balance:,.2f}")
+        # ── everything the ACCOUNT itself declares (2026-08-08) ────────────────────────────────
+        # Added because two PU Prime demos of supposedly DIFFERENT tiers (Prime 700152904 and ECN
+        # 700152905) came back byte-identical on the symbol specification — same `XAUUSD.p`, same
+        # swap, same stops level — so nothing in this tool could tell them apart.
+        #
+        # ⚠ **The thing that actually separates those two tiers is COMMISSION, and commission is
+        # not a symbol property.** MT5 publishes it nowhere on the spec; it lands on a filled deal
+        # and only there. So treat this block as a search for a discriminator, NOT as one: if two
+        # accounts match on every line here as well, the honest conclusion is that the terminal
+        # cannot answer the question, and the answer is one 0.01-lot round turn on each and a read
+        # of `mt5_ops.get_deal_breakdown()`.
+        #
+        # `leverage` and the two stop-out levels are the plausible tier-linked fields; `company`
+        # and `margin_mode` are printed to catch an account that is quietly on a different entity.
+        for name, val in (("company", acct.company), ("leverage", f"1:{acct.leverage}"),
+                          ("margin_mode", acct.margin_mode), ("trade_mode", acct.trade_mode),
+                          ("margin_so_call", acct.margin_so_call),
+                          ("margin_so_so", acct.margin_so_so),
+                          ("limit_orders", acct.limit_orders),
+                          ("fifo_close", acct.fifo_close)):
+            print(f"  {name:<16} {val}")
         print()
 
         s = spec(mt5, symbol)
