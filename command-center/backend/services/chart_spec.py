@@ -39,6 +39,7 @@ from typing import Optional
 
 from services import history_limits, lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
+from services.candle_overlays import GROUP_CANDLES, build_candle_overlays
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.liquidity_overlays import GROUPS as GROUPS_LIQ
 from services.liquidity_overlays import build_liquidity_overlays
@@ -386,6 +387,36 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
     return out
 
 
+def reversal_anchors(
+    trades: list[dict], misses: list[dict],
+) -> list[tuple[int, str, Optional[int]]]:
+    """Where the Candlestick Reversals layer is allowed to paint a candle.
+
+    **The whole rule, and it is Aaron's (2026-08-08): trades, win or lose, and 3/3 misses. Nothing
+    else.** Public and named rather than inline because it is the one thing about this layer that
+    has already been got wrong once, and it is not derivable from anything else on the spec.
+
+    ⚠ **BLOCKED setups are deliberately NOT anchors.** They were until this was read on a real
+    chart: 324 of them on the reference run against 159 trades and 35 three-of-three misses, so they
+    were two thirds of every mark — and the Blocked layer defaults OFF, so they painted navy candles
+    in places the reader could see no setup at all. That reads as the layer firing at random, which
+    is exactly how it was reported.
+
+    ⚠ **A 2/3 miss is excluded for a different reason** — it was never a setup, so there is no
+    "which candle turned it" to ask. `of > 0` guards a record that states no score at all rather
+    than letting `0 >= 0` admit it.
+
+    The third element is the hold END, and only a WINNER has one: its search runs entry → exit to
+    find where price stopped going against it ("the ultimate reversal point before the trade went
+    into my favour"). A loser never had such a point, so `None` gives it the short window at its
+    entry and it answers the other question — what was printing when I took this.
+    """
+    return (
+        [(t["entryTime"], t["dir"], t["exitTime"] if t["pnl"] > 0 else None) for t in trades]
+        + [(m["time"], m["dir"], None) for m in misses if m["of"] > 0 and m["met"] >= m["of"]]
+    )
+
+
 def _build_misses(run_dir: Path, candles: list[dict]) -> tuple[list[dict], list[str]]:
     """The run's MISSED setups → the chart's `misses` array, plus the reason labels the
     chart should start with HIDDEN.
@@ -682,6 +713,11 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # order of magnitude in volume; see liquidity_overlays.py.
     overlays = overlays + build_liquidity_overlays(candles, anchors)
 
+    # Candlestick reversals — ONE candle repainted per setup, and the only layer here whose anchor
+    # set is NARROWER than the `anchors` above: trades and 3/3 misses only, no blocked setups. See
+    # `reversal_anchors` for why that is the feature rather than a filter.
+    overlays = overlays + build_candle_overlays(candles, reversal_anchors(trades, misses))
+
     # Session VWAP — a main-pane line off the canonical engine, default OFF. It is the one layer
     # here that needs the bar's VOLUME, so it returns None (no toggle) whenever the run's bars
     # carry none; see vwap_overlays.py for why a missing volume is a refusal rather than a zero.
@@ -780,8 +816,9 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         # any one strategy — identical for every leg (same instrument/timeframe/window). So the
         # stack's price chart carries the base leg's, giving it full BacktestDetail parity
         # (structure layers, ATR pane, fib/measurement tools all read the same spec).
-        # The ANCHORED groups — fair value gaps, order blocks and the three liquidity tiers — are the
-        # exception, dropped for the same reason blocks and misses are: every one of them is anchored
+        # The ANCHORED groups — fair value gaps, order blocks, candlestick reversals and the three
+        # liquidity tiers — are the exception, dropped for the same reason blocks and misses are:
+        # every one of them is anchored
         # to the BASE leg's trades, so on a merged chart they would draw at one strategy's entries and
         # nothing at the others' — which reads as "these setups had gaps and those didn't" rather than
         # "only one leg was measured". A leg's own page still carries all of them.
@@ -790,7 +827,7 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         # not the level, it is WHICH levels were selected for drawing, and that selection is the base
         # leg's alone. A market fact filtered through one strategy's anchors is not a market fact.
         "overlays": [dict(o) for o in src.get("overlays", [])
-                     if o.get("group") not in (GROUP_FVG, GROUP_OB, *GROUPS_LIQ)],
+                     if o.get("group") not in (GROUP_FVG, GROUP_OB, GROUP_CANDLES, *GROUPS_LIQ)],
         "indicators": [dict(i) for i in src.get("indicators", [])],
         "layers": layers,
         # The base leg's run_id — the frontend routes M1/M5 drill-down + fullscreen candle fetches

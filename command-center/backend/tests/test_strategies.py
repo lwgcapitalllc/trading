@@ -29,6 +29,10 @@ EXPECTED_CLASS_NAMES = {
     "LondonBreakout",
     "MpcSosFadeStrategy",
     "MpcBLegStrategy",
+    # Re-added 2026-08-08 with the `mpc_bos` port's Python side (2026-08-07). This roster has now
+    # gone stale in BOTH directions — a deleted strategy left behind, then a new one not added —
+    # which is the callout above earning its keep for the second time.
+    "MpcBosStrategy",
 }
 
 SYNTHETIC_CS = textwrap.dedent("""\

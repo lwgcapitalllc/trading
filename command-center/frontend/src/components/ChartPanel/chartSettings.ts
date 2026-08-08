@@ -23,6 +23,8 @@
 export interface ChartSettings {
   /** Trade annotations carry their PRICE (`Entry 2635.58`) as well as their name. */
   tradeLabelPrices: boolean
+  /** A repainted candlestick-reversal candle names its pattern (`Bearish Engulfing`). */
+  candleMarkLabels: boolean
 }
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
@@ -31,6 +33,11 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   // setting now because a 1m re-entry's box is short enough that the chips stack on top of each
   // other, and on that chart the price is what makes them too wide to fit.
   tradeLabelPrices: true,
+  // Default OFF (Aaron, 2026-08-08). Every mark draws its own tag with no cross-overlay
+  // de-collision — unlike the batched `LABEL` template — so on a run with marks a few bars apart
+  // the names sit on top of the neighbouring candles. The COLOUR is the signal; the name is what
+  // you switch on when you are asking which pattern it was.
+  candleMarkLabels: false,
 }
 
 export type SettingKind = 'toggle'
@@ -70,6 +77,17 @@ export const SECTIONS: SettingSection[] = [
         label: 'Show prices in labels',
         kind: 'toggle',
         help: 'Off = just Entry / SL / TP1, with no number beside them.',
+      },
+    ],
+  },
+  {
+    title: 'Candlestick reversals',
+    items: [
+      {
+        key: 'candleMarkLabels',
+        label: 'Name the pattern',
+        kind: 'toggle',
+        help: 'Off = the candle is painted navy with no tag. Hover still names it.',
       },
     ],
   },

@@ -51,12 +51,19 @@ export const STRUCTURE_GROUP_COLOR: Record<typeof STRUCTURE_GROUPS[number], stri
  *
  *  ⚠ ORDER MATTERS BEYOND THE MENU: `DEBUG_ON_GROUPS` in `index.tsx` reads `ANALYSIS_GROUPS[0]`, so
  *  a new layer goes on the END unless it is genuinely meant to join Deep debug. */
+/** The candle-repaint group, named on its own because the panel has to reason about it: a
+ *  candlestick pattern is a property of ONE timeframe's bars, so this layer is only meaningful at
+ *  the timeframe it was computed on. Every other analysis group is a price/time zone and survives a
+ *  resample unchanged. MUST match `GROUP_CANDLES` in the backend `candle_overlays.py`. */
+export const GROUP_CANDLE_MARKS = 'Candlestick Reversals'
+
 export const ANALYSIS_GROUPS = [
   'Fair Value Gaps',
   'Order Blocks',
   'Liquidity — Daily/Weekly',
   'Liquidity — Sessions',
   'Liquidity — H4',
+  GROUP_CANDLE_MARKS,
 ] as const
 
 /** Analysis-menu dot colour per group — each matches what its layer actually draws, so a row's dot
@@ -76,7 +83,17 @@ export const ANALYSIS_GROUP_COLOR: Record<typeof ANALYSIS_GROUPS[number], string
   'Liquidity — Daily/Weekly': '#38bdf8',
   'Liquidity — Sessions': '#a78bfa',
   'Liquidity — H4': '#FF6B35',
+  // The navy the candles are painted. ⚠ A true navy (#1e3a8a and darker) all but disappears against
+  // this theme's near-black plot, so this is the most navy-reading blue that still stands out from
+  // the green/red candles it sits between — which is the entire job of the layer.
+  'Candlestick Reversals': '#2f5fe0',
 }
+
+/** ONE candle repainted in another colour — today, the candlestick pattern that turned price at a
+ *  setup. It REDRAWS the bar rather than boxing it: klinecharts has no per-bar style, and the
+ *  overlay plane sits above the candle layer, so painting the same body and wick over the top is
+ *  what "change this candle's colour" means here. */
+export const CANDLE_MARK = 'lwgCandleMark'
 
 /** Daily session-break marker (Step 6) — a vline drawn under a separate name so the generic
  *  vline group and the day breaks can be removed/toggled independently. */
@@ -791,6 +808,68 @@ export function registerChartOverlays(): void {
             baseline: 'top',
           },
           styles: { ...FLAT_TEXT, color },
+          ignoreEvent: true,
+        })
+      }
+      return figures
+    },
+  })
+
+  // ── One candle, repainted ──────────────────────────────────────────────────────
+  // Four points, all at the SAME timestamp, carrying high / low / open / close — so the callback
+  // gets one x and four y's and can rebuild the bar. It draws what klinecharts draws: a wick line
+  // high→low, and a body rect `barSpace.gapBar` wide (the same width the candle layer uses, read
+  // from the chart rather than guessed, so the repaint lands exactly on the bar at every zoom).
+  //
+  // ⚠ It paints OVER the real candle rather than replacing it, which is the only way to do this —
+  // so the body must be OPAQUE, or the original colour shows through and the mark reads as a tint.
+  registerOverlay({
+    name: CANDLE_MARK,
+    totalStep: 2,
+    lock: true,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    createPointFigures: ({ coordinates, overlay, barSpace }) => {
+      if (coordinates.length < 4) return []
+      const [hi, lo, op, cl] = coordinates
+      const d = (overlay.extendData ?? {}) as OverlayExtend
+      const body = d.fillColor ?? '#2f5fe0'
+      const edge = d.color ?? body
+      const x = hi.x
+      // `gapBar` is the candle BODY width (klinecharts' own `_gapBarSpace`); `bar` includes the gap
+      // between candles, so using it would paint over the neighbours.
+      const w = Math.max(1, barSpace.gapBar)
+      const half = w / 2
+      const top = Math.min(op.y, cl.y)
+      // A doji's body is zero-height and would otherwise vanish — which is the one pattern most
+      // worth seeing, so it gets a minimum of 1px exactly as the candle layer gives it.
+      const h = Math.max(1, Math.abs(cl.y - op.y))
+      const figures: OverlayFigure[] = [
+        {
+          // The WICK — drawn as a thin rect rather than a line so it takes the same pixel snapping
+          // as the body and cannot land a half-pixel off it. 1px at any zoom, like the candle layer.
+          type: 'rect',
+          attrs: { x: x - 0.5, y: hi.y, width: 1, height: Math.max(1, lo.y - hi.y) },
+          styles: { style: 'fill', color: edge },
+          ignoreEvent: true,
+        },
+        {
+          type: 'rect',
+          attrs: { x: x - half, y: top, width: w, height: h },
+          styles: { style: 'stroke_fill', color: body, borderColor: edge, borderSize: 1 },
+          ignoreEvent: true,
+        },
+      ]
+      if (d.label) {
+        figures.push({
+          type: 'text',
+          attrs: {
+            // Above the high, and centred on the bar — the candle IS the marker, so the tag only
+            // has to name the pattern; parking it beside the bar would point at nothing.
+            x, y: hi.y - 5, text: d.label, align: 'center', baseline: 'bottom',
+          },
+          styles: { ...FLAT_TEXT, color: edge },
           ignoreEvent: true,
         })
       }

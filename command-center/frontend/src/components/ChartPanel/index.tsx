@@ -15,7 +15,7 @@ import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, 
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartPage, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, DATA_EDGE, DAY_BREAK, FIB, FOCUS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays } from './overlays'
+import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, CANDLE_MARK, DATA_EDGE, DAY_BREAK, FIB, FOCUS, GROUP_CANDLE_MARKS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays } from './overlays'
 import FibSettings from './FibSettings'
 import FibLevelEditor from './FibLevelEditor'
 import ChartSettingsPanel from './ChartSettingsPanel'
@@ -732,6 +732,10 @@ export default function ChartPanel({
   const fetchCacheRef = useRef<Map<number, DrillWindow>>(new Map())
   const fetchTokenRef = useRef(0)
   const isFetchMode = onRequestCandles != null && selectedMin < baseMin
+  // Are the bars on screen the ones the spec's per-bar layers were computed on? A resample up and a
+  // drill-down both make that false, and the candle-repaint layer is gated on it — see
+  // `analysisGroups`. Zone layers (gaps, blocks) are price/time and do not care.
+  const atBaseTf = selectedMin === baseMin
   // Read by the load-data callback and by `goToDate`, both of which are registered once and would
   // otherwise close over the first render's timeframe for ever.
   const isFetchModeRef = useRef(isFetchMode)
@@ -1565,10 +1569,17 @@ export default function ChartPanel({
     for (const ov of allOverlays) {
       if (isAnalysisGroup(ov.group)) counts.set(ov.group, (counts.get(ov.group) ?? 0) + 1)
     }
-    return ANALYSIS_GROUPS.filter(g => counts.has(g)).map(g => ({
-      name: g as string, color: ANALYSIS_GROUP_COLOR[g], count: counts.get(g) ?? 0,
-    }))
-  }, [allOverlays])
+    return ANALYSIS_GROUPS
+      // ⚠ The candle repaint is DROPPED off the timeframe it was computed on, and the row goes with
+      // it rather than sitting there drawing nothing. A candlestick pattern is a property of ONE
+      // bar size — an M15 hammer is not an H1 hammer — so painting the H1 bar that happens to
+      // CONTAIN it would state something nobody measured, and at M1 there is no single bar that is
+      // the pattern at all. Every other analysis group is a price/time zone and resamples fine.
+      .filter(g => counts.has(g) && (g !== GROUP_CANDLE_MARKS || atBaseTf))
+      .map(g => ({
+        name: g as string, color: ANALYSIS_GROUP_COLOR[g], count: counts.get(g) ?? 0,
+      }))
+  }, [allOverlays, atBaseTf])
 
   // Every overlay group defaults ON, EXCEPT the market-structure groups and the analysis groups —
   // both are opt-in (a chart would be unreadable with all of BOS/SOS/swings/internal drawn by
@@ -2265,6 +2276,7 @@ export default function ChartPanel({
     chart.removeOverlay({ name: HLINE })
     chart.removeOverlay({ name: VLINE })
     chart.removeOverlay({ name: LABEL })
+    chart.removeOverlay({ name: CANDLE_MARK })
     const dummyValue = baseCandles[0]?.close ?? 0 // vline ignores y; needs a valid number
     // All visible structure labels go into ONE overlay so they de-collide together (see LABEL in
     // overlays.ts). Collected here, created after the loop.
@@ -2284,8 +2296,9 @@ export default function ChartPanel({
       // not the loaded history: overlay cost is superlinear in the count, and a chart shows ~200
       // bars whatever it holds.
       if (drawLoTs == null || drawHiTs == null) break
-      const oStart = ov.type === 'vline' || ov.type === 'label' ? ov.t : ov.t0
-      const oEnd = ov.type === 'vline' || ov.type === 'label' ? ov.t : ov.t1
+      const pointLike = ov.type === 'vline' || ov.type === 'label' || ov.type === 'candle'
+      const oStart = pointLike ? ov.t : ov.t0
+      const oEnd = pointLike ? ov.t : ov.t1
       if (oEnd < drawLoTs || oStart > drawHiTs) continue
       const style = {
         color: ov.style?.color ?? DEFAULT_OVERLAY_COLOR,
@@ -2320,6 +2333,38 @@ export default function ChartPanel({
           points: [{ timestamp: ov.t, value: dummyValue }],
           extendData: style,
         })
+      } else if (ov.type === 'candle') {
+        // The row is hidden off the base timeframe (see `analysisGroups`), but `groupsOn` KEEPS the
+        // reader's answer across the switch — so the draw has to be gated too, or a layer that is
+        // no longer offered would still paint bars it does not describe.
+        if (!atBaseTf) continue
+        // FOUR points at ONE timestamp — high, low, open, close — so the template gets one x and
+        // four y's and can rebuild the bar. klinecharts keeps every point it is handed regardless
+        // of `totalStep`, which is what makes a 4-point overlay on a 2-step template legal.
+        chart.createOverlay({
+          name: CANDLE_MARK,
+          lock: true,
+          points: [
+            { timestamp: ov.t, value: ov.high },
+            { timestamp: ov.t, value: ov.low },
+            { timestamp: ov.t, value: ov.open },
+            { timestamp: ov.t, value: ov.close },
+          ],
+          extendData: {
+            ...style,
+            // OFF by default (Chart settings → Candlestick reversals). These tags carry no
+            // cross-overlay de-collision — unlike the batched `LABEL` template — so two marks a few
+            // bars apart write their names over the neighbouring candles. The navy IS the marker;
+            // the name is what you switch on when you are asking which pattern it was.
+            // `+N` rather than a second name: 7.4% of bars carry more than one pattern (every
+            // Hanging Man is also a Hammer by construction), and two names on one bar is a tag
+            // wider than the candle it points at. The full list rides on the overlay for a future
+            // hover; nothing draws it today.
+            label: chartSettings.candleMarkLabels && ov.label
+              ? (ov.extra ? `${ov.label} +${ov.extra}` : ov.label)
+              : undefined,
+          },
+        })
       } else if (ov.type === 'label') {
         labelPoints.push({ timestamp: ov.t, value: ov.price })
         labelItems.push({ text: ov.text, color: style.color, placement: ov.placement })
@@ -2328,7 +2373,8 @@ export default function ChartPanel({
     if (labelPoints.length) {
       chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
     }
-  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs])
+    // `chartSettings` is a dep because the candle-mark tag reads it; toggling it must redraw.
+  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs, atBaseTf, chartSettings])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {

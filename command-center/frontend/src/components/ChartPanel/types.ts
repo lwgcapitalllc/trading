@@ -220,7 +220,34 @@ export interface LabelOverlay extends OverlayRequires {
   style?: OverlayStyle
 }
 
-export type ChartOverlay = BoxOverlay | HLineOverlay | VLineOverlay | LabelOverlay
+/** ONE candle repainted, to mark it out from the bars around it — today, the candlestick pattern
+ *  that turned price at a setup (see the backend's `candle_overlays.py`).
+ *
+ *  It carries the bar's own OHLC rather than a price range, because it REDRAWS the candle: the
+ *  overlay plane sits above the candle layer, so painting the same body and wick in another colour
+ *  is what changes a candle's colour — klinecharts has no per-bar style. A box hugging high→low
+ *  would be a different picture (a tinted zone), and would hide the bar it is meant to point at.
+ *
+ *  `label` names the pattern in the STRATEGY's / engine's own words; `extra` is how many more fired
+ *  on the same bar (7.4% of bars carry more than one, and every Hanging Man is also a Hammer by
+ *  construction). `patternDir` is +1/-1/0 exactly as the source Pine DRAWS it — it says which way
+ *  the pattern points and never whether the candle is drawn. */
+export interface CandleOverlay extends OverlayRequires {
+  type: 'candle'
+  group: string
+  t: EpochMs
+  open: number
+  high: number
+  low: number
+  close: number
+  label?: string
+  extra?: number
+  patternDir?: number
+  patterns?: string[]
+  style?: OverlayStyle
+}
+
+export type ChartOverlay = BoxOverlay | HLineOverlay | VLineOverlay | LabelOverlay | CandleOverlay
 
 /**
  * An indicator series shipped FROM the run — not recomputed in the browser, so the
