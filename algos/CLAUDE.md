@@ -239,6 +239,15 @@ Prime, the live bot) and MT5_Lab (Vantage, the backtest agent) — and `mt5.init
 path grabs whichever answers first, which is the leak `_ensure_mt5()` below was written to close.
 **Reporting Vantage's swap as PU Prime's is the exact error this tool exists to end, and it would
 look completely normal.**
+⚠ **`--path/--account/--symbol` measures an account that is NOT a bot (2026-08-08).** `--bot` reads
+all three out of an instance config and stays the everyday path; the explicit form exists because
+**a second ACCOUNT TIER is the only thing that can answer `docs/BROKER_QUESTIONS.md` question 3**,
+and a Prime or ECN demo is not a registered bot. Both routes go through the same `attach()`, so the
+account assertion is NOT relaxed — an explicit run still states the account it expects and still
+refuses a terminal logged into a different one. ⚠ **`--symbol` is required with `--path` and is
+worth passing even with `--bot`: PU Prime suffixes the TIER onto the symbol name** — the same market
+is `XAUUSD.s` on Standard and `XAUUSD.p` on the raw tiers — so the instance config's symbol is
+simply absent on another account. Run `--symbols` first and read what the account actually carries.
 ⚠ **A stale tick repeated for five minutes is NOT a rock-steady spread** — the sampler counts
 repeats separately and reports no statistics at all when nothing fresh arrives, because a shut
 market is otherwise the most confident-looking wrong answer it could give.

@@ -277,7 +277,24 @@ def sibling_symbols(mt5, symbol: str) -> list:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Measure a live broker's symbol costs. Read-only.")
-    ap.add_argument("--bot", required=True)
+    # Two ways to say WHICH terminal and account. `--bot` reads them out of a registered bot's
+    # instance config and is the everyday path. `--path/--account/--symbol` names them directly,
+    # for an account that is not a bot — which is the only way to measure a second ACCOUNT TIER,
+    # the open question in `docs/BROKER_QUESTIONS.md`. Both routes go through the same `attach()`,
+    # so the account assertion is NOT weakened: an explicit run still has to state the account it
+    # expects and still refuses a terminal logged into a different one. That check is the whole
+    # reason this tool can be trusted — reporting one tier's costs as another's is the error it
+    # exists to end, and it would look completely normal.
+    ap.add_argument("--bot", help="a registered bot key; reads terminal, account and symbol from "
+                                  "its instance config")
+    ap.add_argument("--path", help="terminal64.exe of an ALREADY-RUNNING, already-logged-in "
+                                   "terminal (use with --account and --symbol)")
+    ap.add_argument("--account", type=int,
+                    help="the account number you EXPECT to be logged in. Refuses on mismatch.")
+    ap.add_argument("--symbol", help="symbol to read. Required with --path, and worth passing even "
+                                     "with --bot: PU Prime suffixes the tier onto the name, so the "
+                                     "same market is XAUUSD.s on Standard and XAUUSD.p on a raw "
+                                     "tier. --symbols lists what this account actually carries.")
     ap.add_argument("--symbols", action="store_true",
                     help="ALSO list every symbol on this terminal sharing this one's root, with "
                          "its trade mode, swap and spread. This is how you check whether a cost "
@@ -290,15 +307,28 @@ def main(argv=None) -> int:
                          "rollover without waiting for them.")
     args = ap.parse_args(argv)
 
-    inst = load_instance(args.bot)
-    symbol = inst["symbol"]
+    if args.bot:
+        inst = load_instance(args.bot)
+        path, account = inst["mt5_path"], inst["account"]
+        symbol = args.symbol or inst["symbol"]
+        label = args.bot
+    else:
+        # No partial credit: a path with no account would attach to whatever is open and report it
+        # without checking, which is precisely the failure `attach()` exists to prevent.
+        missing = [f for f, v in (("--path", args.path), ("--account", args.account),
+                                  ("--symbol", args.symbol)) if not v]
+        if missing:
+            ap.error(f"either --bot, or all of --path/--account/--symbol (missing: "
+                     f"{', '.join(missing)})")
+        path, account, symbol = args.path, args.account, args.symbol
+        label = f"account {account}"
 
     import MetaTrader5 as mt5
-    attach(mt5, inst["mt5_path"], inst["account"])
+    attach(mt5, path, account)
     try:
         acct = mt5.account_info()
-        print(f"broker_facts {args.bot}")
-        print(f"  terminal   {inst['mt5_path']}")
+        print(f"broker_facts {label}")
+        print(f"  terminal   {path}")
         print(f"  account    {acct.login} / {acct.server} / {acct.currency} "
               f"/ balance {acct.balance:,.2f}")
         print()

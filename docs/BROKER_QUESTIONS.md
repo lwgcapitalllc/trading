@@ -3,9 +3,38 @@
 **Purpose:** The questions to put to PU Prime before funding a live account, why each one is
 being asked, and what to do with the answer.
 **Scope:** PU Prime, XAUUSD, the `mpc_sos_fade` A+ bot. Not a general broker checklist.
-**Status:** Open — sent nothing yet.
+**Status:** Open — sent nothing yet, and **questions 1-3 no longer need to be asked** (see below).
 **Recommendation as it stands:** a **raw-spread tier (ECN, or Prime)** — **not Standard**.
 **Evidence:** `docs/LIVE_TRADING_PIPELINE.md` → **G5a**, measured 2026-08-06.
+
+---
+
+## 🟢 2026-08-08 — Aaron has a demo of EACH TIER, so the tier question is now MEASURABLE
+
+This page was written on the premise that *"only a second account can measure Prime or ECN"*, and
+that premise no longer holds. Three PU Prime demo accounts exist:
+
+| account | tier |
+|---|---|
+| **700119432** | Standard |
+| **700152904** | Prime |
+| **700152905** | ECN |
+
+⚠ **None of these is the account the live bot trades.** That is **700107749** (`PUPrime-Demo`,
+Standard, on `MT5_FFT`) and it is the source of every PU Prime figure in `backtest/fills.py`. So
+700119432 is a *second* Standard account — useful as a cross-check that two accounts of one tier
+really do quote the same thing, which is itself an untested assumption on this broker.
+
+**This retires questions 1, 2 and 3 as things to ASK.** A support reply is broker-stated; a
+Specification read is measured, and this repo's standing rule is to prefer the second. Questions 4,
+5 and 6 still need a human to ask them.
+
+⚠ **Two halves, and only one of them can be done at any time.** Swap, commission, contract size,
+digits, stops level and freeze level are **static Specification fields** and read fine with the
+market shut. The **spread cannot** — `broker_facts.py` deliberately reports `None` rather than
+letting a stale repeated tick pass for a rock-steady spread, and a freshly-logged-in account has no
+local tick store for `--history-days` to read either. **The spread half must wait for an open
+market, and wants the terminal left logged in long enough to build a tick store.**
 
 ---
 
