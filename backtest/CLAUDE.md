@@ -283,6 +283,25 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   ⚠ **Stdlib only, on purpose** — it drives the engines directly and needs no pandas, so it runs on a
   bare interpreter. Run it: `python3 backtest/tools/trigger_edge.py` (~5s).
 
+- **`tools/intraday_edge.py`** — **is there a SECOND, intraday strategy worth building?** The sibling
+  of `trigger_edge.py`, same method (matched random control on direction AND stop distance, hard 8h
+  horizon, nothing scored on the bar it acts on), eight intraday triggers. Added 2026-08-07.
+  🔴 **Its headline finding is a REFUSAL and it is the useful half: there is no intraday edge to
+  harvest on GOLD, and the reason is structural.** All eight triggers are NET NEGATIVE after cost over
+  186,384 M15 bars; the best (`ORB_BREAK`, +2.6% / +2.4σ over control) lands at **−0.008R** — a real,
+  statistically detectable effect almost exactly the size of the spread. **An intraday stop on gold is
+  $1–7 against a ~$0.30 round trip, so cost is 4–37% of every R before the signal says anything.**
+  That is why the SOS fade works and an intraday sibling does not: a median $8.88 stop puts cost at ~3%.
+  ✅ **The same trigger clears cost comfortably on NAS100** (+4.0% / +3.6σ, cost 1.2% of R,
+  **+0.049R**), which is the prediction the cost hypothesis makes and it holds — both sides positive
+  with the SHORT side stronger, both halves positive, positive in 6 of 9 years, and the MIRROR
+  (`ORB_FADE`) catastrophic at −15.2% / −18.9σ. ⚠ **Read it as a prior on a TRIGGER, never as a
+  strategy's number** — no ladder, no staged stop, no position slot, no swap, and NAS100 has no
+  history floor, no Pine parity and no strategy package here. Full record: `docs/INTRADAY_EDGE_STUDY.md`.
+  ⚠ **Two triggers are significantly NEGATIVE on gold and that is knowledge worth keeping**: fading a
+  VWAP stretch and fading the opening-range break both lose to random in 9 years out of 9. Gold does
+  not mean-revert intraday. Do not build either. Stdlib only, runs off `backtest/cache/`.
+
 - **`tools/bos_sweep.py`** — 🔴 **DO NOT QUOTE ITS NUMBERS. FALSIFIED 2026-08-07, the day it was
   written.** On the same symbol, timeframe and window, with the config confirmed identical by the
   Pine's own `[CFG]` echo, this tool reports **20 trades / 80% win / PF 2.97 / +102.5%** where the
