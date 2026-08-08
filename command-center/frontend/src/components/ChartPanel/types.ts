@@ -228,10 +228,18 @@ export interface LabelOverlay extends OverlayRequires {
  *  is what changes a candle's colour — klinecharts has no per-bar style. A box hugging high→low
  *  would be a different picture (a tinted zone), and would hide the bar it is meant to point at.
  *
- *  `label` names the pattern in the STRATEGY's / engine's own words; `extra` is how many more fired
- *  on the same bar (7.4% of bars carry more than one, and every Hanging Man is also a Hammer by
- *  construction). `patternDir` is +1/-1/0 exactly as the source Pine DRAWS it — it says which way
- *  the pattern points and never whether the candle is drawn. */
+ *  `label` names the best pattern on the bar and `patterns` names ALL of them — 7.4% of bars carry
+ *  more than one, because a single candle can satisfy several definitions at once (every Hanging Man
+ *  is also a Hammer by construction). ⚠ The tag used to print `+1` for the rest, which reads as a
+ *  claim about the PATTERN rather than about the BAR — reported as *"how could a pattern have more
+ *  than one name?"* — so the chart joins `patterns` instead.
+ *
+ *  `patternDir` is +1/-1/0 exactly as the source Pine DRAWS it: which way the pattern points. It
+ *  feeds the direction filter and never decides whether the candle is drawn.
+ *
+ *  `spans` are the indices of the anchors whose span covers this bar, and `deepest` says it is the
+ *  reversal of at least one of them. Both come from the backend because a span is a bar RANGE and
+ *  the spec ships only the marks — nothing here could work either out. */
 export interface CandleOverlay extends OverlayRequires {
   type: 'candle'
   group: string
@@ -241,9 +249,12 @@ export interface CandleOverlay extends OverlayRequires {
   low: number
   close: number
   label?: string
-  extra?: number
   patternDir?: number
   patterns?: string[]
+  spans?: number[]
+  deepest?: boolean
+  /** The named pattern's direction relative to the SETUP — never re-derive it from `patternDir`. */
+  align?: 'with' | 'neutral' | 'against'
   style?: OverlayStyle
 }
 

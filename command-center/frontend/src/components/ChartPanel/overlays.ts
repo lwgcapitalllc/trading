@@ -208,6 +208,10 @@ interface TradeExtend {
   // preference (Chart settings), NOT a data change — the levels drawn are identical either way.
   // Undefined means ON, so a caller that has not been updated keeps the shipped behaviour.
   showPrices?: boolean
+  /** Did a candlestick reversal print anywhere in this trade's span? `undefined` = the layer is off,
+   *  i.e. NOT ASKED — and it must not render as "no". Same rule as `mt5_link` everywhere else here:
+   *  never let "no" and "cannot ask" be the same value. */
+  hadPattern?: boolean
   entryPrice?: number
   exitPrice?: number
   mfePrice?: number
@@ -611,7 +615,12 @@ export function registerChartOverlays(): void {
         // A 1m re-entry says so here rather than at the entry — see `secTagFig`. It reads
         // "SEC · Won", so the fact that it IS a re-entry comes first and survives being skimmed.
         const outcome = won ? 'Won' : 'Lost'
-        const parts = [d.layerName, secondary ? 'SEC' : null, outcome].filter(Boolean)
+        // …and whether a reversal candle printed anywhere in this trade's span. `✓` / `✕` rather
+        // than a word, because the chip is centred over the trade and already carries up to three
+        // parts on a stack. ⚠ `undefined` prints NOTHING — the layer is off, so the run has not been
+        // asked, and a `✕` there would state a measurement nobody took.
+        const pat = d.hadPattern === true ? '✓' : d.hadPattern === false ? '✕' : null
+        const parts = [d.layerName, secondary ? 'SEC' : null, outcome, pat].filter(Boolean)
         const text = parts.join(' · ')
         const cx = (x0 + x1) / 2
         const cy = extY + outPix * 12

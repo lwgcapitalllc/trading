@@ -140,13 +140,36 @@ def test_EVERY_pattern_in_the_span_is_marked_not_only_the_one_at_the_turn():
     assert [o["t"] for o in out] == [bars[38]["time"], bars[40]["time"]]
 
 
-def test_nothing_is_marked_PAST_the_turn():
-    """The span stops at the deepest adverse bar. After it price is moving the setup's way, and a
-    reversal candle there is a different subject — drawing it would put marks on the profitable half
-    of a winner and read as the layer having no rule at all."""
+def test_a_pattern_COMPLETING_just_after_the_turn_is_still_that_turns_reversal():
+    """🔴 The span used to stop AT the turn, and that threw the answer away on four setups in ten.
+    ✅ **MEASURED on 194 real anchors: 37.1% carry a pattern on the turn bar and a further 40.2%
+    complete 1-2 bars after it** — because a pattern is reported on the bar it COMPLETES and the
+    engine's longest run to three bars, so the bar that MADE the extreme is usually the pattern's
+    first bar. Reported as *"it's not showing the deepest candle pattern that would have been the
+    most perfect entry."*"""
+    bars = _flat(60)
+    # ⚠ Plain bearish bodies either side, for the reason the fixture two tests down records: a lone
+    # bearish bar among bullish filler makes its NEIGHBOURS a Morning/Evening Star.
+    for j in range(36, 42):
+        bars[j] = _bar(j, 101.5, 101.9, 100.5, 100.9)
+    bars[40] = _bar(40, 100.0, 100.05, 90.0, 90.05)  # the turn — a long body, no pattern
+    # ⚠ Its low must stay ABOVE bar 40's, or the hammer becomes the turn itself and the test is no
+    # longer about a pattern completing after one.
+    bars[42] = _hammer_at(42, 97.0)                  # ...the reversal, completing 2 bars later
+    assert not _fired(bars, 40), "the turn bar must be quiet or this proves nothing"
+    assert _fired(bars, 42)
+    out = build_candle_overlays(bars, [(bars[38]["time"], "long", bars[55]["time"])])
+    assert [o["t"] for o in out] == [bars[42]["time"]]
+    assert out[0]["deepest"] is True, "it IS the turn's reversal, so it is the span's deepest mark"
+
+
+def test_nothing_is_marked_PAST_the_confirmation_WINDOW():
+    """The window is the longest pattern's length minus one and must not become a free-for-all: far
+    past the turn price is moving the setup's way, and a reversal candle there is a different
+    subject. ⚠ This is what stops `_CONFIRM_BARS` being read as a tuning dial."""
     bars = _flat(60)
     bars[40] = _hammer_at(40)                        # the turn (the low of the whole window)
-    bars[45] = _bar(45, 100.0, 100.5, 99.5, 100.0)   # a doji AFTER it, well above the low
+    bars[45] = _bar(45, 100.0, 100.5, 99.5, 100.0)   # a doji 5 bars later, well above the low
     assert _fired(bars, 40) and _fired(bars, 45), "both bars must fire or this proves nothing"
     out = build_candle_overlays(bars, [(bars[38]["time"], "long", bars[55]["time"])])
     assert [o["t"] for o in out] == [bars[40]["time"]]
@@ -314,7 +337,10 @@ def test_the_mark_names_the_pattern_and_counts_the_rest():
     candles = _candles_with_hammer(40)
     out = build_candle_overlays(candles, [(candles[40]["time"], "long", None)])
     assert out[0]["label"] in out[0]["patterns"]
-    assert out[0]["extra"] == len(out[0]["patterns"]) - 1
+    # ⚠ `extra` (a COUNT of the others) is gone. It rendered as "Hammer +1", which reads as a claim
+    # about the pattern rather than about the bar — reported as *"how could a pattern have more than
+    # one name?"* The chart joins `patterns` instead, so the tag answers the question itself.
+    assert "extra" not in out[0]
     assert out[0]["patternDir"] in (-1, 0, 1)
 
 

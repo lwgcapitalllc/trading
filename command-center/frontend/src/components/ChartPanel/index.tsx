@@ -12,7 +12,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type React
 import { AlignJustify, CalendarSearch, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, Loader2, RotateCcw, Ruler, Settings, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, type Chart, type KLineData } from 'klinecharts'
-import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartPage, ChartSpec } from './types'
+import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartOverlay, ChartPage, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
 import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, CANDLE_MARK, DATA_EDGE, DAY_BREAK, FIB, FOCUS, GROUP_CANDLE_MARKS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays } from './overlays'
@@ -1623,6 +1623,59 @@ export default function ChartPanel({
       }))
   }, [allOverlays, atBaseTf])
 
+  // Candlestick reversals — a DIRECTION filter, the same shape as the Missed layer's score rows
+  // (Aaron, 2026-08-08: *"other times it's showing candle patterns that [point] nothing in the
+  // direction of the trade — if I take a long, it's showing my bearish engulfing"*).
+  //
+  // ⚠ **All three start ON, and the opposing one is not special-cased away.** It is half the point
+  // of the layer — *"if it lines up with my trades, then great. If not, it will show me why I was
+  // wrong"* — so this is a control the reader reaches for, never a default that quietly decides
+  // there was nothing at the turn. `patternDir` is the source Pine's own +1/-1/0, so the panel is
+  // filtering on a value it was handed rather than on one it invented.
+  const CANDLE_DIRS = useMemo(() => [
+    { key: 'with', label: 'With the setup' },
+    { key: 'neutral', label: 'Neutral' },
+    { key: 'against', label: 'Against it' },
+  ] as const, [])
+  const [hiddenCandleDirs, setHiddenCandleDirs] = useState<Set<string>>(() => new Set())
+  // Which TRADES had a reversal candle in their span. Aaron, 2026-08-08: *"if there's no candle
+  // pattern where I took the trade, put an indicator inside the Won/Lost label that shows whether
+  // there was a pattern or not."*
+  //
+  // ⚠ Read off each mark's `spans`, NOT from "is there a mark between entry and exit". Spans overlap
+  // — a 3/3 miss's retrace can sit inside a trade's hold — so a time-range test would credit this
+  // trade with somebody else's candle. The anchor list is `trades ++ misses` in spec order, so
+  // anchor `i` IS trade `i`, and the backend carries that index through the off-chart drop for
+  // exactly this reason.
+  const tradeHadPattern = useMemo(() => {
+    const seen = new Set<number>()
+    for (const ov of allOverlays) {
+      if (ov.type !== 'candle' || ov.group !== GROUP_CANDLE_MARKS) continue
+      for (const n of ov.spans ?? []) seen.add(n)
+    }
+    return seen
+  }, [allOverlays])
+
+  const candleDirCounts = useMemo(() => {
+    const n: Record<string, number> = {}
+    for (const ov of allOverlays) {
+      if (ov.type !== 'candle' || ov.group !== GROUP_CANDLE_MARKS) continue
+      const k = ov.align ?? 'against'
+      n[k] = (n[k] ?? 0) + 1
+    }
+    return n
+  }, [allOverlays])
+  const toggleCandleDir = (key: string) => setHiddenCandleDirs(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  })
+  // ⚠ `align` comes from the BACKEND and must not be re-derived from `patternDir`. That is the
+  // pattern's OWN direction; whether a bullish candle points the setup's way depends on the setup's
+  // side, which a mark does not carry and cannot — one bar can sit inside a long's span and a
+  // short's at once, and the anchor that names the bar is the one that answers for it.
+  const candleDirKey = (ov: ChartOverlay) => (ov.type === 'candle' ? ov.align ?? 'against' : 'against')
+
   // Every overlay group defaults ON, EXCEPT the market-structure groups and the analysis groups —
   // both are opt-in (a chart would be unreadable with all of BOS/SOS/swings/internal drawn by
   // default, and the gap layer is a diagnostic view like Blocked and Missed beside it).
@@ -2091,7 +2144,7 @@ export default function ChartPanel({
     if (!chart) return
     chart.removeOverlay({ name: TRADE })
     if (!tradesOn) return
-    for (const tr of spec.trades) {
+    for (const [i, tr] of spec.trades.entries()) {
       // Only draw a trade whose ENTRY is within the loaded candles — one older than the data edge
       // would otherwise clamp its markers onto the plot's left edge (the no-data region).
       if (loadedLoTs == null || loadedHiTs == null) break
@@ -2130,12 +2183,18 @@ export default function ChartPanel({
           layerColor: tr.layerColor,   // outcome-chip border + dot accent (stack only)
           layerName: tr.layerName,     // named in the outcome chip: "SOS Fade · Won" (stack only)
           chipBg: theme.bgSurface,     // dark chip behind the side labels (legible over candles)
+          // Did a reversal candle print anywhere in this trade's span? `undefined` while the layer
+          // is OFF, and `undefined` must NOT render as "no" — the run has not been asked. Only
+          // switching the layer on turns the question into an answer.
+          hadPattern: groupsOn[GROUP_CANDLE_MARKS] && atBaseTf
+            ? tradeHadPattern.has(i)
+            : undefined,
           neutralColor: theme.textTertiary,
         },
       })
     }
   }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs,
-      chartSettings])
+      chartSettings, tradeHadPattern, groupsOn, atBaseTf])
 
   // Trade fibs — the leg each trade was priced off. Rebuilt on data change like every other
   // overlay effect (`applyNewData` clears them).
@@ -2380,6 +2439,10 @@ export default function ChartPanel({
         // reader's answer across the switch — so the draw has to be gated too, or a layer that is
         // no longer offered would still paint bars it does not describe.
         if (!atBaseTf) continue
+        // Two reader filters, both of which only ever REMOVE marks the backend already decided to
+        // draw — neither can invent one, which is what keeps them preferences rather than analysis.
+        if (hiddenCandleDirs.has(candleDirKey(ov))) continue
+        if (chartSettings.candleMarkDeepestOnly && !ov.deepest) continue
         // FOUR points at ONE timestamp — high, low, open, close — so the template gets one x and
         // four y's and can rebuild the bar. klinecharts keeps every point it is handed regardless
         // of `totalStep`, which is what makes a 4-point overlay on a 2-step template legal.
@@ -2398,12 +2461,13 @@ export default function ChartPanel({
             // cross-overlay de-collision — unlike the batched `LABEL` template — so two marks a few
             // bars apart write their names over the neighbouring candles. The navy IS the marker;
             // the name is what you switch on when you are asking which pattern it was.
-            // `+N` rather than a second name: 7.4% of bars carry more than one pattern (every
-            // Hanging Man is also a Hammer by construction), and two names on one bar is a tag
-            // wider than the candle it points at. The full list rides on the overlay for a future
-            // hover; nothing draws it today.
+            // ⚠ It names EVERY pattern on the bar, joined. It used to print `${label} +1`, which
+            // reads as a claim about the PATTERN — *"how could a pattern have more than one
+            // name?"* — when it is a fact about the BAR: one candle can satisfy several
+            // definitions at once, and every Hanging Man is also a Hammer by construction. Two
+            // names is a wider tag than one, and a tag nobody can interpret is worse.
             label: chartSettings.candleMarkLabels && ov.label
-              ? (ov.extra ? `${ov.label} +${ov.extra}` : ov.label)
+              ? (ov.patterns?.length ? ov.patterns.join(' · ') : ov.label)
               : undefined,
           },
         })
@@ -2416,7 +2480,7 @@ export default function ChartPanel({
       chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
     }
     // `chartSettings` is a dep because the candle-mark tag reads it; toggling it must redraw.
-  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs, atBaseTf, chartSettings])
+  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs, atBaseTf, chartSettings, hiddenCandleDirs])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {
@@ -2880,10 +2944,23 @@ export default function ChartPanel({
                 // the backend draws a gap only where a trade was taken, refused or missed, so this
                 // row is "and show me what the gaps looked like there". Default OFF like Blocked and
                 // Missed; the count is how many gap boxes the run produced.
-                ...analysisGroups.map(g => ({
-                  key: `ag-${g.name}`, label: g.name, color: g.color,
-                  on: groupsOn[g.name], toggle: () => toggleGroup(g.name), count: g.count,
-                })),
+                ...analysisGroups.flatMap(g => [
+                  {
+                    key: `ag-${g.name}`, label: g.name, color: g.color,
+                    on: groupsOn[g.name], toggle: () => toggleGroup(g.name), count: g.count,
+                  },
+                  // …and, for the candle repaint only, one sub-toggle per DIRECTION relative to the
+                  // setup. All three start ON: the opposing tier is half the point of the layer, so
+                  // hiding it is something the reader asks for and never a default that quietly
+                  // answers "there was nothing at the turn".
+                  ...(g.name === GROUP_CANDLE_MARKS && groupsOn[g.name]
+                    ? CANDLE_DIRS.map(d => ({
+                        key: `cd-${d.key}`, label: d.label, color: g.color,
+                        on: !hiddenCandleDirs.has(d.key), toggle: () => toggleCandleDir(d.key),
+                        sub: true, count: candleDirCounts[d.key] ?? 0,
+                      }))
+                    : []),
+                ]),
               ]}
             />
           )}

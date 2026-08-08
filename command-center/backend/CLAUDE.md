@@ -2281,12 +2281,31 @@ have shown a possible reversal all the way up to the deepest one … so let's sa
 fifty, but there was no reversal candles until 0.702, and then maybe 0.786. I could see, wow, I
 could have taken a trade at 0.702 or 0.786."* Read with the **Fibs** layer on, each mark sits on a
 rung, so the layer answers *which entry level had a candle behind it* — which a single mark can
-never say. ✅ **MEASURED: 194 anchors → 820 marks (was 153).** Trades: median span 5 bars / 1 mark,
-p90 13, max 43. Misses: median 3 bars / 1 mark, max 32.
+never say. ✅ **MEASURED: 194 anchors → 971 marks.** 464 point with the setup, 409 are neutral, 98 point
+against; 167 are their span's deepest. **140 of 159 trades and 27 of 35 three-of-three misses carry
+a reversal candle at all.**
 
-⚠ **Nothing is drawn PAST the turn.** After it price is moving the setup's way, and a reversal candle
-there is a different subject — drawing it would put marks all over the profitable half of a winner
-and read as the layer having no rule at all.
+🔴 **The span runs `_CONFIRM_BARS` (2) PAST the turn, and that is not a fudge factor.** It is the
+longest pattern the engine reads minus the bar it starts on. **A pattern is reported on the bar it
+COMPLETES**, so the bar that MADE the extreme is usually the pattern's first bar rather than its
+last. ✅ **MEASURED on 194 anchors: 37.1% carry a pattern ON the turn bar and a further 40.2%
+complete 1-2 bars after it** — so ending the span at the turn threw away the reversal candle on
+**four setups in ten**, reported off the chart as *"it's not showing the deepest candle pattern that
+would have been the most perfect entry."* ⚠ **Do not tune it.** Nothing beyond that window is drawn:
+further past the turn price is moving the setup's way, and a reversal candle there is a different
+subject.
+
+**Each mark also carries `spans`, `deepest` and `align`, and none of the three is derivable
+downstream.** `spans` are the anchor indices whose span covers the bar (so the chart can badge a
+trade), `deepest` says it is that span's reversal, and `align` is the named pattern's direction
+**relative to the setup**. ⚠ **`align` is NOT `patternDir`** — that is the pattern's own direction,
+and whether a bullish candle points the setup's way depends on the setup's SIDE, which a mark does
+not carry and cannot: one bar can sit inside a long's span and a short's at once. ⚠ **`spans` is
+collected for EVERY anchor covering a bar, not just the one that names it** — the dedupe decides the
+name, and reusing it here would make a trade whose only pattern bar was already claimed report as
+having none, which is the one thing the trade badge exists to say. ⚠ **`_anchor_bars` carries the
+anchor's ORIGINAL index**, because it drops anchors off the loaded candles and renumbering would
+mislabel every trade after the first drop, silently and plausibly.
 
 ⚠ **A LOSER carries its exit too, and it used to carry `None`** and get a 3-bar window. Its span is
 the retracement it was entered into on the way to the stop, which is the same question. ✅ **MEASURED
@@ -2321,7 +2340,7 @@ on a long.
 
 ### Tests
 
-`tests/test_candle_overlays.py` (23) + `tests/test_chart_spec_reversal_anchors.py` (9). ⚠ **A
+`tests/test_candle_overlays.py` (24) + `tests/test_chart_spec_reversal_anchors.py` (9). ⚠ **A
 fail-watch against HEAD is vacuous for a new module**, so non-vacuity is by MUTATION — each turning
 a distinct test red: marking only the turn, running the span past the turn, anchoring a miss on its
 death bar again, giving losers back their `None`, ignoring `hold_end`, dropping the dedupe, and

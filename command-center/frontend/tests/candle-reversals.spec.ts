@@ -259,3 +259,72 @@ test('the Missed layer filters by SCORE as well as by reason', async ({ page }) 
   await page.getByRole('button', { name: /^2 of 3/ }).click()
   expect(await count()).toBe(all)
 })
+
+test('the direction filter removes marks and every direction starts shown', async ({ page }) => {
+  // Aaron, 2026-08-08: *"other times it's showing candle patterns that [point] nothing in the
+  // direction of the trade — if I take a long, it's showing my bearish engulfing."*
+  //
+  // ⚠ Every direction starts ON. The opposing tier is half the point of the layer — *"if not, it
+  // will show me why I was wrong"* — so hiding it must be something the reader asks for, never a
+  // default that quietly answers "there was nothing at the turn". Proven by MUTATION: defaulting
+  // `against` hidden turns the first assertion red, and dropping the `hiddenCandleDirs` guard from
+  // the draw turns the second red.
+  await openPriceTab(page)
+  await toggleAnalysis(page)
+  await page.getByRole('button', { name: new RegExp(LAYER) }).click()
+  for (const d of ['With the setup', 'Neutral', 'Against it']) {
+    await expect(page.getByRole('button', { name: new RegExp(`^${d}`) }))
+      .toHaveAttribute('aria-pressed', 'true')
+  }
+  await toggleAnalysis(page)
+  await goToDate(page, DATE_WITH_A_MARK)
+  await expect.poll(() => navyPixels(page), { timeout: 30_000 }).toBeGreaterThan(0)
+  const all = await navyPixels(page)
+
+  // Hide every direction and the layer draws nothing — which is what proves the filter does the
+  // work rather than the marks having been somewhere else.
+  await toggleAnalysis(page)
+  for (const d of ['With the setup', 'Neutral', 'Against it']) {
+    await page.getByRole('button', { name: new RegExp(`^${d}`) }).click()
+  }
+  await toggleAnalysis(page)
+  await expect.poll(() => navyPixels(page), { timeout: 20_000 }).toBe(0)
+
+  // ...and back, because a filter that cannot be undone is a narrowing.
+  await toggleAnalysis(page)
+  for (const d of ['With the setup', 'Neutral', 'Against it']) {
+    await page.getByRole('button', { name: new RegExp(`^${d}`) }).click()
+  }
+  await toggleAnalysis(page)
+  await expect.poll(() => navyPixels(page), { timeout: 20_000 }).toBe(all)
+})
+
+test('"Only the deepest" thins the marks without emptying the layer', async ({ page }) => {
+  // Aaron, 2026-08-08: *"a setting where I could take off all the reversal candles and only have the
+  // deepest one show within that trading zone."* The two readings answer different questions — which
+  // level offered the best entry, versus which levels offered one at all.
+  //
+  // ⚠ Both bounds matter. `< all` alone would pass against a setting that drew nothing, and `> 0`
+  // alone against one that changed nothing — and "draws nothing" is exactly what a wrong `deepest`
+  // flag produces. Proven by MUTATION: emitting `deepest: False` for every mark turns it red.
+  await openPriceTab(page)
+  await toggleAnalysis(page)
+  await page.getByRole('button', { name: new RegExp(LAYER) }).click()
+  await toggleAnalysis(page)
+  await goToDate(page, DATE_WITH_A_MARK)
+  await expect.poll(() => navyPixels(page), { timeout: 30_000 }).toBeGreaterThan(0)
+  const all = await navyPixels(page)
+
+  await toggleSettings(page)
+  const only = page.getByText('Only the deepest').locator('xpath=../..').getByRole('switch')
+  await expect(only).toHaveAttribute('aria-checked', 'false')   // the full reading is the default
+  await only.click()
+  await toggleSettings(page)
+  await expect.poll(() => navyPixels(page), { timeout: 20_000 }).toBeLessThan(all)
+  expect(await navyPixels(page)).toBeGreaterThan(0)
+
+  await toggleSettings(page)
+  await only.click()
+  await toggleSettings(page)
+  await expect.poll(() => navyPixels(page), { timeout: 20_000 }).toBe(all)
+})

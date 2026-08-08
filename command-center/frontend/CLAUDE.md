@@ -1218,7 +1218,7 @@ real browser", done by hand, which is why the Overview's twelve defects each sur
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
 **66 tests in 5 files**, run with `npm test` from `frontend/`.
 
-**`tests/candle-reversals.spec.ts` (6, ~32s) — added 2026-08-08 with the Candlestick Reversals
+**`tests/candle-reversals.spec.ts` (8, ~51s) — added 2026-08-08 with the Candlestick Reversals
 layer.** ⚠ **Its `RUN` and `DATE_WITH_A_MARK` constants are tied to real data and drift**: the layer
 went 424 marks → 153 → **820** in one day as its anchor rule was corrected twice, and a date that had
 a mark under one rule need not under the next. When a check here goes red, ask what the run actually

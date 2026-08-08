@@ -828,9 +828,31 @@ here**, so the chart shows exactly what the strategy saw.
     nothing honest to paint. ⚠ **Both halves are needed**: `groupsOn` keeps the reader's answer
     across a timeframe switch, so gating only the menu row would leave it painting M15 bars over H1
     candles — which is the more dangerous half, because it states something nobody measured.
-  - ⚠ **`+N` rather than a second name** when a bar carries several (7.4% do — every Hanging Man is
-    also a Hammer). Two names on one bar is a tag wider than the candle it points at. The full list
-    rides on the overlay for a future hover; nothing draws it today.
+  - ⚠ **The tag names EVERY pattern on the bar, joined.** It printed `Hammer +1` until 2026-08-08,
+    which reads as a claim about the PATTERN — *"how could a pattern have more than one name?"* —
+    when it is a fact about the BAR: one candle can satisfy several definitions at once, and every
+    Hanging Man is also a Hammer by construction. Two names is a wider tag than one, and a tag
+    nobody can interpret is worse than a wide one.
+  - **A DIRECTION filter** (2026-08-08, Aaron: *"it's showing candle patterns that [point] nothing
+    in the direction of the trade — if I take a long, it's showing my bearish engulfing"*). Three
+    sub-toggles under the layer — With the setup / Neutral / Against it — the same shape as the
+    Missed layer's score rows. ⚠ **All three start ON**: the opposing tier is half the point of the
+    layer (*"if not, it will show me why I was wrong"*), so hiding it is something the reader asks
+    for, never a default that quietly answers "there was nothing at the turn". ⚠ **It filters on the
+    backend's `align`, never on `patternDir`** — see `backend/CLAUDE.md` for why the panel cannot
+    work the setup-relative direction out for itself. Measured: 464 with / 409 neutral / 98 against.
+  - **`candleMarkDeepestOnly`** (Chart settings, default OFF) — one candle per setup instead of
+    every one in its span. Two readings of the same data: *which level offered the best entry* vs
+    *which levels offered one at all*. The full reading is the default because it is what the layer
+    was asked for.
+  - **The trade's outcome chip says whether its setup had one** — `Won · ✓` / `Won · ✕`. ⚠ **The
+    chip prints NOTHING when the layer is off**, because then the run has not been asked and a `✕`
+    would state a measurement nobody took — the `mt5_link` rule again: never let "no" and "cannot
+    ask" be the same value. ⚠ **It reads each mark's `spans`, not "is there a mark between entry and
+    exit"** — spans overlap (a miss's retrace can sit inside a trade's hold), so a time-range test
+    would credit a trade with somebody else's candle. ⚠ **It has NO automated check**: the chip is
+    canvas-drawn with no DOM, and its inputs are inside `extendData`, so pinning it would mean
+    contorting the product for the test. Verified by driving; named here rather than skipped.
 - **Fibs** (`TRADE_FIB` overlay, `trade.fib`, 2026-08-02) — **the leg each trade was actually
   priced off.** Aaron's brother asked to see the fib run on the points a trade used, so he can read
   which retracement levels it went into. Every level arrives as an explicit `(ratio, price)` pair

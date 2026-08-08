@@ -25,6 +25,8 @@ export interface ChartSettings {
   tradeLabelPrices: boolean
   /** A repainted candlestick-reversal candle names its pattern (`Bearish Engulfing`). */
   candleMarkLabels: boolean
+  /** Only the DEEPEST reversal candle of each setup is painted, not every one in its span. */
+  candleMarkDeepestOnly: boolean
 }
 
 export const DEFAULT_CHART_SETTINGS: ChartSettings = {
@@ -38,6 +40,12 @@ export const DEFAULT_CHART_SETTINGS: ChartSettings = {
   // the names sit on top of the neighbouring candles. The COLOUR is the signal; the name is what
   // you switch on when you are asking which pattern it was.
   candleMarkLabels: false,
+  // Default OFF — every mark in the span is drawn, which is what the layer was asked for: *"all the
+  // candles that would have shown a possible reversal all the way up to the deepest one."* This is
+  // the other reading, for when the question is the single best entry rather than the choice
+  // between them (Aaron, 2026-08-08: *"a setting where I could take off all the reversal candles
+  // and only have the deepest one show within that trading zone"*).
+  candleMarkDeepestOnly: false,
 }
 
 export type SettingKind = 'toggle'
@@ -87,7 +95,16 @@ export const SECTIONS: SettingSection[] = [
         key: 'candleMarkLabels',
         label: 'Name the pattern',
         kind: 'toggle',
-        help: 'Off = the candle is painted navy with no tag. Hover still names it.',
+        help: 'Off = the candle is painted navy with no tag. A bar can carry more than one pattern'
+          + ' — one candle can satisfy several definitions at once — and the tag names all of them.',
+      },
+      {
+        key: 'candleMarkDeepestOnly',
+        label: 'Only the deepest',
+        kind: 'toggle',
+        help: 'On = one candle per setup, the reversal at the furthest price went against it. Off ='
+          + ' every reversal candle from the entry to that turn, so you can see which levels'
+          + ' offered a better entry.',
       },
     ],
   },
