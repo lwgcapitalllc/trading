@@ -648,7 +648,26 @@ bool i_showLondonHL    = i_showSessionHL
 bool i_showNYHL        = i_showSessionHL
 bool i_showPWC         = true
 bool i_showH4Sweep     = true
-bool showMitLiq        = false
+// ── MITIGATED LEVELS STAY ON THE CHART, DOTTED (Aaron, 2026-08-07) ──
+// He had this before and it went with the Chart Tools lock-down: it used to be the
+// "Show Mitigated Liquidity Lines" input (default OFF) and was frozen at its default
+// as a constant, which locked in the answer nobody had asked for. Now TRUE.
+// A level price has broken is not nothing — it is a pool that has been TAKEN, and where
+// it was taken is the read. So instead of vanishing, it freezes at the break bar, turns
+// dotted and greys out, and its label greys with it rather than disappearing.
+// ⚠ It is ONE flag across THREE tiers — PDH/PDL, PWH/PWL and the session H/Ls all keep
+// their broken levels now, not only the sessions. That is what the old input did too
+// (its tooltip named all three), so this is the behaviour being restored rather than a
+// wider one. Split it per tier if the daily and weekly turn out to be clutter.
+// ⚠ Nothing accumulates: each tier DELETES and redraws its own line when its pool rolls,
+// so there is at most one broken level per tier on screen, and it is replaced rather
+// than stacked. What DOES change is how long one lives — the new-day wipe is skipped
+// when this is on, so a broken level now survives to its own tier's next roll (a swept
+// PWH can sit there most of a week) instead of being cleared at NY midnight.
+// ⚠ A mitigated level frozen more than LIQ_ORIGIN_CAP bars back is hidden anyway —
+// f_liqMitigate refuses to address a line whose break bar has aged out of Pine's
+// buffer, because dragging it forward would read as a level still being live.
+bool showMitLiq        = true
 int  i_lblOffset       = 300
 int  i_lineExtend      = 50
 
@@ -4264,33 +4283,86 @@ if i_showLiquidity and i_showLabels
     liq_y   = array.new_float()
     liq_lbl = array.new_label()
 
-    if not na(d_hLbl)     and i_isDailyEnabled
+    // ── A LABEL NOBODY CAN SEE MAY NOT RESERVE A SLOT ─────────────────────
+    // The nudge below walks the labels bottom-up and pushes each one at least
+    // lblOff above the one under it. A MITIGATED daily/weekly/session level is
+    // hidden (f_liqMitigate blanks its textcolor) but its label OBJECT still
+    // exists — so it was still being pushed into this list, still taking a slot,
+    // and still shoving every visible label above it up by a full lblOff with
+    // nothing on screen to explain the gap. That is why one tag sits further
+    // from its line than its neighbours, and why H4 H and H4 L — which are never
+    // hidden, only greyed — could end up at different distances from their own
+    // lines: a hidden Asia/Ldn level under one of them and not the other.
+    // ⚠ H4 and PWC are deliberately NOT filtered: a swept H4 stays on the chart
+    // in grey, so it is visible and genuinely does need its space.
+    // ── PDH / PDL WIN A TIE ─────────────────────────────────────────────
+    // A session high sitting at the SAME price as the previous day's high is
+    // ONE level, and printing both stacks "NY L" under "PDL" for a line only
+    // one of them needs to name. The daily label is the one kept — it is the
+    // bigger, older pool — and the session label is hidden the same way a
+    // mitigated level is hidden (textcolor na), then left OUT of the nudge
+    // below, so the collision pass does not space the survivors around an
+    // invisible label.
+    // ⚠ The tolerance is ONE TICK, not a visual gap. Both numbers are maxima
+    // over the same bar highs, so a genuine duplicate is EXACT; a level a few
+    // ticks away is a DIFFERENT level and the nudge already handles it.
+    // ⚠ It reads d_hLbl / d_lLbl and not just the prices: once a mitigated
+    // PDH has been deleted on a new day there is nothing left to defer to,
+    // and the session label has to come back.
+    float liqDupTol = syminfo.mintick
+    // ⚠ And it defers only to a VISIBLE daily label. A mitigated PDH is
+    // hidden but its label object lives until the next new-day wipe, so
+    // without this term a swept, invisible PDH went on suppressing a
+    // perfectly visible session tag at the same price — the level lost
+    // its name with nothing on screen holding the place.
+    bool  liqDupH   = i_isDailyEnabled and not na(d_hLbl) and not na(d_hPrice) and (not d_hMit or showMitLiq)
+    bool  liqDupL   = i_isDailyEnabled and not na(d_lLbl) and not na(d_lPrice) and (not d_lMit or showMitLiq)
+
+    if not na(d_hLbl)     and i_isDailyEnabled and (not d_hMit or showMitLiq)
         array.push(liq_y, d_hPrice + lblOff),    array.push(liq_lbl, d_hLbl)
-    if not na(w_hLbl)     and i_isWeeklyEnabled
+    if not na(w_hLbl)     and i_isWeeklyEnabled and (not w_hMit or showMitLiq)
         array.push(liq_y, w_hPrice + lblOff),    array.push(liq_lbl, w_hLbl)
     if not na(pwc_lbl)    and i_showPWC
         array.push(liq_y, pwc_price + lblOff),   array.push(liq_lbl, pwc_lbl)
     if not na(h4HighLbl)  and i_showH4Sweep
         array.push(liq_y, h4TrackHigh + lblOff), array.push(liq_lbl, h4HighLbl)
-    if not na(asiaHLbl)   and i_showAsiaHL
-        array.push(liq_y, asiaHPrice + lblOff),  array.push(liq_lbl, asiaHLbl)
-    if not na(londonHLbl) and i_showLondonHL
-        array.push(liq_y, londonHPrice + lblOff),array.push(liq_lbl, londonHLbl)
-    if not na(nyHLbl)     and i_showNYHL
-        array.push(liq_y, nyHPrice + lblOff),    array.push(liq_lbl, nyHLbl)
+    if not na(asiaHLbl)   and i_showAsiaHL and (not asiaHMit or showMitLiq)
+        if liqDupH and math.abs(asiaHPrice - d_hPrice) <= liqDupTol
+            label.set_textcolor(asiaHLbl, color(na))
+        else
+            array.push(liq_y, asiaHPrice + lblOff),  array.push(liq_lbl, asiaHLbl)
+    if not na(londonHLbl) and i_showLondonHL and (not londonHMit or showMitLiq)
+        if liqDupH and math.abs(londonHPrice - d_hPrice) <= liqDupTol
+            label.set_textcolor(londonHLbl, color(na))
+        else
+            array.push(liq_y, londonHPrice + lblOff),array.push(liq_lbl, londonHLbl)
+    if not na(nyHLbl)     and i_showNYHL and (not nyHMit or showMitLiq)
+        if liqDupH and math.abs(nyHPrice - d_hPrice) <= liqDupTol
+            label.set_textcolor(nyHLbl, color(na))
+        else
+            array.push(liq_y, nyHPrice + lblOff),    array.push(liq_lbl, nyHLbl)
 
-    if not na(d_lLbl)     and i_isDailyEnabled
+    if not na(d_lLbl)     and i_isDailyEnabled and (not d_lMit or showMitLiq)
         array.push(liq_y, d_lPrice - lblOff),    array.push(liq_lbl, d_lLbl)
-    if not na(w_lLbl)     and i_isWeeklyEnabled
+    if not na(w_lLbl)     and i_isWeeklyEnabled and (not w_lMit or showMitLiq)
         array.push(liq_y, w_lPrice - lblOff),    array.push(liq_lbl, w_lLbl)
     if not na(h4LowLbl)   and i_showH4Sweep
         array.push(liq_y, h4TrackLow - lblOff),  array.push(liq_lbl, h4LowLbl)
-    if not na(asiaLLbl)   and i_showAsiaHL
-        array.push(liq_y, asiaLPrice - lblOff),  array.push(liq_lbl, asiaLLbl)
-    if not na(londonLLbl) and i_showLondonHL
-        array.push(liq_y, londonLPrice - lblOff),array.push(liq_lbl, londonLLbl)
-    if not na(nyLLbl)     and i_showNYHL
-        array.push(liq_y, nyLPrice - lblOff),    array.push(liq_lbl, nyLLbl)
+    if not na(asiaLLbl)   and i_showAsiaHL and (not asiaLMit or showMitLiq)
+        if liqDupL and math.abs(asiaLPrice - d_lPrice) <= liqDupTol
+            label.set_textcolor(asiaLLbl, color(na))
+        else
+            array.push(liq_y, asiaLPrice - lblOff),  array.push(liq_lbl, asiaLLbl)
+    if not na(londonLLbl) and i_showLondonHL and (not londonLMit or showMitLiq)
+        if liqDupL and math.abs(londonLPrice - d_lPrice) <= liqDupTol
+            label.set_textcolor(londonLLbl, color(na))
+        else
+            array.push(liq_y, londonLPrice - lblOff),array.push(liq_lbl, londonLLbl)
+    if not na(nyLLbl)     and i_showNYHL and (not nyLMit or showMitLiq)
+        if liqDupL and math.abs(nyLPrice - d_lPrice) <= liqDupTol
+            label.set_textcolor(nyLLbl, color(na))
+        else
+            array.push(liq_y, nyLPrice - lblOff),    array.push(liq_lbl, nyLLbl)
 
     n = array.size(liq_y)
     if n > 1
