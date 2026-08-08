@@ -2087,6 +2087,124 @@ the engine's events into mpc's boxes; that the ENGINE matches the Pine is proven
 on a 21,691-bar 15m export and a 13,186-bar 5m one (`engines/order_blocks/CLAUDE.md` → Validation).
 **Re-run `compare_ob.py` on the next real export**, and add the box-vs-array half here when one lands.
 
+## The chart's session windows are the INDICATOR's, and two of the three were not
+
+🔴 **Fixed 2026-08-08** (Aaron confirmed `mpc_assistant.pine` is the correct source). `chart_spec`'s
+`_FX_SESSIONS` shaded **Tokyo 09:00-15:00** and **London 08:00-16:30** against the indicator's
+**09:00-18:00** and **08:00-17:00** — so two of the three session boxes on a backtest chart were
+SHORTER than the boxes on the TradingView chart the run is read against, and nothing on either screen
+said so. New York already matched, which is what made it look plausible.
+
+⚠ **The engines already agreed with the indicator; this file was the only dissenter.**
+`engines/sessions/engine.py`'s `SessionEngine.DEFAULT_SESSIONS` has carried
+`Asia 0900-1800 / London 0800-1700 / NY 0800-1700` since the 2026-07-31 re-sync, and
+`engines/liquidity/` composes it for the session H/L levels. So this was a **third statement of one
+fact**, and the two that were right had been right for a week.
+
+**The fix is pinned by COMPARING the two, never by restating the windows a third time**
+(`tests/test_chart_spec_sessions.py`, 4 tests, **the one in this pass that could be WATCHED RED**).
+A test hardcoding `09:00`/`18:00` would be a fourth copy, and the next re-sync would leave it stale
+and green — which is the same disease one level down.
+
+⚠ **The display names stay `Tokyo`/`New York` where the engine says `Asia`/`NY`, deliberately.** The
+panel keys its per-session toggle state on `name`, so renaming would silently reset a reader's
+switches; these are legend labels, not an identifier anything resolves through.
+
+⚠ **A window is stated in its own city's clock, and that is what makes it DST-aware** — it does not
+move when that city changes its clocks, while its UTC span does. Re-stating one as a fixed GMT offset
+would be wrong for ~7 months a year and would look right for the other five.
+
+## Liquidity levels — and WHICH POOLS PRICE HAD ALREADY TAKEN
+
+`services/liquidity_overlays.py` (2026-08-08). Aaron asked to be able to read, off the backtest
+chart, that liquidity had been swept for the daily, the New York session, the H4 and so on. The
+canonical `engines/liquidity/` engine is replayed server-side and each level becomes an `hline` in
+one of three groups. **It is that engine's FIRST consumer** — it was written, Pine-parity-validated
+in July 2026 and then imported by nothing for a year, which is why nothing in this app could answer
+the question until now.
+
+**It is the anchor rule again — and here the rule is doing real work rather than being inherited.**
+A liquidity level is not rare the way an order block is: every day mints a PDH and a PDL, every
+session close a high and a low, and the H4 tier rolls SIX TIMES A DAY. ✅ **MEASURED over the full
+history of run `1bbc8fa7773d` (155,891 M15 candles): 35,028 levels created, of which 20,376 — 58% —
+are H4.** That is past `_MAX_PER_GROUP` (20,000), so drawing everything would have been a **silent
+truncation of the oldest levels**, which is the half a reader scrolls back to and the exact defect
+the structure layer's cap was raised to fix. Anchored to trade entries / blocked / missed bars it is
+**8,174 levels, 4,608 of them swept** — the same order as the gap layer's 2,822 — and it answers the
+question actually asked rather than papering the chart.
+
+**THREE groups, not one**, and this is the one place it departs from the gap and block layers. The
+tiers differ by an order of magnitude in volume and in meaning: H4 alone is 58% of the levels, so a
+reader following daily and session sweeps wants it off and a reader timing an entry off the last H4
+candle wants only it. The indicator gets away with one switch because it only ever draws the ~13
+levels that are live RIGHT NOW.
+
+⚠ **This is therefore NOT the same VIEW as the indicator's, and the difference is structural rather
+than a fork to be closed.** `mpc_assistant.pine` draws the live set and nothing else — it never shows
+you a level from 2021, because there is no 2021 on a live chart. This layer draws the historical set
+at the bars that matter. The two agree completely about what a level IS and disagree about which ones
+are on screen.
+
+🔴 **THE ENGINE MUST BE CONSTRUCTED WITH `hide_mitigated_on_new_day=False`, AND THE DEFAULT IS THE
+TRAP.** Its default is `True` — the Pine's `i_currentDayOnly` tidy — and that tidy is GATED on
+`not showMitLiq`, which went **TRUE** in `mpc_assistant.pine` on 2026-08-07 (a swept level now freezes
+dotted and grey instead of vanishing). So today's indicator never runs the tidy. Left at the default,
+every swept level older than the current NY day is evicted before it can be drawn: the layer would
+still render live levels, still look correct, and **be missing the one thing it exists to show.**
+⚠ **Its test needed a SPARSE anchor set to catch that, and the first version was VACUOUS** — anchored
+on every bar the two settings agree exactly (72 swept either way), because a level is marked seen on
+the bar it is swept, before any later tidy can reach it. With one realistic anchor: **6 kept against
+1 tidied.** Production is 944 anchors over 155,891 bars, i.e. the sparse case.
+
+**BSL/SSL is DERIVED for every tier except h4, and the derivation is CHECKED rather than trusted.**
+The Pine labels a swept high `BSL` and a swept low `SSL` on every tier (`liq_dh`, `liq_ash`, …), while
+the engine models `sweep_label` on the **h4 kind alone** — the one tier whose Pine block prints the
+tag on the chart. `sweep_label_for` therefore takes the engine's answer where it exists and derives
+from the side otherwise. A derivation sitting beside a value something else computed is this repo's
+most-repeated defect, so `test_the_derived_sweep_label_agrees_with_the_engines_own` runs the two
+against each other on real h4 sweeps and asserts it checked at least one.
+
+⚠ **`_origin_bar` scans back for the candle that MADE the level**, mirroring the Pine's
+`f_originHigh`/`f_originLow`. A level is created on the first bar of the period AFTER the one that
+produced it, so anchoring the line there starts every line a whole period right of the candle it
+describes. It is geometry over candles the caller already holds — the engine still owns the PRICE —
+and it scans from `created_index` BACKWARDS, never from the live bar, or it would find a bar that
+re-touched the level later and draw the line from the sweep instead of from the origin.
+
+⚠ **`label` is a TOP-LEVEL field on the overlay, not a `style` key.** The panel reads `ov.label` and
+spreads `style` separately, so a label nested in `style` type-checks, survives the round trip and
+simply never draws — leaving unlabelled lines on the layer whose entire job is naming which pool went.
+
+⚠ **The tiers are dropped from a STACK spec** alongside the gaps and blocks. A level is a property of
+the market rather than of a strategy, like the structure overlays that ARE kept — but what is
+leg-specific is not the level, it is **which levels were selected for drawing**, and that selection is
+the base leg's alone. A market fact filtered through one strategy's anchors is not a market fact.
+
+✅ **Driven end to end through the running backend, not only unit-tested**: a real `?refresh=true`
+rebuild of run `bc2143e547b8` (23,706 candles) in 2.3s returns 385 liquidity overlays across the three
+groups, **208 of them swept**, carrying labels like `PWL swept · SSL`, with all 13 tier names present.
+
+**Tests:** `tests/test_liquidity_overlays.py` (17). ⚠ **A fail-watch against HEAD is VACUOUS for all
+of them** — the module did not exist — so non-vacuity came from **MUTATION**, and seven mutations are
+recorded in the docstrings with the test each one turns red. 🔴 **Two of them did not bite on the
+first attempt and the two causes are different, which is why both are written down:** the label-nesting
+mutation never APPLIED (wrong indentation — a no-op edit proves nothing in either direction, so it was
+re-run rather than recorded as a pass), while the origin-scan mutation applied cleanly and left its
+test GREEN — that test was genuinely vacuous on a FLAT feed, where every bar spans the same high and
+low so the creation bar satisfies the assertion exactly as the true origin does. It uses a trending
+feed now.
+
+🔴 **AND THE MUTATION HARNESS ITSELF WAS SILENTLY BROKEN FIRST, WHICH IS THE MOST TRANSFERABLE PART.**
+A mutate-run-restore inside one second leaves the file's **mtime AND size unchanged**, so Python
+reuses the cached bytecode and the "mutation" tests the unmutated module. It presented as a test that
+stayed red after the source was restored byte-identically (`diff` clean, `grep` showing the right
+values, `__file__` pointing at the right path) — because `__file__` names the SOURCE even when the
+module was loaded from a `.pyc`. ⚠ **On macOS there is no local `__pycache__` to clear**:
+`sys.pycache_prefix` is `~/Library/Caches/com.apple.python`, so `find . -name __pycache__` returns
+nothing and the stale bytecode is somewhere else entirely. **Any mutation or fail-watch loop in this
+repo must delete that prefix path (or sleep past the second) between steps, or it proves nothing and
+looks like it proved something.**
+
 ## Trade fibs — the leg each trade was actually priced off
 
 `chart_spec._trade_fib`. Aaron's brother asked to see, on every trade the chart plots, the fib run

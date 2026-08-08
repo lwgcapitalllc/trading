@@ -736,6 +736,37 @@ here**, so the chart shows exactly what the strategy saw.
     Both the BOX and HLINE label paths shipped carrying it, dormant, and both now spread the shared
     `FLAT_TEXT` style the `LABEL` template already used — see that constant in `overlays.ts`.
   - Dropped from a **stack** spec alongside the gaps, for the same anchored-to-the-base-leg reason.
+- **Liquidity levels** (three `Liquidity — …` overlay groups, backend
+  `services/liquidity_overlays.py`, 2026-08-08) — **the pools that were live when something fired,
+  and WHICH OF THEM PRICE HAD ALREADY TAKEN.** Aaron asked to be able to read a sweep off the
+  backtest chart — daily, New York, H4. The canonical `engines/liquidity/` engine is replayed
+  server-side under the same anchor rule as the gaps and blocks, and each level is an `hline`.
+  **A swept level is drawn DOTTED and GREY, ending at the bar it was taken on, labelled
+  `PDH swept · BSL`; a live one is solid in its tier's colour with a bare name.** That styling IS the
+  feature — it mirrors `mpc_assistant.pine`, where `showMitLiq` went TRUE on 2026-08-07 so a broken
+  level freezes and greys rather than vanishing.
+  - **Three rows in Analysis rather than one**, which is the first time a layer here has taken more
+    than one. The tiers differ by an order of magnitude: **H4 is 58% of all levels** (measured —
+    20,376 of 35,028 over a 6.5-year run), so a reader following daily and session sweeps needs it
+    off, and a reader timing an entry needs only it. The indicator gets one switch because it only
+    ever draws the ~13 levels live RIGHT NOW.
+  - **It cost the panel no new template and no new effect** — three plain `hline` groups and three
+    strings in `ANALYSIS_GROUPS`. Fourth entry in the run of layers that landed for a string and a
+    colour (gaps, blocks, VWAP, this), and the reason to reach for the generic pipeline first.
+  - **They go on the END of `ANALYSIS_GROUPS`**, so `DEBUG_ON_GROUPS` (which reads
+    `ANALYSIS_GROUPS[0]`) is untouched and none of them joins Deep debug.
+  - ⚠ **The dot colours describe the LIVE levels only**, because a swept level is grey whatever tier
+    it came from. That is right: the dot says which rows a layer draws, and a spent pool has stopped
+    being one of them. H4 is mpc's own `#FF6B35`, reproduced exactly; the daily/weekly and session
+    hues are NOT the indicator's, which draws both in black — invisible on this chart — so each takes
+    a hue picked away from structure teal, gap slate and block orange.
+  - ⚠ **This is not the same VIEW as the indicator's, and it is not a fork to close.** mpc draws the
+    live set and never a level from 2021, because a live chart has no 2021. This draws the historical
+    set at the bars that matter. Same definition of a level, different question about which to show.
+  - ⚠ **`label` is a TOP-LEVEL overlay field, not a `style` key** — the panel reads `ov.label` and
+    spreads `style` separately, so a nested label round-trips fine and never draws. Pinned backend-side.
+  - Dropped from a **stack** spec alongside the gaps and blocks: a level is a market fact, but WHICH
+    levels were selected for drawing is the base leg's alone.
 - **Fibs** (`TRADE_FIB` overlay, `trade.fib`, 2026-08-02) — **the leg each trade was actually
   priced off.** Aaron's brother asked to see the fib run on the points a trade used, so he can read
   which retracement levels it went into. Every level arrives as an explicit `(ratio, price)` pair

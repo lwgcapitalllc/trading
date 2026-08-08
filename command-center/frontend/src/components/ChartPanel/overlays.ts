@@ -54,6 +54,9 @@ export const STRUCTURE_GROUP_COLOR: Record<typeof STRUCTURE_GROUPS[number], stri
 export const ANALYSIS_GROUPS = [
   'Fair Value Gaps',
   'Order Blocks',
+  'Liquidity — Daily/Weekly',
+  'Liquidity — Sessions',
+  'Liquidity — H4',
 ] as const
 
 /** Analysis-menu dot colour per group — each matches what its layer actually draws, so a row's dot
@@ -63,6 +66,16 @@ export const ANALYSIS_GROUPS = [
 export const ANALYSIS_GROUP_COLOR: Record<typeof ANALYSIS_GROUPS[number], string> = {
   'Fair Value Gaps': '#94a3b8',
   'Order Blocks': '#E65100',
+  // The three liquidity tiers. H4 is mpc's own `H4_ACTIVE_COLOR` reproduced exactly — it is the
+  // colour those levels are read in on the TradingView chart. The other two are NOT mpc's, which
+  // draws them in black: this chart renders on a dark background, so black is invisible and each
+  // takes a hue picked away from everything already here (structure teal, gap slate, block orange).
+  // ⚠ A SWEPT level is drawn grey and dashed whatever its tier, so these dots describe the LIVE
+  // levels only — which is right, because the dot's job is to say which rows a layer is drawing,
+  // and a spent pool has stopped being one of them.
+  'Liquidity — Daily/Weekly': '#38bdf8',
+  'Liquidity — Sessions': '#a78bfa',
+  'Liquidity — H4': '#FF6B35',
 }
 
 /** Daily session-break marker (Step 6) — a vline drawn under a separate name so the generic

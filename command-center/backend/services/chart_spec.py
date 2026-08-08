@@ -40,16 +40,35 @@ from typing import Optional
 from services import history_limits, lab_db, ohlc_fetcher
 from services.backtest_runner import LAB_RESULTS_DIR
 from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
+from services.liquidity_overlays import GROUPS as GROUPS_LIQ
+from services.liquidity_overlays import build_liquidity_overlays
 from services.ob_overlays import GROUP_OB, build_ob_overlays
 from services.structure_overlays import build_market_structure_overlays
 from services.vwap_overlays import build_vwap_indicator
 
 log = logging.getLogger("CHARTSPEC")
 
-# Generic FX market sessions — data, not strategy logic. Times are local to each `tz`.
+# Market sessions — data, not strategy logic. Times are local to each `tz`, which is what makes them
+# DST-aware: a window stated in its own city's clock does not move when that city changes its clocks,
+# while its UTC span does. Read on a UTC-4 chart, London and New York therefore shift an hour twice a
+# year and Tokyo never does.
+#
+# 🔴 **THESE ARE `mpc_assistant.pine`'s WINDOWS AND THEY WERE NOT (fixed 2026-08-08).** Tokyo ended at
+# 15:00 and London at 16:30 here, against the indicator's 18:00 and 17:00 — so two of the three boxes
+# on a backtest chart were SHORTER than the boxes on the TradingView chart the run is read against,
+# and nothing on either screen said so. Aaron confirmed the indicator is the correct source.
+# ⚠ **The engines already agreed with the indicator and this file was the only dissenter** —
+# `engines/sessions/engine.py`'s `SessionEngine` defaults are `Asia 0900-1800 Asia/Tokyo`,
+# `London 0800-1700 Europe/London`, `NY 0800-1700 America/New_York`, re-synced from the 2026-07-31
+# mpc paste. So this was a THIRD statement of a fact two other places already held, which is this
+# repo's most-repeated defect; it is now the same three windows.
+# ⚠ **The engine's names are `Asia`/`London`/`NY` and the display names below stay `Tokyo`/`London`/
+# `New York` deliberately.** The panel keys its per-session toggle state on `name`, so renaming would
+# reset a reader's switches, and these are the labels on the chart legend rather than an identifier
+# anything resolves through.
 _FX_SESSIONS = [
-    {"name": "Tokyo",    "tz": "Asia/Tokyo",        "start": "09:00", "end": "15:00", "color": "#f472b6"},
-    {"name": "London",   "tz": "Europe/London",     "start": "08:00", "end": "16:30", "color": "#60a5fa"},
+    {"name": "Tokyo",    "tz": "Asia/Tokyo",        "start": "09:00", "end": "18:00", "color": "#f472b6"},
+    {"name": "London",   "tz": "Europe/London",     "start": "08:00", "end": "17:00", "color": "#60a5fa"},
     {"name": "New York", "tz": "America/New_York",  "start": "08:00", "end": "17:00", "color": "#fb923c"},
 ]
 
@@ -654,6 +673,15 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     # source; equally, a drawn block never explains an entry, because the bot reads none.
     overlays = overlays + build_ob_overlays(candles, anchors)
 
+    # Liquidity levels — the pools that were live when something fired, and WHICH OF THEM PRICE HAD
+    # ALREADY TAKEN. Same anchor rule again, and it is doing more work here than for the gaps: a
+    # 6.5-year run creates 35,028 levels (measured) against ~2,800 gaps, because the H4 tier rolls six
+    # times a day, so drawing them all would have silently truncated the oldest at the per-group cap.
+    # Anchored it is 8,174, of which 4,608 are swept — and the swept ones are the read.
+    # Three groups rather than one (Daily/Weekly · Sessions · H4), because the tiers differ by an
+    # order of magnitude in volume; see liquidity_overlays.py.
+    overlays = overlays + build_liquidity_overlays(candles, anchors)
+
     # Session VWAP — a main-pane line off the canonical engine, default OFF. It is the one layer
     # here that needs the bar's VOLUME, so it returns None (no toggle) whenever the run's bars
     # carry none; see vwap_overlays.py for why a missing volume is a refusal rather than a zero.
@@ -752,13 +780,17 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         # any one strategy — identical for every leg (same instrument/timeframe/window). So the
         # stack's price chart carries the base leg's, giving it full BacktestDetail parity
         # (structure layers, ATR pane, fib/measurement tools all read the same spec).
-        # The two ANCHORED groups — fair value gaps and order blocks — are the exception, dropped
-        # for the same reason blocks and misses are: both are anchored to the BASE leg's trades, so
-        # on a merged chart they would draw zones at one strategy's entries and nothing at the
-        # others' — which reads as "these setups had gaps and those didn't" rather than "only one
-        # leg was measured". A leg's own page still carries both.
+        # The ANCHORED groups — fair value gaps, order blocks and the three liquidity tiers — are the
+        # exception, dropped for the same reason blocks and misses are: every one of them is anchored
+        # to the BASE leg's trades, so on a merged chart they would draw at one strategy's entries and
+        # nothing at the others' — which reads as "these setups had gaps and those didn't" rather than
+        # "only one leg was measured". A leg's own page still carries all of them.
+        # ⚠ The liquidity tiers are dropped even though a LEVEL is a property of the market rather
+        # than of a strategy — the same as the structure overlays kept above. What is leg-specific is
+        # not the level, it is WHICH levels were selected for drawing, and that selection is the base
+        # leg's alone. A market fact filtered through one strategy's anchors is not a market fact.
         "overlays": [dict(o) for o in src.get("overlays", [])
-                     if o.get("group") not in (GROUP_FVG, GROUP_OB)],
+                     if o.get("group") not in (GROUP_FVG, GROUP_OB, *GROUPS_LIQ)],
         "indicators": [dict(i) for i in src.get("indicators", [])],
         "layers": layers,
         # The base leg's run_id — the frontend routes M1/M5 drill-down + fullscreen candle fetches
