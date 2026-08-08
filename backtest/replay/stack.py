@@ -3,8 +3,8 @@
 One `step(bar)` call feeds a single closed bar through every engine the A+ setup
 reads, in the exact order the Pine evaluates them:
 
-    structure -> fib (structure/sniper/macro/internal) -> FVG -> RSI-divergence
-    -> liquidity -> sessions
+    structure -> order blocks -> fib (structure/sniper/macro/internal) -> FVG
+    -> RSI-divergence -> liquidity -> sessions
 
 and returns a `BarState` bundling this bar plus every engine's events for it. The
 stack owns the engine instances (so a consumer can also read live engine state —
@@ -40,6 +40,7 @@ from fibonacci import (  # noqa: E402
 )
 from fair_value_gaps import FairValueGapEngine, FvgEvents  # noqa: E402
 from equal_highs_lows import EqualHighsLowsEngine  # noqa: E402
+from order_blocks import OrderBlockEngine, OrderBlockEvents  # noqa: E402
 from rsi_divergence import RsiDivergenceEngine, RsiDivEvents  # noqa: E402
 from liquidity import LiquidityEngine, LiquidityEvents  # noqa: E402
 from sessions import SessionEngine, SessionEvents  # noqa: E402
@@ -106,6 +107,25 @@ class EngineConfig:
     eq_pivot_len: int = 2
     eq_atr_mult: float = 0.1
     eq_max_levels: int = 6
+    # order_blocks — OPT-IN, and off by default for the same reason the EQ engine is: no strategy
+    # in this repo reads an order block today (`mpc_sos_fade`, `mpc_bleg` and `mpc_bos` all ignore
+    # them), and an unused engine still costs a per-bar ATR, two pivot scans and a live-zone walk on
+    # every replay, sweep combo and optimizer core in the repo.
+    # ⚠ MEASURED rather than assumed, because "it is probably cheap" is how a default gets chosen
+    # badly: 5,760 synthetic bars, best of 3 — 328.5 ms off vs 386.7 ms on, **+17.7%** (57.0 → 67.1
+    # us/bar). That is per combo, so a 1,000-combo sweep pays it a thousand times for output nothing
+    # reads. Off keeps every existing result byte-identical AND costing exactly what it did before;
+    # a future strategy that wants blocks turns it on and pays for them.
+    #
+    # ⚠ THERE ARE DELIBERATELY NO OB TUNING FIELDS HERE, and that is the repo's own rule rather than
+    # laziness: "nothing in the config may exist without a Pine input behind it" (the BosConfig
+    # lesson, 2026-08-07). Every OB constant — max_age, min_back, max_atr, dupe_overlap, disp_mult,
+    # the turn/push windows — is HARDCODED in `mpc_assistant.pine`, not exposed as an input, so a
+    # field here could never be carried by an export column and no parity gate could ever check it.
+    # `maxActiveOB` was the last real input and it was locked to 10 on 2026-07-31. The engine
+    # defaults therefore ARE the Pine constants, and there is nothing to pin. If mpc ever re-exposes
+    # one as an `input.*`, add the field THEN, with the export column in the same commit.
+    order_blocks: bool = False
     # rsi_divergence
     rsi_len: int = 14
     rsi_pivot_len: int = 5
@@ -134,6 +154,14 @@ class BarState:
     rsi: RsiDivEvents
     liquidity: LiquidityEvents
     sessions: SessionEvents
+    # None = the stack was built with `order_blocks=False`, i.e. the question was never asked.
+    # An OrderBlockEvents with empty lists means the engine RAN and found nothing this bar.
+    # Those are different facts and must not share a value — the `mt5_link` rule, which this repo
+    # has now met on the live bot's terminal probe, the optimizer's sensitivity score and the news
+    # calendar's coverage. A strategy that reads `state.order_blocks.active_bull` on a stack that
+    # never ran the engine gets an AttributeError, which is the loud failure; an empty list would
+    # silently read as "no blocks here" and the strategy would take no trades while looking healthy.
+    order_blocks: OrderBlockEvents | None = None
 
 
 class EngineStack:
@@ -166,6 +194,11 @@ class EngineStack:
         self.eq = EqualHighsLowsEngine(
             pivot_len=c.eq_pivot_len, atr_mult=c.eq_atr_mult, max_levels=c.eq_max_levels,
         ) if c.eq_exempt_fvg else None
+        # Same opt-in shape as `eq`, same reason — see `EngineConfig.order_blocks`. Built with no
+        # kwargs: the engine's defaults ARE mpc_assistant.pine's constants (max_active=10,
+        # body_only=False, …), and that Pine is the only OB source left in the repo since the
+        # strategy files dropped order blocks on 2026-07-24/25.
+        self.order_blocks = OrderBlockEngine() if c.order_blocks else None
 
     def step(self, bar: ReplayBar) -> BarState:
         """Feed one closed bar through the whole stack in Pine order and return
@@ -188,6 +221,16 @@ class EngineStack:
             snap.ifib_seed_asl_loc = None
             snap.ifib_seed_ash = None
             snap.ifib_seed_ash_loc = None
+
+        # Order blocks sit HERE, immediately after the structure engine and before everything else,
+        # because that is where mpc_assistant.pine runs them (`extendOBs` then the push/turn
+        # creation sites, ~L2158-2790 — after `st.process`, before the internal block, EQ and FVG).
+        # ⚠ The position is currently behaviour-NEUTRAL and it is worth knowing why, so nobody
+        # "tidies" it later: this engine is STANDALONE (plain OHLC in, no snapshot since the
+        # 2026-07-31 re-port) and nothing downstream reads its output, so no other engine can see
+        # it move. It is placed faithfully anyway — the day something does read it, the order is
+        # already the Pine's and not a thing to rediscover.
+        ob_ev = self.order_blocks.update(i, o, h, l, c) if self.order_blocks else None
 
         fib_ev = self.fib.update(h, l, snap)
         sniper_ev = self.sniper.update(h, l, snap)
@@ -219,6 +262,7 @@ class EngineStack:
             rsi=rsi_ev,
             liquidity=liq_ev,
             sessions=sess_ev,
+            order_blocks=ob_ev,
         )
 
 

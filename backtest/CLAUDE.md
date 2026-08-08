@@ -33,8 +33,31 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   cache to disk, resample UP to the target timeframe. Ticks (2yr deep) back the fill model.
 - **A1 — Replay loop** *(done)*. `backtest/replay/`. `iter_bars(df)` turns the data-layer frame into
   `ReplayBar`s (0-based index + epoch-ms UTC time); `EngineStack.step(bar)` drives the canonical
-  engines in Pine order (structure → fib{structure/sniper/macro/internal} → FVG → RSI-divergence →
-  liquidity → sessions) and returns a `BarState`; `run(df, warmup=…)` is the convenience iterator.
+  engines in Pine order (structure → order blocks → fib{structure/sniper/macro/internal} → FVG →
+  RSI-divergence → liquidity → sessions) and returns a `BarState`; `run(df, warmup=…)` is the
+  convenience iterator.
+  **`order_blocks` was wired in 2026-08-08 and is OPT-IN, default OFF** (`EngineConfig.order_blocks`).
+  The engine has been canonical and Pine-parity green since 2026-07-31, but until now its only
+  consumers were the command-center price chart (`services/ob_overlays.py`) and its own harness — so
+  no STRATEGY could see a block, which is what blocked the course's POI-based session plays
+  (`education/smc/SMC_KNOWLEDGE_BASE.md` → plays 1 and 3). ⚠ **Off by default because the cost is
+  real and was MEASURED, not assumed: +17.7% on a replay** (5,760 bars, best of 3 — 328.5 ms → 386.7
+  ms), paid per sweep combo, for output no current strategy reads. ⚠ **`BarState.order_blocks` is
+  `None` when the flag is off and an `OrderBlockEvents` when it is on — `None` means the engine never
+  ran, an events object with empty lists means it ran and found nothing.** Collapsing those is the
+  "no" vs "cannot ask" defect this repo has met on the live bot's terminal probe, the optimizer's
+  sensitivity score and the news calendar; here the empty object would read as *no blocks* and a
+  strategy would take no trades while looking perfectly healthy. ⚠ **There are deliberately NO OB
+  tuning fields on `EngineConfig`** — every OB constant is HARDCODED in `mpc_assistant.pine` rather
+  than exposed as an `input.*`, so a config field could never be carried by an export column and no
+  parity gate could check it (the `BosConfig` rule, 2026-08-07). The engine's defaults ARE the Pine's
+  constants. If mpc re-exposes one as an input, add the field then, with its export column.
+  ⚠ **The position in `step()` is the Pine's** (`extendOBs` then the push/turn creation sites, right
+  after `st.process`) and is currently behaviour-NEUTRAL — the engine is standalone and nothing
+  downstream reads it — so do not "tidy" it: the day something reads a block, the order is already
+  right. Pinned by `tests/test_replay_order_blocks.py` (8 tests, all 8 watched RED against HEAD),
+  whose load-bearing case asserts that enabling it leaves all ten other `BarState` fields
+  byte-identical — every measured figure in this repo was produced by a stack with no OB engine in it.
   `EngineConfig` carries the engine-construction knobs; note `show_internal` (default True): the
   `market_structure` engine always computes internal structure, but a consumer whose Pine has
   "Show Internal Structure" OFF sets this False, which blanks the snapshot's internal-derived fields
