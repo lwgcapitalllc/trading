@@ -2297,7 +2297,8 @@ subject.
 
 **Each mark also carries `spans`, `deepest` and `align`, and none of the three is derivable
 downstream.** `spans` are the anchor indices whose span covers the bar (so the chart can badge a
-trade), `deepest` says it is that span's reversal, and `align` is the named pattern's direction
+trade), `deepestOf` are the ones it is the REVERSAL of — a LIST, not a flag, because one bar can be
+the turn of one setup and an ordinary mark inside another's span — and `align` is its direction
 **relative to the setup**. ⚠ **`align` is NOT `patternDir`** — that is the pattern's own direction,
 and whether a bullish candle points the setup's way depends on the setup's SIDE, which a mark does
 not carry and cannot: one bar can sit inside a long's span and a short's at once. ⚠ **`spans` is

@@ -160,7 +160,7 @@ def test_a_pattern_COMPLETING_just_after_the_turn_is_still_that_turns_reversal()
     assert _fired(bars, 42)
     out = build_candle_overlays(bars, [(bars[38]["time"], "long", bars[55]["time"])])
     assert [o["t"] for o in out] == [bars[42]["time"]]
-    assert out[0]["deepest"] is True, "it IS the turn's reversal, so it is the span's deepest mark"
+    assert out[0]["deepestOf"] == [0], "it IS the turn's reversal, so it is that span's deepest mark"
 
 
 def test_nothing_is_marked_PAST_the_confirmation_WINDOW():

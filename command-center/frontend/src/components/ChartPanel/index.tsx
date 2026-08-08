@@ -1647,14 +1647,6 @@ export default function ChartPanel({
   // trade with somebody else's candle. The anchor list is `trades ++ misses` in spec order, so
   // anchor `i` IS trade `i`, and the backend carries that index through the off-chart drop for
   // exactly this reason.
-  const tradeHadPattern = useMemo(() => {
-    const seen = new Set<number>()
-    for (const ov of allOverlays) {
-      if (ov.type !== 'candle' || ov.group !== GROUP_CANDLE_MARKS) continue
-      for (const n of ov.spans ?? []) seen.add(n)
-    }
-    return seen
-  }, [allOverlays])
 
   const candleDirCounts = useMemo(() => {
     const n: Record<string, number> = {}
@@ -1675,6 +1667,26 @@ export default function ChartPanel({
   // side, which a mark does not carry and cannot — one bar can sit inside a long's span and a
   // short's at once, and the anchor that names the bar is the one that answers for it.
   const candleDirKey = (ov: ChartOverlay) => (ov.type === 'candle' ? ov.align ?? 'against' : 'against')
+
+  // ⚠ It NAMES the pattern rather than ticking a box. `Won · ✓` was the first attempt and it is
+  // unreadable — a tick beside "Won" says *confirmed win*, not *a candle was there* (Aaron: *"how
+  // would I know a tick means a candle was there and an x means none?"*). The name needs no legend,
+  // and it is free: the span's DEEPEST mark is the reversal at the turn, which is the one worth
+  // naming when only one fits.
+  const tradePattern = useMemo(() => {
+    const named = new Map<number, string>()
+    const any = new Set<number>()
+    for (const ov of allOverlays) {
+      if (ov.type !== 'candle' || ov.group !== GROUP_CANDLE_MARKS) continue
+      // Follows the direction filter, so the chip agrees with the candles on screen — reading
+      // "Won · Bearish Engulfing" with the opposing tier hidden and no navy candle anywhere is
+      // exactly the kind of two-sources-one-answer this chart keeps being bitten by.
+      if (hiddenCandleDirs.has(candleDirKey(ov))) continue
+      for (const n of ov.spans ?? []) any.add(n)
+      for (const n of ov.deepestOf ?? []) if (ov.label) named.set(n, ov.label)
+    }
+    return { named, any }
+  }, [allOverlays, hiddenCandleDirs])
 
   // Every overlay group defaults ON, EXCEPT the market-structure groups and the analysis groups —
   // both are opt-in (a chart would be unreadable with all of BOS/SOS/swings/internal drawn by
@@ -2183,18 +2195,18 @@ export default function ChartPanel({
           layerColor: tr.layerColor,   // outcome-chip border + dot accent (stack only)
           layerName: tr.layerName,     // named in the outcome chip: "SOS Fade · Won" (stack only)
           chipBg: theme.bgSurface,     // dark chip behind the side labels (legible over candles)
-          // Did a reversal candle print anywhere in this trade's span? `undefined` while the layer
-          // is OFF, and `undefined` must NOT render as "no" — the run has not been asked. Only
-          // switching the layer on turns the question into an answer.
-          hadPattern: groupsOn[GROUP_CANDLE_MARKS] && atBaseTf
-            ? tradeHadPattern.has(i)
+          // The reversal candle at this trade's turn, by name — or `no candle` if its span had
+          // none. `undefined` while the layer is OFF, and `undefined` must NOT render as "no": the
+          // run has not been asked. Only switching the layer on turns the question into an answer.
+          patternName: groupsOn[GROUP_CANDLE_MARKS] && atBaseTf
+            ? (tradePattern.named.get(i) ?? (tradePattern.any.has(i) ? 'candle' : 'no candle'))
             : undefined,
           neutralColor: theme.textTertiary,
         },
       })
     }
   }, [spec.trades, tradesOn, winnersOn, losersOn, hiddenLayers, displayCandles, loadedLoTs, loadedHiTs,
-      chartSettings, tradeHadPattern, groupsOn, atBaseTf])
+      chartSettings, tradePattern, groupsOn, atBaseTf])
 
   // Trade fibs — the leg each trade was priced off. Rebuilt on data change like every other
   // overlay effect (`applyNewData` clears them).
@@ -2442,7 +2454,7 @@ export default function ChartPanel({
         // Two reader filters, both of which only ever REMOVE marks the backend already decided to
         // draw — neither can invent one, which is what keeps them preferences rather than analysis.
         if (hiddenCandleDirs.has(candleDirKey(ov))) continue
-        if (chartSettings.candleMarkDeepestOnly && !ov.deepest) continue
+        if (chartSettings.candleMarkDeepestOnly && !(ov.deepestOf?.length)) continue
         // FOUR points at ONE timestamp — high, low, open, close — so the template gets one x and
         // four y's and can rebuild the bar. klinecharts keeps every point it is handed regardless
         // of `totalStep`, which is what makes a 4-point overlay on a 2-step template legal.

@@ -281,7 +281,7 @@ def build_candle_overlays(
     # only pattern bar was already claimed report as "no pattern at all", which is the one thing the
     # trade badge exists to say.
     spans: dict[int, list[int]] = {}
-    at_turn: set[int] = set()
+    at_turn: dict[int, list[int]] = {}
     aligned: dict[int, str] = {}
     for n, start, direction, hold_end in bars:
         lo, hi, turn = _reversal_span(candles, start, direction, window, hold_end)
@@ -308,10 +308,8 @@ def build_candle_overlays(
         # marks must have a deepest one, or "only the deepest" hides a setup that plainly had
         # candles in it and reads as the layer being broken.
         after = [i for i in in_span if i >= turn]
-        if after:
-            at_turn.add(after[0])
-        elif in_span:
-            at_turn.add(in_span[-1])
+        if after or in_span:
+            at_turn.setdefault(after[0] if after else in_span[-1], []).append(n)
 
     overlays: list[dict] = []
     for i in sorted(marked):
@@ -329,12 +327,14 @@ def build_candle_overlays(
             # painted — that call is Aaron's, made in the menu.
             "patternDir": found[0].direction,
             "patterns": [p.label for p in found],
-            # Which anchors' spans cover this bar (index into `anchors`), and whether it is the
-            # deepest mark of any of them. The chart reads the first to badge a trade and the second
-            # for its "only the deepest" setting; neither is derivable downstream, because a span is
-            # a bar RANGE and the spec ships only the marks.
+            # Which anchors' spans cover this bar (index into `anchors`). The chart reads it to
+            # badge a trade; it is not derivable downstream, because a span is a bar RANGE and the
+            # spec ships only the marks.
             "spans": spans.get(i, []),
-            "deepest": i in at_turn,
+            # Which anchors this bar is the DEEPEST mark of. A list, not a flag: one bar can be the
+            # turn of one setup and an ordinary mark inside another's span, and a bare boolean would
+            # let the chart name it as the second setup's reversal.
+            "deepestOf": at_turn.get(i, []),
             # "with" / "neutral" / "against" — the named pattern's direction relative to the SETUP,
             # which is what the chart's direction filter is asked in. See above for why the chart
             # cannot work it out from `patternDir`.

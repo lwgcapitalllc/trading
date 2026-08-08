@@ -845,14 +845,27 @@ here**, so the chart shows exactly what the strategy saw.
     every one in its span. Two readings of the same data: *which level offered the best entry* vs
     *which levels offered one at all*. The full reading is the default because it is what the layer
     was asked for.
-  - **The trade's outcome chip says whether its setup had one** — `Won · ✓` / `Won · ✕`. ⚠ **The
-    chip prints NOTHING when the layer is off**, because then the run has not been asked and a `✕`
-    would state a measurement nobody took — the `mt5_link` rule again: never let "no" and "cannot
-    ask" be the same value. ⚠ **It reads each mark's `spans`, not "is there a mark between entry and
-    exit"** — spans overlap (a miss's retrace can sit inside a trade's hold), so a time-range test
-    would credit a trade with somebody else's candle. ⚠ **It has NO automated check**: the chip is
-    canvas-drawn with no DOM, and its inputs are inside `extendData`, so pinning it would mean
-    contorting the product for the test. Verified by driving; named here rather than skipped.
+  - **The trade's outcome chip NAMES the reversal at its turn** — `Won · Bearish Engulfing`, or
+    `Won · no candle`. 🔴 **The first attempt was `Won · ✓` / `Won · ✕` and it was unreadable**: a
+    tick beside "Won" says *confirmed win*, which is a different claim — *"how would I know a tick
+    means a candle was there and an x means none?"* **The name needs no legend, and it is free**,
+    since the span's DEEPEST mark is the reversal at the turn and is the one worth naming when only
+    one fits. ⚠ **The chip prints NOTHING when the layer is off**, because then the run has not been
+    asked and `no candle` would state a measurement nobody took — the `mt5_link` rule again: never
+    let "no" and "cannot ask" be the same value. ⚠ **It reads each mark's `spans` / `deepestOf`, not
+    "is there a mark between entry and exit"** — spans overlap (a miss's retrace can sit inside a
+    trade's hold), so a time-range test would credit a trade with somebody else's candle. ⚠ **It
+    follows the direction filter**, so the chip agrees with the candles on screen; naming a bearish
+    engulfing with the opposing tier hidden and no navy candle anywhere is the two-sources-one-answer
+    trap this chart keeps meeting. ⚠ **It has NO automated check**: the chip is canvas-drawn with no
+    DOM and its inputs live in `extendData`, so pinning it would mean contorting the product for the
+    test. Verified by driving, both cases; named here rather than skipped.
+
+  🔴 **Moving that computation exposed a TDZ crash worth recording.** `tradePattern` was declared
+  above the `candleDirKey` it reads, so the whole panel threw *"Cannot access 'candleDirKey' before
+  initialization"* on mount — **and `tsc` was clean**, because a `const` used before its declaration
+  inside a closure is legal to the type checker and fails only at runtime. It was caught by DRIVING
+  the page, not by the suite. **A green typecheck says nothing about declaration order.**
 - **Fibs** (`TRADE_FIB` overlay, `trade.fib`, 2026-08-02) — **the leg each trade was actually
   priced off.** Aaron's brother asked to see the fib run on the points a trade used, so he can read
   which retracement levels it went into. Every level arrives as an explicit `(ratio, price)` pair

@@ -237,9 +237,10 @@ export interface LabelOverlay extends OverlayRequires {
  *  `patternDir` is +1/-1/0 exactly as the source Pine DRAWS it: which way the pattern points. It
  *  feeds the direction filter and never decides whether the candle is drawn.
  *
- *  `spans` are the indices of the anchors whose span covers this bar, and `deepest` says it is the
- *  reversal of at least one of them. Both come from the backend because a span is a bar RANGE and
- *  the spec ships only the marks — nothing here could work either out. */
+ *  `spans` are the indices of the anchors whose span covers this bar; `deepestOf` are those it is
+ *  the REVERSAL of. Both come from the backend because a span is a bar RANGE and the spec ships only
+ *  the marks — nothing here could work either out. ⚠ `deepestOf` is a list rather than a flag: one
+ *  bar can be the turn of one setup and an ordinary mark inside another's span. */
 export interface CandleOverlay extends OverlayRequires {
   type: 'candle'
   group: string
@@ -252,7 +253,7 @@ export interface CandleOverlay extends OverlayRequires {
   patternDir?: number
   patterns?: string[]
   spans?: number[]
-  deepest?: boolean
+  deepestOf?: number[]
   /** The named pattern's direction relative to the SETUP — never re-derive it from `patternDir`. */
   align?: 'with' | 'neutral' | 'against'
   style?: OverlayStyle
