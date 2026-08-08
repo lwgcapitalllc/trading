@@ -9,32 +9,66 @@ being asked, and what to do with the answer.
 
 ---
 
-## 🟢 2026-08-08 — Aaron has a demo of EACH TIER, so the tier question is now MEASURABLE
+## 🟢 2026-08-08 — QUESTION 3 IS ANSWERED BY MEASUREMENT: SWAP DOES NOT DIFFER BY TIER
 
-This page was written on the premise that *"only a second account can measure Prime or ECN"*, and
-that premise no longer holds. Three PU Prime demo accounts exist:
+This page was written on the premise that *"only a second account can measure Prime or ECN"*. Aaron
+opened a demo of each tier, `MT5_Lab` was logged into all three in turn, and
+`broker_facts.py --path/--account/--symbol` read each one (read-only, market shut).
 
-| account | tier |
+| account | tier (per PU Prime's back office) | symbol | swap long | swap short | min stop |
+|---|---|---|---|---|---|
+| **700119432** | MT5 Standard | `XAUUSD.s` | **−79.60** | **+30.25** | 20 pts |
+| **700152904** | MT5 Prime | `XAUUSD.p` | **−79.60** | **+30.25** | 20 pts |
+| **700152905** | MT5 ECN | `XAUUSD.p` | **−79.60** | **+30.25** | 20 pts |
+
+**Identical on all three, and identical to the live bot's account (700107749).** Contract 100 oz,
+digits 2, rollover3days 3 everywhere. ✅ **`backtest/fills.py` now carries the measured swap on
+`puprime_prime` and `puprime_ecn`** — they had been refusing (`UNMEASURED_SWAP`) since 2026-08-06.
+
+⚠ **Read the shared constant in `fills.py` as "three reads that agreed", never as "Standard's
+figure reused".** That distinction is the entire point of the sentinel, and the earlier refusal was
+correct on the evidence available then — `XAUUSD.s` vs `XAUUSD.crp` really do differ 8.5x on ONE
+account. Three tiers agreeing is a RESULT; it must not become the assumption. **`puprime_cent` is
+still unread and still refuses**, which is what keeps the guard alive.
+
+🔴 **THE SUFFIX IS THE TIER, AND THE 2026-08-06 CONCLUSION THAT IT WAS NOT IS NOW KNOWN WRONG.**
+That reading — *"the suffix scheme across all 1,015 symbols is `.s` / `.24H` / `.crp` / no-suffix,
+i.e. product lines rather than tiers"* — was taken from a **Standard** login, which is the one place
+the evidence is invisible. `.s` is Standard and `.p` is the raw tiers, and **neither account can see
+the other's symbol**: there is no `XAUUSD.p` on the Standard account at all. **A survey of what one
+account can see is not a survey of the broker.**
+
+🔴 **PRIME AND ECN ARE INDISTINGUISHABLE FROM THE TERMINAL — same symbol, same swap, same stops
+level, same contract, byte for byte.** Nothing MT5 publishes separates them, including the
+account-level fields (`company`, `leverage` — 500:1 on all three — `margin_mode`, both stop-out
+levels). **The only difference is COMMISSION, and commission is not a symbol property**; it lands on
+a filled deal and nowhere else. The tiers in the table above are read off **PU Prime's back office**,
+which names them outright, not inferred from anything measured here.
+
+⚠ **So question 2 is NOT retired and is now the one that decides the account.** If Prime and ECN
+quote the same spread as well (Sunday will say), then commission is the only thing between them and
+the cheaper one simply wins — which makes the published $1.00-vs-$3.50 contradiction, previously
+worth ~1.2R and ignorable, the whole decision. ✅ **It is settleable without asking anyone: one
+0.01-lot round turn on each demo, read back through `mt5_ops.get_deal_breakdown()`.**
+
+⚠ **Spread is still UNMEASURED on every raw tier and the sentinel stays.** The only readings taken
+were the last quotes before a Friday close — Standard 37 points, both raw tiers 17 — and **a stale
+close-time quote is not a spread.** `broker_facts.py` deliberately reports nothing rather than
+letting a repeated tick pass for a rock-steady spread, and a freshly-logged-in account has no local
+tick store for `--history-days` either. **The spread half needs an open market** and wants each
+terminal left logged in long enough to build a tick store. That 37-vs-17 gap points the right way
+for a marked-up tier against a raw one, and it is not evidence.
+
+### What is left
+
+| | status |
 |---|---|
-| **700119432** | Standard |
-| **700152904** | Prime |
-| **700152905** | ECN |
-
-⚠ **None of these is the account the live bot trades.** That is **700107749** (`PUPrime-Demo`,
-Standard, on `MT5_FFT`) and it is the source of every PU Prime figure in `backtest/fills.py`. So
-700119432 is a *second* Standard account — useful as a cross-check that two accounts of one tier
-really do quote the same thing, which is itself an untested assumption on this broker.
-
-**This retires questions 1, 2 and 3 as things to ASK.** A support reply is broker-stated; a
-Specification read is measured, and this repo's standing rule is to prefer the second. Questions 4,
-5 and 6 still need a human to ask them.
-
-⚠ **Two halves, and only one of them can be done at any time.** Swap, commission, contract size,
-digits, stops level and freeze level are **static Specification fields** and read fine with the
-market shut. The **spread cannot** — `broker_facts.py` deliberately reports `None` rather than
-letting a stale repeated tick pass for a rock-steady spread, and a freshly-logged-in account has no
-local tick store for `--history-days` to read either. **The spread half must wait for an open
-market, and wants the terminal left logged in long enough to build a tick store.**
+| Q3 swap by tier | ✅ **measured — identical**, in `fills.py` |
+| Q1 spread by tier | ⏳ needs an open market (Sunday 22:00 UTC onwards) |
+| Q2 commission per lot per side | ⏳ two 0.01-lot round turns, or ask |
+| Q4 swap-free / Islamic | ❓ still a human question |
+| Q5 min stop | ✅ measured — 20 points ($0.20) on all three |
+| Q6 limit-order handling by tier | ❓ still a human question |
 
 ---
 

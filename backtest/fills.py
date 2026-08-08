@@ -342,6 +342,30 @@ class AccountProfile:
 # read once, hardcoded, and then quietly describes a rate the broker has moved on from. Swap is
 # also the LARGEST re-priceable cost on this strategy (6.41R of the reference run's 12.08R), so
 # it is the worst one to leave stale. **Re-run `broker_facts.py` before quoting a cost figure.**
+# 🟢 **AND IT IS NOW MEASURED ON EVERY TIER WE CAN REACH, NOT JUST STANDARD (2026-08-08).** Aaron
+# opened a demo of each type and MT5_Lab was logged into all three in turn
+# (`broker_facts.py --path/--account/--symbol`, read-only). **The swap is IDENTICAL across them:**
+#
+#     700119432  MT5 Standard  XAUUSD.s   long -79.60   short +30.25   stops 20pts
+#     700152904  MT5 Prime     XAUUSD.p   long -79.60   short +30.25   stops 20pts
+#     700152905  MT5 ECN       XAUUSD.p   long -79.60   short +30.25   stops 20pts
+#
+# ⚠ **This is a MEASUREMENT of each tier, NOT Standard's figure borrowed onto the other two** —
+# which is the distinction the whole `UNMEASURED_SWAP` sentinel exists to protect, so read the
+# shared constant below as "three reads that agreed", never as "one read reused". The tiers are
+# confirmed by PU Prime's own back office (the account cards name MT5 Standard / Prime / ECN), not
+# inferred from the terminal — see the next warning for why that mattered.
+# ⚠ **The 2026-08-06 note above that "the terminal cannot answer the tier question, the suffix
+# scheme is product lines rather than tiers" was drawn from a Standard login and is now known to be
+# wrong: the suffix IS the tier.** `.s` is Standard and `.p` is the raw tiers, and **neither account
+# can see the other's symbol** — there is no `XAUUSD.p` on the Standard account at all. That is why
+# a single account could never have settled this.
+# 🔴 **PRIME AND ECN ARE INDISTINGUISHABLE FROM THE TERMINAL — same symbol, same swap, same
+# 20-point stops level, same everything the spec publishes.** The only thing separating those two
+# tiers is COMMISSION, and MT5 does not put commission on a symbol specification; it lands on a
+# filled deal. So the commissions below remain the published figures, they still CONTRADICT a
+# third-party source on which tier is which, and **one 0.01-lot round turn on each demo settles it**
+# via `mt5_ops.get_deal_breakdown()`. Until then commission is the one cost here nobody has read.
 _XAUUSD_SWAP = SwapModel(swap_long_points=-79.60, swap_short_points=30.25,
                          contract_size=100.0, digits=2, triple_weekday=2)
 
@@ -391,9 +415,13 @@ _SPREAD_XAUUSD_VANTAGE = 0.22
 PROFILES = {
     "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP,
                                        spread=_SPREAD_XAUUSD_PUPRIME_STANDARD),
-    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=UNMEASURED_SWAP,
+    # Swap MEASURED on each of these two tiers 2026-08-08 and found identical to Standard's — see
+    # the block above `_XAUUSD_SWAP`. The SPREAD is still refused: the only readings taken were the
+    # last quotes before a Friday close (Standard 37 points, both raw tiers 17), and a stale
+    # close-time quote is not a spread. Measure it on an open market before removing the sentinel.
+    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP,
                                        spread=SPREAD_UNMEASURED),
-    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=UNMEASURED_SWAP,
+    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP,
                                        spread=SPREAD_UNMEASURED),
     "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=UNMEASURED_SWAP,
                                        spread=SPREAD_UNMEASURED),

@@ -373,16 +373,42 @@ def test_the_raw_puprime_tiers_refuse_their_swap_too():
     That credit is what makes this strategy's swap arithmetic work at all (it trades both sides and
     the short credit nearly cancels the long charge), so borrowing another product's swap is not a
     small approximation. A tier is measured or it refuses.
+
+    ⚠ **RE-AIMED 2026-08-08, and read the reason before widening it back.** Prime and ECN were
+    MEASURED on that date — Aaron opened a demo of each tier, MT5_Lab was logged into all three in
+    turn, and all three read long -79.60 / short +30.25 on their own symbol (`.s` on Standard,
+    `.p` on both raw tiers, and neither account can see the other's). So those two are no longer
+    unmeasured and asserting that they refuse would be asserting something false.
+
+    **`puprime_cent` is still genuinely unread — there is no Cent account — so the guard moves
+    there rather than being deleted.** The rule it protects is unchanged and is not about which
+    tiers happen to agree today: a tier is measured, or it refuses. Three tiers agreeing is a
+    RESULT, and if it were also the assumption there would be nothing left to catch the next
+    product that does not.
     """
-    assert PROFILES["puprime_standard"].swap.unmeasured is False
-    for tier in ("puprime_prime", "puprime_ecn", "puprime_cent"):
-        assert PROFILES[tier].swap.unmeasured is True, tier
+    for tier in ("puprime_standard", "puprime_prime", "puprime_ecn"):
+        assert PROFILES[tier].swap.unmeasured is False, tier
+    assert PROFILES["puprime_cent"].swap.unmeasured is True
+
+
+def test_the_measured_raw_tiers_carry_the_rate_that_was_actually_read():
+    """The three tiers agreeing is the FINDING, so pin the numbers rather than pinning
+    `unmeasured is False` — the latter would stay green if somebody swapped in a plausible
+    stand-in, which is the exact move the sentinel exists to prevent.
+
+    Read 2026-08-08 off accounts 700119432 (Standard), 700152904 (Prime) and 700152905 (ECN) with
+    `algos/tools/broker_facts.py`. The SIGN of the short value is the load-bearing half: gold's
+    short swap is a CREDIT, and this strategy trades both sides."""
+    for tier in ("puprime_standard", "puprime_prime", "puprime_ecn"):
+        swap = PROFILES[tier].swap
+        assert swap.per_lot_per_night(1) == pytest.approx(-79.60), tier
+        assert swap.per_lot_per_night(-1) == pytest.approx(+30.25), tier
 
 
 def test_charging_an_unmeasured_swap_refuses_rather_than_borrowing():
     """Both the per-night rate and the full charge refuse — `charge()` routes through
     `per_lot_per_night`, so one guard covers the two entry points a caller might reach for."""
-    swap = PROFILES["puprime_ecn"].swap
+    swap = PROFILES["puprime_cent"].swap
     with pytest.raises(CostsNotConfigured):
         swap.per_lot_per_night(1)
     with pytest.raises(CostsNotConfigured) as exc:
@@ -394,7 +420,7 @@ def test_the_profile_level_swap_charge_refuses_too():
     """`AccountProfile.swap_charge` is the seam both real consumers use (`execution.py` and
     `reprice.py`), so the refusal has to survive that hop rather than only living on the model."""
     with pytest.raises(CostsNotConfigured):
-        PROFILES["puprime_ecn"].swap_charge(1, 100.0, datetime.date(2026, 8, 6))
+        PROFILES["puprime_cent"].swap_charge(1, 100.0, datetime.date(2026, 8, 6))
 
 
 def test_an_unmeasured_swap_is_NOT_the_same_as_charging_no_swap():
