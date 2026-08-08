@@ -4,7 +4,7 @@
  *
  * The layer's own SELECTION rules (which anchor gets a mark, which bar of the window it lands on,
  * the direction rule, the winner-vs-loser window) are the backend's and are pinned there by
- * `backend/tests/test_candle_overlays.py`, mutation-proven. What these three check is the half
+ * `backend/tests/test_candle_overlays.py`, mutation-proven. What these five check is the half
  * that only exists in the browser:
  *
  *   1. the layer is OFFERED with its count and arrives switched OFF, like every analysis layer
@@ -17,7 +17,10 @@
  *      row has to go with the drawing rather than sit there switched on over an empty chart;
  *   4. the pattern NAME is off by default and comes on from Chart settings. These tags carry no
  *      cross-overlay de-collision, unlike the batched `LABEL` template, so two marks a few bars
- *      apart write their names over the neighbouring candles — which is how it was reported.
+ *      apart write their names over the neighbouring candles — which is how it was reported;
+ *   5. that setting's EXPLANATION is behind the ⓘ rather than printed under its label. A settings
+ *      list is read by scanning names, and a paragraph under every row triples the height of a
+ *      panel that has to fit beside a chart.
  *
  * ⚠ It drives the REAL backend, because the marks come from a server-side engine replay over the
  * run's own candles and a mocked spec would be testing the mock.
@@ -25,7 +28,8 @@
  * ⚠ A fail-watch against HEAD is vacuous — the layer did not exist, so every check would go red on
  * the element simply being absent, which proves the locator and nothing else. Check 2 is instead
  * non-vacuous BY CONSTRUCTION: it measures the same pixels with the layer off and on, so it can
- * only pass on a real change. Checks 1 and 3 were proven by MUTATION (see each one's comment).
+ * only pass on a real change. Checks 1, 3, 4 and 5 were proven by MUTATION (see each one's
+ * comment).
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -41,6 +45,9 @@ const RUN = '997c14cc53bc'
 const DATE_WITH_A_MARK = '2026-07-30'
 
 const LAYER = 'Candlestick Reversals'
+
+// The `help` text `chartSettings.SECTIONS` declares for `candleMarkLabels`.
+const HELP = /Off = the candle is painted navy/
 
 /** The navy body the backend emits (`_NAVY` = #2f5fe0 = rgb(47,95,224)), counted across every
  *  canvas. Read from PIXELS on purpose: the repaint has no DOM presence at all. */
@@ -189,4 +196,23 @@ test('the pattern name is off by default and comes on from Chart settings', asyn
   await nameIt.click()
   await toggleSettings(page)
   await expect.poll(() => edgePixels(page), { timeout: 20_000 }).toBe(off)
+})
+
+test('the setting explains itself from the ⓘ, not from a paragraph under its label', async ({ page }) => {
+  // Proven by MUTATION: rendering `def.help` inline again turns the first assertion red, and
+  // dropping the `<InfoTip>` turns the second red.
+  //
+  // ⚠ Both halves are needed. Checking only that the paragraph is gone would pass against a panel
+  // that simply DELETED the explanation, which is the same tidy-up with the answer thrown away.
+  await openPriceTab(page)
+  await toggleSettings(page)
+  await expect(page.getByText('Name the pattern')).toBeVisible()
+
+  // Not on screen while nobody has asked for it.
+  await expect(page.getByText(HELP)).toHaveCount(0)
+
+  // ...and one hover away. `InfoTip` portals to <body>, so this also rules out the panel's own
+  // scroll box cropping it — the reason the shared control is used here rather than a local span.
+  await page.getByText('Name the pattern').locator('xpath=../..').locator('span.cursor-help').hover()
+  await expect(page.getByText(HELP)).toBeVisible()
 })

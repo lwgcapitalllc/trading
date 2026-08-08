@@ -10,6 +10,7 @@
  */
 import type { ReactNode } from 'react'
 import { RotateCcw, X } from 'lucide-react'
+import InfoTip from '@/components/InfoTip'
 import {
   DEFAULT_CHART_SETTINGS, SECTIONS,
   type ChartSettings, type CustomSection, type SettingDef,
@@ -125,15 +126,17 @@ export default function ChartSettingsPanel({
             : section.items!.map(def => (
                 <div
                   key={def.key}
-                  className="flex items-start gap-2.5 px-3 py-1.5 transition-colors hover:bg-bg-sunken"
+                  className="flex items-center gap-2.5 px-3 py-1.5 transition-colors hover:bg-bg-sunken"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[11px] font-medium text-text-primary">{def.label}</div>
-                    {def.help && (
-                      <div className="mt-px text-[10px] leading-snug text-text-tertiary">{def.help}</div>
-                    )}
+                  {/* The explanation is BEHIND the ⓘ, not under the label. A settings list is read by
+                      scanning names, and a paragraph under every row triples the height of a panel
+                      that has to fit beside a chart. `InfoTip` is the app's shared one — portalled to
+                      <body>, so this panel's scroll box cannot crop it. */}
+                  <div className="flex min-w-0 flex-1 items-center text-[11px] font-medium text-text-primary">
+                    <span className="truncate">{def.label}</span>
+                    {def.help && <InfoTip text={def.help} />}
                   </div>
-                  <div className="pt-[3px]">{row(def)}</div>
+                  {row(def)}
                 </div>
               ))
           // A custom section the host did not render is skipped whole, title included.

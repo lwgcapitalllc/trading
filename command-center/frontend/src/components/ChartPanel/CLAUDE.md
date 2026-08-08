@@ -187,10 +187,19 @@ every setting of that kind that will ever exist.
   TYPE is dropped rather than trusted (the blob is editable by hand and by any older build). Same
   rule `reconcileToggles` follows for overlay groups, and it fails the same silent way if broken:
   the reader's chart quietly loses a control they never turned off.
-- **Today's one setting is `tradeLabelPrices`** → `TradeExtend.showPrices`. Off drops the number from
-  every side label, leaving `Entry` / `SL` / `TP1`. **Undefined means ON**, so a caller that has not
-  been updated keeps the shipped reading. It became a setting because a 1m re-entry's box is short
-  by construction and the price is most of each chip's width.
+- **`tradeLabelPrices`** → `TradeExtend.showPrices`. Off drops the number from every side label,
+  leaving `Entry` / `SL` / `TP1`. **Undefined means ON**, so a caller that has not been updated keeps
+  the shipped reading. It became a setting because a 1m re-entry's box is short by construction and
+  the price is most of each chip's width.
+- **`candleMarkLabels`** → the Candlestick Reversals tag. See the layer's own section below.
+- **The `help` text renders behind an ⓘ, never under the label** (2026-08-08, Aaron's ask). A
+  settings list is read by SCANNING NAMES, and a paragraph under every row triples the height of a
+  panel that has to fit beside a chart — two settings already filled the box above the fib ladder.
+  ⚠ **The explanation is moved, not dropped**, and the browser check asserts both halves for that
+  reason: gone-from-the-row AND one hover away. Deleting the answer is the same tidy-up with the
+  content thrown out, and it looks identical in a screenshot. It is `components/InfoTip` — the app's
+  shared one, portalled to `<body>`, so this panel's `overflow-y-auto` scroll box cannot crop the
+  tip. **Extend the existing control before inventing one**, the same rule the Toggle below records.
 
 🔴 **The first Toggle was hand-rolled and rendered WRONG, which is the small lesson worth keeping.**
 A `translate-x` knob inside a bordered track: under `border-box` the OFF state's 1px border shrinks

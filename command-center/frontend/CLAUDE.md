@@ -1218,12 +1218,15 @@ real browser", done by hand, which is why the Overview's twelve defects each sur
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
 **66 tests in 5 files**, run with `npm test` from `frontend/`.
 
-**`tests/candle-reversals.spec.ts` (4, ~24s) — added 2026-08-08 with the Candlestick Reversals
+**`tests/candle-reversals.spec.ts` (5, ~28s) — added 2026-08-08 with the Candlestick Reversals
 layer.** It drives the REAL backend, because the marks come from a server-side engine replay over
 the run's own candles and a mocked spec would be testing the mock. ⚠ **A fail-watch against HEAD is
 vacuous for a layer that did not exist** — every check would go red on the element being absent,
-which proves the locator and nothing else — so three are proven by MUTATION and the fourth is
-non-vacuous by construction (it measures the same pixels off and on). 🔴 **Two of the four broke when
+which proves the locator and nothing else — so four are proven by MUTATION and the other is
+non-vacuous by construction (it measures the same pixels off and on). **The fifth check pins that a
+setting EXPLAINS ITSELF FROM THE ⓘ**, and it asserts both halves — the paragraph is gone from the row
+AND the text is one hover away — because *checking only that the paragraph is gone would pass against
+a panel that simply deleted the answer*, which is the same tidy-up with the content thrown out. 🔴 **Two of the four broke when
 blocked setups stopped being anchors, and they broke CORRECTLY: they read the opening viewport, which
 held a mark only while the run carried 424 of them.** At 153 the newest bars have none, and **an
 empty viewport is pixel-identical to a layer that never draws** — so both now jump to a date that has
