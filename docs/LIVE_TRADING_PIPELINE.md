@@ -608,19 +608,32 @@ M15 bars with spread and swap charged, IS/OOS split declared before any row ran:
 carry nearly **double** A+'s peak-to-trough for none of the return, and now carries slightly less
 (−5.15R against A+'s −5.62R).
 
-⚠ **This is not "B-LEG is ready", and the difference matters.** Three things are still open.
+✅ **THE ERROR BAR EXISTS NOW, AND THE EDGE CLEARS IT.** `jitter_audit.py` had never been run on this
+bot; it was run 2026-08-09 over **186,128 M15 bars, ±$0.05 redrawn per bar, 12 seeds**. Baseline
+114 trades / +23.28R free, and **every one of the 12 seeds finished positive — min +21.63R, max
++30.36R, mean +26.33R, sd 2.61R.** The baseline sits *below* the jittered median, so it is not an
+optimistic seed. In proportion the noise matches A+ almost exactly (**11.2% of total here, 10.6%
+there**), and the worst seed still clears zero by a wide margin. **The sign of this edge is not a
+feed artefact.**
+
+⚠ **B-LEG is structurally far less flip-prone than A+, and that is a difference in kind.** A+ snaps
+its limit to a fib rung off a gap — discontinuous, which is why four cents moved its entry $10.08 in
+the shadow diff. B-LEG rests at its frozen band's own 0.5 edge with all four fib-entry rules pinned
+off, so its entry *moves* with the feed rather than *jumping*: **0.6 rung flips per run against A+'s
+1.4**. The trade-list churn is the same though — ~5.8 lost and ~7.9 gained per run — so expect a
+cousin of this backtest on another broker, never a twin.
+
+⚠ **This is still not "B-LEG is ready", and the difference matters.** Two things are open.
 (1) **It has been tuned exactly once and never re-validated since** — the pass declared its own IS/OOS
-split, which is the right discipline, but one honest split is not out-of-sample evidence.
-(2) **No jitter audit has ever been run on this bot.** A+'s put its run-to-run spread at **sd 15.06R**,
-which is larger than B-LEG's entire total; until the equivalent exists here, +17.87R has no error bar
-and cannot be compared to zero.
-(3) **Not parity-re-validated at the new defaults** — `compare_bleg.py` configures Python from the
+split, which is the right discipline, but one honest split is not out-of-sample evidence, and a jitter
+audit is **not** an out-of-sample test. It answers "does this survive another broker's quotes", not
+"does this generalise".
+(2) **Not parity-re-validated at the new defaults** — `compare_bleg.py` configures Python from the
 export's own `cfg_*` columns, so parity is structurally unaffected, but every export on disk decodes
 the OLD values and proves nothing about these. Re-export before trusting it.
 
 **Consequence: B-LEG is no longer the thing blocking bot #2.** What blocks it now is the live
-allocator (G10), the fleet halt, the multi-bot Bots page (G11), and a jitter audit on B-LEG so its
-total can be read against a noise band instead of against zero.
+allocator (G10), the fleet halt, and the multi-bot Bots page (G11).
 
 ### G16 — No external dead-man's switch — **CLOSED 2026-08-04**
 
