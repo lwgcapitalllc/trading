@@ -413,7 +413,7 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
 
 def reversal_anchors(
     trades: list[dict], misses: list[dict],
-) -> list[tuple[int, str, Optional[int], str]]:
+) -> list[tuple[int, str, Optional[int], str, Optional[float]]]:
     """Where the Candlestick Reversals layer is allowed to paint a candle.
 
     **The whole rule, and it is Aaron's (2026-08-08): trades, win or lose, and 3/3 misses. Nothing
@@ -465,11 +465,18 @@ def reversal_anchors(
     ⚠ **A miss is `"miss"`, not `"loss"`, even though no trade was taken.** It is a setup that was
     never entered, so the question is *which candle could I have entered on* — the winner's
     question. Filing it as a loss would name it after the candle that killed a trade nobody had.
+
+    **The fifth element is the ENTRY PRICE, and it is what makes a trade's span cover its whole
+    DRAWDOWN** rather than stopping two bars past the adverse extreme — see
+    `candle_overlays._drawdown_end`, and Aaron's report that candles he could have entered on were
+    going unmarked. ⚠ **A MISS passes `None` on purpose: no position was opened, so it has no
+    drawdown**, and its span is already the visit into the zone.
     """
     return (
-        [(t["entryTime"], t["dir"], t["exitTime"], "win" if (t.get("pnl") or 0) > 0 else "loss")
+        [(t["entryTime"], t["dir"], t["exitTime"],
+          "win" if (t.get("pnl") or 0) > 0 else "loss", t.get("entryPrice"))
          for t in trades]
-        + [(m["zoneTime"], m["dir"], m["zoneTurn"], "miss") for m in misses
+        + [(m["zoneTime"], m["dir"], m["zoneTurn"], "miss", None) for m in misses
            if m["of"] > 0 and m["met"] >= m["of"] and m.get("zoneTime") and m.get("zoneTurn")]
     )
 

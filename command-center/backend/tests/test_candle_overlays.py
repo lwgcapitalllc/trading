@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from services.candle_overlays import (  # noqa: E402
     GROUP_CANDLES,
     _deepest_bar,
+    _reversal_span,
     build_candle_overlays,
 )
 
@@ -595,3 +596,78 @@ def test_a_span_holding_a_NEUTRAL_candle_is_still_named():
     out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
     deepest = next(o for o in out if o["deepestOf"])
     assert (deepest.get("deepestNames") or {}).get("0") is not None
+
+
+# ── the span covers the whole DRAWDOWN, not two bars past the extreme ────────────────
+
+def _short_with_a_long_drawdown() -> tuple[list[dict], float]:
+    """A short entered at 100 that runs against itself, tops out EARLY, then grinds sideways ABOVE
+    the entry for a long time before finally dropping away.
+
+    Two hammers: one inside `turn + _CONFIRM_BARS` and one much later but still in the drawdown.
+    The second is the candle Aaron reported missing — on his 2026-06-18 short the turn is 02:00
+    while the trade stays above its entry until 05:30, so the layer saw 9 bars of a 21-bar zone.
+    """
+    entry = 100.0
+    bars = _flat(30, price=90.0)                  # below the entry: context before the trade
+    bars += [_bar(30 + i, 101.0, 101.6, 100.6, 101.2) for i in range(30)]   # the drawdown, adverse
+    bars[32] = _bar(32, 108.0, 112.0, 107.9, 108.0)   # the adverse EXTREME, early in the zone
+    bars[34] = _hammer_at(34, 101.0)              # inside turn + _CONFIRM_BARS (turn is 32)
+    bars[50] = _hammer_at(50, 101.0)              # still above the entry, far past the extreme
+    bars += _flat(20, start=60, price=80.0)       # price has left the band for good
+    bars[70] = _hammer_at(70, 80.0)               # favourable side — must NOT be marked
+    return bars, entry
+
+
+def test_the_span_covers_the_WHOLE_drawdown_not_two_bars_past_the_extreme():
+    """🔴 Watched RED against HEAD, where only the 35 hammer is drawn.
+
+    Aaron, off the chart: *"In drawdown, you're supposed to map all the applicable candles in line
+    with the order we trade. I've hovered over the candles which I think you've missed."* The zone
+    a reader points at is the red band, which outlives the bar that made its high.
+    """
+    bars, entry = _short_with_a_long_drawdown()
+    assert _fired(bars, 34) and _fired(bars, 50), "fixture must fire in BOTH halves of the zone"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "short", bars[79]["time"], "win", entry)],
+    )
+    times = {o["t"] for o in out}
+    assert bars[34]["time"] in times, "the candle near the extreme was already drawn"
+    assert bars[50]["time"] in times, "the one later in the drawdown is the reported gap"
+
+
+def test_a_candle_past_the_drawdown_is_NOT_marked():
+    """The span is the adverse band, never the whole hold. Once price is trading entirely on the
+    favourable side the trade is winning, and a reversal candle there is a different subject —
+    marking it would put navy candles all down a runner's profitable leg.
+
+    ⚠ Non-vacuity is by MUTATION (deleting `_drawdown_end`'s `break`), not by a fail-watch: HEAD
+    draws nothing out there either, for the unrelated reason that its span stopped much earlier.
+    """
+    bars, entry = _short_with_a_long_drawdown()
+    assert _fired(bars, 70), "fixture must fire a pattern out past the zone"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "short", bars[79]["time"], "win", entry)],
+    )
+    assert bars[70]["time"] not in {o["t"] for o in out}
+
+
+def test_an_anchor_with_NO_entry_price_keeps_the_turn_relative_span():
+    """A 3/3 MISS opened no position, so it has no drawdown to cover — its span is the visit into
+    the zone and already ends at the deepest point of that visit. Handing it an entry price it does
+    not have would stretch it over whatever price did next.
+
+    ⚠ It drives `_reversal_span` directly rather than going through a fixture, and that is what
+    makes it bite: the first attempt asserted on the MARKS and passed under the mutation, because
+    the substituted price happened to fall on the wrong side of one wick and cut the walk short
+    anyway. The rule under test is the span, so the span is what is read.
+
+    ⚠ A pin, proven by MUTATION (defaulting `entry` to the start bar's close), not a fail-watch.
+    """
+    bars, entry = _short_with_a_long_drawdown()
+    _, hi_none, turn = _reversal_span(bars, 30, "short", 3, 79, None)
+    _, hi_entry, _ = _reversal_span(bars, 30, "short", 3, 79, entry)
+    assert hi_none == turn + 2, "with no entry price the span still ends at turn + _CONFIRM_BARS"
+    assert hi_entry > hi_none, "and the same anchor WITH one reaches to the end of the drawdown"

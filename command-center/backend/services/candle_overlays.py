@@ -42,15 +42,17 @@ layer on, each mark sits on a rung, and the layer answers which entry level had 
 only ever say *the turn had a pattern* / *it did not*; it could not say *there were three, and the
 deepest two were better entries than the one I took*.
 
-  - **A TRADE** spans entry → exit, win or lose. ⚠ **MEASURED on run `997c14cc53bc` (106 winners):
-    the adverse extreme sits a median of 2 bars past entry, but p90 is 27 and the worst is 112**, so
-    a fixed short window from the entry would truncate the retracement on half of them.
+  - **A TRADE** spans entry → the end of its DRAWDOWN, win or lose. ⚠ **MEASURED on run
+    `997c14cc53bc` (106 winners): the adverse extreme sits a median of 2 bars past entry, but p90 is
+    27 and the worst is 112**, so a fixed short window from the entry would truncate the
+    retracement on half of them. 🔴 **And the turn is not the end of the zone either** — see
+    `_drawdown_end`, and Aaron's report that candles he could have entered on were going unmarked.
   - **A 3/3 MISS** spans the bar price first tagged the ZONE → the bar the setup died. 🔴 **NOT the
     bar the miss was recorded on** — see `chart_spec.reversal_anchors` for why that bar is a median
     $22 away from the setup and what it looked like on the chart.
 
-Nothing is drawn past the turn: after it, price is moving the setup's way and a reversal candle
-there is a different subject.
+Nothing is drawn once price has left the adverse band: after that the trade is winning, and a
+reversal candle there is a different subject.
 
 DIRECTION IS A PREFERENCE, NEVER A FILTER
 -----------------------------------------
@@ -128,13 +130,16 @@ _MAX_MARKS = 20_000
 
 def _anchor_bars(
     times: list[int], anchors: Iterable[tuple],
-) -> list[tuple[int, int, str, Optional[int], str]]:
-    """Anchor `(start_ms, direction, end_ms[, outcome])` → `(anchor index, bar index, direction, end
-    bar, outcome)`, clipped to the loaded candles.
+) -> list[tuple[int, int, str, Optional[int], str, Optional[float]]]:
+    """Anchor `(start_ms, direction, end_ms[, outcome[, entry_price]])` → `(anchor index, bar index,
+    direction, end bar, outcome, entry price)`, clipped to the loaded candles.
 
     An anchor with no outcome reads as `"win"` — the aligned preference, which is what every anchor
     wanted before outcomes existed, so an older caller keeps its behaviour rather than silently
     switching every trade it draws to the loser rule.
+
+    An anchor with no ENTRY PRICE keeps the turn-relative span (see `_reversal_span`), which is what
+    a 3/3 miss wants and what every anchor got before drawdowns were modelled.
 
     🔴 **The anchor's ORIGINAL index rides along, and it must.** This drops anchors that fall off the
     loaded candles, so enumerating the RESULT renumbers every anchor after the first drop — and the
@@ -149,13 +154,15 @@ def _anchor_bars(
     dropping the anchor: a trade whose exit is off the right edge of a paged window is still a real
     setup and still deserves the short-window answer at its entry.
     """
-    out: list[tuple[int, int, str, Optional[int], str]] = []
+    out: list[tuple[int, int, str, Optional[int], str, Optional[float]]] = []
     if not times:
         return out
     lo, hi = times[0], times[-1]
     for n, anchor in enumerate(anchors):
         t, direction, end_ms = anchor[0], anchor[1], anchor[2]
         outcome = str(anchor[3]) if len(anchor) > 3 else "win"
+        raw_entry = anchor[4] if len(anchor) > 4 else None
+        entry = float(raw_entry) if isinstance(raw_entry, (int, float)) else None
         if not isinstance(t, (int, float)) or not (lo <= t <= hi):
             continue
         i = bisect.bisect_right(times, int(t)) - 1
@@ -168,6 +175,7 @@ def _anchor_bars(
                 end_bar = j
         out.append((
             n, i, "short" if str(direction).lower().startswith("s") else "long", end_bar, outcome,
+            entry,
         ))
     return out
 
@@ -255,26 +263,71 @@ def _alignment(patterns: list, direction: str) -> int:
     return best
 
 
+def _drawdown_end(
+    candles: list[dict], turn: int, end: int, direction: str, entry: float,
+) -> int:
+    """The last bar of the trade's INITIAL adverse excursion — where it leaves the drawdown.
+
+    Walks forward from the turn while the bar still trades on the adverse side of `entry`, and stops
+    at the first bar lying ENTIRELY on the favourable side. So the range it returns is exactly the
+    bars that touch the band the chart paints red (entry → the adverse extreme), contiguously from
+    the entry — which is the region a reader points at and calls "the drawdown".
+
+    🔴 **The span used to stop at `turn + _CONFIRM_BARS`, and Aaron reported the gap off the chart:**
+    *"In drawdown, you're supposed to map all the applicable candles in line with the order we
+    trade. I've hovered over the candles which I think you've missed."* On his 2026-06-18 short the
+    turn is 02:00 and the trade stays above its entry until 05:30 — **21 bars of drawdown against a
+    9-bar span** — so the `Inverted Hammer` at 03:00 was never drawn, and the only mark left was the
+    opposing `Bullish Harami` at 01:30, which is why the chip read `no matching candle`.
+
+    ⚠ **It walks from the TURN, not from the entry, and it breaks on the first favourable bar** — so
+    it is one contiguous excursion. Scanning the whole hold for "any bar back near the entry" would
+    re-open the region every time a winner retraced months later, and those bars are a different
+    subject from the retracement the trade was entered into.
+
+    ⚠ **A bar counts while ANY of it is adverse** (`high >= entry` on a short), not only while it is
+    entirely adverse. That is the same test as "does this candle sit in the red band", which is what
+    the reader is looking at; the stricter reading drops a candle whose wick made the very high the
+    zone is measured to.
+    """
+    out = turn
+    for i in range(turn, end + 1):
+        adverse = candles[i]["high"] >= entry if direction == "short" else candles[i]["low"] <= entry
+        if not adverse:
+            break
+        out = i
+    return out
+
+
 def _reversal_span(
     candles: list[dict],
     start: int,
     direction: str,
     window: int,
     hold_end: Optional[int],
-) -> tuple[int, int]:
+    entry: Optional[float] = None,
+) -> tuple[int, int, int]:
     """The inclusive bar range this anchor may paint in, and the TURN inside it.
 
-    Returns `(lo, hi, turn)`: `lo` → `turn` is the retracement the setup was entered into, and `hi`
-    is `turn + _CONFIRM_BARS` — the window a pattern that turned price is still allowed to COMPLETE
-    in. See `_CONFIRM_BARS`; ending at the turn dropped the reversal candle on four setups in ten.
+    Returns `(lo, hi, turn)`. `lo` → `turn` is the retracement the setup was entered into, and `hi`
+    runs to the end of the DRAWDOWN plus `_CONFIRM_BARS` — the window a pattern that turned price is
+    still allowed to COMPLETE in. See `_CONFIRM_BARS`; ending at the turn dropped the reversal candle
+    on four setups in ten, and ending at `turn + _CONFIRM_BARS` dropped every candle in the second
+    half of a long drawdown (see `_drawdown_end`).
 
-    Nothing beyond that: further past the turn price is moving the setup's way and a reversal candle
-    there is a different subject. An anchor stating no `hold_end` falls back to `window` bars.
+    Nothing beyond that: once price has left the adverse band it is moving the setup's way and a
+    reversal candle there is a different subject. An anchor stating no `hold_end` falls back to
+    `window` bars.
+
+    ⚠ **`entry` is optional and `None` keeps the turn-relative window.** A 3/3 MISS passes none, and
+    deliberately: no position was ever opened, so it has no drawdown — its span is the visit into the
+    zone, which already ends at the deepest point of that visit.
     """
     last = len(candles) - 1
     end = min(hold_end if hold_end is not None else start + window, last)
     turn = _adverse_extreme(candles, start, max(start, end), direction)
-    return start, min(turn + _CONFIRM_BARS, last), turn
+    stop = turn if entry is None else _drawdown_end(candles, turn, end, direction, entry)
+    return start, min(stop + _CONFIRM_BARS, last), turn
 
 
 def build_candle_overlays(
@@ -349,8 +402,8 @@ def build_candle_overlays(
     # particular. The chart reads this for a trade's chip and falls back to `label`.
     deepest_names: dict[int, dict[str, str]] = {}
     aligned: dict[int, str] = {}
-    for n, start, direction, hold_end, outcome in bars:
-        lo, hi, turn = _reversal_span(candles, start, direction, window, hold_end)
+    for n, start, direction, hold_end, outcome, entry in bars:
+        lo, hi, turn = _reversal_span(candles, start, direction, window, hold_end, entry)
         # `want` is SETUP-relative and stays that way: it is what `align` is reported in, and the
         # chart's direction filter asks "with the setup / neutral / against it". `prefer` is
         # OUTCOME-relative and decides which candle gets named — the two are the same thing on a
