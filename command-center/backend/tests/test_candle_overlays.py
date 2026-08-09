@@ -642,8 +642,8 @@ def test_a_candle_past_the_drawdown_is_NOT_marked():
     favourable side the trade is winning, and a reversal candle there is a different subject —
     marking it would put navy candles all down a runner's profitable leg.
 
-    ⚠ Non-vacuity is by MUTATION (deleting `_drawdown_end`'s `break`), not by a fail-watch: HEAD
-    draws nothing out there either, for the unrelated reason that its span stopped much earlier.
+    ⚠ Non-vacuity is by MUTATION (dropping the band test from `_in_zone`), not by a fail-watch:
+    HEAD draws nothing out there either, for the unrelated reason that its span stopped earlier.
     """
     bars, entry = _short_with_a_long_drawdown()
     assert _fired(bars, 70), "fixture must fire a pattern out past the zone"
@@ -773,3 +773,67 @@ def test_a_pattern_completing_just_after_the_turn_is_still_marked():
         bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
     )
     assert bars[35]["time"] in {o["t"] for o in out}
+
+
+# ── the zone stops at the EXIT, and re-opens whenever price comes BACK ────────────────
+
+def _short_stopped_out_at_its_high() -> tuple[list[dict], float]:
+    """A short at 100 that runs straight against itself and is stopped out on its worst bar — so the
+    adverse extreme IS the exit. A hammer prints two bars later, after the position is closed."""
+    entry = 100.0
+    bars = _flat(30, price=90.0)
+    bars += [_bar(30 + i, 101.0 + i, 102.6 + i, 100.6 + i, 102.2 + i) for i in range(5)]  # 30..34
+    bars += _flat(25, start=35, price=106.0)
+    bars[36] = _hammer_at(36, 108.0)          # two bars past the exit
+    return bars, entry
+
+
+def test_nothing_is_marked_after_the_trade_has_CLOSED():
+    """🔴 Watched RED against HEAD, which draws bar 36.
+
+    A stopped-out trade's adverse extreme is its FINAL bar, so `turn + _CONFIRM_BARS` lands after
+    the position is closed — the allowance quietly reached into the next setup. Aaron, off his
+    2026-05-11 short (stopped out 13:30, a `Hammer` painted at 14:00): *"Trade already lost. You
+    already hit stop loss… I don't care what the candles after the trade. It has to be within the
+    trade."*
+    """
+    bars, entry = _short_stopped_out_at_its_high()
+    assert _fired(bars, 36), "fixture must fire a pattern after the exit"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "short", bars[34]["time"], "loss", entry)],
+    )
+    assert bars[36]["time"] not in {o["t"] for o in out}
+
+
+def _short_that_dips_then_returns_to_its_entry() -> tuple[list[dict], float]:
+    """A short at 100 that goes against itself, falls away into profit, then comes BACK to the entry
+    later in the hold — the re-test, with a hammer on it — before dropping away for good."""
+    entry = 100.0
+    bars = _flat(30, price=90.0)
+    bars += [_bar(30 + i, 101.0, 101.8, 100.4, 101.2) for i in range(4)]     # 30..33 in the band
+    bars[32] = _bar(32, 103.0, 106.0, 102.8, 103.2)                          # the adverse extreme
+    bars += _flat(26, start=34, price=90.0)                                   # away, into profit
+    bars[40] = _hammer_at(40, 100.0)          # back AT the entry: high 100.1
+    return bars, entry
+
+
+def test_a_candle_that_comes_BACK_to_the_entry_is_marked():
+    """🔴 Watched RED against HEAD, whose zone was one contiguous excursion and stopped at the first
+    favourable bar.
+
+    A re-test of the entry is the setup asking the same question a second time, and the chart's own
+    red box plainly covers it — so leaving it out reads as the layer skipping candles. Aaron, off
+    his 2026-02-15 short: *"we came back up to entry. And there was at least three different candles
+    you coulda highlighted there, and you didn't highlight any of them."*
+
+    ⚠ This is why the zone is a PRICE band rather than a walk: no contiguous rule can include this
+    bar without also swallowing the profitable stretch between it and the entry.
+    """
+    bars, entry = _short_that_dips_then_returns_to_its_entry()
+    assert _fired(bars, 40), "fixture must fire a pattern on the re-test"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "short", bars[59]["time"], "win", entry)],
+    )
+    assert bars[40]["time"] in {o["t"] for o in out}

@@ -308,6 +308,14 @@ lever: the full fifteen replay 186,366 bars in **10.2s** (18k bars/s) and a two-
   between a rule that cannot fire yet and a rule that always fires.
 - Never soften a boundary tie into a tolerance on the flag. A 0/1 column has no "close enough", and
   a tolerance there would swallow real rule differences with the ties. Classify, report, and let the
-  reader see the count.
+  reader see the count. ⚠ **AND THE SAME REFUSAL COVERS THE READER, NOT JUST THE
+  HARNESS — it was tested on 2026-08-09 and held.** The chart layer's first consumer reported four
+  candles that "are obviously bearish engulfings" and were not marked. MEASURED clause by clause
+  against `candle_sticks.pine:32`, **three fail `open >= close[1]` by $0.05, $0.06 and $0.01**, and
+  the fourth passes the engulf and fails `open[trend] < open`. **On a gapless intraday feed a red
+  bar opens within PENNIES of the prior close, so a full-body engulf is decided at the cent** — this
+  is the ordinary case here, not an edge one, and a "just a few cents" tolerance would quietly
+  redefine the rule for the whole family. The honest answer is the clause breakdown; the indicator
+  the reader is comparing against does not draw those candles either.
 - Never treat an unclassifiable mismatch as a tie. Not enough history to replay the bar means the
   question was not answered, and "not answered" must fail, not pass.

@@ -28,9 +28,9 @@ never a setup, so it cannot be asked which candle turned it.
 EVERY PATTERN CANDLE IN THE SETUP'S SPAN, NOT JUST THE DEEPEST ONE
 -----------------------------------------------------------------
 An anchor is a SPAN — `(start, direction, end)` — and the layer paints every bar in it that carries
-a pattern AND sits in the setup's adverse band (see `_in_zone`), from `start` through the end of the
-drawdown. Inside it is the turn, the bar price ran FURTHEST AGAINST the setup (lowest low on a long,
-highest high on a short); everything before it is the retracement the setup was entered into.
+a pattern AND sits in the setup's DRAWDOWN BAND (see `_in_zone`) — anywhere between the entry bar
+and the EXIT bar. Inside it is the turn, the bar price ran FURTHEST AGAINST the setup (lowest low on
+a long, highest high on a short); the band is entry → that extreme, and it is a region in PRICE.
 
 Aaron's words, 2026-08-08: *"you don't only have to give me the deepest candle — you could give me
 all the candles that would have shown a possible reversal all the way up to the deepest one … so
@@ -45,15 +45,17 @@ deepest two were better entries than the one I took*.
   - **A TRADE** spans entry → the end of its DRAWDOWN, win or lose. ⚠ **MEASURED on run
     `997c14cc53bc` (106 winners): the adverse extreme sits a median of 2 bars past entry, but p90 is
     27 and the worst is 112**, so a fixed short window from the entry would truncate the
-    retracement on half of them. 🔴 **And the turn is not the end of the zone either** — see
-    `_drawdown_end`, and Aaron's report that candles he could have entered on were going unmarked.
+    retracement on half of them. 🔴 **And neither the turn nor the end of the first dip is the end
+    of the zone** — see `_in_zone`; the zone is a PRICE band and the hold is only its outer bound.
   - **A 3/3 MISS** spans the bar price first tagged the ZONE → the bar the setup died. 🔴 **NOT the
     bar the miss was recorded on** — see `chart_spec.reversal_anchors` for why that bar is a median
     $22 away from the setup and what it looked like on the chart.
 
 Nothing is drawn where price is on the FAVOURABLE side of the entry — before the turn or after it —
 because there the trade is winning and a reversal candle is a different subject. Aaron, 2026-08-09:
-*"Once price takes off into our favor, we should not be trying to highlight any candles."*
+*"Once price takes off into our favor, we should not be trying to highlight any candles."* And
+nothing is drawn outside the HOLD: *"I don't care what the candles after the trade. It has to be
+within the trade."*
 
 DIRECTION IS A PREFERENCE, NEVER A FILTER
 -----------------------------------------
@@ -172,7 +174,13 @@ def _anchor_bars(
         end_bar: Optional[int] = None
         if isinstance(end_ms, (int, float)) and lo <= end_ms <= hi:
             j = bisect.bisect_right(times, int(end_ms)) - 1
-            if j > i:
+            # 🔴 `>=`, not `>`. A setup that OPENS AND CLOSES INSIDE ONE BAR resolves to `j == i`,
+            # which is a known end (this bar) and not an unknown one — reading it as unknown fell
+            # through to the `window` fallback and gave a 60-second trade a THREE-BAR span reaching
+            # 43 minutes past its own exit. MEASURED on the reference run: 4 marks on 3 trades, one
+            # of them a `Bearish Engulfing` drawn after a trade that lasted 4 minutes. Only an end
+            # BEFORE the start is genuinely unusable.
+            if j >= i:
                 end_bar = j
         out.append((
             n, i, "short" if str(direction).lower().startswith("s") else "long", end_bar, outcome,
@@ -264,42 +272,6 @@ def _alignment(patterns: list, direction: str) -> int:
     return best
 
 
-def _drawdown_end(
-    candles: list[dict], turn: int, end: int, direction: str, entry: float,
-) -> int:
-    """The last bar of the trade's INITIAL adverse excursion — where it leaves the drawdown.
-
-    Walks forward from the turn while the bar still trades on the adverse side of `entry`, and stops
-    at the first bar lying ENTIRELY on the favourable side. So the range it returns is exactly the
-    bars that touch the band the chart paints red (entry → the adverse extreme), contiguously from
-    the entry — which is the region a reader points at and calls "the drawdown".
-
-    🔴 **The span used to stop at `turn + _CONFIRM_BARS`, and Aaron reported the gap off the chart:**
-    *"In drawdown, you're supposed to map all the applicable candles in line with the order we
-    trade. I've hovered over the candles which I think you've missed."* On his 2026-06-18 short the
-    turn is 02:00 and the trade stays above its entry until 05:30 — **21 bars of drawdown against a
-    9-bar span** — so the `Inverted Hammer` at 03:00 was never drawn, and the only mark left was the
-    opposing `Bullish Harami` at 01:30, which is why the chip read `no matching candle`.
-
-    ⚠ **It walks from the TURN, not from the entry, and it breaks on the first favourable bar** — so
-    it is one contiguous excursion. Scanning the whole hold for "any bar back near the entry" would
-    re-open the region every time a winner retraced months later, and those bars are a different
-    subject from the retracement the trade was entered into.
-
-    ⚠ **A bar counts while ANY of it is adverse** (`high >= entry` on a short), not only while it is
-    entirely adverse. That is the same test as "does this candle sit in the red band", which is what
-    the reader is looking at; the stricter reading drops a candle whose wick made the very high the
-    zone is measured to.
-    """
-    out = turn
-    for i in range(turn, end + 1):
-        adverse = candles[i]["high"] >= entry if direction == "short" else candles[i]["low"] <= entry
-        if not adverse:
-            break
-        out = i
-    return out
-
-
 def _reversal_span(
     candles: list[dict],
     start: int,
@@ -310,63 +282,66 @@ def _reversal_span(
 ) -> tuple[int, int, int]:
     """The inclusive bar range this anchor may paint in, and the TURN inside it.
 
-    Returns `(lo, hi, turn)`. The range is the setup's initial adverse excursion — entry → the end
-    of the drawdown — and `_in_zone` then decides, bar by bar, which of those bars are actually IN
-    the band. Two bounds, because neither alone is right: the range keeps a winner that retraces to
-    its entry hours later from re-opening the zone, and the per-bar test keeps a favourable stretch
-    INSIDE the range from being painted. An anchor stating no `hold_end` falls back to `window` bars.
+    Returns `(lo, hi, turn)`. For a TRADE the range is the whole hold — entry bar → EXIT bar — and
+    `_in_zone` decides bar by bar which of those are in the drawdown band. The range's only job is
+    the two ends; the zone itself is a price question.
 
-    🔴 **`_CONFIRM_BARS` is added to the TURN, never to the end of the drawdown, and getting that
-    wrong is what put a mark two bars into a takeoff.** The allowance exists because a pattern is
-    reported on the bar it COMPLETES, so the bar that MADE the extreme is usually the pattern's
-    first bar — it is measured from the extreme and means nothing anywhere else. Added to
-    `_drawdown_end`'s answer it becomes two free bars after price has already left the band, and on
-    a trade that leaves the band into a rally those two bars ARE the rally. See `_in_zone` for the
-    trade that was reported.
+    🔴 **`hi` IS THE EXIT BAR AND MAY NEVER RUN PAST IT.** It used to be `stop + _CONFIRM_BARS`
+    clamped only to the last CANDLE, and on a loser that is two bars into the next setup: a stopped
+    trade's adverse extreme is its final bar, so `turn + _CONFIRM_BARS` lands after the position is
+    closed. ✅ **Aaron reported it off the 2026-05-11 short — stopped out at 13:30, and a `Hammer`
+    painted at 14:00, half an hour after the trade was over:** *"Trade already lost. You already hit
+    stop loss… I don't care what the candles after the trade. It has to be within the trade."*
 
     ⚠ **`entry` is optional and `None` keeps the turn-relative window.** A 3/3 MISS passes none, and
-    deliberately: no position was ever opened, so it has no drawdown — its span is the visit into the
-    zone, which already ends at the deepest point of that visit.
+    deliberately: no position was ever opened, so it has no drawdown band to test bars against — its
+    span is the visit into the zone, which already ends at the deepest point of that visit. It is
+    clamped to the death bar for the same reason a trade is clamped to its exit.
     """
     last = len(candles) - 1
     end = min(hold_end if hold_end is not None else start + window, last)
     turn = _adverse_extreme(candles, start, max(start, end), direction)
-    stop = turn if entry is None else _drawdown_end(candles, turn, end, direction, entry)
-    return start, min(max(stop, turn + _CONFIRM_BARS), last), turn
+    if entry is None:
+        return start, min(turn + _CONFIRM_BARS, end), turn
+    return start, end, turn
 
 
 def _in_zone(
     candles: list[dict], i: int, turn: int, direction: str, entry: Optional[float],
 ) -> bool:
-    """Is bar `i` part of the setup's adverse zone — the band the chart paints red?
+    """Is bar `i` in the setup's DRAWDOWN — the band the chart paints red between the entry and the
+    adverse extreme?
 
-    A bar qualifies while ANY part of it trades on the adverse side of `entry`, which is the same
-    test as *does this candle sit in the red band*, and is what a reader is pointing at when they
-    say "in the drawdown".
+    A bar qualifies while ANY part of it trades on the adverse side of `entry`. That is the same
+    test as *does this candle touch the red box*, which is what a reader is pointing at when they
+    say "in the drawdown" — and it is the whole rule, because the zone is a region in PRICE.
 
-    🔴 **The RANGE alone was not enough, and Aaron reported both halves of the gap off one screen**
-    — *"it said won on inverted hammer but there is no inverted hammer near entry or within draw
-    down… it is somewhere in between… Once price takes off into our favor, we should not be trying
-    to highlight any candles."* ✅ **MEASURED on run `e51d95f212e3`, 166 anchors: 255 of 1084 marks —
-    23% — sat ENTIRELY outside the band**, in two distinct places:
+    🔴 **IMPLEMENTING IT AS A REGION IN TIME IS WHAT KEPT GETTING THIS WRONG, THREE WAYS ACROSS TWO
+    REPORTS.** Aaron: *"there is no inverted hammer near entry or within draw down… it is somewhere
+    in between… Once price takes off into our favor, we should not be trying to highlight any
+    candles"*, then *"within drawdown, you need to show me these candles that align with my trade.
+    And [you're] not showing me them, all of them."* ✅ **MEASURED on run `e51d95f212e3`:**
 
-      - **35 in the confirm tail**, because it was added to the end of the drawdown rather than to
-        the turn. His 2026-07-15 long is exactly this: the drawdown ends 17:15, the next bar rallies
-        $16 clear of the entry, and the `Inverted Hammer` two bars later at 4060-4066 — **$25 above
-        the entry** — was the trade's ONLY mark, so it named the chip. Fixed in `_reversal_span`.
-      - **196 BEFORE the turn**, which no bound on the END could ever have caught. The span opens at
-        the entry BAR, so a trade that runs into profit first and only later comes back to make its
-        adverse extreme painted the whole excursion in between — on one trade the turn is **112 bars**
-        after entry. Fixed here.
+      - **A time-bounded span painted 255 of 1084 marks on the FAVOURABLE side of the entry** — 35
+        in a confirm tail measured from the end of the drawdown rather than from the turn (his
+        2026-07-15 long's only mark sat $25 above the entry, two bars into a rally, and named the
+        chip), and 196 before the turn, where a trade that ran into profit first and only later made
+        its adverse extreme painted the whole excursion in between (**one turn is 112 bars after
+        entry**).
+      - **And it painted TOO FEW as soon as price came BACK.** The first fix walked one contiguous
+        excursion and stopped at the first favourable bar, so on his 2026-02-15 short — which dips,
+        recovers, then returns to the entry an hour later — the return was outside the zone and its
+        two `Hammer`s went unmarked, while the chart's own red box plainly covered them. **A re-test
+        of the entry is the setup asking the same question a second time**, and the reader is
+        looking straight at it.
 
-    ✅ **MEASURED, the same 166 anchors: 1084 marks / 255 outside → 856 / 35, and the 35 that remain
-    are all within `_CONFIRM_BARS` of the extreme.** Trades left with no mark go 17 → 21, which is
-    the honest answer for a setup whose drawdown genuinely held no pattern.
+    A price test answers all three at once and needs no walk: 1084 → 861 → the figure in the module
+    docstring, with nothing drawn where the trade is winning and nothing skipped where it is not.
 
-    ⚠ **The confirm bars are exempt, and that exemption is why this is not simply a band test.**
-    Dropping it gives 771 marks and **40** trades with nothing — it deletes the third bar of every
-    Morning Star that completes on the recovery, which is the reversal candle itself. Measured, it
-    costs 19 more setups their only mark than the rule shipped here.
+    ⚠ **The confirm bars are exempt, and that exemption is why this is not JUST a band test.** A
+    pattern is reported on the bar it COMPLETES, so on a sharp V the third bar of a Morning Star is
+    already back above the entry — and that bar IS the reversal candle. ✅ **MEASURED: dropping the
+    exemption leaves 40 trades with no mark against this rule's 21.**
 
     ⚠ **A MISS passes `entry=None` and every bar in its span qualifies**: no position was opened, so
     there is no entry to measure a band from, and its span is already the visit into the zone.
