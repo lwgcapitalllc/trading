@@ -370,7 +370,28 @@ Backtest numbers are now validated logic, not directional guesses — with the s
 **5 trades is far too thin a sample to tune against.** Parity says the code is right; it says nothing
 about whether the edge is real.
 
-## The 6.5-year measurement — 2026-08-04
+## The 6.5-year measurement — 2026-08-04 — 🔴 **SUPERSEDED, AND KEPT AS THE RECORD OF WHY**
+
+⚠ **EVERY NUMBER IN THIS SECTION IS DEAD. Do not quote it.** It measures the configuration that
+existed on 2026-08-04, and **three defaults moved on 2026-08-06** — `bleg_max_days` 1.25 → 4.0,
+`exec_trail_pct` 1.0 → 0.05, `exec_time_stop_hrs` 36 → 8 (see the two 2026-08-06 header entries).
+Re-measured on 2026-08-09 over the same 155,531 bars, by two independent drivers that agree to the
+cent: **99 trades, +17.87R**, free. Charged over the full history: 114 / +17.56R / PF 1.45 /
+maxDD **−5.15R**. The drawdown is the real change — it used to be nearly double A+'s and is now
+slightly under it.
+
+⚠ **The section stays because the STATISTICAL argument in it is still the right argument**, and it
+now points the other way: 99 trades is still not many, and **no jitter audit has ever been run on this
+bot**, so +17.87R has no error bar. A+'s equivalent measured a run-to-run spread of sd 15.06R —
+larger than B-LEG's entire total. Read the CI reasoning below, substitute today's numbers, and the
+honest verdict is *"positive and not yet distinguishable from noise"* rather than *"no edge"*.
+
+🔴 **The lesson is about the DOCS, not the bot.** This file's header recorded the new numbers on
+2026-08-06 the same day they were measured. `docs/LIVE_TRADING_PIPELINE.md` → G15 and the root
+`CLAUDE.md` went on quoting −0.94R for three days, and those are the two files a decision is read
+out of. **The number was corrected where it was produced and not where it was consumed.**
+
+---
 
 That last sentence was finally acted on. **Nothing above this line changes** — parity is still green
 and the code is still right. What is new is that the bot has been *replayed*, rather than validated,

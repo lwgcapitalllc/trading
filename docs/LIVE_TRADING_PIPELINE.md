@@ -543,28 +543,43 @@ global: the terminal scopes orders by login.
 halts only its own bot. And **nothing here has been exercised against a real second bot**, because
 there is no second instance to exercise it with; it is unit-tested and mutation-checked, not driven.
 
-The overlap half of this gap is **CLOSED as of 2026-08-04** — see G14. What stands between here and
-a second bot is that **B-LEG has no measured edge** (G15) and the live allocator above, in that
-order.
+The overlap half of this gap is **CLOSED** — see G14. What stands between here and a second bot is
+the live allocator above and the caveats on B-LEG in G15.
 
-### G14 — The overlap audit — **MEASURED 2026-08-04, and it passed**
+### G14 — The overlap audit — **RE-MEASURED 2026-08-09, and it still passes**
 
-`backtest/tools/overlap_audit.py`, replayed over **155,453 M15 bars (2020-01-01 → 2026-08-03)**.
-A+ reproduced its documented **161 trades / +135.94R** baseline to the cent, which is the cross-check
+`backtest/tools/overlap_audit.py`, replayed over **155,531 M15 bars (2020-01-01 → 2026-08-03)**.
+A+ reproduced its documented **159 trades / +142.18R** baseline to the cent, which is the cross-check
 that the tool drives the strategies correctly rather than a third thing.
 
-**The legs do not overlap.** Both bots held a position on **27 bars out of 155,453** — 0.3% of A+'s
-own hold time, 0.8% of B-LEG's. 18 of those bars were same-side, 9 opposite. Six A+ trades out of 161
-(3.7%) shared a bar with a B-LEG trade; only **two pairs were same-direction**.
+🔴 **THE RE-RUN IS THE POINT, AND WHY IT WAS NEEDED IS THE LESSON.** The first audit ran 2026-08-04.
+On **2026-08-06** B-LEG was re-defaulted on three axes at once — `bleg_max_days` 1.25 → 4.0,
+`exec_trail_pct` 1.0 → 0.05, `exec_time_stop_hrs` 36 → 8 — which **more than doubled its trade count
+and tripled how long a frozen band stays alive**. Every number in the old G14/G15 was measured on a
+bot that no longer exists. This file's own instruction (*"re-run it after any entry-logic change on
+either bot"*) was there, and nobody ran it, because the change landed in the B-LEG package and the
+verdict lived here. **A cross-cutting measurement has to be re-run by whoever moves the inputs, not by
+whoever wrote the conclusion.**
+
+**The legs still do not overlap, and on direction they overlap LESS than before.** Both bots held a
+position on **49 bars out of 155,531** — 0.5% of A+'s own hold time, 1.8% of B-LEG's. **Exactly ONE of
+those bars was same-side**; the other 48 were opposite, i.e. partially hedged. Seven A+ trades out of
+159 (4.4%) shared a bar with a B-LEG trade, and **one pair was same-direction**.
 
 **They do not fire on the same structure break either**, which was the specific worry: across 6.5
-years exactly **ONE** A+ trade has a same-direction B-LEG entry within 16 bars (2023-07-27, 1 bar
-apart — and both lost). Monthly R correlation is **+0.155** across all 75 traded months and **+0.208**
-across the 33 both traded; they were both negative in 3 of those 33.
+years there is now **NO** A+ trade with a same-direction B-LEG entry within 16 bars — the single
+2023-07-27 cluster the old audit found is gone. Monthly R correlation is **+0.172** across all 78
+traded months (both traded in 53).
+
+⚠ **The absolute overlap went UP and the same-side overlap went DOWN, and both are consequences of the
+same change.** B-LEG holds more positions for longer, so it shares more bars with A+ — but the bars it
+gained are opposite-side, which is a partial hedge rather than doubled risk. Do not read "49 bars, up
+from 27" as a regression without reading the direction split under it.
 
 ⚠ **This does NOT clear the allocator (G10).** The peak was still 2 concurrent positions, and each bot
-sizes off its OWN equity, so on those 27 bars one account would have carried 2 × `exec_risk_pct`. The
+sizes off its OWN equity, so on those 49 bars one account would have carried 2 × `exec_risk_pct`. The
 audit says the allocator would rarely have had anything to arbitrate — not that risk stacking is safe.
+The backtest allocator measured the same thing from the other side on 2026-08-09 and refused nothing.
 
 ⚠ **And it does NOT mean the two are independent.** Both read one structure stream on one instrument,
 and being flat at different moments is not the same as losing for different reasons. A near-zero
@@ -573,30 +588,39 @@ monthly correlation is the better evidence, and it is still only 6.5 years of on
 ⚠ **Re-run it after any entry-logic change on either bot** — that is what the tool is for, and the
 result above is a fact about today's config, not about the setups.
 
-### G15 — B-LEG has NO MEASURED EDGE — raised 2026-08-04
+### G15 — B-LEG: the "no edge" verdict was OVERTURNED — re-measured 2026-08-09
 
-The same run measured B-LEG over the same 6.5 years, and this is the finding that actually changes the
-plan: **50 trades, −0.94R.** Not a loss worth worrying about — a *nothing*. Win rate 34%, average win
-+1.65R, average loss −1.01R, expectancy −0.02R per trade.
+**Raised 2026-08-04 as 50 trades / −0.94R and that number is DEAD.** At today's defaults, over the
+same 155,531 bars and driven by two independent paths that agree to the cent (`overlap_audit.py` and
+the shared-account stack's solo control): **99 trades, +17.87R**, free of cost layers.
 
-**The honest statistical read is that 50 trades cannot tell a small edge from a small negative one.**
-The 95% confidence interval on its mean R is **−0.40 to +0.37**, i.e. its 6.5-year total lands
-somewhere between −20R and +18R. Compare A+ over the same bars: **+0.29 to +1.40** per trade, entirely
-positive. One of these has a measured edge and the other has a measured absence of one.
+What moved it was the 2026-08-06 tuning pass in `strategies/python/mpc_bleg/`, measured over 186,312
+M15 bars with spread and swap charged, IS/OOS split declared before any row ran:
 
-**The shape is worse than the total.** B-LEG's peak-to-trough drawdown in R is **−15.62R** on the way
-to finishing at −0.94R — nearly **double A+'s −7.99R**, for none of the return. It lost in 2021, 2022
-and 2023 (−14.7R combined) and made it back in 2024–2026 (+12.2R), with 2026 being 4 trades.
+| axis | old | new | why |
+|---|---|---|---|
+| `bleg_max_days` | 1.25 | **4.0** | the old value was never tuned — it was the Pine `maxval = 3`, and the best region sits outside it. 1.25 → 59 trades, 4.0 → 112, 5.0 → 118, 7.0 → 121 and falling |
+| `exec_trail_pct` | 1.0 | **0.05** | a UNIT bug, not tuning: the step is a % of PRICE and a B leg's whole 1R is 0.13–1.25% of price, so one inherited step was larger than the entire risk and the ratchet was **inert for this fork's whole life** |
+| `exec_time_stop_hrs` | 36 | **8** | fires only at stage 0, so it cuts no winner; 4–12h is a drawdown plateau |
 
-⚠ **This is a statement about the SHIPPED DEFAULTS, not about the setup.** B-LEG runs `exec_tp1_pct`
-/ `exec_tp2_pct` at 0/0 (full runner) and `exec_sl_level` "1.0", pinned to its own Pine and never
-tuned — lab run `096432c2ad20` was at 30/40. It has never been optimized over a long window, because
-until today it had never been REPLAYED over one; every previous B-LEG number in this repo came from
-2–5 trade validation windows.
+**Charged, the shipped config is 114 trades / +17.56R / PF 1.45 / maxDD −5.15R**, against the old
+59 / −1.73R / PF 0.94 / maxDD −16.00R. The drawdown is the headline, not the total: B-LEG used to
+carry nearly **double** A+'s peak-to-trough for none of the return, and now carries slightly less
+(−5.15R against A+'s −5.62R).
 
-**Consequence: bot #2 is not blocked on the allocator or the overlap audit any more. It is blocked on
-B-LEG having something to deploy.** Optimizing it is real work with a real risk of curve-fitting 50
-trades, and it is not on this plan.
+⚠ **This is not "B-LEG is ready", and the difference matters.** Three things are still open.
+(1) **It has been tuned exactly once and never re-validated since** — the pass declared its own IS/OOS
+split, which is the right discipline, but one honest split is not out-of-sample evidence.
+(2) **No jitter audit has ever been run on this bot.** A+'s put its run-to-run spread at **sd 15.06R**,
+which is larger than B-LEG's entire total; until the equivalent exists here, +17.87R has no error bar
+and cannot be compared to zero.
+(3) **Not parity-re-validated at the new defaults** — `compare_bleg.py` configures Python from the
+export's own `cfg_*` columns, so parity is structurally unaffected, but every export on disk decodes
+the OLD values and proves nothing about these. Re-export before trusting it.
+
+**Consequence: B-LEG is no longer the thing blocking bot #2.** What blocks it now is the live
+allocator (G10), the fleet halt, the multi-bot Bots page (G11), and a jitter audit on B-LEG so its
+total can be read against a noise band instead of against zero.
 
 ### G16 — No external dead-man's switch — **CLOSED 2026-08-04**
 
@@ -1338,7 +1362,7 @@ believing it works.** Offline green means the logic is right, not that the bot s
 | 1 | ~~**Which MT5 instance**~~ — **ANSWERED 2026-07-31**: MT5_FFT, 700107749, PUPrime-Demo, XAUUSD.s. Configured, deployed, startup proven (§5b) | — |
 | 2 | **New Telegram bot token + group chat id** | Step 2. One pair is enough to start — routing is per bot (D7), so a second bot can later get its own group, or its own Telegram identity, by adding a key to `credentials.json` and naming it in that bot's instance config. No code change, and nothing to decide now |
 | 3 | ~~**Live `exec_risk_pct`**~~ — **ANSWERED 2026-08-05: 10%, Aaron's explicit call.** No config change was needed; the live instance already carries `exec_risk_pct = 10.0`, so this is the decision being RECORDED rather than applied. ⚠ **It is a deliberate acceptance, not an unexamined default** — 10% measured **−54.9% max drawdown** over 6.5 years, and Run 12 established that the drawdown is a losing STREAK at that risk rather than give-back, so risk % is the only lever that moves it. Nothing further is owed here; re-open it only if the account purpose changes from demo | — |
-| 4 | **A+ only, or A+ and B-LEG?** | **ANSWERED 2026-08-04 — A+ only, and for a new reason.** The overlap audit ran and B-LEG passed it comfortably (G14), so the original objection is gone. But the same run measured B-LEG at **50 trades / −0.94R over 6.5 years** (G15) — no edge to deploy. The allocator (G10) and the multi-bot Bots page (G11) are still unbuilt and still needed before bot #2, but they are no longer the binding constraint |
+| 4 | **A+ only, or A+ and B-LEG?** | **RE-OPENED 2026-08-09 — the 2026-08-04 "A+ only" answer rested on a number that is now dead.** The overlap audit re-ran and B-LEG passes it more cleanly than before — 1 same-side bar in 6.5 years, no same-break clusters at all (G14). And B-LEG at today's defaults is **99 trades / +17.87R** over the same bars, not the 50 / −0.94R that produced the original refusal (G15). It is a candidate again. Before it deploys: a **jitter audit** so its total has an error bar, a **re-export + `compare_bleg.py`** at the new defaults, the allocator (G10), the fleet halt and the multi-bot Bots page (G11) |
 
 ---
 
