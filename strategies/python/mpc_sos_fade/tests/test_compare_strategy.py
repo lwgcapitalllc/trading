@@ -259,10 +259,19 @@ def test_the_export_column_OVERRIDES_the_bot_pin_in_both_directions():
 
 
 def test_poi_source_column_decodes_every_option():
-    for source in ("FVG", "Order block", "Either"):
+    for source in ("FVG", "Order block", "Either", "FVG first"):
         cfg = SosFadeConfig(exec_poi_source=source)
         got = cs.config_from_export(pd.DataFrame([_encode_cfg(cfg)]))
         assert got.exec_poi_source == source, source
+
+
+def test_the_poi_source_codes_are_a_WIRE_FORMAT_and_are_never_renumbered():
+    """An export on disk carries the NUMBER, so re-pointing one is silent: the file still reads
+    and now claims a mode it never ran. "FVG first" was appended as 3 in 2026-08-09 for exactly
+    that reason, and this pins the three that predate it rather than the count."""
+    assert cs._POI_SOURCE[0] == "FVG"
+    assert cs._POI_SOURCE[1] == "Order block"
+    assert cs._POI_SOURCE[2] == "Either"
 
 
 def test_an_export_without_the_poi_source_column_reads_as_FVG():
@@ -299,6 +308,22 @@ def test_roundtrip_parity_reading_ORDER_BLOCKS_instead_of_gaps(tmp_path):
 
 def test_roundtrip_parity_reading_EITHER_zone(tmp_path):
     cfg = SosFadeConfig(exec_poi_source="Either")
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_roundtrip_parity_on_the_FVG_FIRST_precedence_mode(tmp_path):
+    """The precedence mode has to survive the round trip like the other three — it is the one
+    whose zone list is identical to "Either" and whose CHOICE among them is not, so a harness
+    that decoded it as "Either" would go green while diffing a different entry price.
+
+    NON-VACUITY, and it had to be measured against "Either" specifically rather than against the
+    default: over this 960-bar synth frame both modes price an edge on the SAME 833 bars (the
+    union is identical by construction) and rest a DIFFERENT limit on 111 of them. So the ranking
+    really is steering the stream, and a green here is worth something.
+    """
+    cfg = SosFadeConfig(exec_poi_source="FVG first")
     p, _ = _write(tmp_path, cfg)
     msgs = cs.run_parity(p, warmup=100)
     assert msgs == [], msgs[:3]

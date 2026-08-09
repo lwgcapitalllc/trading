@@ -1182,8 +1182,12 @@ class Execution:
         p2, p3, p6 = sig.fibo_p2, sig.fibo_p3, sig.fibo_p6
         fibs_ready = None not in (sig.fibo_p1, p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
         long_edge = short_edge = None
+        # The precedence tier the current best edge came from ("FVG first" only). Every other
+        # mode hands back one flat tier, so these never differ and the choice below collapses to
+        # the original nearest-first max/min exactly.
+        long_rank = short_rank = None
         if fibs_ready:
-            for top, bot, is_bull, born in pois_for(self._cfg, sig):
+            for top, bot, is_bull, born, rank in pois_for(self._cfg, sig):
                 l_deep_ok = not cfg.exec_fvg_deep_only or top <= p2
                 s_deep_ok = not cfg.exec_fvg_deep_only or bot >= p2
                 # ANDed onto both sides rather than skipping the loop iteration, so with the
@@ -1192,11 +1196,19 @@ class Execution:
                 if is_bull and sig.fibo_dir == 1 and bot <= p2 and top >= p6 and l_deep_ok and pre_ok:
                     df = self._fib_snap(bot, top, True, sig)
                     e = min(top, p2) if df is None else df   # snap override, else shallowest touch
-                    long_edge = e if long_edge is None else max(long_edge, e)
+                    # A HIGHER tier wins on rank alone, however much further away it rests — that
+                    # IS the precedence. Only within one tier does "first price reaches" decide.
+                    if long_edge is None or rank > long_rank:
+                        long_edge, long_rank = e, rank
+                    elif rank == long_rank:
+                        long_edge = max(long_edge, e)
                 if (not is_bull) and sig.fibo_dir == -1 and top >= p2 and bot <= p6 and s_deep_ok and pre_ok:
                     df = self._fib_snap(bot, top, False, sig)
                     e = max(bot, p2) if df is None else df
-                    short_edge = e if short_edge is None else min(short_edge, e)
+                    if short_edge is None or rank > short_rank:
+                        short_edge, short_rank = e, rank
+                    elif rank == short_rank:
+                        short_edge = min(short_edge, e)
             if not cfg.exec_req_fvg:
                 if long_edge is None and sig.fibo_dir == 1:
                     long_edge = p3

@@ -308,7 +308,11 @@ class SosFadeSequence:
         # entry may not use could still be reported as the confluence that armed the setup.
         l_fvg = s_fvg = False
         if sig.fibo_p2 is not None and sig.fibo_p6 is not None:
-            for top, bot, is_bull, born in pois_for(self._cfg, sig):
+            # The precedence RANK is deliberately ignored here: this flag answers "is there a
+            # zone in the band at all", and under "FVG first" a leg whose only zone is an order
+            # block is one the entry really will trade off that block. Ranking the flag would
+            # report no confluence on a setup that is about to fire.
+            for top, bot, is_bull, born, _rank in pois_for(self._cfg, sig):
                 gap_ok = (not self._cfg.exec_fvg_pre_zone
                           or sig.fibo_half_bar is None
                           or born < sig.fibo_half_bar)

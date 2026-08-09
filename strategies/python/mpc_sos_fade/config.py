@@ -41,13 +41,13 @@ class SosFadeConfig:
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require an FVG in the zone"
-    exec_poi_source: str = "FVG"       # "Zone must hold" ∈ {FVG, Order block, Either}
-    #   🔴 PYTHON-ONLY, NO PINE COUNTERPART (2026-08-09, Aaron's ask: "let me see raw what order
-    #   blocks return"). `mpc_strategy.pine` dropped order blocks entirely on 2026-07-24, so there
-    #   is no `cfg_` column for this and `compare_strategy.py` CANNOT check any run with it off
-    #   "FVG" — which is precisely why the default is "FVG" and why anything else is a LAB finding
-    #   rather than a validated one. Same standing as `exec_sl_custom`. Do not deploy a live bot on
-    #   a non-default value until the Pine side exists.
+    exec_poi_source: str = "FVG"       # ∈ {FVG, Order block, Either, FVG first}
+    #   THE PINE SIDE EXISTS (2026-08-09, later the same day). This comment previously read
+    #   "PYTHON-ONLY, NO PINE COUNTERPART" and that is now FALSE — it is corrected in place
+    #   rather than left to be read as current. `mpc_strategy.pine` and its export mirror carry
+    #   `execPoiSource` and the ported OB engine, and the export plots `cfg_poi_source`, which
+    #   `compare_strategy.py` decodes. ⚠ **The gate has still not RUN on a non-FVG export**, so
+    #   any non-default result is a LAB finding until it does, and no live bot may run one.
     #
     #   WHAT IT SWITCHES, and what it deliberately does NOT. It changes only WHICH zones count as
     #   the "point of interest" the setup needs in the 0.5-0.886 band. Every rule downstream is
@@ -67,6 +67,30 @@ class SosFadeConfig:
     #   one direction: a nearer qualifying zone re-prices the resting limit, so a setup that filled
     #   before can miss, and with one position slot an added trade DISPLACES a later one. Read the
     #   trade count as changed, never as increased.
+    #
+    #   ── "FVG first" — the PRECEDENCE mode (2026-08-09, Aaron: "could I add, like, a precedence
+    #   order? If there is fair value gaps, take those preferentially over order blocks") ────────
+    #   The same union of zones as "Either", RANKED instead of pooled. Three tiers, and the entry
+    #   takes the best tier that has a qualifying zone on the leg:
+    #       a gap an order block sits on  >  a plain gap  >  an order block
+    #   Nearest-first only decides WITHIN a tier, so a higher tier wins however much further away
+    #   its limit rests. See `signals.POI_RANK_*`.
+    #
+    #   ⚠ "Either" and "FVG first" hold the SAME zones and differ only in which one prices the
+    #   entry, so a difference between them is entirely an ENTRY-PRICE effect. That is the pair to
+    #   run if you want the half of the order-block result this bot's CLAUDE.md says the first run
+    #   could not separate — which setups qualify, versus where the limit rests.
+    #
+    #   ⚠ It is NOT "FVG" with a fallback bolted on, and the trade counts will show it: a leg whose
+    #   only zone is a block still trades, so this takes strictly more setups than "FVG" does. The
+    #   measured warning stands — requiring a block was worse than requiring nothing — and the
+    #   fallback tier is exactly the population that measured badly.
+    #
+    #   ⚠ The confirming block must point the SAME WAY as the gap. Aaron's rule named no direction;
+    #   this is the reading taken, because in a long setup a bearish (supply) block on a bullish
+    #   gap is the opposite of confirmation, and ranking that gap TOP would promote the worst
+    #   candidate on the leg. One predicate in `signals.pois_for` to flip if the undirected
+    #   version is wanted — and it must be flipped in `mpc_strategy.pine` in the same commit.
     exec_fvg_deep_only: bool = True    # "Gap must sit fully past 0.5"
     exec_fvg_pre_zone: bool = False    # "Gap must pre-date the zone"
     #   Pine execFvgPreZone (2026-08-02). ON = a gap only counts if it was already alive on the bar

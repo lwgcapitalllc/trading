@@ -493,10 +493,43 @@ class PoiSourceUnavailable(RuntimeError):
 # Every accepted value of `exec_poi_source`, and which lists it reads. A dict rather than an
 # if-chain so an unrecognised value RAISES instead of quietly falling through to gaps — a typo
 # that silently ran the default would make a whole replay a lie about what it tested.
-_POI_SOURCES = {"FVG": (True, False), "Order block": (False, True), "Either": (True, True)}
+_POI_SOURCES = {
+    "FVG": (True, False),
+    "Order block": (False, True),
+    "Either": (True, True),
+    "FVG first": (True, True),
+}
+
+# The PRECEDENCE tiers, read only by "FVG first" (2026-08-09, Aaron: "if there is fair value
+# gaps, take those preferentially over order blocks... if a fair value gap and an order block
+# overlap, that's the most preferred fair value gap to take").
+#
+# A rank is a RANKING, never a filter: a lower tier is used whenever no higher one qualifies, so
+# an order block still prices an entry on a leg that has no usable gap at all. That is the
+# difference between this and "FVG" — and the whole point of the mode, since requiring a block
+# measured WORSE than requiring nothing (see this bot's CLAUDE.md).
+#
+# ⚠ The tiers are compared AFTER the eligibility gates, in the entry-edge loop — see
+# `Execution._entry_edges`. An FVG that the deep-only or pre-zone gate refuses must not suppress
+# an order block the entry may legitimately use, and it cannot, because it never enters the
+# comparison. Ranking before gating would turn a REFUSED gap into a veto on the fallback.
+POI_RANK_OB = 0          # an order block: the fallback, used only when no gap qualifies
+POI_RANK_FVG = 1         # a plain fair value gap: preferred over any block
+POI_RANK_FVG_ON_OB = 2   # a gap an order block sits on: the strongest tier
+
+# Every other mode returns ONE flat tier, so every candidate ties and the consumers fall straight
+# back to their original nearest-first choice. That is what keeps "FVG" / "Order block" / "Either"
+# byte-identical to before this mode existed, rather than merely intended to be.
+_POI_RANK_FLAT = 0
 
 
-def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int]]:
+def _zones_overlap(a_top: float, a_bot: float, b_top: float, b_bot: float) -> bool:
+    """Do two zones share price? Inclusive at the edges, matching every other band test in this
+    package (`bot <= p2 and top >= p6`), so a block whose top is exactly a gap's bottom counts."""
+    return min(a_top, b_top) >= max(a_bot, b_bot)
+
+
+def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int, int]]:
     """The zones this setup may use as its point of interest, per `exec_poi_source`.
 
     **This is THE seam, and it exists so there is exactly one of it.** Both consumers of a zone —
@@ -511,6 +544,9 @@ def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int]]:
     silently different strategy reporting itself as the one you configured. `obs_available` is the
     only thing that separates *found none* from *never asked*, and this is the one place it is
     read.
+
+    Returns `(top, bottom, is_bullish, born, rank)`. The RANK is the "FVG first" precedence tier
+    (`POI_RANK_*` above); every other mode returns one flat tier so nothing can move.
     """
     try:
         want_fvg, want_ob = _POI_SOURCES[cfg.exec_poi_source]
@@ -525,11 +561,32 @@ def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int]]:
             f"EngineConfig(order_blocks=True) — MpcSosFadeStrategy.run() does this from the config, "
             f"so a caller passing its own engine_config must too."
         )
-    if want_fvg and not want_ob:
-        return sig.fvgs
-    if want_ob and not want_fvg:
-        return sig.obs
-    return list(sig.fvgs) + list(sig.obs)
+    if cfg.exec_poi_source != "FVG first":
+        pois = []
+        if want_fvg:
+            pois += [(t, b, d, n, _POI_RANK_FLAT) for (t, b, d, n) in sig.fvgs]
+        if want_ob:
+            pois += [(t, b, d, n, _POI_RANK_FLAT) for (t, b, d, n) in sig.obs]
+        return pois
+
+    # "FVG first" — the same UNION as "Either", ranked rather than pooled. Order is gaps then
+    # blocks purely to match "Either" and the Pine seam; with tiers in play it cannot decide an
+    # outcome, because a strictly-higher tier replaces outright and a tie is resolved by a
+    # min/max that does not care what order it saw its candidates in.
+    #
+    # ⚠ The confirming block must point the SAME WAY as the gap. In a long setup we are looking
+    # for demand, and a bearish (supply) block sitting on a bullish gap is the opposite of
+    # confirmation — ranking that gap TOP would promote the worst candidate on the leg. Aaron's
+    # rule said "a gap and an order block overlap" without naming direction; this is the reading
+    # taken, and it is one predicate to flip if the undirected version is wanted instead.
+    pois = [
+        (t, b, d, n, POI_RANK_FVG)
+        if not any(od == d and _zones_overlap(t, b, ot, ob) for (ot, ob, od, _on) in sig.obs)
+        else (t, b, d, n, POI_RANK_FVG_ON_OB)
+        for (t, b, d, n) in sig.fvgs
+    ]
+    pois += [(t, b, d, n, POI_RANK_OB) for (t, b, d, n) in sig.obs]
+    return pois
 
 
 def _active_fvgs(fvg_events):

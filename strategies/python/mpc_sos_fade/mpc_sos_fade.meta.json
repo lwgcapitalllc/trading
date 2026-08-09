@@ -78,10 +78,11 @@
       "choices": [
         "FVG",
         "Order block",
-        "Either"
+        "Either",
+        "FVG first"
       ],
       "label": "Zone the entry reads",
-      "desc": "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap, so it is entered the same way. Blocks are drawn on the chart only while they can be traded, so what you see is what the entry reads. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R. Requiring a block is worse than requiring nothing at all (315 / +149.55R), so treat this as a research dial, not a tuning one."
+      "desc": "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both, pooled, nearest one wins. FVG first = both, RANKED: a gap an order block sits on beats a plain gap, which beats a block, and nearest-first only decides within a rank. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap. Blocks are drawn on the chart only while they can be traded, so what you see is what the entry reads. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R. Requiring a block is worse than requiring nothing at all (315 / +149.55R). FVG first is NOT measured yet, and note it is not FVG with a safety net: a leg whose only zone is a block still trades, so it takes strictly more setups than FVG does."
     },
     {
       "name": "exec_fvg_deep_only",

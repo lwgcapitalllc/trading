@@ -503,7 +503,7 @@ bool  execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2/T
 // execTimeStopHrs (a FLOAT) deliberately stays down at its old declaration site:
 // execBeBandR is a later float, so moving the hours up here would shift THAT.
 string execTimeStopMode = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = GRP_EXEC, tooltip = "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, so the baseline moved: measured by real replay over 6.5 years it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R for +4R. Off closes nothing and is what every result measured before that date was taken on.")
-string execPoiSource = input.string("FVG", "Zone the entry reads", options = ["FVG", "Order block", "Either"], group = GRP_EXEC, tooltip = "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap, so it is entered the same way. Blocks are drawn on the chart only while they can be traded, so what you see is what the entry reads. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R. Requiring a block is worse than requiring nothing at all (315 / +149.55R), so treat this as a research dial, not a tuning one.")
+string execPoiSource = input.string("FVG", "Zone the entry reads", options = ["FVG", "Order block", "Either", "FVG first"], group = GRP_EXEC, tooltip = "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both, pooled, nearest one wins. FVG first = both, RANKED: a gap an order block sits on beats a plain gap, which beats a block, and nearest-first only decides within a rank. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap. Blocks are drawn on the chart only while they can be traded, so what you see is what the entry reads. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R. Requiring a block is worse than requiring nothing at all (315 / +149.55R). FVG first is NOT measured yet, and note it is not FVG with a safety net: a leg whose only zone is a block still trades, so it takes strictly more setups than FVG does.")
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -3936,6 +3936,20 @@ f_w23Arm(mwS, aplusS_stage >= 2 and aplusS_stage[1] < 2, aplusS_sweepBar, aplusS
 // never its anchor candle — see OrderBlock.bornBar.
 f_gapPreZone(int _born) => not execFvgPreZone or na(fiboHalfBar) or _born < fiboHalfBar
 
+// Does a live order block sit on this gap? Read only by "FVG first", to sort a gap into
+// the top rank. INCLUSIVE at the edges, matching every other band test in this file
+// (`_gB <= fiboP2 and _gT >= fiboP6`), so a block whose top is exactly the gap's bottom
+// counts as overlapping. The caller passes the SAME-DIRECTION array — see the seam note.
+f_gapOnOb(array<OrderBlock> _arr, float _gT, float _gB) =>
+    bool _hit = false
+    if array.size(_arr) > 0
+        for _k = 0 to array.size(_arr) - 1
+            OrderBlock _o = array.get(_arr, _k)
+            if math.min(_gT, _o.top) >= math.max(_gB, _o.bottom)
+                _hit := true
+                break
+    _hit
+
 // ── THE POI SEAM — the one place that decides WHICH zones the entry may read ──
 // Everything downstream unpacks (top, bottom, isBullish, born) and knows nothing about
 // where the zone came from. That is what makes "an order block obeys the same rules as a
@@ -3948,22 +3962,44 @@ f_gapPreZone(int _born) => not execFvgPreZone or na(fiboHalfBar) or _born < fibo
 // identical is what lets the parity gate compare them at all.
 // Rebuilt every bar into `var` arrays rather than freshly allocated ones: a script that
 // allocates four arrays per bar over 20,000 bars is a memory-limit error waiting to fire.
+//
+// ── "FVG first" — the PRECEDENCE mode (2026-08-09) ──────────────────────────────
+// The seam also carries a RANK, and it is the only thing that mode adds. Same union of
+// zones as "Either", ranked rather than pooled:
+//     2  a gap an order block sits on   (strongest)
+//     1  a plain gap
+//     0  an order block                 (used only when no gap qualifies)
+// The entry loop takes the best rank that has a QUALIFYING zone and lets nearest-first
+// decide only within it. Every other mode pushes rank 0 for everything, so every
+// candidate ties and the loop collapses to the original max/min exactly — which is what
+// keeps FVG / Order block / Either byte-identical rather than merely intended to be.
+// Mirrors signals.POI_RANK_* in the Python package.
+// ⚠ The confirming block must point the SAME WAY as the gap: a bearish supply block on a
+// bullish gap is the opposite of confirmation, and ranking that gap top would promote the
+// worst candidate on the leg. Flip it here AND in signals.pois_for together, never one.
 var array<float> poiTops   = array.new<float>()
 var array<float> poiBots   = array.new<float>()
 var array<bool>  poiIsBull = array.new<bool>()
 var array<int>   poiBorn   = array.new<int>()
+var array<int>   poiRank   = array.new<int>()
 array.clear(poiTops)
 array.clear(poiBots)
 array.clear(poiIsBull)
 array.clear(poiBorn)
+array.clear(poiRank)
 bool poiWantFvg = execPoiSource != "Order block"
 bool poiWantOb  = execPoiSource != "FVG"
+bool poiPref    = execPoiSource == "FVG first"
 if poiWantFvg and array.size(fvgTops) > 0
     for _pi = 0 to array.size(fvgTops) - 1
-        array.push(poiTops,   array.get(fvgTops, _pi))
-        array.push(poiBots,   array.get(fvgBots, _pi))
-        array.push(poiIsBull, array.get(fvgIsBull, _pi))
+        float _pgT = array.get(fvgTops, _pi)
+        float _pgB = array.get(fvgBots, _pi)
+        bool  _pgU = array.get(fvgIsBull, _pi)
+        array.push(poiTops,   _pgT)
+        array.push(poiBots,   _pgB)
+        array.push(poiIsBull, _pgU)
         array.push(poiBorn,   array.get(fvgBorn, _pi))
+        array.push(poiRank,   poiPref ? (f_gapOnOb(_pgU ? activeBullOBs : activeBearOBs, _pgT, _pgB) ? 2 : 1) : 0)
 if poiWantOb and array.size(activeBullOBs) > 0
     for _pi = 0 to array.size(activeBullOBs) - 1
         OrderBlock _pob = array.get(activeBullOBs, _pi)
@@ -3971,6 +4007,7 @@ if poiWantOb and array.size(activeBullOBs) > 0
         array.push(poiBots,   _pob.bottom)
         array.push(poiIsBull, true)
         array.push(poiBorn,   _pob.bornBar)
+        array.push(poiRank,   0)
 if poiWantOb and array.size(activeBearOBs) > 0
     for _pi = 0 to array.size(activeBearOBs) - 1
         OrderBlock _pob = array.get(activeBearOBs, _pi)
@@ -3978,6 +4015,7 @@ if poiWantOb and array.size(activeBearOBs) > 0
         array.push(poiBots,   _pob.bottom)
         array.push(poiIsBull, false)
         array.push(poiBorn,   _pob.bornBar)
+        array.push(poiRank,   0)
 
 // Zone confluence — a live zone overlapping the entry band (0.5 to 0.886)
 bool aplusL_fvg = false
@@ -4399,11 +4437,17 @@ f_fibEntry(float _gB, float _gT, bool _bull) =>
 // With "Require FVG" off, the edge falls back to the 0.618 fib (E1) line.
 float longEdge  = na
 float shortEdge = na
+// The rank the current best edge came from ("FVG first" only). Every other mode pushes
+// rank 0 for everything, so these can never differ and the choice below is the original
+// nearest-first max/min exactly.
+int longRank  = -1
+int shortRank = -1
 if fibsReady and array.size(poiTops) > 0
     for _i = 0 to array.size(poiTops) - 1
         float _gT = array.get(poiTops, _i)
         float _gB = array.get(poiBots, _i)
         bool  _gBull = array.get(poiIsBull, _i)
+        int   _gRk   = array.get(poiRank, _i)
         // Deep-only gate: when on, the WHOLE gap must sit past the 0.5 line —
         // long: gap top at/below 0.5; short: gap bottom at/above 0.5 (no straddle).
         bool _lDeepOk = not execFvgDeepOnly or _gT <= fiboP2
@@ -4415,11 +4459,21 @@ if fibsReady and array.size(poiTops) > 0
         if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk and _preOk
             float _df = f_fibEntry(_gB, _gT, true)
             float _e = na(_df) ? math.min(_gT, fiboP2) : _df       // snap override, else shallowest touch
-            longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
+            // A HIGHER rank wins outright, however much further away it rests — that IS the
+            // precedence. Only within one rank does "first price reaches" decide.
+            if na(longEdge) or _gRk > longRank
+                longEdge := _e
+                longRank := _gRk
+            else if _gRk == longRank
+                longEdge := math.max(longEdge, _e)
         if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk and _preOk
             float _df = f_fibEntry(_gB, _gT, false)
             float _e = na(_df) ? math.max(_gB, fiboP2) : _df
-            shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
+            if na(shortEdge) or _gRk > shortRank
+                shortEdge := _e
+                shortRank := _gRk
+            else if _gRk == shortRank
+                shortEdge := math.min(shortEdge, _e)
 // ── SNIPER ZONE — the SECOND accepted confirmation ─────────────────────────
 // The SZ is the break leg's 0.5-0.618 pocket, so it already lives inside the
 // 0.5-0.886 entry band. It is a FALLBACK only: the loop above runs first, so a

@@ -54,7 +54,10 @@ _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratc
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 _TIME_STOP = {0: "Off", 1: "Before TP1 only", 2: "Always"}
-_POI_SOURCE = {0: "FVG", 1: "Order block", 2: "Either"}
+# ⚠ A WIRE FORMAT, so codes are APPENDED and never renumbered — an export already on disk
+# carries the old number, and re-pointing it is silent: the file still reads, and now claims
+# to have run a mode it never ran. "FVG first" was added as 3 on 2026-08-09 for that reason.
+_POI_SOURCE = {0: "FVG", 1: "Order block", 2: "Either", 3: "FVG first"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
 _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
