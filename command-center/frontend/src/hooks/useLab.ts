@@ -331,13 +331,18 @@ export function useRefreshChartSpec() {
 export function useRunCandles(runId: string | null) {
   return useCallback(
     async (tf: string, fromMs: number, toMs: number): Promise<ChartPage> => {
-      if (!runId) return { candles: [], available: false, feedError: 'no run', dataStartMs: null, hardEdge: false }
+      if (!runId) return { candles: [], overlays: [], available: false, feedError: 'no run', dataStartMs: null, hardEdge: false }
       const q = `tf=${encodeURIComponent(tf)}&from_ms=${Math.round(fromMs)}&to_ms=${Math.round(toMs)}`
       const res = await api.get<ChartPage & { data_start_ms: number | null; hard_edge: boolean; feed_error: string | null }>(
         `/backtests/runs/${runId}/candles?${q}`,
       )
       return {
         candles: res.candles ?? [],
+        // Structure for THESE bars at THIS timeframe. `?? []` is the honest default for a backend
+        // that predates the field — the panel then draws no structure in a drill-down, which is
+        // right, rather than falling back to the run's base-timeframe overlays, which is the
+        // defect this field exists to fix.
+        overlays: res.overlays ?? [],
         available: !!res.available,
         feedError: res.feed_error ?? null,
         dataStartMs: res.data_start_ms ?? null,

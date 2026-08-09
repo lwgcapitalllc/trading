@@ -153,6 +153,34 @@ class InternalEvents:
     bear_sos: bool = False
     bear_sos_price: Optional[float] = None
 
+    # The BAR the broken level sits on — the wick that made `*_bos_price` / `*_sos_price`. The
+    # external engine has carried this since it was written (`bull_bos_h_loc` / `bear_bos_l_loc`);
+    # the internal engine emitted the four prices with no bar beside them, so a consumer that
+    # needed to DRAW a break had nothing to anchor it to and reached for `ifib_seed_*_loc` instead.
+    #
+    # 🔴 **That substitution is wrong at exactly ONE of the six break sites, and it went unnoticed
+    # because the other five agree by coincidence.** The fib seed is a LEG (a low and a high), and
+    # at five sites the end of that leg happens to be the level that broke. At the first bear-iSOS
+    # branch it is not: the break is `i_last_hl` while the seed's bottom is `i_tracked_ext` — a
+    # different price on a different bar. MEASURED over 2.5 years of real M5 bars (169 internal
+    # breaks): iBOS bull 65/65, iBOS bear 57/57 and iSOS bull 22/22 land on the broken wick, while
+    # **iSOS bear is 3/25** — 22 drawn at a price that is not the level that broke, by up to
+    # $18.47. Reported by Aaron off the chart, and the visible symptom is not the price: the wrong
+    # bar can land ON the break bar, so the line has ZERO LENGTH and does not render at all
+    # (12.4% of all internal breaks drew a line 1 bar or shorter).
+    #
+    # ⚠ **`int_break_origin_loc` is NOT this and cannot substitute for it** — it is the
+    # order-block scan origin, and measured over the same 169 breaks it lands on the broken wick
+    # **zero** times in every category.
+    #
+    # Capture-only: nothing in the engine reads these back, so no structure decision depends on
+    # them — the same additive pattern as `int_break_origin_loc`, `i_confirmed_*` and
+    # `ifib_seed_*` above. None off the break bar.
+    bull_bos_loc: Optional[int] = None
+    bear_bos_loc: Optional[int] = None
+    bull_sos_loc: Optional[int] = None
+    bear_sos_loc: Optional[int] = None
+
     # Order-block creation gate for the INTERNAL engine — mirrors mpc_assistant.pine's
     # int_bull_break / int_bear_break / int_break_origin_loc (~lines 1115-1275). These fire on the
     # same bar as bull_bos/bear_bos/bull_sos/bear_sos, but are kept as separate fields because the

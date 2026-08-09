@@ -315,13 +315,22 @@ export interface ChartSpec {
 
 /** One fetched window of bars, as `onRequestCandles` returns it — the DRILL-DOWN path only.
  *
- *  ⚠ It used to carry that window's ANALYSIS as well (`overlays`/`blocks`/`misses`/`missNoise`),
- *  because the spec shipped ~17 months of a long run and the panel PAGED the rest in over the
- *  network, so every layer had to be recomputed per window or it went silently empty past the
- *  shipped candles. The spec carries the whole run as of 2026-08-06 — analysis included — so
- *  paging older history is an in-memory slice and those four fields are gone. */
+ *  ⚠ It used to carry that window's ANALYSIS as well (`blocks`/`misses`/`missNoise` beside the
+ *  overlays), because the spec shipped ~17 months of a long run and the panel PAGED the rest in
+ *  over the network, so every layer had to be recomputed per window or it went silently empty past
+ *  the shipped candles. The spec carries the whole run as of 2026-08-06 — analysis included — so
+ *  paging older history is an in-memory slice and those three fields are gone. */
 export interface ChartPage {
   candles: ChartCandle[]
+  /** Market structure computed ON THESE BARS, at THIS timeframe.
+   *
+   *  🔴 **Restored 2026-08-08, and its absence was a live defect rather than a missing feature.**
+   *  A drill-down replaces the candles and nothing replaced the overlays, so the panel drew the
+   *  run's BASE-timeframe structure on top of finer bars — M15 swings over M5 candles, every label
+   *  at a price that is not a swing on anything on screen. Reported against a 15m run drilled to
+   *  M5: the chart said `SOS @4242.99` where the M5 answer, and TradingView's, is `4224.73`.
+   *  Structure is a property of the BARS, so it has to be recomputed whenever they change. */
+  overlays: ChartOverlay[]
   /** Whether the feed could be ASKED — NOT whether it had anything.
    *
    *  ⚠ It was `bool(candles)` on the backend until 2026-08-07, i.e. the same fact as

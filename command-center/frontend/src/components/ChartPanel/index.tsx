@@ -581,7 +581,32 @@ const FETCH_LEAD_FRAC = 0.25
 /** A drill-down timeframe's loaded bars and the calendar range they were REQUESTED over.
  *  `edge` = the broker's true oldest bar for this timeframe, once a request has actually reached it
  *  (null = not reached, which is not the same as "there is no more"). */
-type DrillWindow = { candles: ChartCandle[]; edge: number | null; fromMs: number; toMs: number }
+type DrillWindow = { candles: ChartCandle[]; overlays: ChartOverlay[]; edge: number | null; fromMs: number; toMs: number }
+
+/** Identity of a structure overlay, for de-duplicating the windows a drill-down pages together.
+ *  Two adjacent windows both replay the leg that straddles their boundary, so the same line/label
+ *  arrives twice — and a doubled label is visible (the de-collider slides the copy off its anchor). */
+/*  ⚠ Span via `'t' in ov`, NOT by listing the point-like `type`s. The first version enumerated
+ *  `label`/`vline` and read `.t0`/`.t1` off everything else, which broke the moment `CandleOverlay`
+ *  (a third point-like variant) joined the union — a compile error here, but the same shape reaches
+ *  for a wrong field silently in any language that would let it. A property test narrows every
+ *  present and future variant by what it HAS, so a new one cannot land in the wrong branch. */
+function overlayKey(ov: ChartOverlay): string {
+  const [a, b] = 't' in ov ? [ov.t, ov.t] : [ov.t0, ov.t1]
+  return `${ov.type}|${ov.group}|${a}|${b}|${'price' in ov ? ov.price : ''}|${'text' in ov ? ov.text : ''}`
+}
+
+function mergeOverlays(...lists: ChartOverlay[][]): ChartOverlay[] {
+  const seen = new Set<string>()
+  const out: ChartOverlay[] = []
+  for (const list of lists) for (const ov of list) {
+    const k = overlayKey(ov)
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(ov)
+  }
+  return out
+}
 
 /** A server-side failure sentence, trimmed to something a one-line badge can hold.
  *
@@ -782,6 +807,9 @@ export default function ChartPanel({
   // Drill-down (sub-base) fetch state. `isFetchMode` = a TF finer than the run's own bars is
   // selected; then `fetched` (pulled live for the visible window) replaces the resampled candles.
   const [fetched, setFetched] = useState<ChartCandle[]>([])
+  // The drill-down window's OWN structure overlays, computed by the backend on the bars it served.
+  // Replaces `spec.overlays` while a finer timeframe is showing — see `allOverlays`.
+  const [drillOverlays, setDrillOverlays] = useState<ChartOverlay[]>([])
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'ok' | 'empty' | 'error'>('idle')
   // WHY a drill-down came back with nothing, and it is two completely different facts:
   // `offline` = the feed could not be reached (`available: false` — the MT5 agent or its terminal is
@@ -814,6 +842,8 @@ export default function ChartPanel({
   useEffect(() => { selectedMinRef.current = selectedMin }, [selectedMin])
   const fetchedRef = useRef(fetched)
   useEffect(() => { fetchedRef.current = fetched }, [fetched])
+  const drillOverlaysRef = useRef(drillOverlays)
+  useEffect(() => { drillOverlaysRef.current = drillOverlays }, [drillOverlays])
 
   // The candles HANDED TO KLINECHARTS: the newest `APPLIED_BARS` of the spec, grown backwards as you
   // scroll left. The spec itself carries the WHOLE run (2026-08-06) — this is the window applied to
@@ -916,6 +946,7 @@ export default function ChartPanel({
     const cached = fetchCacheRef.current.get(min)
     if (!force && cached && anchorMs >= cached.fromMs && anchorMs <= cached.toMs) {
       setFetched(cached.candles)
+      setDrillOverlays(cached.overlays)
       setDataEdge(cached.edge != null ? { ts: cached.edge, tf: min } : null)
       setFetchStatus(cached.candles.length ? 'ok' : 'empty')
       setFetchNote(null)
@@ -933,8 +964,9 @@ export default function ChartPanel({
       const res = await onRequestCandles(drillLabel(min), from, to)
       if (token !== fetchTokenRef.current) return null // a newer fetch superseded this one
       const edge = res.hardEdge && res.dataStartMs != null ? res.dataStartMs : null
-      fetchCacheRef.current.set(min, { candles: res.candles, edge, fromMs: from, toMs: to })
+      fetchCacheRef.current.set(min, { candles: res.candles, overlays: res.overlays ?? [], edge, fromMs: from, toMs: to })
       setFetched(res.candles)
+      setDrillOverlays(res.overlays ?? [])
       setDataEdge(edge != null ? { ts: edge, tf: min } : null)
       setFetchStatus(res.candles.length ? 'ok' : 'empty')
       // The SERVER's own sentence, verbatim — it is the only one that can name the date. Asking
@@ -978,8 +1010,13 @@ export default function ChartPanel({
     const bars = res.candles.filter(c => c.time < oldest)
     const edge = res.hardEdge && res.dataStartMs != null ? res.dataStartMs : (cached?.edge ?? null)
     if (edge != null) setDataEdge({ ts: edge, tf: min })
+    // The older window replays its own structure; merge rather than replace, or scrolling left
+    // would drop the legs already on screen.
+    const mergedOld = mergeOverlays(res.overlays ?? [], drillOverlaysRef.current)
+    setDrillOverlays(mergedOld)
     fetchCacheRef.current.set(min, {
       candles: [...bars, ...loaded],
+      overlays: mergedOld,
       edge,
       fromMs: Math.min(from, cached?.fromMs ?? from),
       toMs: cached?.toMs ?? oldest,
@@ -1000,8 +1037,11 @@ export default function ChartPanel({
     const res = await onRequestCandles(drillLabel(min), newest, to)
     const bars = res.candles.filter(c => c.time > newest)
     const cached = fetchCacheRef.current.get(min)
+    const mergedNew = mergeOverlays(drillOverlaysRef.current, res.overlays ?? [])
+    setDrillOverlays(mergedNew)
     fetchCacheRef.current.set(min, {
       candles: [...loaded, ...bars],
+      overlays: mergedNew,
       edge: cached?.edge ?? null,
       fromMs: cached?.fromMs ?? newest,
       toMs: Math.max(to, cached?.toMs ?? to),
@@ -1664,9 +1704,25 @@ export default function ChartPanel({
   // in behind it. One list, so the group roster, the counts and the render effect all describe the
   // same set — a group listed off one source and drawn off another is how a toggle ends up claiming
   // to show something that isn't there.
+  // 🔴 **In a DRILL-DOWN this is the window's OWN structure, not the spec's.** The spec's overlays
+  // describe the timeframe the run TRADED; a drill-down swaps the candles underneath them, and
+  // until 2026-08-08 nothing swapped the overlays — so an M5 view of a 15m run drew M15 swings on
+  // M5 bars, every label sitting at a price that is not a swing on anything visible. It reads as
+  // the structure engine disagreeing with the TradingView indicator it was ported from, which is
+  // exactly how it was reported. Structure is a property of the BARS.
+  //
+  // ⚠ **While the drill is still loading, `displayCandles` shows the BASE bars** (see the
+  // placeholder branch there), so the base overlays are the correct ones for what is on screen —
+  // hence the `fetched.length` gate rather than `isFetchMode` alone. The two must stay in step: a
+  // mismatch here is the same defect in miniature.
+  //
+  // ⚠ **The ANALYSIS layers (fair value gaps, order blocks, liquidity) drop out of a drill-down,
+  // deliberately.** They are anchored to the run's own trades/blocks/misses and computed on its
+  // bars, so there is no honest version of them at another timeframe — and drawing the base ones
+  // is the very defect above. Their toggles go with them rather than showing an empty layer.
   const allOverlays = useMemo(
-    () => spec.overlays,
-    [spec.overlays],
+    () => (isFetchMode && fetched.length ? drillOverlays : spec.overlays),
+    [isFetchMode, fetched.length, drillOverlays, spec.overlays],
   )
 
   // Generic overlays (box/hline/vline) carry strategy structure, grouped by `group`. Each group
@@ -2193,6 +2249,7 @@ export default function ChartPanel({
       // memo split is the other half, and both are kept because either alone leaves the hazard live
       // for the next reader who adds a dependency.
       setFetched(prev => (prev.length ? [] : prev))
+      setDrillOverlays(prev => (prev.length ? [] : prev))
       setFetchStatus('idle')
       setFetchNote(null)
       setDataEdge(null)

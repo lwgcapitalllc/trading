@@ -230,19 +230,40 @@ def build_market_structure_overlays(candles: list[dict], major_length: int = 15)
             if intl.demoted_low_label and intl.demoted_low_price is not None:
                 int_pending.append((i, _label(GROUP_SWING_LABELS, t(intl.demoted_low_index), intl.demoted_low_price, intl.demoted_low_label, _INT_BULL, "below"), True))
 
-            # ── Internal breaks: iBOS / iSOS. Anchor the line at the internal swing WICK that broke
-            # — the ifib_seed leg anchors (ash for an up-break, asl for a down-break) land exactly on
-            # that wick. NOT int_break_origin_loc: that's the order-block scan origin and floats off the
-            # wick, which is what made the internal lines miss their candles. Grouped current/historic
-            # after the walk. ──
-            if (intl.bull_bos or intl.bull_sos) and intl.ifib_seed_ash is not None and intl.ifib_seed_ash_loc is not None:
-                price, loc, sos = intl.ifib_seed_ash, intl.ifib_seed_ash_loc, bool(intl.bull_sos)
-                int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BULL, dashed=sos), False))
-                int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BULL, "above"), False))
-            if (intl.bear_bos or intl.bear_sos) and intl.ifib_seed_asl is not None and intl.ifib_seed_asl_loc is not None:
-                price, loc, sos = intl.ifib_seed_asl, intl.ifib_seed_asl_loc, bool(intl.bear_sos)
-                int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BEAR, dashed=sos), False))
-                int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BEAR, "below"), False))
+            # ── Internal breaks: iBOS / iSOS. The line runs from the WICK that made the broken
+            # level to the bar that broke it, so it reads exactly like its external BOS/SOS
+            # counterpart twenty lines up. Grouped current/historic after the walk. ──
+            #
+            # 🔴 **It used to take BOTH the price and the bar from `ifib_seed_ash`/`_asl`, and that
+            # is wrong at one of the engine's six break sites.** The seed is a fib LEG, and at five
+            # of them the end of that leg happens to be the level that broke; at the first bear-iSOS
+            # branch the break is `i_last_hl` while the seed's bottom is `i_tracked_ext`. MEASURED
+            # over 2.5 years of real M5 bars: **22 of 25 bear iSOS drew at a price that is not the
+            # level that broke**, by up to $18.47, against 144/144 correct everywhere else.
+            #
+            # ⚠ **The reported symptom was the LINE, not the price** (Aaron, 2026-08-08: *"the
+            # internal SOS is not showing the horizontal lines like the mpc_assistant"*). A wrong
+            # anchor bar can land on the break bar itself, and a zero-width `hline` draws NOTHING —
+            # so the tag rendered with no line under it. On his own window one iSOS spanned 0 bars
+            # and another 1; across the sample 12.4% of internal breaks drew a line ≤1 bar long,
+            # against 2.4% once anchored properly.
+            #
+            # ⚠ **Never anchor these on `int_break_origin_loc`** — it is the order-block scan
+            # origin, and over the same 169 breaks it sits on the broken wick **zero** times.
+            if intl.bull_bos or intl.bull_sos:
+                sos = bool(intl.bull_sos)
+                price = intl.bull_sos_price if sos else intl.bull_bos_price
+                loc = intl.bull_sos_loc if sos else intl.bull_bos_loc
+                if price is not None and loc is not None:
+                    int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BULL, dashed=sos), False))
+                    int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BULL, "above"), False))
+            if intl.bear_bos or intl.bear_sos:
+                sos = bool(intl.bear_sos)
+                price = intl.bear_sos_price if sos else intl.bear_bos_price
+                loc = intl.bear_sos_loc if sos else intl.bear_bos_loc
+                if price is not None and loc is not None:
+                    int_pending.append((i, _hline("", t(loc), t(i), price, _INT_BEAR, dashed=sos), False))
+                    int_pending.append((i, _label("", t(_mid(loc, i)), price, "iSOS" if sos else "iBOS", _INT_BEAR, "below"), False))
 
         # Active (unbroken) external swings → a ray to the last bar + its ASH/ASL label.
         if active_high is not None:

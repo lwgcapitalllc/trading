@@ -44,7 +44,11 @@ from services.fvg_overlays import GROUP_FVG, build_fvg_overlays
 from services.liquidity_overlays import GROUPS as GROUPS_LIQ
 from services.liquidity_overlays import build_liquidity_overlays
 from services.ob_overlays import GROUP_OB, build_ob_overlays
-from services.structure_overlays import build_market_structure_overlays
+from services.structure_overlays import (
+    GROUP_INTERNAL,
+    GROUP_INTERNAL_HISTORIC,
+    build_market_structure_overlays,
+)
 from services.vwap_overlays import build_vwap_indicator
 
 log = logging.getLogger("CHARTSPEC")
@@ -102,6 +106,12 @@ _DRILL_CANDLE_CAP = 60_000
 # long weekend / holiday (bars are absent then too, but that isn't a data boundary).
 _HARD_EDGE_SLOP_MS = 4 * 24 * 60 * 60 * 1000
 
+# Bars of context replayed IN FRONT of a drill-down window before its structure is read off.
+# The structure engine is a streaming state machine, so a cold replay opens with no swings and no
+# active levels — i.e. the first stretch of every drill-down would be blank and then "catch up",
+# which reads as the layer being broken rather than as the engine warming.
+_DRILL_WARMUP_BARS = 2_000
+
 
 def _ts_to_epoch_ms(ts) -> int:
     """pandas Timestamp / datetime → epoch ms (UTC). Naive values are treated as UTC."""
@@ -156,13 +166,27 @@ def _fetch_candles(
     # 12.63s by iterrows against 0.15s here, byte-identical output — 85x, paid on every chart
     # request. `iterrows` builds a fresh Series per row, which is the whole cost.
     df = df.sort_index()
-    # `astype("int64")` on a DatetimeIndex is UTC epoch nanos for BOTH naive and tz-aware
-    # indexes — pandas stores aware timestamps as UTC internally and the zone is display only.
-    # So this matches `_ts_to_epoch_ms` (naive read as UTC, aware converted) with no branch.
+    # `astype("int64")` on a DatetimeIndex is UTC epoch in the index's OWN UNIT for both naive and
+    # tz-aware indexes — pandas stores aware timestamps as UTC internally and the zone is display
+    # only. So this matches `_ts_to_epoch_ms` (naive read as UTC, aware converted) with no branch.
     # ⚠ An explicit `tz_convert("UTC")` branch was written here first and DELETED: mutating it
     # out left the tz test green, because there was never a case for it to handle. A branch
     # nothing can exercise is not defence, it is untested code.
-    times = (df.index.astype("int64") // 1_000_000).tolist()
+    #
+    # ⚠ **THE UNIT MUST BE STATED, AND IT WAS NOT UNTIL 2026-08-08: this read `astype("int64") //
+    # 1_000_000`, i.e. nanos-to-millis, on an index whose unit pandas chooses.** Nanoseconds was
+    # the only resolution pandas 1.x had and is still the default in pandas 2 — so the old divide
+    # is CORRECT on this venv (2.3.3) and nothing served from it was ever wrong. **pandas 3 makes
+    # MICROseconds the default for parsed timestamps**, and the same divide then yields epoch
+    # SECONDS wearing the name `_ms` — every candle timestamp 1000x too small, silently, in a field
+    # every consumer reads as ms. MEASURED on pandas 3.0.5: `2026-08-05 00:00` comes back as
+    # `1785888000` instead of `1785888000000`.
+    #
+    # So this is a LATENT bug that fires on the day this venv upgrades, not a live one — recorded
+    # as latent because the pin is what makes it latent, and a pin is not a fix. `as_unit("ms")`
+    # states the unit instead of assuming it and is byte-identical under pandas 2, so the answer
+    # stops depending on how pandas happened to parse the cache file.
+    times = df.index.as_unit("ms").astype("int64").tolist()
     rows = [
         {"time": t, "open": o, "high": h, "low": lo, "close": c}
         for t, o, h, lo, c in zip(
@@ -907,6 +931,51 @@ def _is_broker_floor(instrument: str, timeframe: str, data_start_ms: int, runner
     return data_start_ms - floor_ms <= _FLOOR_SLOP_MS
 
 
+def _drill_structure(candles: list[dict], from_ms: int, to_ms: int) -> list[dict]:
+    """Market structure for a DRILL-DOWN window, computed on the bars the reader is looking at.
+
+    🔴 **Structure used to be computed ONCE, on the run's own timeframe, and drawn over whatever
+    candles were on screen — so a drill-down painted the base timeframe's swings on top of finer
+    bars.** Reported by Aaron on 2026-08-08 against the M5 drill-down of a 15m run: the chart's own
+    OHLC readout was the M5 bar (`C 4,339.80  V 908`) while every label on it came from the M15
+    replay — `SOS @4242.99`, `iSL @4247.23` — prices that are not swings on the bars underneath.
+    The M5 answer is `SOS @4224.73`, which is what TradingView drew for the same window. **Nothing
+    errored, both halves were internally correct, and the chart read as an engine that disagreed
+    with the indicator it was ported from.**
+
+    ⚠ **`candles` must already carry `_DRILL_WARMUP_BARS` of context in front of `from_ms`** — see
+    that constant. Only overlays whose span reaches into `[from_ms, to_ms]` are returned, so the
+    warm-up is context and never content.
+
+    ⚠ **Internal content is demoted to HISTORIC.** `build_market_structure_overlays` calls the
+    newest leg in whatever it replayed "current", and a drill-down window ends at the reader's
+    viewport rather than at the run — so paging older would mint a second, third, fourth "current"
+    leg, for a group whose entire meaning is *the leg this run is in now*. Same call the deleted
+    `_demote_page_internal` made, for the same reason.
+    """
+    if not candles:
+        return []
+    try:
+        overlays = build_market_structure_overlays(candles)
+    except Exception as exc:  # noqa: BLE001 — a page is about its BARS; structure is a bonus
+        log.warning("drill structure: replay failed: %s", exc)
+        return []
+
+    out: list[dict] = []
+    for ov in overlays:
+        start = ov["t"] if ov["type"] == "label" else ov["t0"]
+        end = ov["t"] if ov["type"] == "label" else ov["t1"]
+        if end < from_ms or start > to_ms:
+            continue
+        if ov["group"] == GROUP_INTERNAL:
+            ov["group"] = GROUP_INTERNAL_HISTORIC
+            ov["requires"] = [GROUP_INTERNAL]
+        elif ov.get("requires") == [GROUP_INTERNAL]:
+            ov["requires"] = [GROUP_INTERNAL, GROUP_INTERNAL_HISTORIC]
+        out.append(ov)
+    return out
+
+
 def build_run_candles(
     run_id: str, timeframe: str, from_ms: int, to_ms: int,
 ) -> Optional[dict]:
@@ -952,10 +1021,28 @@ def build_run_candles(
         from_ms = to_ms - max_span_ms
 
     # The fetch is day-granular; widen to whole UTC days, then slice back to the exact window.
-    start_date = datetime.fromtimestamp(from_ms / 1000, tz=timezone.utc).date().isoformat()
+    # ⚠ The START is widened FURTHER, by `_DRILL_WARMUP_BARS` of this timeframe, so the structure
+    # engine has context to replay through before the window the reader sees. Calendar days rather
+    # than trading days (`* 7 / 5`), because the fetch is stated in dates and a weekend carries no
+    # bars. Those extra bars are trimmed out of `candles` below — they are NEVER shipped, so
+    # `data_start_ms` and `hard_edge` still describe the window that was asked for.
+    warmup_ms = int(_DRILL_WARMUP_BARS * tf_min * 60_000 * 7 / 5)
+    fetch_from_ms = from_ms - warmup_ms
+    start_date = datetime.fromtimestamp(fetch_from_ms / 1000, tz=timezone.utc).date().isoformat()
     end_date = datetime.fromtimestamp(to_ms / 1000, tz=timezone.utc).date().isoformat()
-    candles, feed_error = _fetch_candles(instrument, start_date, end_date, timeframe, runner)
-    candles = [c for c in candles if from_ms <= c["time"] <= to_ms]
+    fetched, feed_error = _fetch_candles(instrument, start_date, end_date, timeframe, runner)
+    if feed_error is not None:
+        # ⚠ The warm-up must never be able to REFUSE a window the reader could otherwise see.
+        # Reaching back 2,000 bars can cross the broker's measured history floor, and `BarSource`
+        # raises on that — so a drill-down near the start of history would come back
+        # `available: false` for bars the feed holds. Context is a bonus; the window is the point.
+        log.info("run_candles: warmed fetch failed (%s) — retrying bare window", feed_error)
+        bare_start = datetime.fromtimestamp(from_ms / 1000, tz=timezone.utc).date().isoformat()
+        fetched, feed_error = _fetch_candles(instrument, bare_start, end_date, timeframe, runner)
+    fetched = [c for c in fetched if c["time"] <= to_ms]
+    # Structure is read off the WARMED series; the window itself is what gets shipped.
+    overlays = _drill_structure(fetched, from_ms, to_ms)
+    candles = [c for c in fetched if from_ms <= c["time"]]
     data_start_ms = candles[0]["time"] if candles else None
     # True broker limit ⇔ data exists, its oldest bar is well past what we asked for (beyond a
     # weekend/holiday gap), OUR cap didn't clip the request, AND that oldest bar is sitting on the
@@ -1001,7 +1088,10 @@ def build_run_candles(
         "feed_error": feed_error,
         "data_start_ms": data_start_ms,
         "hard_edge": hard_edge,
+        # Structure computed ON THESE BARS. The panel swaps it in for the spec's base-timeframe
+        # overlays while a drill-down is showing — see `_drill_structure`.
+        "overlays": overlays,
     }
-    log.info("run_candles: %s %s [%s, %s] -> %d candles (hard_edge=%s, feed_error=%s)",
-             run_id, timeframe, start_date, end_date, len(candles), hard_edge, feed_error)
+    log.info("run_candles: %s %s [%s, %s] -> %d candles, %d overlays (hard_edge=%s, feed_error=%s)",
+             run_id, timeframe, start_date, end_date, len(candles), len(overlays), hard_edge, feed_error)
     return out
