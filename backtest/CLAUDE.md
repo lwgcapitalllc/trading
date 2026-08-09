@@ -417,7 +417,7 @@ surfaces the agent's `mt5_error`, which is what distinguishes the two cases.
 
 **Backtest broker = Vantage demo (backtest-ONLY; live trading is always PU Prime).** Chosen so bar +
 tick data match the `VANTAGE_XAUUSD` TradingView feed the strategies are designed against. MT5_Lab is
-logged into the Vantage demo (account 25815745, `VantageMarkets-Demo`); **gold symbol is `XAUUSD`, no
+logged into the Vantage demo (account 25893735, `VantageMarkets-Demo`); **gold symbol is `XAUUSD`, no
 `.s` suffix** (that was PU Prime). See `algos/CLAUDE.md` for the MT5_Lab pin.
 
 **Don't hand-feed broker facts — pull them.** The agent has two read-only endpoints that read the live

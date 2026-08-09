@@ -81,12 +81,12 @@ def test_a_connected_terminal_reports_which_account_it_is_bound_to(monkeypatch):
     """Worth surfacing: the agent binds MT5_Lab ONLY, and a run against the
     wrong account would produce a plausible result off the wrong feed."""
     _stub(monkeypatch, tunnel=True, vps=True, nt8=True, mt5=True,
-          terminal={"connected": True, "account": 25815745,
+          terminal={"connected": True, "account": 25893735,
                     "server": "VantageMarkets-Demo", "error": None})
     h = system._build_health()
     assert h["mt5_connected"] is True
     assert h["mt5_server"] == "VantageMarkets-Demo"
-    assert h["mt5_account"] == 25815745
+    assert h["mt5_account"] == 25893735
 
 
 def test_terminal_fields_stay_None_when_the_agent_is_down(monkeypatch):

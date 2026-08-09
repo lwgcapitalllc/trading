@@ -369,7 +369,7 @@ class AccountProfile:
 _XAUUSD_SWAP = SwapModel(swap_long_points=-79.60, swap_short_points=30.25,
                          contract_size=100.0, digits=2, triple_weekday=2)
 
-# Vantage demo (account 25815745, VantageMarkets-Demo) — the BACKTEST-ONLY broker, chosen so bar and
+# Vantage demo (account 25893735, VantageMarkets-Demo) — the BACKTEST-ONLY broker, chosen so bar and
 # tick data match the VANTAGE_XAUUSD TradingView feed the strategies are designed against. Live
 # trading is always PU Prime; this profile exists purely to price backtests on the matching feed.
 # Every value below was read straight off the live terminal on 2026-07-22 via the agent's
@@ -377,6 +377,23 @@ _XAUUSD_SWAP = SwapModel(swap_long_points=-79.60, swap_short_points=30.25,
 # -74.84, swap_short +26.98, triple-swap on Wednesday (MT5 rollover3days=3 → our Monday-based 2).
 # Commission is 0.00 because it is a DEMO account — Aaron's standing fact: demos never charge
 # commission (a live Vantage RAW ECN would be $3.00/side/lot, but we never trade Vantage live).
+#
+# 🔴 **THAT MEASUREMENT WAS TAKEN ON A DEMO ACCOUNT THAT NO LONGER EXISTS, AND THE SWAP HAS MOVED.**
+# 25815745 was replaced by **25893735** (same broker, same server, same symbol). Re-read off the
+# live terminal 2026-08-09: **swap_long -79.60, swap_short +30.25** — 6.4% and 12.1% away from the
+# numbers below, with contract size, digits, swap_mode and rollover3days all unchanged.
+# ⚠ **The VALUE below is deliberately NOT updated, because changing it silently re-prices every
+# charged figure recorded in this repo** — `backtest/CLAUDE.md`'s "+spread+swap 123.90R" and the
+# 2026-08-02 cost table were all measured at -74.84 / +26.98. Moving a measured cost input is a
+# baseline change and belongs in its own commit with the affected figures restated, not as a side
+# effect of correcting an account number. One line when that is wanted.
+# ⚠ **Do NOT read the new pair as "Vantage now matches PU Prime" just because -79.60 / +30.25 are
+# the same two numbers `_XAUUSD_SWAP` carries.** That is one reading on one day off one account;
+# swaps are re-quoted and the PU Prime figure was measured on a different date. Two numbers
+# agreeing once is a coincidence until it is measured twice.
+# ⚠ **The SPREAD is a separate question and is NOT re-opened by this.** The terminal read 0.27 at
+# that instant, which is one tick, not a measurement — the recorded 0.220 median is over 1,494,459
+# ticks with p90 at exactly 0.270, so a single 0.27 is inside it and contradicts nothing.
 _XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.98,
                                  contract_size=100.0, digits=2, triple_weekday=2)
 

@@ -370,11 +370,11 @@ def test_terminal_status_is_None_when_the_agent_cannot_be_asked(monkeypatch):
 def test_terminal_status_reports_the_account_it_is_bound_to(monkeypatch):
     monkeypatch.setattr(
         "services.mt5_agent_client.status",
-        lambda: {"mt5_connected": True, "account": 25815745,
+        lambda: {"mt5_connected": True, "account": 25893735,
                  "server": "VantageMarkets-Demo", "error": None},
     )
     st = sup.mt5_terminal_status()
-    assert st == {"connected": True, "account": 25815745,
+    assert st == {"connected": True, "account": 25893735,
                   "server": "VantageMarkets-Demo", "error": None}
 
 
