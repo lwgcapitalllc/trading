@@ -248,32 +248,32 @@ color i_nyHLColor     = color.black
 //  INTERNAL FIB INPUTS
 //============================================================
 var GRP_IFIB      = "Internal Fib"
-bool showIFibInput     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
+bool showIFibInput     = input.bool(false, "Show Internal Fib (removed 2026-08-09 — compile tokens)", group = GRP_IFIB, active = false, display = display.none)
 bool showIFib = marketStructureOnly ? false : showIFibInput
-int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFibInput, display = display.none)
+int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = false, display = display.none)
 
-color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = showIFibInput, display = display.none)
+color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = false, display = display.none)
 string iFibo1Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo1", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = showIFibInput, display = display.none)
+color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = false, display = display.none)
 string iFibo2Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo2", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = showIFibInput, display = display.none)
+color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = false, display = display.none)
 string iFibo3Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo3", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = showIFibInput, display = display.none)
+color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = false, display = display.none)
 string iFibo4Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo4", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = showIFibInput, display = display.none)
+color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = false, display = display.none)
 string iFibo5Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo5", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = showIFibInput, display = display.none)
+color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = false, display = display.none)
 string iFibo6Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo6", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = showIFibInput, display = display.none)
+color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = false, display = display.none)
 string iFibo0Style      = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo0",   options = ["─","┈","╌"], display = display.none)
 
-color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = showIFibInput, display = display.none)
+color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = false, display = display.none)
 string iFibo100Style    = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo100", options = ["─","┈","╌"], display = display.none)
 
 //============================================================
@@ -1305,29 +1305,6 @@ var int   i_sos_watch_hh_loc= na
 var float i_sos_watch_ll    = na
 var int   i_sos_watch_ll_loc= na
 
-// Internal fib anchor vars — declared before internal structure block so captures work
-var float iFib_asl     = na
-var int   iFib_asl_loc = na
-var float iFib_ash     = na
-var int   iFib_ash_loc = na
-var int   iFib_dir     = 0
-
-// Internal fib touched tracking — same system as micro fib
-color IFIB_GREY           = color.new(#888888, 0)
-var bool iFib0Touched     = false   // 0.0
-var bool iFib382Touched   = false   // 0.382 TP2
-var bool iFib50Touched    = false   // 0.5  FFT
-var bool iFib618Touched   = false   // 0.618 E1 — gate
-var bool iFib702Touched   = false   // 0.702 E2
-var bool iFib786Touched   = false   // 0.786 E3
-var bool iFib886Touched   = false   // 0.886 E4
-var bool iFib100Touched   = false   // 1.0
-var bool iFib618EverReached = false  // gate flag
-var float iFib_tp3_hit_price = na    // frozen price level TP3 was hit at (for detecting a later break-through)
-var float iFibPrevAsh = na   // detects when the extending anchor itself changed this bar
-var float iFibPrevAsl = na   // (a live wick), so touched-checks don't self-trigger off it
-var bool  iFibResetActive    = false // true once TP3 has been hit — resets this internal fib immediately
-
 float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
 
 // Internal structure is naturally scoped to the current active external swing —
@@ -1556,15 +1533,6 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
         int_bull_break := true
         int_bull_bos   := true
         int_break_origin_loc := i_tracked_ext_loc
-        // Bull BOS: bottom=i_last_hl (just set above), top=i_sw_price (high being broken)
-        if showIFib and not na(i_last_hl) and not na(i_sw_price)
-            iFib_asl := i_last_hl,  iFib_asl_loc := i_last_hl_loc
-            iFib_ash := i_sw_price, iFib_ash_loc := i_sw_loc
-            iFib_dir := 1
-            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_price       := na
         i_tracked_ext    := na
@@ -1598,15 +1566,6 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
         int_bear_break := true
         int_bear_bos   := true
         int_break_origin_loc := i_tracked_ext_loc
-        // Bear BOS: bottom=i_sw_price (low being broken), top=i_last_lh (just set above)
-        if showIFib and not na(i_sw_price) and not na(i_last_lh)
-            iFib_asl := i_sw_price,  iFib_asl_loc := i_sw_loc
-            iFib_ash := i_last_lh,   iFib_ash_loc := i_last_lh_loc
-            iFib_dir := -1
-            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_price        := na
         i_tracked_ext     := na
@@ -1642,15 +1601,6 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bear_break := true
         int_bear_sos   := true
         int_break_origin_loc := i_sw_loc
-        // Bear iSOS: bottom=i_tracked_ext, top=i_sw_price (iLH being confirmed as ASH)
-        if showIFib and not na(i_tracked_ext) and not na(i_sw_price)
-            iFib_asl := i_tracked_ext, iFib_asl_loc := i_tracked_ext_loc
-            iFib_ash := i_sw_price,    iFib_ash_loc := i_sw_loc
-            iFib_dir := -1
-            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1681,15 +1631,6 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bull_break := true
         int_bull_sos   := true
         int_break_origin_loc := i_sw_loc
-        // Bull iSOS: bottom=i_sw_price (iHL), top=i_last_lh (LH being broken)
-        if showIFib and not na(i_sw_price) and not na(i_last_lh)
-            iFib_asl := i_sw_price, iFib_asl_loc := i_sw_loc
-            iFib_ash := i_last_lh,  iFib_ash_loc := i_last_lh_loc
-            iFib_dir := 1
-            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1719,15 +1660,6 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bull_break := true
         int_bull_sos   := true
         int_break_origin_loc := i_sw_loc
-        // Bull iSOS: bottom=i_sw_price (last iHL), top=i_sos_watch_hh (level being broken)
-        if showIFib and not na(i_sw_price) and not na(i_sos_watch_hh)
-            iFib_asl := i_sw_price,      iFib_asl_loc := i_sw_loc
-            iFib_ash := i_sos_watch_hh,  iFib_ash_loc := i_sos_watch_hh_loc
-            iFib_dir := 1
-            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1758,15 +1690,6 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bear_break := true
         int_bear_sos   := true
         int_break_origin_loc := i_sw_loc
-        // Bear iSOS: bottom=i_sos_watch_ll (level being broken), top=i_sw_price (last iLH)
-        if showIFib and not na(i_sos_watch_ll) and not na(i_sw_price)
-            iFib_asl := i_sos_watch_ll,     iFib_asl_loc := i_sos_watch_ll_loc
-            iFib_ash := i_sw_price,         iFib_ash_loc := i_sw_loc
-            iFib_dir := -1
-            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -3197,161 +3120,23 @@ if bar_index >= 0
 //  macro_origin_locked alone, so nothing the strategy reads changes.)
 
 
-//============================================================
-//  INTERNAL FIB
-//============================================================
-var line  iFL0   = na, var label ifLbl0   = na
-var line  iFL382 = na, var label ifLbl382 = na
-var line  iFL50  = na, var label ifLbl50  = na
-var line  iFL618 = na, var label ifLbl618 = na
-var line  iFL702 = na, var label ifLbl702 = na
-var line  iFL786 = na, var label ifLbl786 = na
-var line  iFL886 = na, var label ifLbl886 = na
-var line  iFL100 = na, var label ifLbl100 = na
-
-// Clear internal fib when external BOS/SOS fires — wait for new iBOS/iSOS
-if st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos
-    iFib_dir := 0, iFib_asl := na, iFib_asl_loc := na, iFib_ash := na, iFib_ash_loc := na
-    iFibPrevAsh := na, iFibPrevAsl := na
-    iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
-    iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
-    iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
-    iFib_tp3_hit_price := na, iFibResetActive := false
-    line.delete(iFL0),   label.delete(ifLbl0)
-    line.delete(iFL382), label.delete(ifLbl382)
-    line.delete(iFL50),  label.delete(ifLbl50)
-    line.delete(iFL618), label.delete(ifLbl618)
-    line.delete(iFL702), label.delete(ifLbl702)
-    line.delete(iFL786), label.delete(ifLbl786)
-    line.delete(iFL886), label.delete(ifLbl886)
-    line.delete(iFL100), label.delete(ifLbl100)
-
-// Track live low/high since iBOS fired — updates the moving anchor
-if iFib_dir == -1 and not na(iFib_ash)
-    if na(iFib_asl) or low < iFib_asl
-        iFib_asl     := low
-        iFib_asl_loc := bar_index
-else if iFib_dir == 1 and not na(iFib_asl)
-    if na(iFib_ash) or high > iFib_ash
-        iFib_ash     := high
-        iFib_ash_loc := bar_index
-
-// Internal fib touched tracking — same logic as micro fib
-bool iFibExtChanged = (not na(iFibPrevAsh) and iFib_ash != iFibPrevAsh) or (not na(iFibPrevAsl) and iFib_asl != iFibPrevAsl)
-if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash) and not iFibExtChanged
-    float iFR  = iFib_ash - iFib_asl
-    if iFR > 0
-        // Level prices (same direction logic as micro fib)
-        float iTP618 = iFib_dir == 1 ? iFib_ash - iFR*0.618 : iFib_asl + iFR*0.618
-        float iTP702 = iFib_dir == 1 ? iFib_ash - iFR*0.702 : iFib_asl + iFR*0.702
-        float iTP786 = iFib_dir == 1 ? iFib_ash - iFR*0.786 : iFib_asl + iFR*0.786
-        float iTP886 = iFib_dir == 1 ? iFib_ash - iFR*0.886 : iFib_asl + iFR*0.886
-        float iTP50  = iFib_dir == 1 ? iFib_ash - iFR*0.5   : iFib_asl + iFR*0.5
-        float iTP382 = iFib_dir == 1 ? iFib_ash - iFR*0.382 : iFib_asl + iFR*0.382
-        float iTP0   = iFib_dir == 1 ? iFib_ash              : iFib_asl
-        float iTP100 = iFib_dir == 1 ? iFib_asl              : iFib_ash
-
-        // Gate: 0.618 must be reached first
-        bool iGate618 = iFib_dir == 1 ? low <= iTP618 : high >= iTP618
-        if iGate618 and not iFib618Touched
-            iFib618Touched := true
-
-        if iFib618Touched
-            iFib702Touched := f_checkTouch(iFib702Touched, iTP702, iFib_dir == 1 ? low <= iTP702 : high >= iTP702)
-            iFib786Touched := f_checkTouch(iFib786Touched, iTP786, iFib_dir == 1 ? low <= iTP786 : high >= iTP786)
-            iFib886Touched := f_checkTouch(iFib886Touched, iTP886, iFib_dir == 1 ? low <= iTP886 : high >= iTP886)
-            iFib100Touched := f_checkTouch(iFib100Touched, iTP100, iFib_dir == 1 ? low <= iTP100 : high >= iTP100)
-
-        if iFib618EverReached
-            iFib50Touched  := f_checkTouch(iFib50Touched,  iTP50,  iFib_dir == 1 ? high >= iTP50  : low <= iTP50)
-            iFib382Touched := f_checkTouch(iFib382Touched, iTP382, iFib_dir == 1 ? high >= iTP382 : low <= iTP382)
-            bool iFib0WasTouched = iFib0Touched
-            iFib0Touched := f_checkTouch(iFib0Touched, iTP0, iFib_dir == 1 ? high >= iTP0 : low <= iTP0)
-            if iFib0Touched and not iFib0WasTouched
-                iFib_tp3_hit_price := iTP0
-
-        if iGate618 and not iFib618EverReached
-            iFib618EverReached := true
-
-if iFib_dir != 0
-    iFibPrevAsh := iFib_ash
-    iFibPrevAsl := iFib_asl
-
-if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
-    float iH  = iFib_ash
-    float iL  = iFib_asl
-    int   iS  = iFib_asl_loc
-    float iR  = iH - iL
-    int   iE  = bar_index + iFibExtend
-
-    if iR > 0
-        // Direction aware levels
-        // Bullish: 0=top(iH), 1=bottom(iL), levels go DOWN from top
-        // Bearish: 0=bottom(iL), 1=top(iH), levels go UP from bottom
-        float iP0   = iFib_dir == 1 ? iH : iL
-        float iP382 = iFib_dir == 1 ? iH - iR*0.382 : iL + iR*0.382
-        float iP50  = iFib_dir == 1 ? iH - iR*0.5   : iL + iR*0.5
-        float iP618 = iFib_dir == 1 ? iH - iR*0.618 : iL + iR*0.618
-        float iP702 = iFib_dir == 1 ? iH - iR*0.702 : iL + iR*0.702
-        float iP786 = iFib_dir == 1 ? iH - iR*0.786 : iL + iR*0.786
-        float iP886 = iFib_dir == 1 ? iH - iR*0.886 : iL + iR*0.886
-        float iP100 = iFib_dir == 1 ? iL : iH
-
-        // Colors — grey until touched, then the level's configured color
-        color c0 = iFib0Touched ? iFibo0Color : IFIB_GREY
-        color c382 = iFib382Touched ? iFibo1Color : IFIB_GREY
-        color c50 = iFib50Touched ? iFibo2Color : IFIB_GREY
-        color c618 = iFib618Touched ? iFibo3Color : IFIB_GREY
-        color c702 = iFib702Touched ? iFibo4Color : IFIB_GREY
-        color c786 = iFib786Touched ? iFibo5Color : IFIB_GREY
-        color c886 = iFib886Touched ? iFibo6Color : IFIB_GREY
-        color c100 = iFib100Touched ? iFibo100Color : IFIB_GREY
-
-        // FFT label when 0.5 first touched, otherwise honor TP/Entry vs Fib Value label mode
-        string tx0 = f_fiboLabel(0.0, "TP3", "TP3") + str.tostring(iP0, format.mintick) + ")"
-        string tx382 = f_fiboLabel(0.382, "TP2", "TP2") + str.tostring(iP382, format.mintick) + ")"
-        string tx50 = (iFib50Touched ? "FFT  (" : f_fiboLabel(0.5, "TP1", "TP1")) + str.tostring(iP50, format.mintick) + ")"
-        string tx618 = f_fiboLabel(0.618, "E1", "E1") + str.tostring(iP618, format.mintick) + ")"
-        string tx702 = f_fiboLabel(0.702, "E2", "E2") + str.tostring(iP702, format.mintick) + ")"
-        string tx786 = f_fiboLabel(0.786, "E3", "E3") + str.tostring(iP786, format.mintick) + ")"
-        string tx886 = f_fiboLabel(0.886, "E4", "E4") + str.tostring(iP886, format.mintick) + ")"
-        string tx100 = f_fiboLabel(1.0, "1.0", "1.0") + str.tostring(iP100, format.mintick) + ")"
-
-        bool ishow = not iFibResetActive
-        [nl0, nlb0] = f_fibLevel(ishow, iFL0, ifLbl0, iS, iP0, iE, c0, f_fiboLineStyle(iFibo0Style), tx0)
-        iFL0 := nl0, ifLbl0 := nlb0
-        [nl382, nlb382] = f_fibLevel(ishow, iFL382, ifLbl382, iS, iP382, iE, c382, f_fiboLineStyle(iFibo1Style), tx382)
-        iFL382 := nl382, ifLbl382 := nlb382
-        [nl50, nlb50] = f_fibLevel(ishow, iFL50, ifLbl50, iS, iP50, iE, c50, f_fiboLineStyle(iFibo2Style), tx50)
-        iFL50 := nl50, ifLbl50 := nlb50
-        [nl618, nlb618] = f_fibLevel(ishow, iFL618, ifLbl618, iS, iP618, iE, c618, f_fiboLineStyle(iFibo3Style), tx618)
-        iFL618 := nl618, ifLbl618 := nlb618
-        [nl702, nlb702] = f_fibLevel(ishow, iFL702, ifLbl702, iS, iP702, iE, c702, f_fiboLineStyle(iFibo4Style), tx702)
-        iFL702 := nl702, ifLbl702 := nlb702
-        [nl786, nlb786] = f_fibLevel(ishow, iFL786, ifLbl786, iS, iP786, iE, c786, f_fiboLineStyle(iFibo5Style), tx786)
-        iFL786 := nl786, ifLbl786 := nlb786
-        [nl886, nlb886] = f_fibLevel(ishow, iFL886, ifLbl886, iS, iP886, iE, c886, f_fiboLineStyle(iFibo6Style), tx886)
-        iFL886 := nl886, ifLbl886 := nlb886
-        [nl100, nlb100] = f_fibLevel(ishow, iFL100, ifLbl100, iS, iP100, iE, c100, f_fiboLineStyle(iFibo100Style), tx100)
-        iFL100 := nl100, ifLbl100 := nlb100
-    else
-        line.delete(iFL0),   label.delete(ifLbl0)
-        line.delete(iFL382), label.delete(ifLbl382)
-        line.delete(iFL50),  label.delete(ifLbl50)
-        line.delete(iFL618), label.delete(ifLbl618)
-        line.delete(iFL702), label.delete(ifLbl702)
-        line.delete(iFL786), label.delete(ifLbl786)
-        line.delete(iFL886), label.delete(ifLbl886)
-        line.delete(iFL100), label.delete(ifLbl100)
-        iFL0 := na, ifLbl0 := na
-        iFL382 := na, ifLbl382 := na
-        iFL50 := na, ifLbl50 := na
-        iFL618 := na, ifLbl618 := na
-        iFL702 := na, ifLbl702 := na
-        iFL786 := na, ifLbl786 := na
-        iFL886 := na, ifLbl886 := na
-        iFL100 := na, ifLbl100 := na
-
+// ── INTERNAL FIB REMOVED 2026-08-09 (compile tokens, CE10117) ────────────────
+// The order-block entry option pushed this file to 102,086 tokens against a cap of
+// 100,256, so real code had to go. This block was the choice, on the same test every
+// earlier cut here was made on (Kill Zones, VWAP, Order Blocks, SVP, the Cycle Fib
+// drawing): PURELY COSMETIC, DEFAULTED OFF, and read by NOTHING in the execution
+// layer — verified by grep before cutting, not assumed.
+// ⚠ THE INTERNAL STRUCTURE ENGINE STAYS AND IS TRADE-CRITICAL. Do not confuse the two.
+// `i_confirmed_low_price` / `i_confirmed_high_price` are written by the internal SWING
+// detection and adopted as the External Fib's anchors whenever they are more extreme,
+// so they set fiboP1..fiboP10 — every entry, stop and target in this file. What went is
+// only the internal fib's own LADDER: eight levels, eight touched-flags, eight lines.
+// ⚠ THE GRP_IFIB INPUTS ARE LEFT DECLARED, NOT DELETED, and must stay that way.
+// TradingView keys saved input values off declaration order within each type, and that
+// group holds 8 colours and 8 strings — deleting them would shift every later input of
+// those types and silently reset them on every chart, `execPoiSource` and the time stop
+// included. Same call, same reason, as the Cycle Fib's two parked inputs.
+// It still draws in mpc_assistant.pine. Recover from git; never rewrite from memory.
 //============================================================
 //  SNIPER FIB
 //============================================================
