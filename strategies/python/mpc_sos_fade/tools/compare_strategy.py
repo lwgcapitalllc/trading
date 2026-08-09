@@ -54,6 +54,7 @@ _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratc
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 _TIME_STOP = {0: "Off", 1: "Before TP1 only", 2: "Always"}
+_POI_SOURCE = {0: "FVG", 1: "Order block", 2: "Either"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
 _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
@@ -220,6 +221,26 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         # position one bar after its fill). A 0 in this column can only come from an export
         # taken with the lever Off, where the value is never read anyway.
         vals["exec_time_stop_hrs"] = float(tsh)
+    # POI source (added 2026-08-09) — WHICH ZONE the entry may read: fair value gaps, order
+    # blocks, or both. Same shape and same reasoning as the two decoders directly above: an
+    # export with no column predates the lever, and the parent shipped "FVG" from the day it
+    # was added, so "absent ⇒ FVG" is a FACT about those exports rather than a guess.
+    #
+    # ⚠ This is the most trade-changing column in the file and the one most worth being strict
+    # about. It decides which zones EXIST, so it decides which setups arm, where the limit
+    # rests and which trades happen at all — a wrong value here does not shift a price by a
+    # tick, it diffs two different strategies and reports the difference as an entry-rule bug.
+    # Do NOT fall back on the base config: the moment the Python default is anything but FVG,
+    # every older export silently decodes as a run it never made. That is exactly how
+    # cfg_eq_exempt produced a three-day window of exports that cannot say what they ran.
+    #
+    # Nothing needs to switch the order-block ENGINE on here — MpcSosFadeStrategy.stack_config()
+    # reads this field and adds `order_blocks=True` to whatever EngineConfig it is handed, so
+    # the engine follows the config rather than the harness having to remember. If it did not,
+    # the blind stack would raise PoiSourceUnavailable rather than quietly finding no blocks.
+    ps = get("cfg_poi_source")
+    vals["exec_poi_source"] = "FVG" if ps is None else \
+        _POI_SOURCE.get(int(round(ps)), vals["exec_poi_source"])
     return cls(**vals)
 
 

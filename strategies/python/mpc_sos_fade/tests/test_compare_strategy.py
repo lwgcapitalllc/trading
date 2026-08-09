@@ -35,6 +35,7 @@ _TRAIL = {v: k for k, v in cs._RUNNER_TRAIL.items()}
 _TP2 = {v: k for k, v in cs._TP2_STOP.items()}
 _MINSTOP = {v: k for k, v in cs._MIN_STOP.items()}
 _TIMESTOP = {v: k for k, v in cs._TIME_STOP.items()}
+_POI = {v: k for k, v in cs._POI_SOURCE.items()}
 
 
 def _encode_cfg(cfg: SosFadeConfig) -> dict:
@@ -69,6 +70,7 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             "cfg_min_stop_val": cfg.exec_min_stop_val,
             "cfg_time_stop": _TIMESTOP[cfg.exec_time_stop_mode],
             "cfg_time_stop_hrs": cfg.exec_time_stop_hrs,
+            "cfg_poi_source": _POI[cfg.exec_poi_source],
             # An ENGINE setting, not a strategy one — so it is read off the bot's own
             # engine_config() rather than off `cfg`, which is what stops this encoder and the
             # pin drifting apart. It is here at all because the Pine plots it: this encoder
@@ -247,3 +249,56 @@ def test_the_export_column_OVERRIDES_the_bot_pin_in_both_directions():
     bare = pd.DataFrame([_encode_cfg(SosFadeConfig())]).drop(columns=["cfg_eq_exempt"])
     assert cs.engine_config_from_export(bare, base, eq_exempt=True).eq_exempt_fvg is True
     assert cs.engine_config_from_export(bare, base, eq_exempt=False).eq_exempt_fvg is False
+
+
+# ── cfg_poi_source — WHICH ZONE the entry reads (2026-08-09) ──────────────────────
+# This is the widest-blast-radius column in the export: it decides which zones exist, so it
+# decides which setups arm, where the limit rests, and which trades happen. A decode failure
+# here does not shift a price by a tick — it diffs two different strategies and blames the
+# entry rule. These tests are therefore weighted toward the ways it can be silently wrong.
+
+
+def test_poi_source_column_decodes_every_option():
+    for source in ("FVG", "Order block", "Either"):
+        cfg = SosFadeConfig(exec_poi_source=source)
+        got = cs.config_from_export(pd.DataFrame([_encode_cfg(cfg)]))
+        assert got.exec_poi_source == source, source
+
+
+def test_an_export_without_the_poi_source_column_reads_as_FVG():
+    """Absent ⇒ FVG is a FACT about every export predating 2026-08-09 — the Pine shipped the
+    input defaulting to FVG on the day it was added, so there is no window of exports that ran
+    something else without a column to say so. That is precisely why the default had to be the
+    OLD behaviour and not "Either".
+
+    It must NOT fall back to the base config. The day someone flips the Python default, every
+    archived export would silently decode as a run it never made — which is `cfg_eq_exempt`'s
+    three-day hole, reproduced deliberately instead of by accident.
+    """
+    base = SosFadeConfig(exec_poi_source="Either")
+    bare = pd.DataFrame([_encode_cfg(SosFadeConfig())]).drop(columns=["cfg_poi_source"])
+    assert cs.config_from_export(bare, base).exec_poi_source == "FVG"
+
+
+def test_roundtrip_parity_reading_ORDER_BLOCKS_instead_of_gaps(tmp_path):
+    """The harness must be able to DRIVE an order-block run end to end, not merely decode the
+    string. That means `stack_config()` has to build the order-block engine off the decoded
+    config — if it did not, the replay would raise PoiSourceUnavailable rather than quietly
+    diffing against an empty zone list, which is the failure this whole seam is shaped around.
+
+    NON-VACUITY, measured rather than assumed: over this 960-bar synth frame the three sources
+    price an entry edge on 824 (FVG) / 404 (Order block) / 833 (Either) bars. So the column is
+    steering a materially different decision stream and the round trip still reproduces it — a
+    green here would be worth nothing if all three modes produced the same run.
+    """
+    cfg = SosFadeConfig(exec_poi_source="Order block")
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_roundtrip_parity_reading_EITHER_zone(tmp_path):
+    cfg = SosFadeConfig(exec_poi_source="Either")
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]

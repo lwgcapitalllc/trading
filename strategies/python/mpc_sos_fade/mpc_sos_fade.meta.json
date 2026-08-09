@@ -75,9 +75,13 @@
       "name": "exec_poi_source",
       "group": "Entry zone",
       "core": true,
-      "choices": ["FVG", "Order block", "Either"],
-      "label": "Zone must hold",
-      "desc": "Which zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = an order block instead. Either = a union of both. Every rule downstream is unchanged — a block is judged by the same deep-only filter, the same pre-zone gate and the same four entry rules a gap is. LAB ONLY: there is no TradingView counterpart, so a non-default run cannot be parity-checked. MEASURED 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown · Order block 267 / +75.93R / 11.11R · Either 292 / +85.77R / 10.51R."
+      "choices": [
+        "FVG",
+        "Order block",
+        "Either"
+      ],
+      "label": "Zone the entry reads",
+      "desc": "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap, so it is entered the same way. Blocks are drawn on the chart only while they can be traded, so what you see is what the entry reads. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R. Requiring a block is worse than requiring nothing at all (315 / +149.55R), so treat this as a research dial, not a tuning one."
     },
     {
       "name": "exec_fvg_deep_only",
@@ -613,7 +617,9 @@
         "off": "One per 1m leg",
         "on": "One per primary"
       },
-      "show_if": {"exec_secondary": true},
+      "show_if": {
+        "exec_secondary": true
+      },
       "desc": "Cap how many times one 15m setup may be re-entered. On (default) = at most one re-entry per primary. Off = the original rule, one per 1-MINUTE leg, which is what let 2 December 2024 take two re-entries off a single structure break about 100 minutes apart. The cap is per SETUP, not per lifetime — a fresh break of structure re-opens it. Measured over the full 7.9 years it fires on exactly two setups and removes two trades: 190 → 188 trades, total R identical (the two happen to be exactly −1R and +1R and cancel — coincidence, not a rule), max drawdown 6.53R → 5.53R and 50.7% → 45.3%. No primary trade moves either way."
     },
     {
@@ -624,7 +630,9 @@
       "min": 0.0,
       "max": 0.999,
       "step": 0.001,
-      "show_if": {"exec_secondary": true},
+      "show_if": {
+        "exec_secondary": true
+      },
       "desc": "Where the 1-minute re-entry's limit rests, as a fib ratio of that 1m leg. 0.382 is the shipped default. 0 rests at the leg extreme, which is entering on the 1m shift of structure itself rather than waiting for a pullback. It is a trade-off, not a free knob: the stop is the leg ORIGIN either way, so a smaller number is a WIDER stop and a smaller position for the same risk, with less room to the 15m targets. Measured over the full 7.9 years, deeper is better and it is monotonic — 0.0 gives 12 re-entries and +14.48R, 0.382 gives 10 and +25.56R, 0.5 gives 9 and +30.17R — but every one of those totals is a single April 2023 trade, and with that trade removed all four are negative. Read the ranking as how big one winner got, not as which entry is better."
     },
     {
