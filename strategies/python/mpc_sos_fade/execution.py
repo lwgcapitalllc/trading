@@ -46,7 +46,7 @@ from backtest.portfolio.account import SoloAccount
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
 from engines.fibonacci.geometry import fib_level
 
-from .signals import sos_aware_veto
+from .signals import pois_for, sos_aware_veto
 
 
 def _first(pred, values):
@@ -1183,7 +1183,7 @@ class Execution:
         fibs_ready = None not in (sig.fibo_p1, p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
         long_edge = short_edge = None
         if fibs_ready:
-            for top, bot, is_bull, born in sig.fvgs:
+            for top, bot, is_bull, born in pois_for(self._cfg, sig):
                 l_deep_ok = not cfg.exec_fvg_deep_only or top <= p2
                 s_deep_ok = not cfg.exec_fvg_deep_only or bot >= p2
                 # ANDed onto both sides rather than skipping the loop iteration, so with the

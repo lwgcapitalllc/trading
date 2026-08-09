@@ -72,6 +72,14 @@
       "desc": "On = only enter when a live gap overlaps the 0.5-0.886 zone. Off = fall back to the 0.618 fib and enter on the retrace alone. Off does not switch off the gap rules below — a qualifying gap still prices the entry first."
     },
     {
+      "name": "exec_poi_source",
+      "group": "Entry zone",
+      "core": true,
+      "choices": ["FVG", "Order block", "Either"],
+      "label": "Zone must hold",
+      "desc": "Which zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = an order block instead. Either = a union of both. Every rule downstream is unchanged — a block is judged by the same deep-only filter, the same pre-zone gate and the same four entry rules a gap is. LAB ONLY: there is no TradingView counterpart, so a non-default run cannot be parity-checked. MEASURED 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown · Order block 267 / +75.93R / 11.11R · Either 292 / +85.77R / 10.51R."
+    },
+    {
       "name": "exec_fvg_deep_only",
       "group": "Entry zone",
       "core": true,

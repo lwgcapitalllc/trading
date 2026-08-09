@@ -100,6 +100,23 @@ class Signals:
     # origin itself never matters (which is what keeps this safe against a partial export).
     fvgs: List[Tuple[float, float, bool, int]] = field(default_factory=list)
 
+    # Live ORDER BLOCKS, in the IDENTICAL shape as `fvgs` above — (top, bottom, is_bullish, born)
+    # — so `exec_poi_source` can hand either list to the same confluence and entry-edge loops
+    # without a second implementation of the rules. See `pois_for()`.
+    #
+    # ⚠ `born` is the block's **created_index**, not its origin candle: the anchor can be ~10 bars
+    # older than the bar the engine can first report it on, and the `exec_fvg_pre_zone` gate asks
+    # whether the zone was ALREADY THERE when price arrived. Answering with the anchor bar would
+    # credit a setup with a zone nothing could yet have seen.
+    obs: List[Tuple[float, float, bool, int]] = field(default_factory=list)
+
+    # Did the ORDER-BLOCK ENGINE actually run this bar? `False` = the stack was built without it,
+    # so `obs` being empty means THE QUESTION WAS NEVER ASKED — not "there are no blocks".
+    # `pois_for()` refuses on that combination rather than silently trading as if FVG-only, which
+    # is this repo's standing rule that "no" and "cannot ask" must never be the same value. It
+    # defaults False so a hand-built Signals in a test cannot accidentally claim coverage.
+    obs_available: bool = False
+
     # The bar price first tagged 0.5 on THIS leg (Pine `fiboHalfBar`) — i.e. the bar price
     # entered the entry zone. Latched once and reset with the leg, exactly like
     # `fibo_half_reached`, so it is scoped to the same fib whose band a gap is judged against.
@@ -405,6 +422,16 @@ class SignalAdapter:
         # active FVGs (top, bottom, is_bullish, born_index)
         fvgs = [(g.top, g.bottom, g.is_bullish, g.born_index) for g in _active_fvgs(state.fvg)]
 
+        # active ORDER BLOCKS, adapted into the gap's own shape — see `Signals.obs`.
+        # `state.order_blocks is None` means the stack was built with `order_blocks=False`, i.e.
+        # the engine never ran; an OrderBlockEvents with empty lists means it ran and found none.
+        obs: List[Tuple[float, float, bool, int]] = []
+        obs_available = state.order_blocks is not None
+        if obs_available:
+            obs = [(b.top, b.bottom, b.is_bullish, b.created_index)
+                   for b in (list(state.order_blocks.active_bull)
+                             + list(state.order_blocks.active_bear))]
+
         # Macro POI (Pine 3700-3706): bull discount 0.618-0.886, short premium 0.382+
         poi_long = poi_short = False
         mac = state.macro
@@ -438,7 +465,8 @@ class SignalAdapter:
             fibo_asl=(fib.asl if fib.active else None),
             fibo_half_reached=fibo_half, fibo_618_ever_reached=fibo_618_ever,
             fibo7_touched=fibo7_touched, fibo_half_bar=self._half_bar,
-            fvgs=fvgs, poi_long_now=poi_long, poi_short_now=poi_short,
+            fvgs=fvgs, obs=obs, obs_available=obs_available,
+            poi_long_now=poi_long, poi_short_now=poi_short,
             bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
             bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,
             last_conf_high=ext.last_conf_high, last_conf_low=ext.last_conf_low,
@@ -456,6 +484,52 @@ class SignalAdapter:
         if loc is None or loc < 0 or loc >= len(self._bar_ms):
             return None
         return int(self._bar_ms[loc])
+
+
+class PoiSourceUnavailable(RuntimeError):
+    """`exec_poi_source` asks for order blocks and the engine stack never built them."""
+
+
+# Every accepted value of `exec_poi_source`, and which lists it reads. A dict rather than an
+# if-chain so an unrecognised value RAISES instead of quietly falling through to gaps — a typo
+# that silently ran the default would make a whole replay a lie about what it tested.
+_POI_SOURCES = {"FVG": (True, False), "Order block": (False, True), "Either": (True, True)}
+
+
+def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int]]:
+    """The zones this setup may use as its point of interest, per `exec_poi_source`.
+
+    **This is THE seam, and it exists so there is exactly one of it.** Both consumers of a zone —
+    the confluence flag in `sequence.py` and the entry-edge loop in `execution.py` — call this and
+    then run their unchanged logic, so an order block is filtered by the deep-only rule, judged by
+    the pre-zone gate and priced by the four entry rules through the SAME code a gap goes through.
+    That is what makes "order blocks obey the same rules as a gap" true by construction. Adding a
+    third consumer means calling this, never reading `sig.fvgs` directly.
+
+    ⚠ **Refuses rather than degrading.** Asking for blocks on a stack built without the engine
+    would otherwise return `[]` and trade exactly like a Require-FVG run that found no gap — a
+    silently different strategy reporting itself as the one you configured. `obs_available` is the
+    only thing that separates *found none* from *never asked*, and this is the one place it is
+    read.
+    """
+    try:
+        want_fvg, want_ob = _POI_SOURCES[cfg.exec_poi_source]
+    except KeyError:
+        raise ValueError(
+            f"exec_poi_source={cfg.exec_poi_source!r} is not one of {sorted(_POI_SOURCES)}"
+        ) from None
+    if want_ob and not sig.obs_available:
+        raise PoiSourceUnavailable(
+            f"exec_poi_source={cfg.exec_poi_source!r} needs order blocks, but the engine stack was "
+            f"built without them (state.order_blocks was None). Build the stack with "
+            f"EngineConfig(order_blocks=True) — MpcSosFadeStrategy.run() does this from the config, "
+            f"so a caller passing its own engine_config must too."
+        )
+    if want_fvg and not want_ob:
+        return sig.fvgs
+    if want_ob and not want_fvg:
+        return sig.obs
+    return list(sig.fvgs) + list(sig.obs)
 
 
 def _active_fvgs(fvg_events):

@@ -24,6 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from .signals import pois_for
+
 
 @dataclass
 class SeqState:
@@ -306,7 +308,7 @@ class SosFadeSequence:
         # entry may not use could still be reported as the confluence that armed the setup.
         l_fvg = s_fvg = False
         if sig.fibo_p2 is not None and sig.fibo_p6 is not None:
-            for top, bot, is_bull, born in sig.fvgs:
+            for top, bot, is_bull, born in pois_for(self._cfg, sig):
                 gap_ok = (not self._cfg.exec_fvg_pre_zone
                           or sig.fibo_half_bar is None
                           or born < sig.fibo_half_bar)

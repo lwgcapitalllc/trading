@@ -41,6 +41,32 @@ class SosFadeConfig:
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require an FVG in the zone"
+    exec_poi_source: str = "FVG"       # "Zone must hold" ∈ {FVG, Order block, Either}
+    #   🔴 PYTHON-ONLY, NO PINE COUNTERPART (2026-08-09, Aaron's ask: "let me see raw what order
+    #   blocks return"). `mpc_strategy.pine` dropped order blocks entirely on 2026-07-24, so there
+    #   is no `cfg_` column for this and `compare_strategy.py` CANNOT check any run with it off
+    #   "FVG" — which is precisely why the default is "FVG" and why anything else is a LAB finding
+    #   rather than a validated one. Same standing as `exec_sl_custom`. Do not deploy a live bot on
+    #   a non-default value until the Pine side exists.
+    #
+    #   WHAT IT SWITCHES, and what it deliberately does NOT. It changes only WHICH zones count as
+    #   the "point of interest" the setup needs in the 0.5-0.886 band. Every rule downstream is
+    #   untouched: the deep-only filter, the pre-zone gate, the four entry rules (`_fib_snap`), the
+    #   stop anchor and the whole exit ladder all read the chosen zones through the SAME code, because
+    #   an order block is adapted into the gap's own `(top, bottom, is_bullish, born)` shape rather
+    #   than getting a parallel path. That is what makes "order blocks obey the same rules as a gap"
+    #   true by construction instead of by two implementations agreeing.
+    #
+    #   ⚠ `born` for a block is its **created_index**, NOT its origin candle. The block's anchor
+    #   candle can be ~10 bars older than the bar the engine can first report it on, and the
+    #   pre-zone gate asks "was this ALREADY THERE when price arrived" — answering that with the
+    #   anchor bar would credit the setup with a zone nothing could have seen yet, which is
+    #   look-ahead wearing a reasonable-looking field name.
+    #
+    #   ⚠ "Either" is a UNION, so it can only ever ADD zones — but more zones is not more trades in
+    #   one direction: a nearer qualifying zone re-prices the resting limit, so a setup that filled
+    #   before can miss, and with one position slot an added trade DISPLACES a later one. Read the
+    #   trade count as changed, never as increased.
     exec_fvg_deep_only: bool = True    # "Gap must sit fully past 0.5"
     exec_fvg_pre_zone: bool = False    # "Gap must pre-date the zone"
     #   Pine execFvgPreZone (2026-08-02). ON = a gap only counts if it was already alive on the bar

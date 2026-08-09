@@ -74,6 +74,26 @@ class MpcSosFadeStrategy:
         resolver = TickPathResolver(tick_source, cfg.symbol, latency_ms=profile.latency_ms)
         return resolver, profile
 
+    def stack_config(self, engine_config=None):
+        """The `EngineConfig` this instance's own settings require.
+
+        `engine_config()` is a STATIC description of the Pine's engine constants and stays that way
+        — `compare_strategy.py`, `mpc_bleg` and the parity tests all call it off the class. This is
+        the per-INSTANCE layer on top: `exec_poi_source` decides whether the order-block engine has
+        to run, and only an instance knows its own config.
+
+        ⚠ **A caller that drives `step()` with its own stack must apply this too.** `step()` takes a
+        pre-built `BarState`, so the live runner and the optimizer build the stack themselves; one
+        that skips this hands the strategy a state with `order_blocks=None`. That does not silently
+        degrade — `pois_for()` raises — which is the whole reason this returns a config rather than
+        mutating something later.
+        """
+        base = engine_config or self.engine_config()
+        if self.config.exec_poi_source != "FVG" and not base.order_blocks:
+            import dataclasses
+            return dataclasses.replace(base, order_blocks=True)
+        return base
+
     def step(self, bar_state) -> Decision:
         sig = self.signals.update(bar_state)
         seq = self.sequence.update(sig)
@@ -139,7 +159,7 @@ class MpcSosFadeStrategy:
         if len(df.index) > 1:
             self.execution.bar_ms = int(df.index.to_series().diff().min().total_seconds() * 1000)
 
-        stack = EngineStack(engine_config or self.engine_config())
+        stack = EngineStack(self.stack_config(engine_config))
         for bar in iter_bars(df):
             state = stack.step(bar)
             sig = self.signals.update(state)
@@ -187,7 +207,7 @@ class MpcSosFadeStrategy:
         else:
             tf15_ms = 900_000
 
-        stack = EngineStack(engine_config or self.engine_config())
+        stack = EngineStack(self.stack_config(engine_config))
         bars15 = list(iter_bars(df15))
         close15 = [b.timestamp_ms + tf15_ms for b in bars15]   # when each 15m bar is known
         n15 = len(bars15)
