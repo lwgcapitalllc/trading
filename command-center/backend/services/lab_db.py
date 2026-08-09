@@ -354,6 +354,22 @@ def init_db() -> None:
             "ALTER TABLE strategies ADD COLUMN deployed_at INTEGER",
             "ALTER TABLE strategies ADD COLUMN compiled_source_hash TEXT",
             "ALTER TABLE strategies ADD COLUMN compiled_at INTEGER",
+            # Shared-risk stacks (2026-08-09). A stack is one of two DIFFERENT things now:
+            #   'screen' — N standalone runs added together. Every leg sized as if it owned the
+            #              whole account and no leg could ever block another, so it is an UPPER
+            #              BOUND. This is what every stack in this app has always been.
+            #   'shared' — one balance, one risk budget the legs COMPETE for, replayed together
+            #              on one merged clock (backtest/portfolio/run_stack).
+            # ⚠ The DEFAULT is 'screen' and must stay so: every stack written before this column
+            # existed was a screen, and defaulting to 'shared' would silently relabel finished
+            # results as a simulation nobody ran.
+            "ALTER TABLE stacks ADD COLUMN mode TEXT NOT NULL DEFAULT 'screen'",
+            # The account the legs share. NULL on a screen — not 0, because 0 is a real number
+            # that renders as "an account with no money" rather than "this question does not
+            # apply to a screen".
+            "ALTER TABLE stacks ADD COLUMN account_size REAL",
+            "ALTER TABLE stacks ADD COLUMN risk_cap_pct REAL",
+            "ALTER TABLE stacks ADD COLUMN entry_floor_pct REAL",
         ]:
             try:
                 conn.execute(migration_sql)
@@ -721,7 +737,17 @@ def init_db() -> None:
                 end_date            TEXT NOT NULL,
                 commission_per_side REAL NOT NULL,
                 slippage_ticks      INTEGER NOT NULL,
-                created_at          INTEGER NOT NULL
+                created_at          INTEGER NOT NULL,
+                -- Declared HERE as well as in the migration list above, and both are needed.
+                -- The migrations run BEFORE this script, so on a fresh database the
+                -- `ALTER TABLE stacks` lines fail (no table yet) and are swallowed — leaving a
+                -- brand-new DB without the columns while every existing one has them. That is
+                -- the worst shape available: it works on the machine that ran the migration and
+                -- breaks on a clone.
+                mode                TEXT NOT NULL DEFAULT 'screen',
+                account_size        REAL,
+                risk_cap_pct        REAL,
+                entry_floor_pct     REAL
             );
 
             -- Membership is separate from ownership. owned=1 = a fresh run this stack
@@ -2278,15 +2304,28 @@ def _backfill_stack_membership(conn) -> None:
 
 
 def insert_stack(data: dict) -> None:
-    """Persist a stack's shared settings (instrument/timeframe/window/costs)."""
+    """Persist a stack's shared settings (instrument/timeframe/window/costs, and — for a
+    SHARED-mode stack — the account the legs compete over).
+
+    ⚠ The account knobs are written as `None` on a screen rather than as zeros. A screen has no
+    account: every leg traded a full one. A stored `0` would render as an account with no money
+    and would make `risk_cap_pct = 0` (which refuses every entry) indistinguishable from "this
+    stack never had a cap".
+    """
+    shared = data.get("mode") == "shared"
     with _connect() as conn:
         conn.execute(
             "INSERT INTO stacks (stack_id, instrument, bar_type, bar_value, start_date, "
-            "end_date, commission_per_side, slippage_ticks, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "end_date, commission_per_side, slippage_ticks, created_at, "
+            "mode, account_size, risk_cap_pct, entry_floor_pct) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (data["stack_id"], data["instrument"], data["bar_type"], data["bar_value"],
              data["start_date"], data["end_date"], data["commission_per_side"],
-             data["slippage_ticks"], data["created_at"]),
+             data["slippage_ticks"], data["created_at"],
+             data.get("mode") or "screen",
+             data.get("account_size") if shared else None,
+             data.get("risk_cap_pct") if shared else None,
+             data.get("entry_floor_pct") if shared else None),
         )
 
 
@@ -2412,6 +2451,11 @@ def list_stacks() -> list[dict]:
                 "failed_strategies":    failed,
                 "status":               status,
                 "strategy_names":       " + ".join(m["name"] for m in members),
+                # A screen and a shared simulation answer different questions, so the list has
+                # to say which one a row is. Without it two rows over the same legs and window
+                # sit side by side reporting different numbers, and nothing explains why.
+                "mode":                 st["mode"] if "mode" in st.keys() else "screen",
+                "risk_cap_pct":         st["risk_cap_pct"] if "risk_cap_pct" in st.keys() else None,
             })
     return result
 

@@ -41,16 +41,40 @@ class PortfolioResult:
     trades: list = field(default_factory=list)        # combined, every leg's closed trades
     per_leg: dict = field(default_factory=dict)       # leg name -> its own trades
     contention: list = field(default_factory=list)    # the account's shrink/block log
+    cancelled: bool = False                           # stopped early — the book is PARTIAL
 
 
-def simulate(legs: Sequence[Any], account: Any) -> PortfolioResult:
+_CHECK_EVERY = 512
+
+
+def simulate(legs: Sequence[Any], account: Any, *,
+             progress: Any = None, should_cancel: Any = None) -> PortfolioResult:
     """Run all legs through `account` on one merged clock. `account` is a `PortfolioAccount`
     (or `SoloAccount` for a single leg). Returns the combined trades, per-leg trades, and the
-    contention log."""
+    contention log.
+
+    `progress(tick_index)` and `should_cancel() -> bool` are optional and exist for a caller
+    driving this from a UI: a full-history two-leg stack is four replays over ~150,000 bars, so
+    a Stop button that cannot reach the loop is a Stop button that does nothing. Both are polled
+    every `_CHECK_EVERY` ticks rather than every tick — the check is cheap and the loop body is
+    cheaper, so per-tick polling is measurable overhead on a run that does not cancel.
+
+    ⚠ **A cancelled result is PARTIAL and says so** (`cancelled=True`). It holds every trade
+    closed up to the tick it stopped on, which reads exactly like a complete short backtest —
+    so a caller must branch on the flag rather than on the trade list, and must never persist a
+    partial book as a finished one.
+    """
     by_name = {leg.name: leg for leg in legs}
     streams = {leg.name: leg.bars() for leg in legs}
+    cancelled = False
 
-    for tick in merge_streams(streams):
+    for i, tick in enumerate(merge_streams(streams)):
+        if i % _CHECK_EVERY == 0:
+            if should_cancel is not None and should_cancel():
+                cancelled = True
+                break
+            if progress is not None:
+                progress(i)
         account.now = tick.time
         # holders before flat legs — freed room is released before any entry is sized.
         ordered = sorted(tick.bars, key=lambda lb: 0 if by_name[lb[0]].in_position() else 1)
@@ -68,4 +92,5 @@ def simulate(legs: Sequence[Any], account: Any) -> PortfolioResult:
     per_leg = {leg.name: list(leg.trades) for leg in legs}
     combined = [t for leg in legs for t in leg.trades]
     return PortfolioResult(trades=combined, per_leg=per_leg,
-                           contention=list(getattr(account, "contention", [])))
+                           contention=list(getattr(account, "contention", [])),
+                           cancelled=cancelled)

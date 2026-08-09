@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Loader2, XCircle, Layers, Trash2, Square, Play } from 'lucide-react'
 import StickyHeader from '@/components/StickyHeader'
-import { useStack, useDeleteStack, useCancelStack, useStackChartSpec, useRunCandles } from '@/hooks/useLab'
+import { useStack, useDeleteStack, useCancelStack, useStackChartSpec, useRunCandles, useStackContention } from '@/hooks/useLab'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { XModeToggle } from '@/components/XModeToggle'
@@ -13,7 +13,7 @@ import {
   DirectionBreakdown, PriceChartView, SeriesToggle, type FallbackMetrics,
 } from '@/pages/BacktestDetail'
 import { C } from '@/themes/chart'
-import type { StackStrategyLeg, BacktestDetail as RunDetail, EquityPoint, DailyPnlPoint } from '@/types'
+import type { StackStrategyLeg, BacktestDetail as RunDetail, EquityPoint, DailyPnlPoint, StackSharedReport } from '@/types'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 
@@ -268,10 +268,169 @@ const CHART_SUBS: Record<string, string> = {
   breakdown: 'Drawdown from peak, daily P&L, and long vs short — for the combined portfolio.',
 }
 
+// ── The shared account ────────────────────────────────────────────────────────
+//
+// A screen cannot answer any of this: it runs each leg on its own full account, so nothing was
+// ever refused and there is no budget to report on. This panel is the whole difference between
+// the two modes, and it is built around one number the reader has to be able to trust — the
+// SCREEN-VS-SHARED delta, i.e. what the idealised sum promised against what one account
+// delivered.
+function SharedAccountPanel({ report, colorFor, nameFor }: {
+  report: StackSharedReport
+  colorFor: (id: string) => string
+  nameFor: (id: string) => string
+}) {
+  // ⚠ The test seam is on ALL THREE branches, not only the finished one. A panel that is still
+  // replaying and a panel that failed are both this panel — putting the id on the happy path only
+  // means a check for "it says what it is doing while running" can never find it, and would pass
+  // or fail for the wrong reason.
+  if (!report.available) {
+    const p = report.progress
+    if (p && p.phase === 'failed') {
+      return (
+        <div data-testid="shared-account-panel"
+             className="rounded-lg border border-neg-text/25 bg-neg-muted/20 px-4 py-3">
+          <div className="text-[13px] font-semibold text-neg-text mb-1">The shared replay failed</div>
+          <div className="text-[12px] text-text-secondary font-mono break-words">{p.message}</div>
+        </div>
+      )
+    }
+    return (
+      <div data-testid="shared-account-panel"
+           className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/5 px-4 py-3 text-[13px] text-accent">
+        <Loader2 size={14} className="animate-spin" />
+        {p ? `${p.message} · ${p.pct}%` : 'Replaying the strategies on one account…'}
+      </div>
+    )
+  }
+
+  // The screen is the sum of the SOLO controls — each leg on its own full account, which is
+  // exactly what a screen-mode stack would have produced. So this is a like-for-like comparison
+  // against a run that really happened, not against an estimate.
+  const opening = report.opening_balance ?? 0
+  const screenClosing = report.legs.reduce((a, l) => a + (l.solo_closing_balance - opening), opening)
+  const sharedClosing = report.closing_balance ?? 0
+  const delta = sharedClosing - screenClosing
+  const anyContention = (report.contention_events ?? 0) > 0
+  const capPct = report.risk_cap_pct ?? 0
+  const peakPct = report.peak_open_risk_pct ?? 0
+  const fill = capPct > 0 ? Math.min(100, (peakPct / capPct) * 100) : 0
+
+  return (
+    <div data-testid="shared-account-panel" className="space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-border-default bg-bg-surface px-4 py-3">
+          <div className="text-[11px] text-text-tertiary uppercase tracking-[0.6px] mb-1">One account</div>
+          <div className="text-[22px] font-mono tabular-nums font-semibold">{fmtMoney(sharedClosing, false)}</div>
+          <div className="text-[11px] text-text-tertiary mt-0.5">from {fmtMoney(opening, false)}</div>
+        </div>
+        <div className="rounded-xl border border-border-default bg-bg-surface px-4 py-3">
+          <div className="text-[11px] text-text-tertiary uppercase tracking-[0.6px] mb-1">The screen promised</div>
+          <div className="text-[22px] font-mono tabular-nums font-semibold text-text-secondary">{fmtMoney(screenClosing, false)}</div>
+          <div className={`text-[11px] mt-0.5 font-mono ${delta >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+            {fmtMoney(delta)} on one account
+          </div>
+        </div>
+        <div className="rounded-xl border border-border-default bg-bg-surface px-4 py-3">
+          <div className="text-[11px] text-text-tertiary uppercase tracking-[0.6px] mb-1">Peak open risk</div>
+          <div className="text-[22px] font-mono tabular-nums font-semibold">{peakPct.toFixed(2)}%</div>
+          <div className="h-[5px] rounded-full bg-bg-sunken mt-2 overflow-hidden">
+            <div className="h-full rounded-full bg-accent" style={{ width: `${fill}%` }} />
+          </div>
+          <div className="text-[11px] text-text-tertiary mt-1">
+            against a {capPct.toFixed(2)}% cap · {report.peak_concurrent_legs} of {report.leg_count} holding at once
+          </div>
+        </div>
+      </div>
+
+      {/* ⚠ An empty contention log is a REAL RESULT and the expected one — say so, rather than
+          rendering nothing and letting it read as a panel that failed to load. */}
+      <div className={`rounded-lg border px-4 py-3 text-[12px] ${
+        anyContention ? 'border-warn-text/25 bg-warn-muted/20' : 'border-border-subtle bg-bg-sunken'
+      }`}>
+        {anyContention ? (
+          <>
+            <span className="font-semibold text-warn-text">{report.contention_events} contention events</span>
+            <span className="text-text-secondary"> — the budget was full when a strategy asked, so it was shrunk to fit or refused. Every difference above should trace to one of these.</span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold text-text-primary">Nothing was ever refused.</span>
+            <span className="text-text-secondary"> That is a measurement, not a missing one — open risk is
+            measured to each trade's <strong className="text-text-primary">current</strong> stop, so a stop moved to
+            breakeven releases its room before the other strategy asks. Read it as
+            “the budget would rarely have had anything to arbitrate”, never as “a cap is unnecessary”.</span>
+          </>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border-default bg-bg-surface overflow-hidden">
+        <table className="w-full text-[12px]">
+          <thead className="bg-bg-sunken text-text-tertiary">
+            <tr className="text-left">
+              <th className="px-3 py-2 font-medium">Strategy</th>
+              <th className="px-3 py-2 font-medium text-right">Shared R</th>
+              <th className="px-3 py-2 font-medium text-right">Alone R</th>
+              <th className="px-3 py-2 font-medium text-right">Trades</th>
+              <th className="px-3 py-2 font-medium text-right">Shrunk</th>
+              <th className="px-3 py-2 font-medium text-right">Blocked</th>
+              <th className="px-3 py-2 font-medium text-right">Risk refused</th>
+            </tr>
+          </thead>
+          <tbody>
+            {report.legs.map(l => (
+              <tr key={l.strategy_id} className="border-t border-border-subtle">
+                <td className="px-3 py-2">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: colorFor(l.strategy_id) }} />
+                    {nameFor(l.strategy_id)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{l.shared_r.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums text-text-secondary">{l.solo_r.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">
+                  {l.shared_trades}
+                  {l.shared_trades !== l.solo_trades && (
+                    <span className="text-text-tertiary"> / {l.solo_trades} alone</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{l.shrunk || '—'}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">{l.blocked || '—'}</td>
+                <td className="px-3 py-2 text-right font-mono tabular-nums">
+                  {l.risk_refused ? fmtMoney(l.risk_refused, false) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* The one thing this panel can CHECK rather than report. R is normalised to the trade's own
+          risk, so with a full budget a leg must post the same R shared as solo — a difference there
+          is the shared account moving a decision it must not touch, which is a defect in the seam
+          and not a portfolio effect. */}
+      {report.neutral && (
+        <div className={`text-[11px] px-3 py-2 rounded-lg border ${
+          report.neutral.checkable && report.neutral.ok === false
+            ? 'border-neg-text/25 bg-neg-muted/20 text-neg-text'
+            : 'border-border-subtle bg-bg-sunken text-text-tertiary'
+        }`}>
+          {report.neutral.checkable && report.neutral.ok === false && <strong>Seam check failed — </strong>}
+          {report.neutral.reason}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function StackDetail() {
   const { stackId } = useParams<{ stackId: string }>()
   const navigate = useNavigate()
   const { data: stack, isLoading } = useStack(stackId ?? null)
+  const isShared = stack?.mode === 'shared'
+  // Gated on the mode: a screen has no account to contend over, so polling one would be asking a
+  // question that can never be answered.
+  const { data: shared } = useStackContention(stackId ?? null, isShared)
   const deleteStack = useDeleteStack()
   const cancelStack = useCancelStack()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -490,6 +649,13 @@ export function StackDetail() {
             slippageTicks: stack.slippage_ticks,
             start: stack.start_date,
             end: stack.end_date,
+            // The mode and its account knobs are part of what a stack IS, so a rerun that
+            // silently reverted to a screen would produce a different experiment under the word
+            // "rerun" — and the two report different numbers with nothing on screen to explain it.
+            mode: stack.mode,
+            accountSize: stack.account_size ?? undefined,
+            riskCapPct: stack.risk_cap_pct ?? undefined,
+            entryFloorPct: stack.entry_floor_pct ?? undefined,
           }}
           onClose={() => setShowRerun(false)}
         />
@@ -519,6 +685,26 @@ export function StackDetail() {
               <span className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-secondary font-mono">
                 {fmtDate(stack.start_date)} → {fmtDate(stack.end_date)}
               </span>
+              {/* The mode belongs in the header, beside the window: a screen and a shared run over
+                  the same legs report different numbers, and the reader has to know which one they
+                  are looking at BEFORE reading any of them. */}
+              {isShared ? (
+                <span
+                  data-testid="stack-mode-chip"
+                  title="One balance and one risk budget the strategies competed for."
+                  className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/30 font-mono"
+                >
+                  Shared account · {stack.risk_cap_pct?.toFixed(2)}% cap
+                </span>
+              ) : (
+                <span
+                  data-testid="stack-mode-chip"
+                  title="Each strategy ran on its own full account and the results were added together, so no strategy could ever block another. Read it as an upper bound."
+                  className="inline-flex items-center px-2 py-[3px] rounded text-[11px] font-medium bg-bg-surface border border-border-subtle text-text-tertiary font-mono"
+                >
+                  Screen · upper bound
+                </span>
+              )}
             </div>
           </div>
 
@@ -560,6 +746,22 @@ export function StackDetail() {
                     colorFor={colorFor}
                   />
                 }
+              />
+            </div>
+          )}
+
+          {/* The shared account — what a screen cannot answer. Rendered ABOVE the strategy chips
+              because those chips toggle legs in and out of the combined view, and the budget is a
+              property of the run as it happened rather than of whichever legs are ticked. */}
+          {isShared && shared && (
+            <div>
+              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">
+                The shared account
+              </h2>
+              <SharedAccountPanel
+                report={shared}
+                colorFor={colorFor}
+                nameFor={(id) => legs.find(l => l.strategy_id === id)?.strategy_name ?? id}
               />
             </div>
           )}

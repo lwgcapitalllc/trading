@@ -1122,6 +1122,40 @@ class StackRequest(BaseModel):
     # uses its stored default_params. Lets the two sleeves carry different risk knobs.
     params_by_strategy: dict[str, dict] = {}
 
+    # Which of the two things this stack IS. They answer different questions and must not be
+    # confused for one another:
+    #   "screen" — N standalone runs added together. Fast, reuses finished runs, and every leg
+    #              traded a full account with nothing able to block it, so it is an UPPER BOUND.
+    #   "shared" — one balance and one risk budget the legs COMPETE for, replayed together on a
+    #              merged clock. This is the demo-account question.
+    # ⚠ Default "screen", deliberately. It is what every stack in this app has always been, and
+    # a caller that states nothing must keep getting the behaviour it already had.
+    mode: str = "screen"
+    # The shared account. Read ONLY when mode == "shared"; ignored on a screen, where there is
+    # no account because each leg had its own.
+    account_size: float = 10_000.0
+    risk_cap_pct: float = 10.0              # max OPEN risk across all legs, % of the LIVE balance
+    entry_floor_pct: float = 0.0            # skip an entry granted less than this % in risk
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, v: str) -> str:
+        if v not in ("screen", "shared"):
+            raise ValueError('mode must be "screen" or "shared"')
+        return v
+
+    @field_validator("risk_cap_pct")
+    @classmethod
+    def _positive_cap(cls, v: float) -> float:
+        # A cap of zero refuses every entry, which is not a portfolio — it is a stopped bot, and
+        # it would render as a completed stack that took no trades. `run_stack` raises on it; the
+        # refusal is repeated here so it is a 400 at the request rather than a failed background
+        # job the reader has to open a log to understand.
+        if v <= 0:
+            raise ValueError("risk_cap_pct must be greater than 0 — a cap of zero refuses "
+                             "every entry, which is a stopped bot rather than a portfolio")
+        return v
+
 
 class StackPreviewRequest(BaseModel):
     """Ask, without running anything, which legs would be REUSED from an existing
@@ -1134,6 +1168,11 @@ class StackPreviewRequest(BaseModel):
     end_date: str
     commission_per_side: float = 0.0        # match the Pine (0/0) — see StackRequest
     slippage_ticks: int = 0
+    # A SHARED stack reuses nothing — a finished standalone run was measured on its own full
+    # account with nothing able to block it, so dropping one in would put an un-contended leg
+    # beside contended ones. The preview has to say that, or the modal offers a reuse count for
+    # a run that will re-run every leg regardless.
+    mode: str = "screen"
 
 
 class StackPreviewLeg(BaseModel):
@@ -1169,6 +1208,11 @@ class StackSummary(BaseModel):
     status: str
     created_at: datetime
     strategy_names: str = ""                 # " + "-joined display names
+    # A screen and a shared simulation are different experiments over the same legs, so the row
+    # has to say which. Without it two rows sit side by side reporting different numbers with
+    # nothing on screen explaining the gap.
+    mode: str = "screen"
+    risk_cap_pct: Optional[float] = None     # None on a screen — there is no account to cap
 
 
 class StackStrategyLeg(BaseModel):
@@ -1207,6 +1251,60 @@ class StackDetail(BaseModel):
     # One entry per strategy sleeve — carries the child run id + its daily P&L and equity curve
     # so the frontend can sum enabled sleeves into a portfolio line and recompute KPIs on toggle.
     strategies: list[StackStrategyLeg] = []
+    # ── Shared-account mode ──────────────────────────────────────────────────
+    mode: str = "screen"
+    account_size: Optional[float] = None     # None on a screen: each leg had its own account
+    risk_cap_pct: Optional[float] = None
+    entry_floor_pct: Optional[float] = None
+
+
+class StackContentionEvent(BaseModel):
+    """One entry the shared risk budget refused or shrank."""
+    leg: str
+    time: Optional[int] = None               # epoch ms
+    blocked: bool = False                    # False = shrunk to fit, True = refused outright
+    desired_risk: float = 0.0
+    granted_risk: float = 0.0
+
+
+class StackLegContention(BaseModel):
+    strategy_id: str
+    run_id: str
+    shared_trades: int = 0
+    shared_r: float = 0.0
+    solo_trades: int = 0
+    solo_r: float = 0.0
+    solo_closing_balance: float = 0.0
+    shrunk: int = 0
+    blocked: int = 0
+    risk_refused: float = 0.0
+
+
+class StackSharedReport(BaseModel):
+    """What the shared account actually did — the answer a screen cannot give.
+
+    ⚠ `events: []` with `summary` present is a REAL RESULT and the most likely one: open risk is
+    measured to each trade's CURRENT stop, so a stop moved to breakeven releases its room, and
+    the measured 6.5-year two-bot run refused nothing at all. Read an empty log as *the budget
+    would rarely have had anything to arbitrate*, never as *the cap is not working* — and never
+    as *not measured*, which is what a missing `summary` means instead.
+    """
+    stack_id: str
+    available: bool                          # False = this stack is a screen, or has not finished
+    opening_balance: Optional[float] = None
+    closing_balance: Optional[float] = None
+    risk_cap_pct: Optional[float] = None
+    entry_floor_pct: Optional[float] = None
+    peak_open_risk_pct: Optional[float] = None
+    peak_concurrent_legs: Optional[int] = None
+    leg_count: Optional[int] = None
+    combined_trades: Optional[int] = None
+    combined_r: Optional[float] = None
+    contention_events: Optional[int] = None
+    legs: list[StackLegContention] = []
+    events: list[StackContentionEvent] = []
+    neutral: Optional[dict] = None           # the shared-vs-solo R check; see portfolio_runner
+    progress: Optional[dict] = None          # live while replaying: {phase, pct, message}
 
 
 # ── Lab — optimizations ───────────────────────────────────────────────────────

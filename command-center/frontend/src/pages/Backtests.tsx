@@ -1193,6 +1193,7 @@ function StacksTab() {
             <thead>
               <tr className="border-b border-border-subtle">
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Strategies</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Mode</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
@@ -1210,6 +1211,26 @@ function StacksTab() {
                     className="hover:bg-bg-hover cursor-pointer transition-colors"
                   >
                     <td className="px-4 py-3 font-medium max-w-[280px] truncate">{st.strategy_names}</td>
+                    {/* A screen and a shared simulation over the same legs report different
+                        numbers. Two rows side by side with no way to tell them apart is a
+                        comparison the reader cannot make. */}
+                    <td className="px-4 py-3">
+                      {st.mode === 'shared' ? (
+                        <span
+                          title="One balance and one risk budget the strategies competed for."
+                          className="inline-flex items-center px-2 py-[2px] rounded text-[11px] font-semibold bg-accent/10 text-accent border border-accent/30 font-mono"
+                        >
+                          Shared{st.risk_cap_pct != null && ` ${st.risk_cap_pct.toFixed(0)}%`}
+                        </span>
+                      ) : (
+                        <span
+                          title="Each strategy ran on its own full account and the results were added together — an upper bound."
+                          className="text-[11px] text-text-tertiary font-mono"
+                        >
+                          Screen
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-text-secondary font-mono">{st.instrument}</td>
                     <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">{fmtDateRange(st.start_date, st.end_date)}</td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">

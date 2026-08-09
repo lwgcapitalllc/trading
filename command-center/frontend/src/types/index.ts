@@ -1102,7 +1102,16 @@ export interface StackRequest {
   slippage_ticks?: number
   ruleset_ids?: string[]
   params_by_strategy?: Record<string, Record<string, unknown>>
+  // 'screen' (default) = N standalone runs added together — an UPPER BOUND, because every leg
+  // sized as if it owned the account and nothing could block it. 'shared' = one balance and one
+  // risk budget the legs compete for. The three account fields are read only in shared mode.
+  mode?: StackMode
+  account_size?: number
+  risk_cap_pct?: number
+  entry_floor_pct?: number
 }
+
+export type StackMode = 'screen' | 'shared'
 
 export interface StackResponse {
   stack_id: string
@@ -1119,6 +1128,9 @@ export interface StackPreviewRequest {
   end_date: string
   commission_per_side?: number
   slippage_ticks?: number
+  // A shared stack reuses nothing, so the preview must not offer a reuse count for a run that
+  // will replay every leg regardless.
+  mode?: StackMode
 }
 
 export interface StackPreviewLeg {
@@ -1148,6 +1160,8 @@ export interface StackSummary {
   status: string
   created_at: string
   strategy_names: string
+  mode: StackMode
+  risk_cap_pct: number | null   // null on a screen — there is no account to cap
 }
 
 export interface StackStrategyLeg {
@@ -1181,6 +1195,61 @@ export interface StackDetail {
   completed_at: string | null
   regime_timeline: RegimeDay[]
   strategies: StackStrategyLeg[]
+  mode: StackMode
+  // null on a screen: each leg traded its own full account, so there is no shared one to state.
+  account_size: number | null
+  risk_cap_pct: number | null
+  entry_floor_pct: number | null
+}
+
+// One entry the shared risk budget refused or shrank.
+export interface StackContentionEvent {
+  leg: string
+  time: number | null
+  blocked: boolean          // false = shrunk to fit, true = refused outright
+  desired_risk: number
+  granted_risk: number
+}
+
+export interface StackLegContention {
+  strategy_id: string
+  run_id: string
+  shared_trades: number
+  shared_r: number
+  solo_trades: number
+  solo_r: number
+  solo_closing_balance: number
+  shrunk: number
+  blocked: number
+  risk_refused: number
+}
+
+// What the shared account actually did.
+//
+// ⚠ `available: false` is THREE different answers and the page must not collapse them: this
+// stack is a screen (no account exists to contend over), it is still replaying, or it failed.
+// `progress` separates the second; `StackDetail.mode` separates the first.
+//
+// ⚠ `events: []` with `available: true` is the OPPOSITE — a real measurement that nothing was
+// refused, and it is the expected result: open risk is measured to each trade's CURRENT stop, so
+// a stop moved to breakeven releases its room before the other leg ever asks.
+export interface StackSharedReport {
+  stack_id: string
+  available: boolean
+  opening_balance: number | null
+  closing_balance: number | null
+  risk_cap_pct: number | null
+  entry_floor_pct: number | null
+  peak_open_risk_pct: number | null
+  peak_concurrent_legs: number | null
+  leg_count: number | null
+  combined_trades: number | null
+  combined_r: number | null
+  contention_events: number | null
+  legs: StackLegContention[]
+  events: StackContentionEvent[]
+  neutral: { checkable: boolean; ok?: boolean; reason: string; drifted?: string[] } | null
+  progress: { phase: string; pct: number; message: string; error?: string } | null
 }
 
 // A layer in the merged stack price chart — one completed leg.

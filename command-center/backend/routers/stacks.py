@@ -28,8 +28,9 @@ from fastapi import APIRouter, HTTPException, Response
 from models import (
     StackRequest, StackResponse, StackSummary, StackDetail, StackStrategyLeg,
     StackPreviewRequest, StackPreviewResponse, StackPreviewLeg,
+    StackSharedReport, StackLegContention, StackContentionEvent,
 )
-from services import chart_spec, lab_db, history_limits
+from services import chart_spec, lab_db, history_limits, portfolio_runner
 from services.sweep_runner import run_sweep
 
 _LAB_RESULTS_DIR = Path(__file__).parent.parent / "reports" / "lab"
@@ -73,7 +74,7 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
     legs: list[StackPreviewLeg] = []
     reuse = 0
     for strat in strategies:
-        match = lab_db.find_matching_stack_run(
+        match = None if req.mode == "shared" else lab_db.find_matching_stack_run(
             strat["id"], req.instrument, req.bar_type, req.bar_value,
             req.start_date, req.end_date, req.commission_per_side, req.slippage_ticks,
         )
@@ -112,6 +113,10 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
 
     stack_id = "st_" + uuid.uuid4().hex[:10]
     now      = int(time.time())
+
+    if req.mode == "shared":
+        return _trigger_shared_stack(req, strategies, stack_id, now)
+
     run_specs: list[dict] = []   # only the fresh legs actually need running
     job_specs: list[dict] = []
     run_ids:   list[str]  = []
@@ -207,6 +212,178 @@ async def trigger_stack(req: StackRequest) -> StackResponse:
     return StackResponse(stack_id=stack_id, run_ids=run_ids, status=status)
 
 
+# Settings a leg of a SHARED stack structurally cannot carry, pinned to the value the simulator
+# can run. `backtest/portfolio/legs.py::_refuse_unreplayable` is the AUTHORITY — it raises on
+# each of these — and this pins them ahead of it so the refusal never has to fire.
+#
+# ⚠ It is a structural impossibility, not a preference: `exec_secondary` is the 1-minute
+# re-entry, it needs a second bar stream through `run_dual`, and a leg on a merged clock is one
+# frame. Replaying it single-stream is the dangerous option — the leg comes back primary-only
+# while its own solo control and the screen both have the re-entries in them.
+#
+# ⚠ The pinned params are what gets STORED on the child run, deliberately. Overriding at replay
+# time while the row said otherwise is this app's most-repeated defect: a page stating a value
+# no code read. Here the row and the replay say the same thing, and the page says it was pinned.
+# `tests/test_shared_stack.py` reads `legs.py` and fails if it grows a refusal this misses.
+_SHARED_LEG_PINS = {"exec_secondary": False}
+
+
+def _pin_for_shared(params: dict) -> dict:
+    return {**params, **{k: v for k, v in _SHARED_LEG_PINS.items() if k in params}}
+
+
+def _trigger_shared_stack(req: StackRequest, strategies: list[dict],
+                          stack_id: str, now: int) -> StackResponse:
+    """One balance, one risk budget, every leg replayed together.
+
+    Deliberately different from the screen path in three ways, each of which would be a defect
+    if it were copied across:
+
+    * **No reuse, ever.** A finished standalone run was measured on its own full account with
+      nothing able to block it. Dropping one into a shared stack would put an un-contended leg
+      beside contended ones and call the pair a portfolio — the reuse optimisation is only
+      sound because a screen never claims the legs interacted.
+    * **It always takes the python lock**, because there is always work: `run_stack` is
+      `1 + len(legs)` full replays (the shared book plus one solo CONTROL per leg).
+    * **One job, not N.** The legs share a clock and an account, so they cannot be serialised
+      one after another the way `run_sweep` fans out a screen's legs.
+    """
+    if lab_db.has_running_job("python"):
+        raise HTTPException(409, "A Python job is already running — wait for it to finish")
+
+    lab_db.insert_stack({
+        "stack_id":            stack_id,
+        "instrument":          req.instrument,
+        "bar_type":            req.bar_type,
+        "bar_value":           req.bar_value,
+        "start_date":          req.start_date,
+        "end_date":            req.end_date,
+        "commission_per_side": req.commission_per_side,
+        "slippage_ticks":      req.slippage_ticks,
+        "created_at":          now,
+        "mode":                "shared",
+        "account_size":        req.account_size,
+        "risk_cap_pct":        req.risk_cap_pct,
+        "entry_floor_pct":     req.entry_floor_pct,
+    })
+
+    legs:    list[dict] = []
+    run_ids: list[str]  = []
+    for pos, strat in enumerate(strategies):
+        run_id = uuid.uuid4().hex[:12]
+        run_ids.append(run_id)
+        params = dict(req.params_by_strategy.get(strat["id"])
+                      or strat.get("default_params") or {})
+        params = _pin_for_shared(params)
+        lab_db.insert_run_stack({
+            "run_id":             run_id,
+            "strategy_id":        strat["id"],
+            "instrument":         req.instrument,
+            "params":             params,
+            "bar_type":           req.bar_type,
+            "bar_value":          req.bar_value,
+            "start_date":         req.start_date,
+            "end_date":           req.end_date,
+            "commission_per_side": req.commission_per_side,
+            "slippage_ticks":     req.slippage_ticks,
+            "status":             "running",
+            "created_at":         now,
+            "stack_id":           stack_id,
+            "runner":             "python",
+        })
+        lab_db.add_stack_member(stack_id, run_id, owned=1, position=pos)
+        legs.append({
+            "run_id":      run_id,
+            "strategy_id": strat["id"],
+            "class_name":  strat["class_name"],
+            "params":      params,
+            "ruleset_ids": req.ruleset_ids,
+        })
+
+    # ⚠ No `cost_layers` / `broker_profile` here, and that is the CURRENT state of stacks
+    # rather than a decision: the stacks table does not carry those columns, so a stack takes
+    # the legacy commission/slippage branch of `python_runner._cost_profile` like every other
+    # stack in this app. Wire them before anyone expects a priced shared stack — and wire them
+    # for BOTH modes at once, or a screen and a shared run over the same legs would be measured
+    # on different physics and the delta column would report the cost gap as the cap's doing.
+    portfolio_runner.launch(stack_id, legs, {
+        "instrument":          req.instrument,
+        "bar_type":            req.bar_type,
+        "bar_value":           req.bar_value,
+        "start_date":          req.start_date,
+        "end_date":            req.end_date,
+        "commission_per_side": req.commission_per_side,
+        "slippage_ticks":      req.slippage_ticks,
+        "account_size":        req.account_size,
+        "risk_cap_pct":        req.risk_cap_pct,
+        "entry_floor_pct":     req.entry_floor_pct,
+    })
+    return StackResponse(stack_id=stack_id, run_ids=run_ids, status="started")
+
+
+@router.get("/stacks/{stack_id}/contention", response_model=StackSharedReport)
+def get_stack_contention(stack_id: str) -> StackSharedReport:
+    """What the shared risk budget actually did — and, while it is still replaying, how far in.
+
+    ⚠ **`available: false` is not one answer, it is three, and the caller must not collapse
+    them**: this stack is a SCREEN (no account exists to contend over), it is still RUNNING, or
+    it failed. `progress` separates the second from the others, and `mode` on the detail
+    separates the first. An empty `events` list under `available: true` is the opposite of all
+    three — a real measurement that nothing was refused.
+    """
+    settings = lab_db.get_stack_settings(stack_id)
+    if not settings and not lab_db.list_stack_runs(stack_id):
+        raise HTTPException(404, f"Stack '{stack_id}' not found")
+
+    progress = portfolio_runner.progress_for(stack_id)
+    summary = portfolio_runner.read_shared_summary(stack_id)
+    if not summary:
+        return StackSharedReport(stack_id=stack_id, available=False, progress=progress)
+
+    events = _load_json(str(portfolio_runner.stack_dir(stack_id) / "contention.json"))
+    return StackSharedReport(
+        stack_id=stack_id,
+        available=True,
+        opening_balance=summary.get("opening_balance"),
+        closing_balance=summary.get("closing_balance"),
+        risk_cap_pct=summary.get("risk_cap_pct"),
+        entry_floor_pct=summary.get("entry_floor_pct"),
+        peak_open_risk_pct=summary.get("peak_open_risk_pct"),
+        peak_concurrent_legs=summary.get("peak_concurrent_legs"),
+        leg_count=summary.get("leg_count"),
+        combined_trades=summary.get("combined_trades"),
+        combined_r=summary.get("combined_r"),
+        contention_events=summary.get("contention_events"),
+        neutral=summary.get("neutral"),
+        progress=progress,
+        legs=[
+            StackLegContention(
+                strategy_id=row.get("strategy_id", ""),
+                run_id=row.get("run_id", ""),
+                shared_trades=row.get("shared_trades", 0),
+                shared_r=row.get("shared_r", 0.0),
+                solo_trades=row.get("solo_trades", 0),
+                solo_r=row.get("solo_r", 0.0),
+                solo_closing_balance=row.get("solo_closing_balance", 0.0),
+                shrunk=(row.get("contention") or {}).get("shrunk", 0),
+                blocked=(row.get("contention") or {}).get("blocked", 0),
+                risk_refused=(row.get("contention") or {}).get("risk_refused", 0.0),
+            )
+            for row in (summary.get("legs") or [])
+        ],
+        events=[
+            StackContentionEvent(
+                leg=str(e.get("leg", "")),
+                time=int(e["time"]) if e.get("time") is not None else None,
+                blocked=bool(e.get("blocked")),
+                desired_risk=float(e.get("desired_risk") or 0.0),
+                granted_risk=float(e.get("granted_risk") or 0.0),
+            )
+            for e in events
+        ],
+    )
+
+
 @router.post("/stacks/{stack_id}/cancel", status_code=200)
 def cancel_stack(stack_id: str) -> dict:
     rows = lab_db.list_stack_runs(stack_id)
@@ -232,6 +409,13 @@ def delete_stack(stack_id: str) -> Response:
         run_dir = _LAB_RESULTS_DIR / run_id
         if run_dir.exists():
             shutil.rmtree(run_dir)
+    # A SHARED stack owns a directory of its own (`contention.json`, `shared_summary.json`),
+    # which no child run references — so deleting only the children leaves it behind, and the
+    # stress-test audit already measured what that habit costs: 191 directories against 84 live
+    # runs. `stack_id` cannot collide with a `run_id` (it is `st_`-prefixed), so this is safe.
+    sdir = _LAB_RESULTS_DIR / stack_id
+    if sdir.exists():
+        shutil.rmtree(sdir)
     return Response(status_code=204)
 
 
@@ -337,4 +521,11 @@ async def get_stack(stack_id: str) -> StackDetail:
         completed_at=completed_at,
         regime_timeline=regime_timeline,
         strategies=legs,
+        mode=(settings or {}).get("mode") or "screen",
+        # Served from the settings row and NOT defaulted to a number. A screen has no account —
+        # every leg traded a full one — so `None` is the answer, and a `0` here would render as
+        # an account with no money rather than as a question that does not apply.
+        account_size=(settings or {}).get("account_size"),
+        risk_cap_pct=(settings or {}).get("risk_cap_pct"),
+        entry_floor_pct=(settings or {}).get("entry_floor_pct"),
     )

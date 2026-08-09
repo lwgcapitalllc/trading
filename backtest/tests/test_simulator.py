@@ -104,3 +104,64 @@ def test_forced_overlap_shrinks_second_and_logs_it():
     c = res.contention[0]
     assert c["leg"] == "B" and c["blocked"] is False
     assert c["desired_risk"] == 1000.0 and c["granted_risk"] == 200.0
+
+
+# ── Cancel and progress (2026-08-09) ──────────────────────────────────────────
+#
+# The lab drives a shared stack from a UI, and a full-history two-leg run is four replays over
+# ~150,000 bars. A Stop button that cannot reach this loop is a Stop button that does nothing.
+
+
+def test_a_cancelled_run_says_so_and_stops_stepping():
+    """⚠ The FLAG is the whole point, not the early return.
+
+    A cancelled result holds every trade closed up to the tick it stopped on, which is
+    indistinguishable from a complete short backtest once it is written to disk. A caller must
+    branch on `cancelled`, never on the trade list — persisting a partial book as a finished one
+    is the "cancel did not cancel" defect from the other side.
+    """
+    acct = _acct()
+    # Long enough that the cancel lands inside the run rather than after it.
+    script = [(i, "open" if i == 0 else "") for i in range(4_000)]
+    leg = FakeLeg("a", script, acct)
+    seen = {"ticks": 0}
+
+    def _cancel():
+        seen["ticks"] += 1
+        return seen["ticks"] > 1        # clear on the first poll, cancelled on the second
+
+    res = simulate([leg], acct, should_cancel=_cancel)
+    assert res.cancelled is True
+    assert acct.now < 4_000 - 1, "it kept stepping after the cancel"
+
+
+def test_a_run_nobody_cancels_is_not_marked_cancelled():
+    """The other direction, and it is the one that would be "simplified" back — a flag that is
+    always true reports every finished run as partial."""
+    acct = _acct()
+    leg = FakeLeg("a", [(0, "open"), (1, "close")], acct)
+    res = simulate([leg], acct, should_cancel=lambda: False)
+    assert res.cancelled is False
+    assert len(leg.trades) == 1
+
+
+def test_progress_reports_the_tick_index_and_is_polled_sparsely():
+    """Polled every `_CHECK_EVERY` ticks rather than every tick: the check is cheap and the loop
+    body is cheaper, so per-tick polling is measurable overhead on a run that never cancels."""
+    from backtest.portfolio.simulator import _CHECK_EVERY
+
+    acct = _acct()
+    n = _CHECK_EVERY * 3
+    leg = FakeLeg("a", [(i, "") for i in range(n)], acct)
+    seen: list = []
+    simulate([leg], acct, progress=seen.append)
+    assert seen == [0, _CHECK_EVERY, _CHECK_EVERY * 2]
+
+
+def test_simulate_without_the_new_arguments_is_untouched():
+    """Every existing caller passes neither, and a replay that started polling a None would be a
+    behaviour change dressed as a feature addition."""
+    acct = _acct()
+    leg = FakeLeg("a", [(0, "open"), (1, "close")], acct)
+    res = simulate([leg], acct)
+    assert res.cancelled is False and len(res.trades) == 1

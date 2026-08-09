@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Layers, X, Play, Loader2 } from 'lucide-react'
 import { useStrategies, useTriggerStack, useRunningVpsJob, useStackPreview, useHistoryLimit } from '@/hooks/useLab'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
+import type { StackMode } from '@/types'
 
 const BAR_PRESETS: [number, string][] = [[5, '5m'], [15, '15m'], [30, '30m'], [60, '1H'], [240, '4H']]
 
@@ -14,7 +15,28 @@ export interface StackConfigInitial {
   slippageTicks?: number
   start?: string
   end?: string
+  mode?: StackMode
+  accountSize?: number
+  riskCapPct?: number
+  entryFloorPct?: number
 }
+
+// The two things a stack can BE. They answer different questions, so the modal states the
+// difference in the reader's terms rather than assuming the word "shared" carries it.
+const MODES: { key: StackMode; label: string; blurb: string }[] = [
+  {
+    key: 'screen',
+    label: 'Screen',
+    blurb: 'Each strategy runs on its own full account and the results are added together. ' +
+      'Fast, reuses finished runs — and an UPPER BOUND, because no strategy can ever block another.',
+  },
+  {
+    key: 'shared',
+    label: 'Shared account',
+    blurb: 'One balance and one risk budget the strategies compete for, replayed together on one ' +
+      'clock. This is the demo-account question. Every leg is re-run — nothing is reused.',
+  },
+]
 
 // Shared config surface for BOTH "New stack" (Backtests → Stacks) and "Rerun stack" (StackDetail).
 // One component so the two can never drift — a rerun exposes EXACTLY what creation does. Submitting
@@ -48,6 +70,11 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
   // applies real cost via the account profile (vantage_demo = 0), so these display values stay honest.
   const [commPerSide, setCommPerSide] = useState(initial?.commPerSide ?? 0)
   const [slippageTicks, setSlippageTicks] = useState(initial?.slippageTicks ?? 0)
+  const [mode, setMode] = useState<StackMode>(initial?.mode ?? 'screen')
+  const [accountSize, setAccountSize] = useState(initial?.accountSize ?? 10_000)
+  const [riskCapPct, setRiskCapPct] = useState(initial?.riskCapPct ?? 10)
+  const [entryFloorPct, setEntryFloorPct] = useState(initial?.entryFloorPct ?? 0)
+  const shared = mode === 'shared'
 
   // Default the instrument to the first selected strategy's suggestion (New-stack case only).
   useEffect(() => {
@@ -63,7 +90,11 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
   })
 
   const validPeriod = !!start && !!end && start < end
-  const settingsReady = selected.size >= 2 && !!instrument.trim() && validPeriod
+  // A cap of zero refuses every entry, so a "portfolio" under it takes no trades at all — the
+  // backend refuses it and the button must not offer it either. Account size is guarded the same
+  // way: a leg sizes off the balance, so zero produces zero-size positions.
+  const accountValid = !shared || (riskCapPct > 0 && accountSize > 0)
+  const settingsReady = selected.size >= 2 && !!instrument.trim() && validPeriod && accountValid
 
   const previewBody = useMemo(() => ({
     strategy_ids: Array.from(selected),
@@ -74,7 +105,8 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
     end_date: end,
     commission_per_side: commPerSide,
     slippage_ticks: slippageTicks,
-  }), [selected, instrument, barValue, start, end, commPerSide, slippageTicks])
+    mode,
+  }), [selected, instrument, barValue, start, end, commPerSide, slippageTicks, mode])
   const { data: preview } = useStackPreview(previewBody, settingsReady)
   const actionByStrategy = useMemo(() => {
     const m = new Map<string, 'reuse' | 'run'>()
@@ -88,7 +120,15 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
   const submit = () => {
     if (!canRun) return
     triggerStack.mutate(
-      { ...previewBody, strategy_ids: Array.from(selected) },
+      {
+        ...previewBody,
+        strategy_ids: Array.from(selected),
+        // Sent only in shared mode. On a screen the backend stores NULL for all three, because a
+        // screen has no account — every leg traded its own — and a number here would be recorded
+        // as a setting the run never had.
+        ...(shared ? { account_size: accountSize, risk_cap_pct: riskCapPct,
+                       entry_floor_pct: entryFloorPct } : {}),
+      },
       { onSuccess: (res) => { onClose(); navigate(`/backtests/stacks/${res.stack_id}`) } },
     )
   }
@@ -107,8 +147,78 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
         <div className="px-5 py-4 overflow-y-auto space-y-5">
           <p className="text-[12px] text-text-secondary">
             Layer 2 or more Python strategies over one shared instrument and window to see combined
-            P&L. Each runs as its own backtest; toggle any strategy off afterward to see the effect.
+            P&L.
           </p>
+
+          <div>
+            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
+              What this stack measures
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {MODES.map(m => (
+                <button
+                  key={m.key}
+                  data-testid={`stack-mode-${m.key}`}
+                  onClick={() => setMode(m.key)}
+                  className={`px-3 py-2 rounded-lg text-[12px] font-medium border text-left transition-colors ${
+                    mode === m.key
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-border-subtle bg-bg-sunken text-text-secondary hover:border-border-default'
+                  }`}
+                >{m.label}</button>
+              ))}
+            </div>
+            <p className="text-[11px] text-text-tertiary mt-1.5">
+              {MODES.find(m => m.key === mode)!.blurb}
+            </p>
+          </div>
+
+          {shared && (
+            <div data-testid="stack-account-fields">
+              <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
+                The shared account
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <div className="text-[11px] text-text-tertiary mb-1.5">Balance ($)</div>
+                  <input
+                    type="number" step="100" min="1" value={accountSize}
+                    onChange={e => setAccountSize(Number(e.target.value))}
+                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+                <div>
+                  <div className="text-[11px] text-text-tertiary mb-1.5">Risk cap (%)</div>
+                  <input
+                    type="number" step="0.5" min="0.5" value={riskCapPct}
+                    onChange={e => setRiskCapPct(Number(e.target.value))}
+                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+                <div>
+                  <div className="text-[11px] text-text-tertiary mb-1.5">Entry floor (%)</div>
+                  <input
+                    type="number" step="0.1" min="0" value={entryFloorPct}
+                    onChange={e => setEntryFloorPct(Number(e.target.value))}
+                    className="w-full bg-bg-sunken border border-border-subtle rounded-md px-3 py-2 text-[13px] font-mono focus:outline-none focus:border-accent transition-colors"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-text-tertiary mt-1.5">
+                The cap is the most OPEN risk all strategies may hold at once, as a % of the
+                <strong className="text-text-secondary"> live </strong> balance — and an open trade
+                only reserves risk down to its <strong className="text-text-secondary">current</strong> stop,
+                so a stop moved to breakeven frees its room. An entry with no room is shrunk to fit,
+                or skipped if what is left falls under the floor.
+              </p>
+              {!accountValid && (
+                <p className="text-[11px] text-neg-text mt-1.5">
+                  Balance and risk cap must both be above zero — a cap of zero refuses every entry,
+                  which is a stopped bot rather than a portfolio.
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
@@ -199,7 +309,16 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
             <PeriodPicker start={start} end={end} onChange={(s, e) => { setStart(s); setEnd(e) }} limit={historyLimit} />
           </div>
 
-          {settingsReady && preview && (
+          {settingsReady && shared && (
+            <div className="text-[12px] text-text-secondary bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2">
+              <span className="text-warn-text font-semibold">{selected.size + 1} replays</span>
+              {' '}— the strategies together, then each one <strong className="text-text-secondary">alone</strong> as
+              the control. Without the solo run a difference is a mixture of <em>the cap bit</em> and
+              <em> the shared balance re-sized everything</em>, and nothing afterwards separates them.
+            </div>
+          )}
+
+          {settingsReady && !shared && preview && (
             <div className="text-[12px] text-text-secondary bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2">
               {preview.reuse_count > 0 && (
                 <span><span className="text-pos-text font-semibold">{preview.reuse_count}</span> reused from existing runs</span>

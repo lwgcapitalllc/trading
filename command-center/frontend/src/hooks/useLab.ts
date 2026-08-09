@@ -10,7 +10,7 @@ import type {
   LabProgress, SystemHealth, NavActivity, ReadinessReport,
   SweepRequest, SweepResponse, SweepDetail,
   StackRequest, StackResponse, StackSummary, StackDetail, StackChartSpec,
-  StackPreviewRequest, StackPreviewResponse,
+  StackPreviewRequest, StackPreviewResponse, StackSharedReport,
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
   InstrumentSummary, RunningJobStatus,
   StrategyFile, StrategyFilesResponse, StrategyFileSyncResponse, CompileJobStatus,
@@ -720,6 +720,31 @@ export function useStack(stackId: string | null) {
       const data = query.state.data as StackDetail | undefined
       if (!data) return 5_000
       return data.completed_strategies < data.total_strategies ? 3_000 : false
+    },
+  })
+}
+
+// What the shared risk budget actually did — plus, while it replays, how far in.
+//
+// ⚠ Polls on `available` being false rather than on the stack's own status, and the two are NOT
+// the same question: the legs go `complete` the moment their results are written, while this
+// artefact is written in the same pass, so keying off the stack status would stop polling a beat
+// before the report exists. `available` is the thing being waited for, so it is what gates the
+// poll.
+//
+// ⚠ Enabled only for a SHARED stack. A screen has no account to contend over, and polling one
+// forever would be asking a question that can never be answered.
+export function useStackContention(stackId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['lab', 'stack-contention', stackId],
+    queryFn: () => api.get<StackSharedReport>(`/backtests/stacks/${stackId}/contention`),
+    enabled: !!stackId && enabled,
+    refetchInterval: (query) => {
+      const data = query.state.data as StackSharedReport | undefined
+      if (!data) return 3_000
+      // A finished report never changes; a failed one will not start moving again either.
+      if (data.available || data.progress?.phase === 'failed') return false
+      return 3_000
     },
   })
 }

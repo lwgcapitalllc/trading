@@ -61,15 +61,25 @@ class StackRun:
     solo_closing: dict = field(default_factory=dict)    # leg -> its own closing balance, alone
     peak_reserved_pct: float = 0.0                      # most open risk carried, % of balance
     peak_concurrent: int = 0                            # most legs holding a position at once
+    cancelled: bool = False                             # stopped early — every book is PARTIAL
 
 
 def run_stack(specs: Sequence[LegSpec], *, balance: float, risk_cap_pct: float,
-              entry_floor_pct: float = 0.0, solo_control: bool = True) -> StackRun:
+              entry_floor_pct: float = 0.0, solo_control: bool = True,
+              progress: Any = None, should_cancel: Any = None) -> StackRun:
     """Replay `specs` together on one account, plus one solo control replay per leg.
 
     `risk_cap_pct` is a FRACTION of the live balance (0.10 = 10%), matching
     `PortfolioAccount.cap()`. It is the account-level rule the live allocator has to enforce
     too — the same number, or the stacked backtest stops predicting the stacked account.
+
+    `progress(phase, tick_index)` and `should_cancel()` are for a caller driving this from a
+    UI — this is `1 + len(specs)` full replays, so on a full history it is minutes of work.
+    ⚠ **A cancelled run RETURNS rather than raising, with `cancelled=True` and a partial
+    book.** A caller must branch on that flag: a stack stopped a year in produces a perfectly
+    ordinary-looking short result, and persisting it as finished is the "cancel did not
+    cancel" defect from the other side — not a run that kept going, but a stopped run
+    recorded as a complete one.
     """
     _refuse_duplicate_names(specs)
     if not 0.0 < risk_cap_pct:
@@ -80,20 +90,35 @@ def run_stack(specs: Sequence[LegSpec], *, balance: float, risk_cap_pct: float,
                                entry_floor_pct=entry_floor_pct)
     legs = [build_leg(s.name, s.strategy_cls, s.config, s.df, account=account,
                       initial_capital=balance, cost_profile=s.cost_profile) for s in specs]
-    result = simulate(legs, account)
+    result = simulate(legs, account,
+                      progress=(lambda i: progress("shared", i)) if progress else None,
+                      should_cancel=should_cancel)
 
     run = StackRun(opening_balance=balance, risk_cap_pct=risk_cap_pct,
                    entry_floor_pct=entry_floor_pct, closing_balance=account.balance,
                    trades=list(result.trades), per_leg=dict(result.per_leg),
                    contention=list(result.contention),
                    peak_reserved_pct=account.peak_reserved_pct,
-                   peak_concurrent=account.peak_concurrent)
+                   peak_concurrent=account.peak_concurrent,
+                   cancelled=result.cancelled)
+    if result.cancelled:
+        # No solo controls for a cancelled shared run. A control's whole job is to be
+        # comparable to the shared book, and a control over the FULL history beside a shared
+        # book that stopped a year in is not a control — it is two different experiments in
+        # one table, and the delta column would read as the cap's doing.
+        return run
     if solo_control:
         for spec in specs:
             solo = SoloAccount(balance=balance)
             leg = build_leg(spec.name, spec.strategy_cls, spec.config, spec.df, account=solo,
                             initial_capital=balance, cost_profile=spec.cost_profile)
-            simulate([leg], solo)
+            solo_result = simulate(
+                [leg], solo,
+                progress=(lambda i, n=spec.name: progress(f"solo:{n}", i)) if progress else None,
+                should_cancel=should_cancel)
+            if solo_result.cancelled:
+                run.cancelled = True
+                return run
             run.solo_per_leg[spec.name] = list(leg.trades)
             run.solo_closing[spec.name] = solo.balance
     return run

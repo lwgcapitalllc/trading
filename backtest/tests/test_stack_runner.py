@@ -257,3 +257,77 @@ def test_a_real_shrink_is_logged_end_to_end():
     granted = acct.request_fill("b", 1, 100.0, 99.0, 100.0, 1.0)   # wants $100, $1 is left
     assert granted == pytest.approx(1.0)
     assert [(r["leg"], r["blocked"]) for r in acct.contention] == [("b", False)]
+
+
+# ── Cancel (2026-08-09) ───────────────────────────────────────────────────────
+
+def _stub_build_leg(monkeypatch, n_bars=4_000, built=None):
+    """Point `run_stack` at the scripted leg the rest of this file uses.
+
+    The real `build_leg` constructs an `EngineStack` from a strategy's engine config, which needs
+    a real strategy and a real bar frame — neither of which says anything about the control flow
+    under test here. What IS under test is what `run_stack` does with a cancelled simulation, so
+    the leg is stubbed and `simulate` is the real one.
+    """
+    from backtest.portfolio import runner as runner_mod
+
+    def _fake(name, strategy_cls, config, df, *, account, initial_capital, cost_profile=None):
+        if built is not None:
+            built.append(name)
+        return _leg(name, account, entry_bar=1, n_bars=n_bars)
+
+    monkeypatch.setattr(runner_mod, "build_leg", _fake)
+
+
+def test_a_cancelled_shared_run_skips_the_solo_CONTROLS(monkeypatch):
+    """⚠ This is the load-bearing half of the cancel path.
+
+    A control's whole job is to be comparable to the shared book. A control replayed over the
+    FULL history, beside a shared book that stopped a year in, is not a control — it is two
+    different experiments in one table, and the screen-vs-shared delta would report the missing
+    year as the cap's doing.
+    """
+    built: list = []
+    _stub_build_leg(monkeypatch, built=built)
+    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+             LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame())]
+    calls = {"n": 0}
+
+    def _cancel():
+        calls["n"] += 1
+        return calls["n"] > 1        # clear on the first poll, cancelled on the second
+
+    run = run_stack(specs, balance=10_000.0, risk_cap_pct=1.0, should_cancel=_cancel)
+    assert run.cancelled is True
+    assert run.solo_per_leg == {} and run.solo_closing == {}
+    # ⚠ The two assertions above are NOT enough on their own and this one is why. Removing the
+    # skip leaves them BOTH TRUE: each solo replay polls `should_cancel` on its own first tick,
+    # gets True, and bails before recording anything — so the run does the extra work and looks
+    # identical from the outside. Counting the legs BUILT is what distinguishes "the controls
+    # were skipped" from "the controls ran and threw their results away".
+    assert built == ["a", "b"], "the solo controls were replayed after a cancel"
+
+
+def test_an_uncancelled_run_still_produces_a_control_per_leg(monkeypatch):
+    """The direction that would go unnoticed if the skip were made unconditional — a run with no
+    controls reports a shared book nothing can be compared against."""
+    _stub_build_leg(monkeypatch, n_bars=10)
+    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+             LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame())]
+    run = run_stack(specs, balance=10_000.0, risk_cap_pct=1.0, should_cancel=lambda: False)
+    assert run.cancelled is False
+    assert set(run.solo_per_leg) == {"a", "b"}
+
+
+def test_progress_names_the_PHASE_so_a_reader_can_tell_control_from_book(monkeypatch):
+    """`1 + len(legs)` full replays is minutes of work on a real history, and "bar 8,704 of
+    23,712" three times over says nothing about how far through the run is. The phase is what
+    turns the tick index into progress."""
+    _stub_build_leg(monkeypatch, n_bars=10)
+    specs = [LegSpec("a", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame()),
+             LegSpec("b", _FakeStrategy, {"entry_bar": 1}, pd.DataFrame())]
+    phases: list = []
+    run_stack(specs, balance=10_000.0, risk_cap_pct=1.0,
+              progress=lambda phase, i: phases.append(phase))
+    assert phases[0] == "shared"
+    assert set(phases) == {"shared", "solo:a", "solo:b"}
