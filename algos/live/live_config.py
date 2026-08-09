@@ -98,6 +98,23 @@ class LiveConfig:
     # sharing the login. 100 would let one setup commit the whole account, which is how the
     # 2026-08-07 order got as far as the broker deleting it at the fill.
     margin_safety_pct: float = 50.0
+    # ── the ACCOUNT-level risk cap (G10) ────────────────────────────────────
+    # The most open risk EVERY bot on this account may hold at once, as a % of the live balance,
+    # measured to each position's CURRENT broker-side stop — so a stop moved to breakeven frees
+    # its room, exactly as it does in `backtest/portfolio/`. It is the layer above
+    # `exec_risk_pct`, which is per-TRADE and has never had anything above it: two bots at 10%
+    # put 20% on from a state neither can see.
+    #
+    # ⚠ `None` = UNCAPPED, and that is a supported, honest state rather than an oversight. A
+    # one-bot account needs no cap, every result this repo has measured was taken without one,
+    # and inventing a default here would change a live bot's behaviour with no measurement behind
+    # it. The runner LOGS which state it is in at startup so "no cap" is a reported fact — the
+    # same call `deadman_url` makes, for the same reason: an absent guard must not be silent.
+    #
+    # ⚠ It is NOT runtime-reloadable. `RUNTIME_RELOADABLE` covers `exec_risk_pct` alone because
+    # that one is applied only while flat by rebuilding the strategy; the cap is read by the
+    # bridge, which holds live order state, so changing it means a restart.
+    account_risk_cap_pct: Optional[float] = None
 
     # ── broker clock ────────────────────────────────────────────────────────
     # "std,dst" hours ahead of UTC. MEASURED with backtest/tools/compare_feeds.py against THIS
@@ -195,6 +212,42 @@ def deployed_record(bot_key: str) -> Dict[str, Any]:
         return {}
 
 
+def _assert_magic_is_unique(bot_key: str, account, magic) -> None:
+    """No two bots on ONE ACCOUNT may share a magic number.
+
+    The magic is what separates one bot's orders from every other order on the terminal: every
+    read in `mt5_ops.py` filters on it, and `bridge.adopt_broker_state` HALTS on a position under
+    this bot's magic that it has no record of. Two bots sharing one would therefore each read the
+    OTHER's position as its own — cancel its orders, ratchet its stop, and report its fill as a
+    trade of its own — which is precisely the doubled-book failure the duplicate-process guards
+    exist to prevent, arriving through configuration instead of through a second process.
+
+    ⚠ **It is per ACCOUNT, not global.** Two bots on two different accounts may share a magic
+    quite safely — the terminal scopes orders by login — and refusing that would be a rule nobody
+    could satisfy once there are more accounts than sensible magic numbers.
+
+    ⚠ **An unreadable sibling config is SKIPPED, not fatal.** A half-written instance directory
+    must not stop a healthy bot from starting; the cost of skipping is that a clash hiding inside
+    a broken file is missed, and a broken file fails loudly on its own next start anyway.
+
+    Checked at LOAD rather than in a linter, because the file is edited by hand and by the Bots
+    page, and the only moment that reliably precedes trading is this one.
+    """
+    for other in sorted(_INSTANCES.glob("*/config.json")):
+        try:
+            raw = json.loads(other.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if raw.get("bot_key") == bot_key:
+            continue
+        if raw.get("account") == account and raw.get("magic") == magic:
+            raise ValueError(
+                f"magic {magic} is already used by bot {raw.get('bot_key')!r} on account "
+                f"{account}. Two bots sharing one magic on one account each read the OTHER's "
+                f"orders as their own — cancelling them, moving their stops and booking their "
+                f"fills — so give {bot_key!r} a magic of its own before starting it.")
+
+
 def load(bot_key: str) -> LiveConfig:
     """Read one bot's config. Raises with an actionable message if it is missing or malformed —
     a live bot must never start on a guessed configuration."""
@@ -219,6 +272,7 @@ def load(bot_key: str) -> LiveConfig:
     if missing:
         raise ValueError(f"{p} is missing required key(s): {', '.join(missing)}")
     raw.setdefault("display_name", raw["bot_key"])
+    _assert_magic_is_unique(raw["bot_key"], raw["account"], raw["magic"])
 
     # The DEPLOYMENT record wins on the version fields. `config.json` states the intent; only a
     # promote can state what is actually on disk, and only the machine that ran it knows. Left

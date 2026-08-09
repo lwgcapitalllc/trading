@@ -387,6 +387,27 @@ class LiveRunner:
                           {"mt5_path": self.cfg.mt5_path}, creds, self.log)
         return self.mt5.connect()
 
+    def _log_risk_cap(self) -> None:
+        """Report the account-level cap's state at every start, capped or not.
+
+        Both states have to be SAID. A cap that is set and a cap that is absent produce identical
+        behaviour on an account holding nothing, so the only moment the difference is legible is
+        before anything has happened — and "I thought the cap was on" is exactly the belief that
+        makes an uncapped second bot feel safe. It goes to the HEALTH stream because it describes
+        the machinery, not a setup.
+        """
+        cap = self.cfg.account_risk_cap_pct
+        per_trade = getattr(getattr(self.strategy, "config", None), "exec_risk_pct", None)
+        if cap is None:
+            self.log.warning(
+                f"Account risk cap: NONE. This bot risks {per_trade}% per trade and nothing "
+                f"limits what the ACCOUNT carries — correct for a one-bot account, and it means "
+                f"a second bot here would stack its risk on top of this one's. See G10.")
+        else:
+            self.log.info(f"Account risk cap: {cap}% of the live balance, across every bot on "
+                          f"this account (this bot risks {per_trade}% per trade).")
+        self.ledger.event("risk_cap", account_cap_pct=cap, per_trade_pct=per_trade)
+
     def warm(self):
         """Replay history through the strategy WITHOUT acting on any of it."""
         from backtest.replay import EngineStack, iter_bars
@@ -686,7 +707,13 @@ class LiveRunner:
             self.feed = BarFeed(self.mt5, self.cfg.timeframe, self.cfg.symbol)
             self.bridge = OrderBridge(self.mt5, self.strategy.execution, self.ledger, self.log,
                                       notify=self._notify, dry_run=self.dry_run,
-                                      margin_safety_pct=self.cfg.margin_safety_pct)
+                                      margin_safety_pct=self.cfg.margin_safety_pct,
+                                      account_risk_cap_pct=self.cfg.account_risk_cap_pct)
+            # SAY which state the account-level cap is in, every start. An absent guard is
+            # silent by construction, and "no cap" and "a cap that is not working" look
+            # identical from outside — the same reason `deadman.py --status` reports an unset
+            # URL rather than exiting quietly. It is a HEALTH record, not a decision.
+            self._log_risk_cap()
             self.bridge.adopt_broker_state()
             if self.bridge.state is BridgeState.HALTED:
                 return 4, "bridge halted while adopting the broker's state"

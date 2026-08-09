@@ -478,26 +478,70 @@ rarely have had anything to arbitrate", never as "a cap is unnecessary"**: it is
 bars arriving through the budget, and the window where two bots genuinely carry 2× risk is the bar
 before the stop stages.
 
-🔴 **THE LIVE HALF IS UNBUILT AND CANNOT REUSE THIS OBJECT.** `PortfolioAccount` is an in-process
-Python object; live bots are separate OS processes on the VPS, and **every MT5 read in
-`algos/shared/mt5_ops.py` is filtered by MAGIC** — which is correct for isolation and is exactly
-what makes an account-level allocator blind. So the live version has to read the broker's real
-exposure ACROSS magics, or share state under a lock. Nothing in `algos/live/` references the
-portfolio package today (grepped 2026-08-09, zero hits).
+✅ **THE LIVE HALF IS BUILT TOO, LATER THE SAME DAY, AND IT COULD NOT REUSE THAT OBJECT.**
+`PortfolioAccount` is an in-process Python object; live bots are separate OS processes. So the live
+allocator reads **the BROKER**, which is the design rather than a compromise: every alternative —
+a shared state file, a lock, a message bus — needs the bots to trust each other, and a bot that
+crashed or was killed leaves a stale reservation, so the cap then bounds a fiction. The broker
+knows what is actually open, **and it knows the STOP on every one of them**, because this suite
+puts the stop at the broker by design (bridge → D4). Risk-to-the-current-stop is therefore READ,
+not inferred — the same basis the backtest reserves on.
 
-⚠ **The binding constraint is that the two rules must be the SAME rule.** Whatever cap is tuned in
-the backtest has to be the cap the live allocator enforces, or the stacked backtest stops predicting
-the stacked account — this repo's own "a label is a CLAIM about code somewhere else" defect, in the
-one place where being wrong costs real money.
+| piece | where |
+|---|---|
+| the arithmetic and the refusals, pure and offline | `algos/shared/account_risk.py` |
+| the ONE unfiltered broker read | `mt5_ops.account_exposure()` |
+| the check, at the single sizing seam | `bridge._account_cap_check`, called from `_plan` |
+| the setting | `account_risk_cap_pct` on the instance config — `null` = uncapped |
 
-⚠ **A cap BELOW a leg's own risk % does not arbitrate, it RE-SIZES.** At a 5% cap against two bots
-each risking 10%, all 258 entries are shrunk and none is blocked; R is unchanged and the closing
-balance falls $204.9M → $4.7M. Blocking only happens when a leg asks while the budget is genuinely
-full.
+🔴 **The unfiltered read is the whole foundation and it is a deliberate exception to a standing
+rule.** Every other read in `mt5_ops.py` is MAGIC-filtered — right, and exactly what makes a bot
+blind to the account it shares. `account_exposure()` reads everything on the symbol whoever placed
+it. It never cancels, modifies or closes any of it: **the isolation rule is about WRITES**, and
+nothing here writes.
 
-⚠ **Two more live-side gaps found in the same pass and not yet closed**: nothing enforces DISTINCT
-magic numbers across instance configs (`live_config.py` validates each instance in isolation), and
-there is no account-level halt or fleet kill switch — the bridge halts only its own bot.
+⚠ **A position with NO stop REFUSES the order rather than scoring as zero risk.** Its risk is not
+small, it is unbounded — a hand trade left running is exactly that — and the falsy value it arrives
+as has the same shape as "no risk". Scoring it zero would let the one thing the cap exists to bound
+sit invisibly underneath it.
+
+⚠ **An unreadable account REFUSES.** A cap that opens itself when the terminal wobbles is a cap
+that is absent exactly when the account is least healthy. "Cannot ask" is never "affordable".
+
+🔴 **THE TWO SIDES RESOLVE A SHORTFALL DIFFERENTLY, AND IT IS NAMED RATHER THAN PAPERED OVER.** The
+backtest SHRINKS the leg's size to the room; live REFUSES. Shrinking is coherent in the backtest
+because the account hands the granted size back and the same process's emulator opens at it —
+**nothing hands a size back across a process boundary**, so a shrunk live order would leave the
+emulator holding one trade and the broker a smaller one, they would grade different R, and
+`_agrees` would eventually halt the bot on a divergence the safety feature created. On the measured
+history it changes nothing, because the cap never bound at all — but that is a fact about one
+history. **Anything that tunes the cap has to be replayed under the REFUSE policy**, or the
+backtest stops predicting the account.
+
+⚠ **A cap BELOW a leg's own risk % does not arbitrate, it RE-SIZES** (in the backtest) or refuses
+everything (live). At a 5% cap against two bots each risking 10%, all 258 backtest entries are
+shrunk and none is blocked; R is unchanged and the closing balance falls $204.9M → $4.7M.
+
+⚠ **This bot's OWN exposure is excluded from the total, and that is not a shortcut**: the strategy
+has ONE position slot, so anything of ours already on the book is what this order REPLACES.
+Counting it would make the bot refuse its own re-sizes near the cap, which reads exactly like a
+broken strategy.
+
+⚠ **`null` = UNCAPPED and the runner SAYS SO at every start** (a `risk_cap` health record and a
+warning line). A cap that is set and a cap that is absent behave identically on an empty account,
+so the only moment the difference is legible is before anything has happened — and *"I thought the
+cap was on"* is precisely the belief that makes an uncapped second bot feel safe. Same call as
+`deadman_url`. **The live bot is unchanged: it has no cap configured, so nothing about it moves.**
+
+✅ **Magic numbers are now enforced UNIQUE per account** (`live_config._assert_magic_is_unique`).
+Two bots sharing one would each read the OTHER's position as their own — cancel its orders, ratchet
+its stop, book its fill — which is the doubled-book failure the duplicate-process guards exist to
+prevent, arriving through configuration instead of through a second process. Per ACCOUNT, not
+global: the terminal scopes orders by login.
+
+⚠ **STILL OPEN on the live side: there is no account-level HALT or fleet kill switch** — the bridge
+halts only its own bot. And **nothing here has been exercised against a real second bot**, because
+there is no second instance to exercise it with; it is unit-tested and mutation-checked, not driven.
 
 The overlap half of this gap is **CLOSED as of 2026-08-04** — see G14. What stands between here and
 a second bot is that **B-LEG has no measured edge** (G15) and the live allocator above, in that

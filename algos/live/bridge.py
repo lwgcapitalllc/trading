@@ -105,7 +105,8 @@ def assert_supported(strategy_config) -> None:
 class OrderBridge:
     def __init__(self, bot_mt5, execution, ledger, log, *,
                  notify=None, dry_run: bool = True,
-                 margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT) -> None:
+                 margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT,
+                 account_risk_cap_pct: Optional[float] = None) -> None:
         self._mt5 = bot_mt5
         self._ex = execution
         self._ledger = ledger
@@ -113,6 +114,14 @@ class OrderBridge:
         self._notify = notify or (lambda text, kind, reply_to=None: None)
         self.dry_run = dry_run
         self._margin_safety_pct = float(margin_safety_pct)
+        # The ACCOUNT-level cap: max open risk across EVERY bot on this account, as a % of the
+        # live balance. `None` = uncapped, which is the honest state for a one-bot account and
+        # is what every result measured before it existed was taken on — inventing a default
+        # would change a live bot's behaviour with no measurement behind it. The runner SAYS
+        # which state it is in at startup, so "no cap" is a reported fact rather than an
+        # absence nobody noticed (the `deadman_url` precedent). See G10.
+        self._risk_cap_pct = (None if account_risk_cap_pct is None
+                              else float(account_risk_cap_pct))
         self._strategy_name = getattr(bot_mt5, "bot_label", "") or "strategy"
 
         self.state = BridgeState.LIVE
@@ -468,7 +477,7 @@ class OrderBridge:
 
         side = "bullish" if direction > 0 else "bearish"
         cfg = getattr(self._ex, "cfg", None)
-        return plan_order(
+        plan = plan_order(
             qty_units=pend.qty,
             entry=pend.edge,
             stop=pend.sl,
@@ -486,6 +495,63 @@ class OrderBridge:
             margin_for=lambda lots: self._mt5.margin_for(side, lots, pend.edge),
             margin_safety_pct=self._margin_safety_pct,
         )
+        # The ACCOUNT-level cap runs LAST, on a plan that already passed every per-order check.
+        # Order matters: a refusal should name the first thing wrong with the order itself
+        # (a collapsed stop, an unaffordable margin, a size below the broker minimum) before it
+        # starts talking about what OTHER bots are holding.
+        return self._account_cap_check(plan, spec)
+
+    def _account_cap_check(self, plan, spec):
+        """Does this order fit inside the whole ACCOUNT's risk budget?
+
+        This is the one check that reads past this bot's own magic number, and it is the reason
+        `mt5_ops.account_exposure()` exists. Every other read in the live path is magic-filtered —
+        correct for isolation, and precisely what makes a bot blind to the account it shares.
+
+        ⚠ **This bot's OWN exposure is excluded, and that is not a shortcut.** The strategy has
+        ONE position slot, so anything of ours already on the book is the thing this order
+        REPLACES (`_sync_side` cancels and re-places on a size change), never something it adds
+        to. Counting it would make the bot refuse its own re-sizes as soon as it was near the cap,
+        which reads exactly like a broken strategy.
+
+        ⚠ **It refuses; it never shrinks.** `algos/shared/account_risk.py` records why at length:
+        a resized order is not the trade the strategy's emulator is holding, the two grade
+        different R, and `_agrees` eventually halts the bot on a divergence the safety feature
+        created. The backtest allocator SHRINKS instead, which is coherent there because the
+        account hands the granted size back; nothing hands a size back across a process boundary.
+        """
+        from account_risk import RiskUnmeasurable, check_account_cap, measure_exposure
+
+        if self._risk_cap_pct is None or not plan.ok:
+            return plan
+
+        from order_sizing import SizingRefusal
+        items = self._mt5.account_exposure()
+        if items is None:
+            # The terminal could not be asked. Same call as an uncomputable margin: "cannot ask"
+            # is never "affordable", and a cap that opens itself when the terminal wobbles is a
+            # cap that is absent exactly when the account is least healthy.
+            return SizingRefusal(
+                "account_risk_unreadable",
+                "the account's open positions and orders could not be read, so the account-level "
+                "risk cap cannot be checked. Refusing rather than assuming the account is empty.")
+        try:
+            open_risk = measure_exposure(
+                [it for it in items if it.magic != self._mt5.magic], spec)
+        except RiskUnmeasurable as e:
+            return SizingRefusal("account_risk_unmeasurable", str(e))
+
+        # `risk_ccy`, not `intended_risk_ccy` — the cap bounds what actually goes ON THE BOOK,
+        # and rounding to the broker's volume step is always DOWN, so the intended figure would
+        # refuse orders that genuinely fit. The two differ by less than one volume step, but a
+        # refusal a reader cannot reproduce from the order that was placed is a refusal nobody
+        # can act on.
+        verdict = check_account_cap(
+            new_order_risk_ccy=plan.risk_ccy, open_risk=open_risk,
+            balance=self._account_balance(), cap_pct=self._risk_cap_pct)
+        if verdict.allowed:
+            return plan
+        return SizingRefusal(verdict.code, verdict.detail)
 
     def _account_balance(self):
         """The broker's balance, or None if it cannot be read.

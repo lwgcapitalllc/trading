@@ -58,8 +58,12 @@ class _Pos:
 
 
 class _Order:
-    def __init__(self, ticket):
+    def __init__(self, ticket, price=0.0, sl=0.0, volume=0.0, buy=True):
         self.ticket = ticket
+        # Carried so `account_exposure` below can be DERIVED from this book rather than
+        # hand-listed beside it. A fake whose exposure disagrees with its own order book is the
+        # 2026-08-07 trap one level up: it would test a shape production never produces.
+        self.price, self.sl, self.volume, self.buy = price, sl, volume, buy
 
 
 class _FakeMt5Ops:
@@ -76,12 +80,39 @@ class _FakeMt5Ops:
         self.spec = spec
         self.free = free
         self.leverage = leverage
+        # What OTHER magics hold on this account — another bot, or a hand trade. `None` stands
+        # for "the terminal could not be asked", which is a different answer from an empty
+        # account and the bridge has to treat it as one.
+        self.external: list = []
+        self.exposure_readable = True
 
     def get_open_positions(self, symbol=None):
         return list(self.positions)
 
     def get_pending_orders(self, symbol=None):
         return list(self.orders)
+
+    def account_exposure(self, symbol=None):
+        """Everything on the account across EVERY magic — this bot's own book plus `external`.
+
+        DERIVED from `self.positions` / `self.orders`, never hand-listed: production reads one
+        terminal, so a fake whose exposure and whose order book can disagree tests a state that
+        cannot occur. It also means the bridge's own-magic exclusion is genuinely exercised —
+        with a hand-listed exposure it would be exercising nothing.
+        """
+        from account_risk import Exposure
+        if not self.exposure_readable:
+            return None
+        out = []
+        for p in self.positions:
+            out.append(Exposure(ticket=p.ticket, symbol=self.symbol, magic=self.magic,
+                                direction=1 if p.type == 0 else -1, volume=p.volume,
+                                entry=p.price_open, stop=p.sl, resting=False))
+        for o in self.orders:
+            out.append(Exposure(ticket=o.ticket, symbol=self.symbol, magic=self.magic,
+                                direction=1 if o.buy else -1, volume=o.volume,
+                                entry=o.price, stop=o.sl, resting=True))
+        return out + list(self.external)
 
     def normalize_volume(self, lots, symbol=None):
         v = int(lots / 0.01 + 1e-9) * 0.01
@@ -106,7 +137,8 @@ class _FakeMt5Ops:
     def place_pending_limit(self, direction, lots, price, sl, tp=0.0, comment="", symbol=None):
         self._ticket += 1
         self.actions.append(("place", direction, lots, price, sl))
-        self.orders.append(_Order(self._ticket))
+        self.orders.append(_Order(self._ticket, price=price, sl=sl, volume=lots,
+                                  buy=direction == "bullish"))
         return self._ticket, price
 
     def modify_pending(self, ticket, price, sl, tp=0.0, symbol=None):
@@ -206,11 +238,20 @@ def _stub_mt5(monkeypatch):
         point = 0.01
         trade_contract_size = 100.0
 
+    class _AI:
+        # The account-level risk cap is a fraction of the LIVE balance, so the stub has to serve
+        # one. Without it `_account_balance` returns None and the cap REFUSES every order —
+        # correctly ("cannot ask" is never "affordable"), but it would make every cap test pass
+        # for the wrong reason.
+        balance = 2000.0
+
     m.symbol_info = lambda s: _SI()
+    m.account_info = lambda: _AI()
     monkeypatch.setitem(sys.modules, "MetaTrader5", m)
 
 
-def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, kinds=None):
+def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, kinds=None,
+            account_risk_cap_pct=None):
     mt5ops = mt5ops or _FakeMt5Ops()
     ledger = ledger or _FakeLedger()
     notes = notes if notes is not None else []
@@ -229,7 +270,8 @@ def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, k
         return len(notes)
 
     b = live_bridge.OrderBridge(mt5ops, execution, ledger, _Log(),
-                                notify=_notify, dry_run=dry_run)
+                                notify=_notify, dry_run=dry_run,
+                                account_risk_cap_pct=account_risk_cap_pct)
     b.state = live_bridge.BridgeState.LIVE
     return b, mt5ops, ledger, notes
 
@@ -697,3 +739,127 @@ def test_the_halt_names_the_refusal_that_caused_it():
     assert b.state is live_bridge.BridgeState.HALTED
     assert "REFUSED" in b.halt_reason
     assert "insufficient_margin" in b.halt_reason
+
+
+# ── the ACCOUNT-level risk cap (G10) ──────────────────────────────────────────
+#
+# `exec_risk_pct` is per-TRADE and has never had anything above it, so two bots at 10% put 20%
+# on from a state neither can see. These drive the whole seam — the unfiltered broker read, the
+# arithmetic, and the refusal — rather than the arithmetic alone, because the arithmetic was
+# already right in `test_account_risk.py` and the wiring is where a cap goes quietly missing.
+def _cap_pend(edge=3300.0, sl=3290.0, qty=20.0):
+    """A long wanting $200 of risk on the stub's $2,000 balance: 20 oz = 0.2 lots, $10 stop,
+    $1.00 per 0.01 per lot = $200 = exactly 10%."""
+    return _Pend(dir=1, edge=edge, qty=qty, sl=sl)
+
+
+def _other_bot(risk_dollars, magic=880220):
+    """A SECOND bot's open position holding `risk_dollars` of the account's budget."""
+    from account_risk import Exposure
+    lots = risk_dollars / (10.0 / 0.01 * 1.00)     # $10 of stop distance on gold
+    return Exposure(ticket=555, symbol="XAUUSD", magic=magic, direction=1, volume=lots,
+                    entry=3300.0, stop=3290.0, resting=False)
+
+
+def test_with_no_cap_configured_the_bridge_behaves_exactly_as_before(_stub_mt5):
+    """The default has to be inert. Every live result this repo has measured was taken with no
+    account cap, and a default appearing from nowhere would move a live bot with no measurement
+    behind it."""
+    b, ops, _, _ = _bridge(_FakeExecution(pend_long=_cap_pend()))
+    ops.external = [_other_bot(100_000.0)]         # the account is enormously over any cap
+    b.sync(_Dec(), _Sig())
+    assert [a[0] for a in ops.actions] == ["place"]
+
+
+def test_the_second_bot_is_REFUSED_when_the_first_holds_the_whole_budget(_stub_mt5):
+    """Aaron's requirement, end to end: one bot has the account's risk on, this one wants in,
+    and the system blocks it. Nothing reaches the broker."""
+    b, ops, ledger, notes = _bridge(_FakeExecution(pend_long=_cap_pend()),
+                                    account_risk_cap_pct=10.0)
+    ops.external = [_other_bot(200.0)]             # the whole 10% of $2,000
+    b.sync(_Dec(), _Sig())
+
+    assert ops.actions == []
+    refusals = [e for e in ledger.rows if e[0] == "event:order_refused"]
+    assert refusals and refusals[0][1]["code"] == "account_risk_cap"
+    assert "880220" in refusals[0][1]["detail"]
+
+
+def test_room_freed_by_the_other_bot_moving_ITS_stop_to_breakeven_lets_this_one_in(_stub_mt5):
+    """The property that makes a reservation model worth having, and the reason the cap reads the
+    CURRENT stop rather than the entry one: the other bot is still in the market, still holding a
+    full position, and holding NO risk — so it is not blocking anything."""
+    b, ops, _, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
+    from account_risk import Exposure
+    ops.external = [Exposure(ticket=555, symbol="XAUUSD", magic=880220, direction=1,
+                             volume=0.20, entry=3300.0, stop=3300.0, resting=False)]
+    b.sync(_Dec(), _Sig())
+    assert [a[0] for a in ops.actions] == ["place"]
+
+
+def test_a_partly_used_budget_REFUSES_rather_than_placing_a_smaller_order(_stub_mt5):
+    """Refuse, never shrink. A resized order is not the trade the strategy's emulator is holding;
+    the two would grade different R and `_agrees` would halt the bot on a divergence the safety
+    feature created. The BACKTEST allocator shrinks instead, which is coherent there because the
+    account hands the granted size back — nothing hands a size back across a process boundary."""
+    b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
+    ops.external = [_other_bot(150.0)]             # $50 of room against a $200 order
+    b.sync(_Dec(), _Sig())
+
+    assert ops.actions == []                       # NOT a 0.05-lot order
+    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == \
+        ["account_risk_cap"]
+
+
+def test_this_bots_OWN_resting_order_does_not_block_its_own_re_size(_stub_mt5):
+    """The own-magic exclusion, and it is not a shortcut. The strategy has ONE position slot, so
+    anything of ours already resting is what this order REPLACES — counting it would make the bot
+    refuse its own re-sizes near the cap, which reads exactly like a broken strategy."""
+    b, ops, _, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
+    b.sync(_Dec(), _Sig())                          # places, and the fake's book now holds it
+    assert [a[0] for a in ops.actions] == ["place"]
+
+    b._ex._pend_long = _cap_pend(edge=3301.0, sl=3291.0)   # same risk, moved a dollar
+    b.sync(_Dec(), _Sig())
+    assert [a[0] for a in ops.actions] == ["place", "modify"]
+
+
+def test_a_hand_trade_with_NO_STOP_refuses_rather_than_scoring_as_zero_risk(_stub_mt5):
+    """The dangerous shape. A stopless position's risk is UNBOUNDED, and the falsy value it
+    arrives as is the same shape as 'no risk' — so scoring it zero would let the one thing the
+    cap exists to bound sit invisibly underneath it."""
+    b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
+    from account_risk import Exposure
+    ops.external = [Exposure(ticket=42, symbol="XAUUSD", magic=0, direction=1, volume=0.5,
+                             entry=3300.0, stop=0.0, resting=False)]
+    b.sync(_Dec(), _Sig())
+
+    assert ops.actions == []
+    refusals = [e for e in ledger.rows if e[0] == "event:order_refused"]
+    assert refusals[0][1]["code"] == "account_risk_unmeasurable"
+    assert "NO broker-side stop" in refusals[0][1]["detail"]
+
+
+def test_an_unreadable_account_REFUSES_and_never_reads_as_an_empty_one(_stub_mt5):
+    """A cap that opens itself when the terminal wobbles is a cap that is absent exactly when the
+    account is least healthy — the `mt5_link` three-state rule applied to money."""
+    b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_cap_pend()), account_risk_cap_pct=10.0)
+    ops.exposure_readable = False
+    b.sync(_Dec(), _Sig())
+
+    assert ops.actions == []
+    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == \
+        ["account_risk_unreadable"]
+
+
+def test_a_per_order_refusal_is_reported_BEFORE_the_account_cap(_stub_mt5):
+    """Precedence. A refusal should name the first thing wrong with the ORDER itself before it
+    starts talking about what other bots are holding — otherwise a collapsed stop gets blamed on
+    a busy account and the reader goes looking in the wrong place."""
+    b, ops, ledger, _ = _bridge(_FakeExecution(pend_long=_Pend(dir=1, edge=3300.0, qty=20.0,
+                                                               sl=3300.0)),
+                                account_risk_cap_pct=10.0)
+    ops.external = [_other_bot(200.0)]              # the account is also full
+    b.sync(_Dec(), _Sig())
+    assert [e[1]["code"] for e in ledger.rows if e[0] == "event:order_refused"] == \
+        ["zero_stop_distance"]

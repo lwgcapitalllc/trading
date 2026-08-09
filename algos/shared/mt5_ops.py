@@ -523,6 +523,67 @@ class BotMT5:
         pos = mt5.positions_get(symbol=symbol or self.symbol)
         return [p for p in (pos or []) if p.magic == self.magic]
 
+    # ── The ONE unfiltered read, and it is the account-level allocator's whole foundation ──
+    #
+    # Every other read in this file is MAGIC-filtered, and that rule is right: it is what stops
+    # two bots on one terminal cancelling each other's orders and what keeps a hand trade
+    # invisible to the reconciler. **It is also exactly what makes an account-level risk cap
+    # impossible** — a bot that can only see its own orders cannot know the account is already
+    # full. `exec_risk_pct` is per-trade with nothing above it, so two bots at 10% put 20% at
+    # risk from a state neither of them can see (`docs/LIVE_TRADING_PIPELINE.md` → G10).
+    #
+    # So this reads EVERYTHING on the symbol, whoever placed it, and it is deliberately the only
+    # one that does. Note what it does NOT do: it never cancels, modifies or closes anything it
+    # can see. It is a read for arithmetic. The isolation rule is about WRITES, and nothing here
+    # writes.
+    def account_exposure(self, symbol: str = None) -> Optional[list]:
+        """Everything open or resting on this symbol, across EVERY magic, as `Exposure` rows.
+
+        `None` means the terminal could not be asked — MT5 returns `None` from `positions_get`
+        on an error and an empty tuple when there genuinely is nothing, and those two must not
+        collapse: an unreadable account read as "nothing on" is a cap that opens itself the
+        moment the terminal wobbles. The caller REFUSES on `None`, exactly as it does for a
+        `None` margin.
+
+        ⚠ **`sl` is passed through as the broker reports it, zero included.** A position with no
+        stop arrives here as `sl = 0.0`, and `account_risk.measure_exposure` refuses on it rather
+        than scoring it as zero risk — a stopless position's risk is unbounded, not absent.
+        Do not "tidy" a missing stop into a default here.
+        """
+        from account_risk import Exposure
+
+        sym = symbol or self.symbol
+        try:
+            pos = mt5.positions_get(symbol=sym)
+            orders = mt5.orders_get(symbol=sym)
+        except Exception as e:
+            self.log.error(f"Could not read the account's exposure on {sym}: {e}")
+            return None
+        if pos is None or orders is None:
+            self.log.error(f"positions_get/orders_get returned None for {sym}: {mt5.last_error()}")
+            return None
+
+        out = []
+        for p in pos:
+            out.append(Exposure(
+                ticket=int(p.ticket), symbol=sym, magic=int(p.magic),
+                # POSITION_TYPE_BUY is 0 and SELL is 1 — not +1/-1, and reading `p.type` as a
+                # sign would make every long a short and every short a flat position.
+                direction=1 if int(p.type) == mt5.POSITION_TYPE_BUY else -1,
+                volume=float(p.volume), entry=float(p.price_open), stop=float(p.sl),
+                resting=False))
+        for o in orders:
+            buy = int(o.type) in (mt5.ORDER_TYPE_BUY_LIMIT, mt5.ORDER_TYPE_BUY_STOP,
+                                  mt5.ORDER_TYPE_BUY_STOP_LIMIT)
+            out.append(Exposure(
+                ticket=int(o.ticket), symbol=sym, magic=int(o.magic),
+                direction=1 if buy else -1,
+                # `volume_current` is what is LEFT on a partially-filled order; `volume_initial`
+                # would double-count the filled part, which is already in `positions_get` above.
+                volume=float(o.volume_current), entry=float(o.price_open), stop=float(o.sl),
+                resting=True))
+        return out
+
     def place_pending_limit(self, direction: str, lots: float, price: float,
                             sl: float, tp: float = 0.0, comment: str = "",
                             symbol: str = None) -> tuple:

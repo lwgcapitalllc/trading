@@ -125,6 +125,12 @@ def test_every_event_written_in_algos_live_is_classified():
         # machinery correcting its own book-keeping, not about a setup. No order changes
         # because of it — the next one is merely sized off a number that is true.
         "equity_reanchored",
+        # The account-level risk cap's state, written once per start — capped or NOT. HEALTH by
+        # the same rule: it describes what the machinery is configured to enforce, not a setup.
+        # The order the cap actually refuses is a DECISION and goes out as `order_refused`
+        # carrying its own code, which is the pair worth noticing: one subject, seen from the
+        # two sides of this file's dividing line.
+        "risk_cap",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (
