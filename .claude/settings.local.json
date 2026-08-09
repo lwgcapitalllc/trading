@@ -133,7 +133,8 @@
       "Bash(sqlite3 data/lab.db \"select trades_path, equity_curve_path from backtest_runs where run_id like 'e51d95f212e3%'\")",
       "Bash(sqlite3 data/lab.db \"select params from backtest_runs where run_id like 'e51d95f212e3%'\")",
       "Bash(echo \"diff-exit=$?\")",
-      "Bash(python3 -m pytest candlesticks/tests/ -q)"
+      "Bash(python3 -m pytest candlesticks/tests/ -q)",
+      "Bash(python3 -m pytest tests/test_candle_overlays.py -q)"
     ],
     "additionalDirectories": [
       "/private/tmp",

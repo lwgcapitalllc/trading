@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services.candle_overlays import (  # noqa: E402
     GROUP_CANDLES,
+    _deepest_bar,
     build_candle_overlays,
 )
 
@@ -483,3 +484,114 @@ def test_the_deepest_mark_names_itself_PER_ANCHOR():
     named = {n: nm for o in out for n, nm in (o.get("deepestNames") or {}).items()}
     assert set(named) == {"0", "1"}, "both anchors must be named"
     assert named["0"] != named["1"], "a winner and a loser on one leg want different candles"
+
+
+# ---------------------------------------------------------------------------
+# "Deepest" is a PRICE, and an OPPOSING candle is never the NAME
+#
+# Two defects Aaron reported off the chart on 2026-08-08, from two different trades:
+#
+#   *"look at this trade on june 16 2026 — the deepest best entry was on a bearish engulfing yet
+#    you did not highlight it."*  → the fallback ranked by TIME, so the LAST pattern bar in the span
+#    won even when an earlier one sat deeper in the retracement.
+#
+#   *"how can I have won a short and the best candle be a bullish harami? Shouldn't it be a neutral
+#    candle, no candle or best yet a bearish candle?"*  → the name fell through to an OPPOSING
+#    candle whenever the span held nothing else.
+#
+# ⚠ All five were WATCHED RED against HEAD.
+
+
+def _plant_bear_engulf(bars: list[dict], i: int, reach: float) -> None:
+    """A Bearish Engulfing completing on bar `i`, whose HIGH reaches `reach` above the local price.
+
+    On a SHORT, `reach` is how DEEP into the retracement that candle went — which is the whole
+    subject here, and it is deliberately independent of WHEN the bar sits.
+    """
+    base = bars[i - 1]["open"]
+    bars[i - 1] = _bar(i - 1, base, base + 2.0, base - 0.2, base + 1.8)
+    prev = bars[i - 1]
+    top = prev["close"] + reach
+    bars[i] = _bar(i, prev["close"] + 0.5, top, prev["open"] - 9.2, prev["open"] - 9.0)
+
+
+def _deep_early__shallow_late() -> list[dict]:
+    """A short whose span holds two aligned candles: a DEEPER one early and a shallower one later,
+    with the turn past both so nothing reaches it and the fallback is what decides.
+
+    ⚠ The early bar is made deeper with a WICK rather than by position, because in a rising market
+    a later bar is higher by default — which is exactly the confound that let a recency rule look
+    correct for so long.
+    """
+    bars = _uptrend(200)
+    _plant_bear_engulf(bars, 155, reach=24.0)   # deeper (higher), earlier
+    _plant_bear_engulf(bars, 170, reach=0.7)    # shallower, later
+    bars[185] = _bar(185, bars[185]["open"], bars[185]["high"] + 60.0,
+                     bars[185]["low"], bars[185]["close"])
+    return bars
+
+
+def test_the_DEEPEST_candle_wins_the_name_not_the_most_RECENT_one():
+    """MEASURED on the reference run's 2026-06-16 short: the span held three Bearish Engulfings and
+    the LAST pattern bar was a Bearish Harami at high 4345.02, while the deepest aligned candle was
+    a Bearish Engulfing at 4349.27 — $4.25 deeper, i.e. the better short entry, and the one Aaron
+    named. Over that run's 166 anchors the deepest bar moves on 13 and the NAME changes on 8."""
+    bars = _deep_early__shallow_late()
+    out = build_candle_overlays(bars, [(bars[150]["time"], "short", bars[195]["time"], "win")])
+    # Scoped to the ALIGNED tier, which is the pool the fallback actually chooses from — the
+    # turn bar's own long wick prints a neutral pattern, and that bar is in a lower tier.
+    aligned = [o for o in out if o["spans"] and o["patternDir"] == -1]
+    assert len(aligned) >= 2, "the fixture must produce two aligned bars to choose between"
+    deepest = next(o for o in out if o["deepestOf"])
+    assert deepest["high"] == max(o["high"] for o in aligned), "deepest on a short is the HIGHEST"
+    assert deepest["t"] != max(o["t"] for o in aligned), "and it is NOT simply the latest"
+
+
+def test_deepest_is_measured_the_other_way_up_on_a_LONG():
+    """A long retraces DOWNWARDS, so its deepest candle is the LOWEST. Driven straight at
+    `_deepest_bar` because the directional patterns a full fixture would need cannot fire in the
+    trend a long's retracement requires — the rule is what is under test, not the engine."""
+    # ⚠ Bar 1 is the WIDER bar and bar 3 sits INSIDE it, which is what makes this check bite.
+    # It was vacuous twice before landing on this shape: with the extremes split across the two
+    # bars, a rule reading the wrong PRICE still returns the right index, because the comparator
+    # is chosen by direction and only the key is wrong. Here bar 1 has both the lowest low and the
+    # highest high, so reading `high` on a long picks bar 3 and reading `low` on a short picks
+    # bar 3 — each mutation is separated by exactly one of these two assertions.
+    bars = [_bar(i, 100.0, 101.0, 99.0, 100.0) for i in range(5)]
+    bars[1] = _bar(1, 100.0, 115.0, 90.0, 100.0)
+    bars[3] = _bar(3, 100.0, 101.0, 95.0, 100.0)
+    assert _deepest_bar(bars, [1, 3], "long") == 1, "a long's deepest is the LOWEST low"
+    assert _deepest_bar(bars, [1, 3], "short") == 1, "a short's deepest is the HIGHEST high"
+
+
+def test_an_OPPOSING_candle_is_never_the_name():
+    """Aaron: *"Shouldn't it be a neutral candle, no candle or best yet a bearish candle?"* — so the
+    preference ends at NEUTRAL and the honest answer below it is silence. MEASURED: 9 of the
+    reference run's 166 anchors hold nothing but opposing candles, and every one of them used to be
+    named after the candle arguing AGAINST the setup."""
+    bars = _neutral_and_opposing(with_neutral=False)
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    deepest = next(o for o in out if o["deepestOf"])
+    assert deepest["patternDir"] == -1, "the fixture must hold ONLY an opposing candle"
+    assert (deepest.get("deepestNames") or {}).get("0") is None, "so it must not be NAMED"
+
+
+def test_an_unnamed_span_is_still_PAINTED_and_still_the_deepest():
+    """Withholding the NAME may never withhold the MARK: the opposing candle is half the point of
+    the layer (*"it will show me why I was wrong"*), and dropping it from `deepestOf` would hide it
+    behind the panel's "Only the deepest" setting."""
+    bars = _neutral_and_opposing(with_neutral=False)
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    deepest = [o for o in out if o["deepestOf"]]
+    assert len(deepest) == 1, "the span still has a deepest mark"
+    assert deepest[0]["patterns"], "and it is still drawn, with its pattern list intact"
+
+
+def test_a_span_holding_a_NEUTRAL_candle_is_still_named():
+    """The floor is neutral, not aligned. 59 of the reference run's 194 spans hold no directional
+    candle at all — ten of the source Pine's fifteen rules gate on a trend lookback — so raising the
+    floor to aligned would strip the name off a third of the layer for no reason."""
+    bars = _neutral_and_opposing(with_neutral=True)
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    deepest = next(o for o in out if o["deepestOf"])
+    assert (deepest.get("deepestNames") or {}).get("0") is not None

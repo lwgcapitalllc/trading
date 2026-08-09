@@ -1781,8 +1781,15 @@ export default function ChartPanel({
       // `deepestNames` before `label`: the bar's own label is whichever anchor reached it first, and
       // on a bar that is the deepest of both a losing trade and a miss those two want opposite
       // directions. The per-anchor name is the only one that can answer both.
+      //
+      // ⚠ **A `deepestNames` OBJECT that lacks this anchor's key is an ANSWER, not a gap** — the
+      // backend withholds the name when the span's only candles point against the setup, so falling
+      // back to `label` there would put the opposing candle's name back on the chip, which is the
+      // defect. `label` is the fallback ONLY when the field is absent altogether, i.e. a spec cached
+      // before per-anchor naming existed. The repo's own rule: never let "no" and "cannot ask" be
+      // the same value.
       for (const n of ov.deepestOf ?? []) {
-        const name = ov.deepestNames?.[String(n)] ?? ov.label
+        const name = ov.deepestNames ? ov.deepestNames[String(n)] : ov.label
         if (name) named.set(n, name)
       }
     }
@@ -2300,7 +2307,11 @@ export default function ChartPanel({
           // none. `undefined` while the layer is OFF, and `undefined` must NOT render as "no": the
           // run has not been asked. Only switching the layer on turns the question into an answer.
           patternName: groupsOn[GROUP_CANDLE_MARKS] && atBaseTf
-            ? (tradePattern.named.get(i) ?? (tradePattern.any.has(i) ? 'candle' : 'no candle'))
+            // ⚠ Three states, not two. `no candle` = the span held no pattern at all;
+            // `no matching candle` = it held some and none pointed the way this outcome asks about,
+            // so the marks ARE on the chart and none of them earns the chip. Collapsing the two
+            // would report a setup that plainly had candles in it as having had none.
+            ? (tradePattern.named.get(i) ?? (tradePattern.any.has(i) ? 'no matching candle' : 'no candle'))
             : undefined,
           neutralColor: theme.textTertiary,
         },
@@ -2763,11 +2774,26 @@ export default function ChartPanel({
   }
 
   // Reset chart view (right-click menu) — restore the zoom/scroll captured at init, like TradingView.
+  //
+  // 🔴 **The PRICE axis has to be reset too, and it is a separate mechanism from the other three.**
+  // `setBarSpace` / `setOffsetRightDistance` / `scrollToRealTime` are all the TIME axis; dragging
+  // the price axis (or panning vertically once it is manual) switches the y axis off auto-scale and
+  // klinecharts keeps that range for ever. So "Reset chart view" restored the horizontal view onto a
+  // chart still showing a price window price had left — reported off a screen showing 5,100–5,460
+  // with the market at 4,252, i.e. a chart that looks EMPTY, which reads as the reset having broken
+  // it rather than half-finished it.
+  //
+  // ⚠ **klinecharts exposes no `resetYAxis`** — the only public route back is `setStyles` with a
+  // valid `yAxis.type`, which flips the candle pane's `autoCalcTickFlag` back on and re-adjusts the
+  // viewport. It is passed the type the chart already uses, so this changes nothing visually and is
+  // purely the reset. Double-clicking the price axis is the same reset by hand, and the reason
+  // nobody found this: the chart CAN be recovered, just not by the control that says it resets it.
   const resetView = () => {
     const chart = chartRef.current
     if (!chart) return
     if (defaultBarSpaceRef.current != null) chart.setBarSpace(defaultBarSpaceRef.current)
     if (defaultOffsetRef.current != null) chart.setOffsetRightDistance(defaultOffsetRef.current)
+    chart.setStyles({ yAxis: { type: chart.getStyles().yAxis.type } })
     chart.scrollToRealTime()
   }
 

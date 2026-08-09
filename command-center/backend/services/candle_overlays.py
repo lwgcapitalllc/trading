@@ -186,6 +186,28 @@ def _adverse_extreme(candles: list[dict], start: int, end: int, direction: str) 
     return extreme
 
 
+def _deepest_bar(candles: list[dict], bars: list[int], direction: str) -> int:
+    """Whichever of `bars` price ran FURTHEST AGAINST the setup on — the DEEPEST one.
+
+    🔴 **"Deepest" is a price, and it was being read as a time.** The fallback below used to take
+    the LAST pattern bar in the span (`pool[-1]`) whenever none reached the turn, which is *most
+    recent*, not *deepest*. MEASURED on the reference run's 2026-06-16 short: the span holds three
+    Bearish Engulfings and the last pattern bar is a Bearish Harami at 12:15 (high 4345.02), while
+    the genuinely deepest aligned candle is the 11:00 Bearish Engulfing at **4349.27 — $4.25
+    higher, i.e. a better short entry**. Aaron reported it as exactly that: *"the deepest best entry
+    was on a bearish engulfing yet you did not highlight it."*
+
+    ⚠ **Ties keep the EARLIER bar** (strict `>`), because the earlier one is the entry you could
+    actually have taken.
+    """
+    best = bars[0]
+    key = "high" if direction == "short" else "low"
+    for i in bars:
+        if (candles[i][key] > candles[best][key]) if direction == "short" else (candles[i][key] < candles[best][key]):
+            best = i
+    return best
+
+
 def _wanted_direction(direction: str, outcome: str) -> int:
     """The pattern direction this anchor's NAMED candle should carry: +1 bullish, -1 bearish.
 
@@ -380,16 +402,31 @@ def build_candle_overlays(
         tier_neut = [i for i in in_span if any(p.direction == 0 for p in hits[i])]
         pool = tier_pref or tier_neut or in_span
         if pool:
+            # A pattern that COMPLETES at or after the turn IS the turn candle, so it wins outright
+            # (see `_CONFIRM_BARS`). Only when nothing in the pool reaches the turn does "deepest"
+            # become a question, and then it is a question about PRICE — see `_deepest_bar`.
             after = [i for i in pool if i >= turn]
-            pick = after[0] if after else pool[-1]
+            pick = after[0] if after else _deepest_bar(candles, pool, direction)
             at_turn.setdefault(pick, []).append(n)
             # Name THIS anchor after a pattern pointing the way IT asked about, not after whichever
             # the bar's `label` ordering happened to settle on for somebody else.
+            #
+            # 🔴 **An OPPOSING candle is never the name, and there is deliberately no third
+            # fallback.** Aaron, off a winning short named `Bullish Harami`: *"Shouldn't it be a
+            # neutral candle, no candle or best yet a bearish candle?"* — so the preference order
+            # ends at neutral and the honest answer below it is silence. MEASURED: 9 of 166 anchors
+            # on the reference run have nothing but opposing candles in their span, and every one of
+            # them was being named after the candle that argues AGAINST the setup.
+            # ⚠ **The bar is still `deepestOf` and still PAINTED** — dropping it would hide the
+            # opposing candle behind "Only the deepest", and showing it is half the point of the
+            # layer (*"it will show me why I was wrong"*). Only the NAME is withheld, and the chart
+            # says `no matching candle` rather than `no candle`, because the two are different facts.
             chosen = next(
                 (p for p in hits[pick] if p.direction == prefer),
-                next((p for p in hits[pick] if p.direction == 0), hits[pick][0]),
+                next((p for p in hits[pick] if p.direction == 0), None),
             )
-            deepest_names.setdefault(pick, {})[str(n)] = chosen.label
+            if chosen is not None:
+                deepest_names.setdefault(pick, {})[str(n)] = chosen.label
 
     overlays: list[dict] = []
     for i in sorted(marked):
