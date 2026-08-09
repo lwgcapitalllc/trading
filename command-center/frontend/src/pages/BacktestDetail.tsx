@@ -2688,11 +2688,15 @@ function ChartLoadingSkeleton({ height }: { height: number }) {
 
 // Candlestick panel body (klinecharts). Lazy: the chart library and the run's ChartSpec (a heavy
 // candle fetch) load only when `active` — i.e. when the Price tab in the primary chart is selected.
-function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscreenClose }: {
+function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscreenClose, onRebuild, rebuilding }: {
   runId: string
   height?: number
   isFullscreen?: boolean
   onFullscreenClose?: () => void
+  /** Rebuild the run's ChartSpec. Passed DOWN from the page rather than owned here, so the inline
+   *  button and the fullscreen one drive ONE mutation and cannot report different pending states. */
+  onRebuild?: () => void
+  rebuilding?: boolean
 }) {
   const { data: spec, isLoading, isError } = useChartSpec(runId)
   const requestCandles = useRunCandles(runId)
@@ -2700,7 +2704,41 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
     <PriceChartView
       spec={spec} isLoading={isLoading} isError={isError} requestCandles={requestCandles}
       height={height} isFullscreen={isFullscreen} onFullscreenClose={onFullscreenClose}
+      onRebuild={onRebuild} rebuilding={rebuilding}
     />
+  )
+}
+
+/**
+ * Rebuild chart data — ONE control, on the price chart's own vertical TOOL STRIP, just above the
+ * Chart settings cog.
+ *
+ * 🔴 It sat in the tab strip until 2026-08-08, on a written-down rule that actions are not view
+ * state and so belong beside the tabs. That rule holds for the equity/breakdown `ChartModal`, whose
+ * fullscreen is a portal over a page whose chrome is still there — and it is wrong for the PRICE
+ * chart, which goes fullscreen by `position: fixed` over the whole app and takes the tab strip off
+ * screen with it. Reported in exactly those terms: *"allow me to rebuild chart on full screenview
+ * also it only allows me to do on minimized view"*, then placed here on Aaron's call.
+ *
+ * ⚠ It was MOVED, not copied. A second copy in the tab strip would be two controls firing one
+ * action — the argument that already removed the fib tool's own gear from that strip when the
+ * ladder moved into Chart settings (`ChartPanel/CLAUDE.md`). The strip is inside the panel, so one
+ * button covers both views.
+ *
+ * ⚠ Icon-only, sized and styled as a strip button: the strip is 40px wide, and a labelled button
+ * there would either overflow it or force the strip wider on every chart in the app.
+ */
+function RebuildChartButton({ onClick, pending }: { onClick: () => void; pending: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={pending}
+      title="Rebuild chart data — re-fetches the candles and replays the engines. Use it after a fix that changes what a layer draws."
+      aria-label="Rebuild chart"
+      className="flex items-center justify-center w-8 h-8 rounded-md border border-transparent text-text-tertiary hover:text-text-secondary hover:bg-bg-surface transition-colors disabled:opacity-50"
+    >
+      <RefreshCw className={`w-4 h-4 ${pending ? 'animate-spin' : ''}`} />
+    </button>
   )
 }
 
@@ -2708,7 +2746,7 @@ function PriceChartPanel({ runId, height = 520, isFullscreen = false, onFullscre
 // tools, and fullscreen chrome, driven by an already-fetched ChartSpec. BacktestDetail feeds it a
 // single run's spec; StackDetail feeds it the merged stack spec (trades layered by strategy) — both
 // get identical functionality. `requestCandles` wires M1/M5 drill-down; pass undefined to disable.
-export function PriceChartView({ spec, isLoading, isError, requestCandles, height = 520, isFullscreen = false, onFullscreenClose }: {
+export function PriceChartView({ spec, isLoading, isError, requestCandles, height = 520, isFullscreen = false, onFullscreenClose, onRebuild, rebuilding = false }: {
   spec: ChartSpec | undefined
   isLoading: boolean
   isError: boolean
@@ -2716,6 +2754,9 @@ export function PriceChartView({ spec, isLoading, isError, requestCandles, heigh
   height?: number
   isFullscreen?: boolean
   onFullscreenClose?: () => void
+  /** Optional — a stack has no single run to rebuild, so it passes neither and the button is absent. */
+  onRebuild?: () => void
+  rebuilding?: boolean
 }) {
   const fsBodyRef = useRef<HTMLDivElement>(null)
   const [fsBodyH, setFsBodyH] = useState(0)
@@ -2774,6 +2815,11 @@ export function PriceChartView({ spec, isLoading, isError, requestCandles, heigh
             onRequestCandles={spec.baseTimeframe !== 'D1' ? requestCandles : undefined}
             // Snapshot button on the expanded chart only — same rule as every other chart here.
             showCopy={isFullscreen}
+            // On the tool strip, so it is there in BOTH views — the tab strip that used to carry it
+            // is off screen in fullscreen.
+            toolActions={onRebuild
+              ? <RebuildChartButton onClick={onRebuild} pending={rebuilding} />
+              : undefined}
             headerClassName={isFullscreen ? 'border-b border-border-subtle pb-2' : undefined}
             headerLeading={isFullscreen
               ? <span className="text-[15px] font-bold uppercase tracking-wide text-text-primary ml-1 mr-2">{spec.instrument}</span>
@@ -4900,7 +4946,11 @@ export function BacktestDetail() {
             // View controls for a chart tab — rendered BOTH inline and in the fullscreen header.
             // Fullscreen is where a chart is actually read, so every control must exist there too
             // (the axis switch especially: expanding to compare against a date is the whole point).
-            // Actions (Refresh / Rebuild) deliberately stay inline — they're not view state.
+            // Actions (Refresh / Rebuild) stay OUT of this slot — they're not view state, and the
+            // equity/breakdown ChartModal is a portal over a page whose own chrome is still there.
+            // ⚠ That reasoning does NOT extend to the PRICE chart: it goes fullscreen by
+            // position:fixed over the whole app and takes this tab strip with it, so Rebuild travels
+            // with the chart, on ChartPanel's tool strip via `toolActions`. See `RebuildChartButton`.
             const chartControls = (key: string): React.ReactNode => (
               <>
                 {key === 'equity' && (
@@ -4959,6 +5009,8 @@ export function BacktestDetail() {
                       height={h}
                       isFullscreen={fullscreenChart === 'price'}
                       onFullscreenClose={() => setFullscreenChart(null)}
+                      onRebuild={isNt8 ? undefined : () => refreshChartSpec.mutate(runId)}
+                      rebuilding={refreshChartSpec.isPending}
                     />
                   ) : null
                 }
@@ -5047,17 +5099,9 @@ export function BacktestDetail() {
                             Refresh
                           </button>
                         )}
-                        {!isNt8 && primaryTab === 'price' && (
-                          <button
-                            onClick={() => runId && refreshChartSpec.mutate(runId)}
-                            disabled={refreshChartSpec.isPending}
-                            title="Rebuild chart data (re-fetches candles + recomputes structure)"
-                            className="flex items-center gap-[6px] px-2 py-[4px] rounded text-[11px] text-text-tertiary hover:text-text-secondary transition-colors disabled:opacity-50"
-                          >
-                            <RefreshCw size={11} className={refreshChartSpec.isPending ? 'animate-spin' : ''} />
-                            Rebuild chart
-                          </button>
-                        )}
+                        {/* ⚠ Rebuild chart is NOT here any more — it is on the price chart's own
+                            tool strip, above the Chart settings cog, so it survives fullscreen.
+                            Do not add a second copy back: see `RebuildChartButton`. */}
                       </>}
                     />
 

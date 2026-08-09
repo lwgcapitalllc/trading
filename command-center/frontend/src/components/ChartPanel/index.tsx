@@ -733,6 +733,7 @@ export default function ChartPanel({
   onRequestCandles,
   headerLeading,
   headerTrailing,
+  toolActions,
   headerClassName,
   showCopy = false,
 }: {
@@ -752,9 +753,16 @@ export default function ChartPanel({
    * the timeframe control; `headerTrailing` at the far right, after Copy. `headerClassName` is
    * appended to the header row (e.g. a `border-b` when it doubles as a modal title bar). Used by
    * the fullscreen wrapper to put its "Price" title + exit X on the same row as TF/Layers/Copy.
+   *
+   * `toolActions` is NOT a header slot: it renders on the vertical TOOL STRIP, in the bottom
+   * cluster directly above the Chart settings cog. That is where a host ACTION belongs — the strip
+   * is inside the panel, so it survives fullscreen (which is `position: fixed` over the whole app
+   * and takes the host's own chrome off screen), and it is where a reader already looks for
+   * controls that are about the chart rather than about the run. Icon-sized: the strip is 40px.
    */
   headerLeading?: ReactNode
   headerTrailing?: ReactNode
+  toolActions?: ReactNode
   headerClassName?: string
   /** Show the snapshot (camera) button. FULLSCREEN ONLY by convention — the whole app puts
    *  copy-as-image on the expanded chart, never the inline one. */
@@ -3310,6 +3318,10 @@ export default function ChartPanel({
               tool: those configure a DRAWING, this configures the chart. The full-size cog and the
               gap are the same distinction said twice. */}
           <div className="mt-auto" />
+          {/* Host ACTIONS sit in the bottom cluster with the cog rather than in the header, so they
+              survive fullscreen — the panel goes `position: fixed` over the whole app and takes the
+              host's own chrome (its tab strip) off screen with it. Aaron's placement, 2026-08-08. */}
+          {toolActions}
           <button
             onClick={e => {
               const r = e.currentTarget.getBoundingClientRect()
