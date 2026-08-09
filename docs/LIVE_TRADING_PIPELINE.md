@@ -531,7 +531,16 @@ broken strategy.
 warning line). A cap that is set and a cap that is absent behave identically on an empty account,
 so the only moment the difference is legible is before anything has happened — and *"I thought the
 cap was on"* is precisely the belief that makes an uncapped second bot feel safe. Same call as
-`deadman_url`. **The live bot is unchanged: it has no cap configured, so nothing about it moves.**
+`deadman_url`. 🔴 **SUPERSEDED SAME DAY — the live bot is CAPPED AT 10% now** (Aaron's call, ahead of
+bot #2). It read *"the live bot is unchanged: it has no cap configured, so nothing about it moves"*,
+which was true for a few hours. ⚠ **10% equals A+'s own `exec_risk_pct`, so the two bots will not
+share the budget — they take turns**: one full-size position or resting limit fills it and the other
+is refused until the room returns. A cap that lets both hold at once has to be 20%. ⚠ **A RESTING
+order counts here and does NOT in `backtest/portfolio/`, which reserves at the fill** — A+ enters on
+a limit that can sit for hours, so **live contention will be more frequent than the shared-account
+backtest predicts, and its empty contention log is not a forecast for this account.** ✅ The account
+was probed read-only first (0 positions, 0 orders, 0 stopless), because one stopless hand trade
+refuses every order and would read as a strategy that went quiet.
 
 ✅ **Magic numbers are now enforced UNIQUE per account** (`live_config._assert_magic_is_unique`).
 Two bots sharing one would each read the OTHER's position as their own — cancel its orders, ratchet
