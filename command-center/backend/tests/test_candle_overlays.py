@@ -671,3 +671,105 @@ def test_an_anchor_with_NO_entry_price_keeps_the_turn_relative_span():
     _, hi_entry, _ = _reversal_span(bars, 30, "short", 3, 79, entry)
     assert hi_none == turn + 2, "with no entry price the span still ends at turn + _CONFIRM_BARS"
     assert hi_entry > hi_none, "and the same anchor WITH one reaches to the end of the drawdown"
+
+
+# ── the zone is a PRICE band, not a stretch of time ──────────────────────────────────
+
+def _long_that_drifts_up_then_dips_then_takes_off() -> tuple[list[dict], float]:
+    """A long entered at 100 that drifts ABOVE its entry first, then dips into a real drawdown,
+    then leaves the band for good and rallies away — Aaron's 2026-07-15 long in miniature.
+
+    Four hammers, one in each region the rule has to tell apart:
+      32 — above the entry, BEFORE the turn      (favourable: must not be marked)
+      40 — inside the band, past turn + confirm  (the drawdown: must be marked)
+      43 — two bars past the end of the drawdown (the takeoff: must not be marked)
+      52 — far into the rally                    (must not be marked)
+    """
+    entry = 100.0
+    bars = _flat(30, price=90.0)
+    bars += [_bar(30 + i, 101.4, 102.0, 100.8, 101.6) for i in range(4)]      # above the entry
+    bars += [_bar(34 + i, 99.0, 99.6, 98.2, 99.2) for i in range(8)]          # the drawdown
+    bars += _flat(20, start=42, price=110.0)                                   # gone for good
+    bars[32] = _hammer_at(32, 108.0)          # low 102 — favourable side
+    bars[36] = _bar(36, 96.0, 96.4, 92.0, 96.1)   # the adverse EXTREME
+    bars[40] = _hammer_at(40, 99.5)           # low 93.5 — deep in the band
+    bars[41] = _bar(41, 99.8, 100.4, 99.7, 100.2)  # the last bar touching the entry
+    bars[43] = _hammer_at(43, 112.0)          # low 106 — two bars past the drawdown
+    bars[52] = _hammer_at(52, 112.0)          # low 106 — far into the rally
+    return bars, entry
+
+
+def test_a_candle_two_bars_past_the_drawdown_is_NOT_marked():
+    """🔴 Watched RED against HEAD, which draws bar 43.
+
+    THE REPORTED DEFECT. `_CONFIRM_BARS` was added to the end of the DRAWDOWN instead of to the
+    TURN, so every trade got two free bars after price had already left the band — and on a trade
+    that leaves the band into a rally those two bars ARE the rally. Aaron, off his 2026-07-15 long:
+    *"it said won on inverted hammer but there is no inverted hammer near entry or within draw down
+    … it is somewhere in between."* On that trade it was the only mark, so it named the chip.
+    """
+    bars, entry = _long_that_drifts_up_then_dips_then_takes_off()
+    assert _fired(bars, 43), "fixture must fire a pattern two bars past the drawdown"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+    )
+    times = {o["t"] for o in out}
+    assert bars[43]["time"] not in times, "two bars past the band is the takeoff, not the drawdown"
+    assert bars[52]["time"] not in times, "and neither is the rest of the rally"
+
+
+def test_a_favourable_candle_BEFORE_the_turn_is_NOT_marked():
+    """🔴 Watched RED against HEAD, which draws bar 32.
+
+    The other half of the same report, and no bound on the END could have caught it: the span opens
+    at the ENTRY BAR, so a trade that runs into profit first and only later comes back to make its
+    adverse extreme painted the whole excursion in between. MEASURED on run `e51d95f212e3`, that is
+    196 of 255 stray marks, one of them 112 bars after its entry.
+    """
+    bars, entry = _long_that_drifts_up_then_dips_then_takes_off()
+    assert _fired(bars, 32), "fixture must fire a pattern above the entry, before the turn"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+    )
+    assert bars[32]["time"] not in {o["t"] for o in out}
+
+
+def test_the_candles_INSIDE_the_band_are_still_drawn():
+    """The counterweight, and the reason the two tests above are not satisfied by drawing nothing:
+    a pattern deep in the drawdown — past `turn + _CONFIRM_BARS`, so it qualifies on the band test
+    alone — is exactly what this layer exists to show.
+    """
+    bars, entry = _long_that_drifts_up_then_dips_then_takes_off()
+    assert _fired(bars, 40), "fixture must fire a pattern inside the band"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+    )
+    assert bars[40]["time"] in {o["t"] for o in out}
+
+
+def test_a_pattern_completing_just_after_the_turn_is_still_marked():
+    """The one exemption from the band test, and it is why this is not simply a price filter.
+
+    A pattern is reported on the bar it COMPLETES, so a three-bar reversal that starts on the
+    extreme finishes two bars later — on a sharp V that bar is already back above the entry. Cutting
+    it costs the reversal candle itself: MEASURED over 166 anchors, a band-only rule leaves 40 trades
+    with no mark against this rule's 21.
+
+    ⚠ A pin, proven by MUTATION (dropping the `turn <= i <= turn + _CONFIRM_BARS` clause), not by a
+    fail-watch — HEAD draws this bar too, for its own broader reason.
+    """
+    entry = 100.0
+    bars = _flat(30, price=90.0)
+    bars += [_bar(30 + i, 99.0, 99.5, 98.0, 99.2) for i in range(5)]   # in the band
+    bars += _flat(25, start=35, price=110.0)                            # straight out of it
+    bars[34] = _bar(34, 96.0, 96.4, 92.0, 96.1)                         # the extreme, last in band
+    bars[35] = _hammer_at(35, 112.0)                                    # low 106 — turn + 1
+    assert _fired(bars, 35), "fixture must fire a pattern one bar past the extreme"
+
+    out = build_candle_overlays(
+        bars, [(bars[30]["time"], "long", bars[59]["time"], "win", entry)],
+    )
+    assert bars[35]["time"] in {o["t"] for o in out}
