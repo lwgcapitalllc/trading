@@ -39,13 +39,19 @@ from .execution import BLegExecution  # noqa: E402
 class MpcBLegStrategy(MpcSosFadeStrategy):
     def __init__(self, config: Optional[BLegConfig] = None,
                  initial_capital: float = 1_000_000.0, tick_source=None,
-                 cost_profile=None) -> None:
+                 cost_profile=None, account=None, leg: str = "strat") -> None:
         self.config = config or BLegConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
         resolver, profile = self._fill_model(tick_source, cost_profile)
+        # The shared-account seam, identical to the parent's — this fork overrides only
+        # `_place_entries`, and every line that touches the account (the fill gate, the stop
+        # reservation, the P&L booking, `equity`) is the parent's, so the seam works here for
+        # free. It has to be threaded through this constructor because this one does not call
+        # super().__init__. See the parent's __init__ for what `leg` must satisfy.
         self.execution = BLegExecution(self.config, initial_capital=initial_capital,
-                                       resolver=resolver, profile=profile)
+                                       resolver=resolver, profile=profile,
+                                       account=account, leg=leg)
         self.tracker: Optional[BLegTracker] = None   # built in run() once the timeframe is known
         self.decisions: List[Decision] = []
         # The tracker's per-bar state, recorded alongside the decisions. REPORTING ONLY —

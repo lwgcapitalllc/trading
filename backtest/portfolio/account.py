@@ -25,6 +25,25 @@ from typing import Optional, Sequence
 
 __all__ = ["Position", "PortfolioAccount", "SoloAccount"]
 
+# A grant within this much of the desired risk IS the desired risk.
+#
+# `granted = min(desired, room)` and `room = cap - reserved`, so a lone leg whose own risk %
+# equals the account cap lands EXACTLY on the boundary — `mpc_sos_fade` at `exec_risk_pct = 10`
+# under a 10% cap does it on every single entry. In exact arithmetic those two are equal and
+# nothing is refused; in floats the room comes out a few parts in 1e16 short, `granted < desired`
+# is true, and the entry is logged as a shrink.
+#
+# Measured before this existed: a 6.5-year two-leg run reported **11 contention events totalling
+# $0.00 of refused risk** — every one of them float noise, on a run where the cap never actually
+# bound. That is the whole log made unreadable, and downstream it would put "this trade was
+# shrunk" markers on a chart for trades granted in full.
+#
+# It is deliberately RELATIVE and deliberately tiny: 1e-9 of the desired risk is $0.000001 on a
+# $1,000 risk, far below a broker's smallest volume step, while a real shrink is a fraction of the
+# position. It is not a rounding of the granted QTY — the leg still gets `min(desired, room)`
+# scaled exactly; it only decides whether the difference is worth calling contention.
+_GRANT_EPS = 1e-9
+
 
 @dataclass
 class Position:
@@ -61,6 +80,15 @@ class PortfolioAccount:
         # every collision — the whole point of sharing an account. (SoloAccount never contends.)
         self.now: Optional[int] = None
         self.contention: list[dict] = []
+        # What the account actually CARRIED, sampled by the simulator once per tick. The
+        # contention log answers "was anything refused"; this answers the question underneath
+        # it — how close the legs ever came to the cap — and the two can disagree completely.
+        # A reservation falls to zero the moment a stop reaches breakeven, so a book can hold
+        # two full positions all day and still log nothing, which reads as "the legs never
+        # competed" when what happened is that the budget was released before they could.
+        self.peak_reserved = 0.0            # dollars
+        self.peak_reserved_pct = 0.0        # of the balance AT THAT MOMENT, not of the opening
+        self.peak_concurrent = 0            # most legs holding a position at once
 
     # ── budget ────────────────────────────────────────────────────────────────
     def reserved(self) -> float:
@@ -92,7 +120,7 @@ class PortfolioAccount:
         if granted_risk <= 0.0 or granted_risk < self._floor():
             self._log_contention(leg, dir, desired_risk, 0.0, blocked=True)
             return 0.0
-        if granted_risk < desired_risk:
+        if self._is_shrunk(desired_risk, granted_risk):
             self._log_contention(leg, dir, desired_risk, granted_risk, blocked=False)
         return self._open(leg, dir, entry, stop, desired_qty, desired_risk, granted_risk, point_value)
 
@@ -113,12 +141,17 @@ class PortfolioAccount:
                 self._log_contention(r["leg"], r["dir"], desired_risk, 0.0, blocked=True)
                 out[r["leg"]] = 0.0
                 continue
-            if granted_risk < desired_risk:
+            if self._is_shrunk(desired_risk, granted_risk):
                 self._log_contention(r["leg"], r["dir"], desired_risk, granted_risk, blocked=False)
             out[r["leg"]] = self._open(r["leg"], r["dir"], r["entry"], r["stop"],
                                        r["desired_qty"], desired_risk, granted_risk,
                                        r["point_value"])
         return out
+
+    @staticmethod
+    def _is_shrunk(desired_risk: float, granted_risk: float) -> bool:
+        """Did the budget actually take size away? See `_GRANT_EPS` for why this is not `<`."""
+        return granted_risk < desired_risk * (1.0 - _GRANT_EPS)
 
     def _log_contention(self, leg: str, dir: int, desired_risk: float,
                         granted_risk: float, *, blocked: bool) -> None:
@@ -164,6 +197,21 @@ class PortfolioAccount:
 
     def has_position(self, leg: str) -> bool:
         return leg in self._positions
+
+    def sample_exposure(self) -> None:
+        """Record what the account is carrying right now. Called once per tick by the simulator.
+
+        Sampled rather than derived at the end, because both peaks are instants: the open risk
+        is recomputed from every position's CURRENT stop, so it is a moving number that leaves
+        no trace once the stops advance.
+        """
+        held = len(self._positions)
+        self.peak_concurrent = max(self.peak_concurrent, held)
+        res = self.reserved()
+        if res > self.peak_reserved:
+            self.peak_reserved = res
+        if self.balance > 0.0:
+            self.peak_reserved_pct = max(self.peak_reserved_pct, res / self.balance)
 
     # ── account-level halt ──────────────────────────────────────────────────--
     def check_trailing_halt(self, trailing_max_loss: Optional[float]) -> bool:

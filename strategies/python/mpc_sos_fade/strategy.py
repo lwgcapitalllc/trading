@@ -34,13 +34,21 @@ from .signals import SignalAdapter
 class MpcSosFadeStrategy:
     def __init__(self, config: Optional[SosFadeConfig] = None,
                  initial_capital: float = 1_000_000.0, tick_source=None,
-                 cost_profile=None) -> None:
+                 cost_profile=None, account=None, leg: str = "strat") -> None:
         self.config = config or SosFadeConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
         resolver, profile = self._fill_model(tick_source, cost_profile)
+        # `account` is the SHARED account when this bot is one leg of a stack — it owns the
+        # balance every leg sizes against and the risk budget they compete for. Omit it (the
+        # default) and Execution builds its own SoloAccount, which is byte-identical to the
+        # standalone behaviour this bot's parity gate was measured on. `leg` is this leg's key
+        # in that account and MUST be distinct per leg: the account holds one open position per
+        # key, so two legs sharing a name would overwrite each other's reservation and the cap
+        # would silently under-count the open risk. See backtest/portfolio/.
         self.execution = Execution(self.config, initial_capital=initial_capital,
-                                   resolver=resolver, profile=profile)
+                                   resolver=resolver, profile=profile,
+                                   account=account, leg=leg)
         self.decisions: List[Decision] = []
 
     def _fill_model(self, tick_source, cost_profile=None):

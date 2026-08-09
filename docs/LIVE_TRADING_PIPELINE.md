@@ -448,16 +448,60 @@ version), but that tracks lab deploys of `.cs`/`.mq5` files, not running process
 No live trade log exists (there are no live trades). `decision_log.py` is the right tool and is
 unwired. Nothing backs up any VPS log anywhere — `algos/` logs live only on the VPS disk.
 
-### G10 — No account-level risk allocator
+### G10 — No account-level risk allocator — **BACKTEST HALF BUILT 2026-08-09, LIVE HALF STILL OPEN**
 
-`CLAUDE.md` is explicit: `exec_risk_pct` is per-trade with nothing above it, the account-level cap is
-**unbuilt, and is a prerequisite for running more than one bot live**.
+`exec_risk_pct` is per-trade with nothing above it, and the account-level cap is a prerequisite for
+running more than one bot live.
 
-**Consequence for this plan: start with ONE bot.** A+ alone needs no allocator.
+**Consequence for this plan is unchanged: start with ONE bot.** A+ alone needs no allocator.
 
-The overlap half of this gap is **CLOSED as of 2026-08-04** — see G14. The legs really do stay out of
-each other's way, so the allocator is no longer the thing standing between here and a second bot. What
-is standing there now is that **B-LEG has no measured edge**, which the same run found.
+**Split the gap in two, because only one half moved.**
+
+✅ **The BACKTEST can now run a shared account.** `backtest/portfolio/run_stack` replays several
+`strategies/python/` bots on ONE balance and ONE risk budget: every leg sizes off the shared balance,
+every leg's P&L books onto it, an open trade reserves risk to its CURRENT stop, and an entry with no
+room is shrunk to fit or refused. Every shrink and refusal lands in a contention log. Driven by
+`backtest/tools/stack_run.py`. Both strategy constructors thread `account` / `leg` through to
+`Execution`, where the seam had existed since 2026-07-17 with nothing able to pass it one.
+
+✅ **MEASURED on the first real run — 155,807 M15 bars, A+ and B-LEG, $10,000, cap 10% of the live
+balance: A+ 159 trades / +142.18R · B-LEG 99 / +17.87R · account $10,000 → $204,918,789**, with
+every leg posting the SAME R shared as solo. That equality is the control, not the headline: R is
+normalised to the trade's own risk, so with nothing refused the shared account changed the DOLLARS
+and moved no decision — which is what makes any later difference attributable to the cap.
+
+🔴 **AND NOTHING WAS EVER BLOCKED IN 6.5 YEARS.** Peak open risk touched **exactly 10.00%** with
+**2 of 2 legs holding at once**, and the contention log is empty — because risk is measured to each
+trade's CURRENT stop and A+ touches breakeven on 161 of 161 trades at a median of ONE BAR, so its
+room is released before the other leg can ever be refused. **Read that as "the allocator would
+rarely have had anything to arbitrate", never as "a cap is unnecessary"**: it is G14's 27 shared
+bars arriving through the budget, and the window where two bots genuinely carry 2× risk is the bar
+before the stop stages.
+
+🔴 **THE LIVE HALF IS UNBUILT AND CANNOT REUSE THIS OBJECT.** `PortfolioAccount` is an in-process
+Python object; live bots are separate OS processes on the VPS, and **every MT5 read in
+`algos/shared/mt5_ops.py` is filtered by MAGIC** — which is correct for isolation and is exactly
+what makes an account-level allocator blind. So the live version has to read the broker's real
+exposure ACROSS magics, or share state under a lock. Nothing in `algos/live/` references the
+portfolio package today (grepped 2026-08-09, zero hits).
+
+⚠ **The binding constraint is that the two rules must be the SAME rule.** Whatever cap is tuned in
+the backtest has to be the cap the live allocator enforces, or the stacked backtest stops predicting
+the stacked account — this repo's own "a label is a CLAIM about code somewhere else" defect, in the
+one place where being wrong costs real money.
+
+⚠ **A cap BELOW a leg's own risk % does not arbitrate, it RE-SIZES.** At a 5% cap against two bots
+each risking 10%, all 258 entries are shrunk and none is blocked; R is unchanged and the closing
+balance falls $204.9M → $4.7M. Blocking only happens when a leg asks while the budget is genuinely
+full.
+
+⚠ **Two more live-side gaps found in the same pass and not yet closed**: nothing enforces DISTINCT
+magic numbers across instance configs (`live_config.py` validates each instance in isolation), and
+there is no account-level halt or fleet kill switch — the bridge halts only its own bot.
+
+The overlap half of this gap is **CLOSED as of 2026-08-04** — see G14. What stands between here and
+a second bot is that **B-LEG has no measured edge** (G15) and the live allocator above, in that
+order.
 
 ### G14 — The overlap audit — **MEASURED 2026-08-04, and it passed**
 

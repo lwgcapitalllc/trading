@@ -5,7 +5,17 @@ simulation on ONE account with ONE risk budget the strategies compete for.
 **Design + phases:** `PORTFOLIO_STACKING.md` and `PORTFOLIO_STACKING_BUILD_PLAN.md`. This document
 is the concrete execution list for that plan's **Phase 2**, rewritten against the Stacks UI that
 actually shipped (2026-07-25) rather than the separate "Portfolios" page the plan originally assumed.
-**Status:** Not started. Written 2026-07-25.
+**Status:** Written 2026-07-25. **Work items 1 and 2 are DONE as of 2026-08-09, but in
+`backtest/`, not here** — the runner is `backtest/portfolio/run_stack` driven by
+`backtest/tools/stack_run.py`, so a shared-account stack is real and runnable from the CLI today.
+Items 3–6 (the `stacks` table's `mode` column, the API, the frontend toggle and the contention
+markers) are still not started, so the Stacks PAGE still shows only the screen.
+⚠ **The seam moved from where this document assumed it would be**, and that is the one thing to
+re-read before picking item 2 up: it lives in the strategy CONSTRUCTOR (`account=` / `leg=`, threaded
+to `Execution`) plus `backtest.replay.build_strategy`, which REFUSES a strategy that cannot accept an
+account rather than letting it fall back to its own uncapped `SoloAccount`. A `services/portfolio_runner.py`
+in this app should CALL `run_stack`, never rebuild it. Full record: `backtest/CLAUDE.md` →
+*The shared-account run*.
 **Owner decision that started it:** two $10k legs were showing a $20k stack, which exposed that a
 stack has never modelled a shared account at all.
 

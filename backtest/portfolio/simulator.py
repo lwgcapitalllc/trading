@@ -56,6 +56,14 @@ def simulate(legs: Sequence[Any], account: Any) -> PortfolioResult:
         ordered = sorted(tick.bars, key=lambda lb: 0 if by_name[lb[0]].in_position() else 1)
         for name, bar in ordered:
             by_name[name].step(bar)
+        # Sample what the account is CARRYING, after the tick's entries and exits. The
+        # contention log only records what was refused, and a reservation is released the
+        # moment a stop reaches breakeven — so a book that held two full positions every day
+        # can log nothing at all. The peaks are the other half of the answer, and they only
+        # exist if somebody looks: open risk is recomputed from live stops and leaves no trace.
+        sample = getattr(account, "sample_exposure", None)
+        if sample is not None:
+            sample()
 
     per_leg = {leg.name: list(leg.trades) for leg in legs}
     combined = [t for leg in legs for t in leg.trades]
