@@ -389,7 +389,7 @@ def _build_blocks(run_dir: Path, candles: list[dict]) -> list[dict]:
 
 def reversal_anchors(
     trades: list[dict], misses: list[dict],
-) -> list[tuple[int, str, Optional[int]]]:
+) -> list[tuple[int, str, Optional[int], str]]:
     """Where the Candlestick Reversals layer is allowed to paint a candle.
 
     **The whole rule, and it is Aaron's (2026-08-08): trades, win or lose, and 3/3 misses. Nothing
@@ -430,10 +430,22 @@ def reversal_anchors(
     A run made before the strategy recorded those fields yields NO miss anchors at all, and that is
     deliberate — drawing nothing is honest about a question the run cannot answer, and drawing it in
     the old place is not. Rerun the backtest to get them.
+
+    **The fourth element is the OUTCOME, and it decides which candle gets NAMED** — see
+    `candle_overlays._wanted_direction`. A winner and a miss want the candle that would have turned
+    price the setup's way; a LOSER wants the one that turned it against, because that is the candle
+    that explains what happened (Aaron, 2026-08-08: *"if I lost it should default to the candle that
+    signaled why I lost"*). It changes no mark's colour and hides nothing — only which of a span's
+    marks is its `deepestOf`, and therefore which name the trade's chip carries.
+
+    ⚠ **A miss is `"miss"`, not `"loss"`, even though no trade was taken.** It is a setup that was
+    never entered, so the question is *which candle could I have entered on* — the winner's
+    question. Filing it as a loss would name it after the candle that killed a trade nobody had.
     """
     return (
-        [(t["entryTime"], t["dir"], t["exitTime"]) for t in trades]
-        + [(m["zoneTime"], m["dir"], m["zoneTurn"]) for m in misses
+        [(t["entryTime"], t["dir"], t["exitTime"], "win" if (t.get("pnl") or 0) > 0 else "loss")
+         for t in trades]
+        + [(m["zoneTime"], m["dir"], m["zoneTurn"], "miss") for m in misses
            if m["of"] > 0 and m["met"] >= m["of"] and m.get("zoneTime") and m.get("zoneTurn")]
     )
 

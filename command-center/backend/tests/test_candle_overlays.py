@@ -371,3 +371,115 @@ def test_the_engine_defaults_are_NOT_used__the_chart_preset_is():
     assert CHART_PRESET["trend"] == 117
     assert CHART_PRESET["doji_size"] == 0.01
     assert len(CHART_PRESET["patterns"]) == 11
+
+
+# ── which candle gets NAMED, and how the outcome flips it ────────────────────────────
+#
+# Aaron, 2026-08-08, off two screenshots of WINNERS named with the opposing candle (a long reading
+# `Won · Bearish Engulfing`, a short reading `Won · Bullish Harami`): *"if I won it should default
+# to the BEST candle that helped or COULD HAVE HELPED signal the reversal (typically the deepest
+# CORRECT with trade direction). If I lost it should default to the candle that signaled why I
+# lost. If I missed the trade it should default to the DEEPEST CORRECT candle that I could have
+# used to enter. I should see BULLISH candle for long trades or BEARISH candle for short trades."*
+#
+# ⚠ Every one of these was WATCHED RED against HEAD, where the pick was nearest-the-turn over the
+# whole span and the ordering was setup-aligned regardless of outcome.
+
+
+def _preferred_and_nearer_opposing():
+    """A span holding a candle pointing the SETUP's way, and an opposing one NEARER the turn.
+
+    That is the shape the defect needs: rank on nearness and the opposing one wins, which is
+    exactly what put a Bearish Engulfing on a long that won.
+    """
+    return _neutral_and_opposing()
+
+
+def test_a_WINNER_is_named_after_the_candle_pointing_its_own_way():
+    """The reported defect, stated as a rule. The bar at the turn is bearish and a NEUTRAL bar sits
+    further from it — on a winning long the neutral one is the better answer, and the opposing one
+    must not win merely by sitting closer."""
+    bars = _neutral_and_opposing()
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    deepest = [o for o in out if o["deepestOf"]]
+    assert len(deepest) == 1
+    assert deepest[0]["patternDir"] != -1, "a winning LONG must not be named by a bearish candle"
+    assert deepest[0]["t"] == bars[150]["time"]
+
+
+def test_a_LOSER_is_named_after_the_candle_that_BEAT_it():
+    """The other half of the same rule, and the one that inverts: *"if I lost it should default to
+    the candle that signaled why I lost."* Same bars, same side — only the outcome changes — and
+    the bearish candle is now the answer rather than the thing to avoid."""
+    bars = _neutral_and_opposing()
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "loss")])
+    deepest = [o for o in out if o["deepestOf"]]
+    assert len(deepest) == 1
+    assert deepest[0]["patternDir"] == -1
+    assert deepest[0]["t"] == bars[152]["time"]
+
+
+def test_the_outcome_changes_the_NAME_and_never_what_is_PAINTED():
+    """The guard on the whole idea: this is a preference, exactly as the within-bar ordering is.
+    Both readings of the same span draw the same candles — only `deepestOf` moves."""
+    bars = _neutral_and_opposing()
+    anchor = (bars[150]["time"], "long", None)
+    won = build_candle_overlays(bars, [(*anchor, "win")])
+    lost = build_candle_overlays(bars, [(*anchor, "loss")])
+    assert [o["t"] for o in won] == [o["t"] for o in lost]
+    assert [o["patternDir"] for o in won] == [o["patternDir"] for o in lost]
+
+
+def test_a_MISS_is_named_like_a_winner_not_like_a_loss():
+    """A miss was never entered, so the question is *which candle could I have entered on* — the
+    winner's question. Filing it as a loss would name it after the candle that beat a trade nobody
+    took."""
+    bars = _neutral_and_opposing()
+    anchor = (bars[150]["time"], "long", None)
+    miss = build_candle_overlays(bars, [(*anchor, "miss")])
+    won = build_candle_overlays(bars, [(*anchor, "win")])
+    assert [o["deepestOf"] for o in miss] == [o["deepestOf"] for o in won]
+
+
+def test_an_anchor_with_no_outcome_reads_as_a_WIN():
+    """An older caller keeps the aligned preference rather than silently switching every trade it
+    draws to the loser rule."""
+    bars = _neutral_and_opposing()
+    bare = build_candle_overlays(bars, [(bars[150]["time"], "long", None)])
+    won = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    assert [o["deepestOf"] for o in bare] == [o["deepestOf"] for o in won]
+
+
+def test_a_NEUTRAL_candle_is_preferred_over_an_OPPOSING_one():
+    """MEASURED on the reference run: 59 of 194 spans hold no directional candle at all, so a
+    two-tier `preferred or anything` pool picks the opposing bar whenever it sits nearer the turn.
+    The neutral tier is not a rounding case here — it is most of the layer."""
+    bars = _neutral_and_opposing()
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    deepest = next(o for o in out if o["deepestOf"])
+    assert deepest["patternDir"] == 0
+
+
+def test_with_ONLY_an_opposing_candle_it_is_still_the_deepest():
+    """The fallback, and it must not be dropped to nothing: a setup whose only candles point the
+    other way still has a deepest one, and reporting "no reversal candle" for a setup that plainly
+    had one is the failure the layer's opposing tier exists to prevent."""
+    bars = _neutral_and_opposing(with_neutral=False)
+    out = build_candle_overlays(bars, [(bars[150]["time"], "long", None, "win")])
+    deepest = [o for o in out if o["deepestOf"]]
+    assert len(deepest) == 1
+    assert deepest[0]["patternDir"] == -1
+
+
+def test_the_deepest_mark_names_itself_PER_ANCHOR():
+    """One bar can be the deepest of two anchors wanting opposite directions, so the bar's single
+    `label` is whichever anchor reached it first and is nobody's answer in particular. Each anchor
+    gets its own name off `deepestNames`."""
+    bars = _neutral_and_opposing()
+    out = build_candle_overlays(bars, [
+        (bars[150]["time"], "long", None, "win"),
+        (bars[150]["time"], "long", None, "loss"),
+    ])
+    named = {n: nm for o in out for n, nm in (o.get("deepestNames") or {}).items()}
+    assert set(named) == {"0", "1"}, "both anchors must be named"
+    assert named["0"] != named["1"], "a winner and a loser on one leg want different candles"

@@ -15,7 +15,7 @@ import { ActionType, DomPosition, IndicatorSeries, LoadDataType, dispose, init, 
 import type { ChartBlock, ChartBlockReason, ChartCandle, ChartMiss, ChartOverlay, ChartPage, ChartSpec } from './types'
 import { chartStyles } from './chartStyles'
 import { AUDJPY_FIXTURE } from './fixtures/audjpy'
-import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, CANDLE_MARK, DATA_EDGE, DAY_BREAK, FIB, FOCUS, GROUP_CANDLE_MARKS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays } from './overlays'
+import { ANALYSIS_GROUPS, ANALYSIS_GROUP_COLOR, BLOCK, BOX, CANDLE_MARK, DATA_EDGE, DAY_BREAK, FIB, FOCUS, GROUP_CANDLE_MARKS, HLINE, LABEL, type LabelItem, LOADING_EDGE, MISS, SESSION_BOX, STRUCTURE_GROUPS, STRUCTURE_GROUP_COLOR, TRADE, TRADE_FIB, VLINE, registerChartOverlays, withAlpha } from './overlays'
 import FibSettings from './FibSettings'
 import FibLevelEditor from './FibLevelEditor'
 import ChartSettingsPanel from './ChartSettingsPanel'
@@ -92,7 +92,7 @@ type TfOption = { label: string; min: number }
 
 /** One row in a header dropdown: a coloured dot, a label, an optional count, a tick when on.
  *  `sub` indents it under the row above (a filter of that layer rather than a peer of it). */
-interface MenuItem {
+interface MenuToggle {
   key: string
   label: string
   color: string
@@ -106,7 +106,37 @@ interface MenuItem {
    *  count. Counting a shortcut as a layer would make "Analysis 4/7" describe something that isn't
    *  a set of layers, and the count is what the reader uses to see how much is drawn. */
   action?: boolean
+  chips?: undefined
 }
+
+/** One VALUE of a filter — a reason, a score, a direction. Not a layer: it narrows a layer that is
+ *  already on, and it is never a thing the chart draws on its own. */
+interface MenuChip {
+  key: string
+  label: string
+  on: boolean
+  toggle: () => void
+  count?: number
+}
+
+/** A filter's whole value set, drawn as wrapped chips under its own caption rather than as one row
+ *  per value.
+ *
+ *  ⚠ **The caption is the point, not the space it saves.** The Missed layer offers two INDEPENDENT
+ *  filters — score and missing-confluence — and each is a complete partition of the same setups
+ *  (measured on the shipped run: 35 + 417 = 452, and 179 + 238 + 21 + 10 + 4 = 452). Listed as one
+ *  indented column of seven they read as seven sub-filters of one thing, and the counts read as
+ *  double-counting. Naming each set is what says they answer different questions. */
+interface MenuChips {
+  key: string
+  /** The FILTER's name — "Score", "Missing", "Direction". Not a layer name. */
+  label: string
+  color: string
+  chips: MenuChip[]
+  section?: string
+}
+
+type MenuItem = MenuToggle | MenuChips
 
 /** The hover answer behind a would-be-entry marker (Blocked or Missed), and where to float it.
  *  `met` is what the setup DID have (empty for a block, which by definition had everything);
@@ -189,9 +219,10 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
-  // LAYERS only. An `action` row is a preset, not something drawn, so counting it would make the
-  // header's `on/total` stop describing how much is on the chart — which is its whole job.
-  const layers = items.filter(it => !it.action)
+  // LAYERS only. An `action` row is a preset and a `chips` row is a filter's value set — neither is
+  // something drawn — so counting either would make the header's `on/total` stop describing how much
+  // is on the chart, which is its whole job.
+  const layers = items.filter((it): it is MenuToggle => !it.chips && !it.action)
   const activeCount = layers.filter(it => it.on).length
   return (
     <div ref={ref} className="relative">
@@ -204,7 +235,14 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
         <ChevronDown className={`w-3 h-3 text-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute left-0 mt-1 rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg" style={{ zIndex: 50, minWidth }}>
+        // ⚠ BOUNDED, because this menu grows with the run. Fully expanded on a full-history run it
+        // MEASURES 741px against a 940px viewport, and the header it hangs from is rarely at the
+        // top of the page — so unbounded it runs off the bottom and the rows down there cannot be
+        // reached at all. (It was 862px before the filters became chips.)
+        <div
+          className="absolute left-0 mt-1 overflow-y-auto rounded-md border border-border-subtle bg-bg-surface py-1 shadow-lg"
+          style={{ zIndex: 50, minWidth, maxHeight: 'min(70vh, 620px)' }}
+        >
           {items.map((it, i) => (
             <Fragment key={it.key}>
               {/* A section caption, with a rule above it unless it opens the menu. This is what lets
@@ -217,23 +255,50 @@ function ToggleMenu({ title, items, minWidth = 172 }: {
                   {it.section}
                 </div>
               )}
-              {/* Every row here is a TOGGLE, and its on-state was carried only by a colour dot and a
-                  tick glyph — so nothing outside the pixels could read it. `aria-pressed` states it
-                  for a screen reader and, equally, for a browser check: a test that has to infer a
-                  toggle's state from an icon is asserting the icon. */}
-              <button
-                onClick={it.toggle}
-                aria-pressed={it.on}
-                className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
-              >
-                <span
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
-                />
-                <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
-                {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
-                {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
-              </button>
+              {it.chips ? (
+                // A filter's values, captioned and wrapped. Indented to the `sub` gutter so they
+                // still read as belonging to the layer above, but they are deliberately NOT rows:
+                // a row is a thing the chart draws, and none of these is.
+                <div className="pl-7 pr-3 pb-1">
+                  <div className="pb-1 text-[9px] uppercase tracking-wide text-text-tertiary">{it.label}</div>
+                  <div className="flex flex-wrap gap-1">
+                    {it.chips.map(c => (
+                      <button
+                        key={c.key}
+                        onClick={c.toggle}
+                        aria-pressed={c.on}
+                        className="rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+                        style={{
+                          color: c.on ? theme.textPrimary : theme.textTertiary,
+                          background: c.on ? withAlpha(it.color, 0.18) : 'transparent',
+                          boxShadow: `inset 0 0 0 1px ${c.on ? withAlpha(it.color, 0.55) : theme.borderSubtle}`,
+                        }}
+                      >
+                        {c.label}
+                        {c.count != null && <span className="ml-1 font-mono opacity-70">{c.count}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Every row here is a TOGGLE, and its on-state was carried only by a colour dot and a
+                   tick glyph — so nothing outside the pixels could read it. `aria-pressed` states it
+                   for a screen reader and, equally, for a browser check: a test that has to infer a
+                   toggle's state from an icon is asserting the icon. */
+                <button
+                  onClick={it.toggle}
+                  aria-pressed={it.on}
+                  className={`flex w-full items-center gap-2 py-1.5 pr-3 text-left text-[11px] font-medium transition-colors hover:bg-bg-sunken ${it.sub ? 'pl-7' : 'pl-3'}`}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ background: it.on ? it.color : 'transparent', boxShadow: `inset 0 0 0 1px ${it.color}`, opacity: it.on ? 1 : 0.5 }}
+                  />
+                  <span className={it.on ? 'text-text-primary' : 'text-text-tertiary'}>{it.label}</span>
+                  {it.count != null && <span className="font-mono text-text-tertiary">{it.count}</span>}
+                  {it.on && <Check className="w-3 h-3 ml-auto flex-shrink-0 text-accent" />}
+                </button>
+              )}
             </Fragment>
           ))}
         </div>
@@ -1362,11 +1427,12 @@ export default function ChartPanel({
     [spec.misses],
   )
   const [missesOn, setMissesOn] = useState(false)
-  const missReasons = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const m of misses) for (const r of m.reasons) counts.set(r.label, (counts.get(r.label) ?? 0) + 1)
-    return Array.from(counts, ([label, count]) => ({ label, count }))
-  }, [misses])
+
+  // ── The Missed layer's TWO filters ───────────────────────────────────────────────────────────
+  // Both hidden-sets are declared BEFORE either count, because each count now reads the OTHER
+  // filter's set (see below) — and a `const` referenced above its declaration is a TDZ crash that
+  // a typecheck will happily bless when the reference is inside a closure.
+
   // Seeded from the EMITTER's `missNoise` — the reasons it says aren't worth opening on. The panel
   // treats them as opaque strings (it has no idea one of them means "price never retraced"); it
   // just starts them unticked, and one click brings any of them back. That is what reproduces the
@@ -1389,27 +1455,6 @@ export default function ChartPanel({
     return next
   })
 
-  // SCORE sub-toggles — "3 of 3" / "2 of 3" (Aaron, 2026-08-08: *"sometimes I just want to see 2/3
-  // vs 3/3 because they are legit different"*). A 3/3 had every confluence and still did not trade;
-  // a 2/3 never got there. Reading one is a different question from reading the other, and the
-  // reason list could not express it: the labels map onto the scores in THIS strategy, so the
-  // filter existed, but only for a reader who already knew which of the seven labels meant which.
-  //
-  // ⚠ Derived from the data and OPAQUE, exactly like the reason rows — the panel does not know what
-  // a confluence is, only that a miss carries `met`/`of`. A strategy scoring out of four lists
-  // "3 of 4" here without this file changing, which is the same contract `of` already had.
-  const missScores = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const m of misses) {
-      if (!m.of) continue      // a record that counted nothing cannot be filed under a score
-      const k = `${m.met}/${m.of}`
-      counts.set(k, (counts.get(k) ?? 0) + 1)
-    }
-    // Best score first — a 3/3 is the one worth opening on, and a descending list puts it at the top
-    // whatever the denominator.
-    return Array.from(counts, ([key, count]) => ({ key, count }))
-      .sort((a, b) => Number(b.key.split('/')[0]) - Number(a.key.split('/')[0]))
-  }, [misses])
   // All scores start SHOWN. The layer's opening view is the emitter's `missNoise` recommendation and
   // this must not quietly narrow it — a second default would be a second answer to "what do I see
   // first", and the reader would have no way to tell which one hid a marker.
@@ -1420,6 +1465,56 @@ export default function ChartPanel({
     if (next.has(key)) next.delete(key); else next.add(key)
     return next
   })
+
+  // ⚠ **EACH AXIS COUNTS WHAT THE OTHER IS LETTING THROUGH, and the roster is separate from the
+  // count.** Both halves are load-bearing, for different reasons.
+  //
+  // The CROSS-FILTERED count, because the two filters compose: with "3 of 3" alone the layer draws
+  // 35 markers while the reason chips went on reading 179 / 238 / 21 / 10 / 4 — which sum to 452,
+  // the whole set. Reported off the screen. **A chip's number is a claim about what ticking it
+  // would change**, so conditioned on nothing it is a claim about markers that are not on the
+  // chart. A reason that cannot occur at this score now reads 0, which is itself the answer.
+  //
+  // The SEPARATE roster, because shrinking it to the values PRESENT in the filtered subset would
+  // delete a chip the instant its count hit 0 — and a control that disappears when it reaches zero
+  // is one the reader cannot use to get back.
+  const missReasons = useMemo(() => {
+    const counts = new Map<string, number>()
+    // Roster: every label in the run, in first-seen order, seeded at 0.
+    for (const m of misses) for (const r of m.reasons) if (!counts.has(r.label)) counts.set(r.label, 0)
+    // Count: only the misses the SCORE filter is letting through.
+    for (const m of misses) {
+      if (hiddenMissScores.has(`${m.met}/${m.of}`)) continue
+      for (const r of m.reasons) counts.set(r.label, (counts.get(r.label) ?? 0) + 1)
+    }
+    return Array.from(counts, ([label, count]) => ({ label, count }))
+  }, [misses, hiddenMissScores])
+
+  // SCORE chips — "3 of 3" / "2 of 3" (Aaron, 2026-08-08: *"sometimes I just want to see 2/3 vs 3/3
+  // because they are legit different"*). A 3/3 had every confluence and still did not trade; a 2/3
+  // never got there. Reading one is a different question from reading the other, and the reason list
+  // could not express it: the labels map onto the scores in THIS strategy, so the filter existed,
+  // but only for a reader who already knew which of the seven labels meant which.
+  //
+  // ⚠ Derived from the data and OPAQUE, exactly like the reason chips — the panel does not know what
+  // a confluence is, only that a miss carries `met`/`of`. A strategy scoring out of four lists
+  // "3 of 4" here without this file changing, which is the same contract `of` already had.
+  //
+  // ⚠ The MIRROR of `missReasons`: roster from every miss, count from only those the REASON filter
+  // is letting through.
+  const missScores = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const m of misses) {
+      if (!m.of) continue      // a record that counted nothing cannot be filed under a score
+      const k = `${m.met}/${m.of}`
+      if (!counts.has(k)) counts.set(k, 0)
+      if (m.reasons.some(r => !hiddenMissReasons.has(r.label))) counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+    // Best score first — a 3/3 is the one worth opening on, and a descending list puts it at the top
+    // whatever the denominator.
+    return Array.from(counts, ([key, count]) => ({ key, count }))
+      .sort((a, b) => Number(b.key.split('/')[0]) - Number(a.key.split('/')[0]))
+  }, [misses, hiddenMissReasons])
 
   // Score AND reason. Two independent axes, so unticking "2 of 3" must not also decide anything
   // about the reasons — that is the whole point of splitting them.
@@ -1683,7 +1778,13 @@ export default function ChartPanel({
       // exactly the kind of two-sources-one-answer this chart keeps being bitten by.
       if (hiddenCandleDirs.has(candleDirKey(ov))) continue
       for (const n of ov.spans ?? []) any.add(n)
-      for (const n of ov.deepestOf ?? []) if (ov.label) named.set(n, ov.label)
+      // `deepestNames` before `label`: the bar's own label is whichever anchor reached it first, and
+      // on a bar that is the deepest of both a losing trade and a miss those two want opposite
+      // directions. The per-anchor name is the only one that can answer both.
+      for (const n of ov.deepestOf ?? []) {
+        const name = ov.deepestNames?.[String(n)] ?? ov.label
+        if (name) named.set(n, name)
+      }
     }
     return { named, any }
   }, [allOverlays, hiddenCandleDirs])
@@ -2884,7 +2985,10 @@ export default function ChartPanel({
           {(spec.trades.length > 0 || blocks.length > 0 || misses.length > 0 || analysisGroups.length > 0) && (
             <ToggleMenu
               title="Analysis"
-              minWidth={198}
+              // Wider than the other two menus: the filter chips wrap inside it, and at 198 a
+              // two-word reason ("No FVG in zone") took a line to itself, which is the one-row-per-
+              // value shape the chips exist to replace.
+              minWidth={262}
               items={[
                 // ── Deep debug ───────────────────────────────────────────────────────────────
                 // One row, at the top, above the layers it switches. It is ADDITIVE — it deepens
@@ -2896,29 +3000,34 @@ export default function ChartPanel({
                   on: debugOn, toggle: toggleDebug, action: true,
                 }] : []),
                 // ── The layers themselves ────────────────────────────────────────────────────
-                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length, section: 'Layers' }] : []),
-                // Winners/Losers are SUB-toggles of Trades — indented, and listed only while
-                // something they FILTER is on the chart. That is Trades or Fibs: both effects apply
-                // these two predicates, so with Fibs on alone they are still live switches, and
-                // hiding them there would leave the fibs silently filtered by a control nobody can
-                // see. Each carries its count so the split is readable without opening the table.
-                ...(spec.trades.length > 0 && (tradesOn || (tradeFibsOn && tradeFibCount > 0)) ? [
-                  { key: 'winners', label: 'Winners', color: TRADE_WIN_COLOR, on: winnersOn, toggle: () => setWinnersOn(o => !o), sub: true, count: outcomeCounts.wins },
-                  { key: 'losers', label: 'Losers', color: TRADE_LOSS_COLOR, on: losersOn, toggle: () => setLosersOn(o => !o), sub: true, count: outcomeCounts.losses },
-                ] : []),
+                ...(spec.trades.length > 0 ? [{ key: 'trades', label: 'Trades', color: TRADE_WIN_COLOR, on: tradesOn, toggle: () => setTradesOn(o => !o), count: spec.trades.length, section: 'Signals' }] : []),
+                // Winners/Losers FILTER Trades — so they are chips under the layer, not rows beside
+                // it. Listed only while something they filter is on the chart: that is Trades or
+                // Fibs, since both effects apply these two predicates, and hiding them with Fibs on
+                // alone would leave the fibs silently filtered by a control nobody can see. Each
+                // carries its count so the split is readable without opening the table.
+                ...(spec.trades.length > 0 && (tradesOn || (tradeFibsOn && tradeFibCount > 0)) ? [{
+                  key: 'trade-outcome', label: 'Show', color: TRADE_WIN_COLOR,
+                  chips: [
+                    { key: 'winners', label: 'Winners', on: winnersOn, toggle: () => setWinnersOn(o => !o), count: outcomeCounts.wins },
+                    { key: 'losers', label: 'Losers', on: losersOn, toggle: () => setLosersOn(o => !o), count: outcomeCounts.losses },
+                  ],
+                }] : []),
                 // Blocked sits under Trades — same subject (what happened to a signal), opposite
                 // answer. Listed only when the run reports any: a runner that can't tell us would
                 // otherwise show a permanently empty toggle.
                 ...(blocks.length > 0 ? [{ key: 'blocks', label: 'Blocked', color: BLOCK_COLOR, on: blocksOn, toggle: () => setBlocksOn(o => !o), count: shownBlockCount }] : []),
-                // …and one sub-toggle per REASON, so a rule can be isolated ("show me only what the
-                // veto refused") or excluded. Each count is how many setups that rule refused — the
+                // …and one chip per REASON, so a rule can be isolated ("show me only what the veto
+                // refused") or excluded. Each count is how many setups that rule refused — the
                 // number this whole layer exists to produce. Same "only while the parent is on" rule
                 // as Winners/Losers.
-                ...(blocksOn ? blockReasons.map(r => ({
-                  key: `blk-${r.label}`, label: r.label, color: BLOCK_COLOR,
-                  on: !hiddenReasons.has(r.label), toggle: () => toggleReason(r.label),
-                  sub: true, count: r.count,
-                })) : []),
+                ...(blocksOn && blockReasons.length > 0 ? [{
+                  key: 'blk-reasons', label: 'Refused by', color: BLOCK_COLOR,
+                  chips: blockReasons.map(r => ({
+                    key: `blk-${r.label}`, label: r.label, count: r.count,
+                    on: !hiddenReasons.has(r.label), toggle: () => toggleReason(r.label),
+                  })),
+                }] : []),
                 // Missed = the setups that never got as far as being refused. Listed after
                 // Blocked because it's the same question one step earlier in the setup's life,
                 // and only when the run reports any (an NT8/MT5 run reports none).
@@ -2928,51 +3037,83 @@ export default function ChartPanel({
                 // trade, a 2/3 never got there. All start ON, so this narrows nothing until it is
                 // used. Listed above the reasons deliberately — reason answers "why", score answers
                 // "how close", and the reader picks the axis before the value.
-                ...(missesOn ? missScores.map(s => ({
-                  key: `mis-score-${s.key}`, label: `${s.key.replace('/', ' of ')}`, color: MISS_COLOR,
-                  on: !hiddenMissScores.has(s.key), toggle: () => toggleMissScore(s.key),
-                  sub: true, count: s.count,
-                })) : []),
-                // …then one sub-toggle per MISSING confluence, same shape as Blocked's. Some start
-                // OFF — the ones the strategy flagged as routine (see `spec.missNoise`) — so the
-                // layer opens on the misses worth studying rather than every setup that simply
-                // never retraced. Their counts are still listed, so nothing is hidden silently.
-                ...(missesOn ? missReasons.map(r => ({
-                  key: `mis-${r.label}`, label: r.label, color: MISS_COLOR,
-                  on: !hiddenMissReasons.has(r.label), toggle: () => toggleMissReason(r.label),
-                  sub: true, count: r.count,
-                })) : []),
-                // Fibs — the fib LEG each trade was priced off. A PEER row, not a sub-toggle of
-                // Trades (Aaron's call, 2026-08-03): it is its own reading of the chart, and it
-                // draws with Trades off. It still obeys Winners/Losers, which is why those two are
-                // listed whenever this is on. Sits directly before Fair value gaps — both are the
-                // CONTEXT a setup was priced in rather than a kind of signal. Default OFF: eight
-                // lines per trade is a lot of chart, and the run reads fine without it.
-                ...(tradeFibCount > 0 ? [
-                  { key: 'tradefibs', label: 'Fibs', color: theme.accent, on: tradeFibsOn, toggle: () => setTradeFibsOn(o => !o), count: tradeFibCount },
-                ] : []),
-                // Analysis overlay groups — today just Fair Value Gaps. Last in the menu because it
-                // is the CONTEXT around the three rows above it rather than a fourth kind of signal:
-                // the backend draws a gap only where a trade was taken, refused or missed, so this
-                // row is "and show me what the gaps looked like there". Default OFF like Blocked and
-                // Missed; the count is how many gap boxes the run produced.
-                ...analysisGroups.flatMap(g => [
-                  {
-                    key: `ag-${g.name}`, label: g.name, color: g.color,
+                //
+                // ⚠ THESE TWO SETS ARE EACH A COMPLETE PARTITION OF THE SAME MISSES, which is why
+                // they are two CAPTIONED chip groups and not one indented list. Measured on the
+                // shipped run: 35 + 417 = 452, and 179 + 238 + 21 + 10 + 4 = 452. Seven rows in one
+                // column read as seven sub-filters of one thing and the counts read as
+                // double-counting — reported from the screen in exactly those words.
+                ...(missesOn && missScores.length > 0 ? [{
+                  key: 'mis-scores', label: 'Score', color: MISS_COLOR,
+                  chips: missScores.map(s => ({
+                    key: `mis-score-${s.key}`, label: s.key.replace('/', ' of '), count: s.count,
+                    on: !hiddenMissScores.has(s.key), toggle: () => toggleMissScore(s.key),
+                  })),
+                }] : []),
+                // …then one chip per MISSING confluence, same shape as Blocked's. Some start OFF —
+                // the ones the strategy flagged as routine (see `spec.missNoise`) — so the layer
+                // opens on the misses worth studying rather than every setup that simply never
+                // retraced. Their counts are still listed, so nothing is hidden silently.
+                ...(missesOn && missReasons.length > 0 ? [{
+                  key: 'mis-reasons', label: 'Missing', color: MISS_COLOR,
+                  chips: missReasons.map(r => ({
+                    key: `mis-${r.label}`, label: r.label, count: r.count,
+                    on: !hiddenMissReasons.has(r.label), toggle: () => toggleMissReason(r.label),
+                  })),
+                }] : []),
+                // ── CONTEXT ──────────────────────────────────────────────────────────────────
+                // Everything below answers a different question from the three layers above it:
+                // those are what the strategy DID with its signals, these are what was on the chart
+                // when it did. They were peers in one flat list of nineteen rows, which is most of
+                // why the menu read as a wall — nine of those rows are context and three of them
+                // are one family. The caption is the whole fix; the rows are unchanged.
+                ...(() => {
+                  const LIQ = 'Liquidity — '
+                  const row = (g: typeof analysisGroups[number], label: string) => ({
+                    key: `ag-${g.name}`, label, color: g.color,
                     on: groupsOn[g.name], toggle: () => toggleGroup(g.name), count: g.count,
-                  },
-                  // …and, for the candle repaint only, one sub-toggle per DIRECTION relative to the
-                  // setup. All three start ON: the opposing tier is half the point of the layer, so
-                  // hiding it is something the reader asks for and never a default that quietly
-                  // answers "there was nothing at the turn".
-                  ...(g.name === GROUP_CANDLE_MARKS && groupsOn[g.name]
-                    ? CANDLE_DIRS.map(d => ({
-                        key: `cd-${d.key}`, label: d.label, color: g.color,
-                        on: !hiddenCandleDirs.has(d.key), toggle: () => toggleCandleDir(d.key),
-                        sub: true, count: candleDirCounts[d.key] ?? 0,
-                      }))
-                    : []),
-                ]),
+                  })
+                  // Fibs — the fib LEG each trade was priced off. A PEER row, not a sub-toggle of
+                  // Trades (Aaron's call, 2026-08-03): it is its own reading of the chart, and it
+                  // draws with Trades off. It still obeys Winners/Losers, which is why those two are
+                  // listed whenever this is on. Default OFF: eight lines per trade is a lot of
+                  // chart, and the run reads fine without it.
+                  const fibs: MenuItem[] = tradeFibCount > 0
+                    ? [{ key: 'tradefibs', label: 'Fibs', color: theme.accent, on: tradeFibsOn, toggle: () => setTradeFibsOn(o => !o), count: tradeFibCount }]
+                    : []
+                  // The zone layers — gaps, order blocks, the candle repaint. Each is drawn only
+                  // where a trade was taken, refused or missed, so each is "and show me what this
+                  // looked like there". Default OFF; the count is how many the run produced.
+                  const zones: MenuItem[] = analysisGroups.filter(g => !g.name.startsWith(LIQ)).flatMap(g => [
+                    row(g, g.name),
+                    // …and, for the candle repaint only, the DIRECTION filter relative to the setup.
+                    // All three start ON: the opposing tier is half the point of the layer, so
+                    // hiding it is something the reader asks for and never a default that quietly
+                    // answers "there was nothing at the turn".
+                    ...(g.name === GROUP_CANDLE_MARKS && groupsOn[g.name]
+                      ? [{
+                          key: 'candle-dirs', label: 'Direction', color: g.color,
+                          chips: CANDLE_DIRS.map(d => ({
+                            key: `cd-${d.key}`, label: d.label, count: candleDirCounts[d.key] ?? 0,
+                            on: !hiddenCandleDirs.has(d.key), toggle: () => toggleCandleDir(d.key),
+                          })),
+                        }]
+                      : []),
+                  ])
+                  // The three liquidity tiers take their own caption and drop the shared prefix from
+                  // their labels. They are one family — H4 alone is 58% of every level a run draws —
+                  // so as three peers of Fair Value Gaps they were three long wrapping rows saying
+                  // the same word three times. The GROUP NAME is untouched: it is the contract with
+                  // the backend and with `groupsOn`, and only the displayed label shortens.
+                  const liq: MenuItem[] = analysisGroups.filter(g => g.name.startsWith(LIQ))
+                    .map((g, i) => ({ ...row(g, g.name.slice(LIQ.length)), ...(i === 0 ? { section: 'Liquidity' } : {}) }))
+                  const ctx = [...fibs, ...zones, ...liq]
+                  // The caption opens the section, so it belongs on whichever row happens to be
+                  // first — and never on top of a caption that is already there (a run carrying
+                  // nothing but liquidity keeps "Liquidity", which is the more specific answer).
+                  if (ctx.length > 0 && !ctx[0].section) ctx[0] = { ...ctx[0], section: 'Context' }
+                  return ctx
+                })(),
               ]}
             />
           )}

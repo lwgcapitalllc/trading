@@ -254,6 +254,13 @@ export interface CandleOverlay extends OverlayRequires {
   patterns?: string[]
   spans?: number[]
   deepestOf?: number[]
+  /** `{anchor index: the pattern to NAME that anchor with}`, keyed by the index stringified.
+   *
+   *  One bar can be the deepest of two anchors that want OPPOSITE directions — a losing trade wants
+   *  the candle that beat it, a 3/3 miss on the same leg wants the one it could have entered on — so
+   *  the bar's single `label` is whichever anchor reached it first and is nobody's answer in
+   *  particular. Read this for a trade's chip and fall back to `label`. */
+  deepestNames?: Record<string, string>
   /** The named pattern's direction relative to the SETUP — never re-derive it from `patternDir`. */
   align?: 'with' | 'neutral' | 'against'
   style?: OverlayStyle

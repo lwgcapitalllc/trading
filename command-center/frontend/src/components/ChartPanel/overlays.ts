@@ -258,7 +258,7 @@ const LOADING_LABEL_MIN_GAP = 190
 const NEXT_TP_SHOW_FRAC = 0.33
 
 /** '#rrggbb' / '#rgb' → 'rgba(r,g,b,a)'. Non-hex input is returned unchanged. */
-function withAlpha(color: string, a: number): string {
+export function withAlpha(color: string, a: number): string {
   if (!color.startsWith('#')) return color
   const h = color.slice(1)
   const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h

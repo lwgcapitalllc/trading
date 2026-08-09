@@ -127,10 +127,14 @@ _MAX_MARKS = 20_000
 
 
 def _anchor_bars(
-    times: list[int], anchors: Iterable[tuple[int, str, Optional[int]]],
-) -> list[tuple[int, int, str, Optional[int]]]:
-    """Anchor `(start_ms, direction, end_ms)` triples → `(anchor index, bar index, direction, end
-    bar)`, clipped to the loaded candles.
+    times: list[int], anchors: Iterable[tuple],
+) -> list[tuple[int, int, str, Optional[int], str]]:
+    """Anchor `(start_ms, direction, end_ms[, outcome])` → `(anchor index, bar index, direction, end
+    bar, outcome)`, clipped to the loaded candles.
+
+    An anchor with no outcome reads as `"win"` — the aligned preference, which is what every anchor
+    wanted before outcomes existed, so an older caller keeps its behaviour rather than silently
+    switching every trade it draws to the loser rule.
 
     🔴 **The anchor's ORIGINAL index rides along, and it must.** This drops anchors that fall off the
     loaded candles, so enumerating the RESULT renumbers every anchor after the first drop — and the
@@ -145,11 +149,13 @@ def _anchor_bars(
     dropping the anchor: a trade whose exit is off the right edge of a paged window is still a real
     setup and still deserves the short-window answer at its entry.
     """
-    out: list[tuple[int, int, str, Optional[int]]] = []
+    out: list[tuple[int, int, str, Optional[int], str]] = []
     if not times:
         return out
     lo, hi = times[0], times[-1]
-    for n, (t, direction, end_ms) in enumerate(anchors):
+    for n, anchor in enumerate(anchors):
+        t, direction, end_ms = anchor[0], anchor[1], anchor[2]
+        outcome = str(anchor[3]) if len(anchor) > 3 else "win"
         if not isinstance(t, (int, float)) or not (lo <= t <= hi):
             continue
         i = bisect.bisect_right(times, int(t)) - 1
@@ -160,7 +166,9 @@ def _anchor_bars(
             j = bisect.bisect_right(times, int(end_ms)) - 1
             if j > i:
                 end_bar = j
-        out.append((n, i, "short" if str(direction).lower().startswith("s") else "long", end_bar))
+        out.append((
+            n, i, "short" if str(direction).lower().startswith("s") else "long", end_bar, outcome,
+        ))
     return out
 
 
@@ -176,6 +184,36 @@ def _adverse_extreme(candles: list[dict], start: int, end: int, direction: str) 
             if candles[i]["low"] < candles[extreme]["low"]:
                 extreme = i
     return extreme
+
+
+def _wanted_direction(direction: str, outcome: str) -> int:
+    """The pattern direction this anchor's NAMED candle should carry: +1 bullish, -1 bearish.
+
+    **Aaron's rule, 2026-08-08, off two screenshots of winners named with the opposing candle** (a
+    long reading `Won · Bearish Engulfing`, a short reading `Won · Bullish Harami`): *"if I won it
+    should default to the BEST candle that helped or COULD HAVE HELPED signal the reversal… If I
+    lost it should default to the candle that signaled why I lost. If I missed the trade it should
+    default to the DEEPEST CORRECT candle that I could have used to enter."*
+
+    So the question is always **which candle explains what happened to this setup**, and the answer
+    flips on the outcome rather than on the side:
+
+      - a WINNER or a MISS wants the candle ALIGNED with the setup — bullish on a long, bearish on
+        a short. That is the reversal that turned price the setup's way, or would have.
+      - a LOSER wants the OPPOSING one, because on a trade that failed the informative candle is
+        the one that turned price against it.
+
+    ⚠ **This orders the NAME and never decides what is PAINTED.** Every pattern candle in the span
+    is still drawn in every direction — the opposing tier is half the point of the layer (*"if not,
+    it will show me why I was wrong"*) — so this is a preference, exactly as the within-bar ordering
+    below is, and the chart's own direction filter is the only thing that hides anything.
+
+    ⚠ **An unknown outcome reads as a WIN.** Aligned is the answer for two of the three cases and is
+    the one a reader expects by default; guessing "loser" would name a healthy trade after the
+    candle that beat it.
+    """
+    aligned = -1 if direction == "short" else 1
+    return -aligned if str(outcome).lower().startswith("los") else aligned
 
 
 def _alignment(patterns: list, direction: str) -> int:
@@ -282,19 +320,34 @@ def build_candle_overlays(
     # trade badge exists to say.
     spans: dict[int, list[int]] = {}
     at_turn: dict[int, list[int]] = {}
+    # bar index → {anchor index: the pattern name to NAME that anchor with}. Keyed per anchor
+    # because one bar can be the deepest of two anchors that want OPPOSITE directions (a losing
+    # trade and a 3/3 miss on the same leg), and a single `label` cannot answer both — it is
+    # whatever the first anchor to reach the bar ordered it as, which is nobody's answer in
+    # particular. The chart reads this for a trade's chip and falls back to `label`.
+    deepest_names: dict[int, dict[str, str]] = {}
     aligned: dict[int, str] = {}
-    for n, start, direction, hold_end in bars:
+    for n, start, direction, hold_end, outcome in bars:
         lo, hi, turn = _reversal_span(candles, start, direction, window, hold_end)
+        # `want` is SETUP-relative and stays that way: it is what `align` is reported in, and the
+        # chart's direction filter asks "with the setup / neutral / against it". `prefer` is
+        # OUTCOME-relative and decides which candle gets named — the two are the same thing on a
+        # winner and a miss, and opposites on a loser. See `_wanted_direction`.
         want = -1 if direction == "short" else 1
+        prefer = _wanted_direction(direction, outcome)
         in_span = [i for i in range(lo, hi + 1) if hits.get(i)]
         for i in in_span:
             spans.setdefault(i, []).append(n)
             if i in marked:
                 continue
-            # Stable sort: aligned, then neutral, then opposing — so `label` names the pattern that
-            # points the setup's way rather than whichever the engine happened to emit first.
+            # Stable sort: the direction this anchor is asking about, then neutral, then the
+            # opposite — so `label` names the pattern that answers the question rather than
+            # whichever the engine happened to emit first. On a winner or a miss that is the
+            # setup-aligned one; on a loser it is the candle that beat it.
             marked[i] = sorted(
-                hits[i], key=lambda p: 0 if p.direction == want else (1 if p.direction == 0 else 2))
+                hits[i],
+                key=lambda p: 0 if p.direction == prefer else (1 if p.direction == 0 else 2),
+            )
             # ...and RECORD which of the three it was. ⚠ It cannot be derived from `patternDir`
             # downstream: that is the pattern's own direction, and whether a bullish candle points
             # the setup's way depends on the SETUP's side — which a mark does not carry, and cannot,
@@ -307,9 +360,36 @@ def build_candle_overlays(
         # ⚠ It falls back to the last mark BEFORE the turn rather than to nothing: a span that has
         # marks must have a deepest one, or "only the deepest" hides a setup that plainly had
         # candles in it and reads as the layer being broken.
-        after = [i for i in in_span if i >= turn]
-        if after or in_span:
-            at_turn.setdefault(after[0] if after else in_span[-1], []).append(n)
+        #
+        # 🔴 **The bars carrying a pattern in the PREFERRED direction are searched first, and that
+        # is the fix for the defect this was reported as**: ranking on nearness alone put a
+        # `Bearish Engulfing` on a long that WON and a `Bullish Harami` on a short that won, because
+        # whichever candle sat closest to the turn won whichever way it pointed. Aaron: *"I should
+        # see BULLISH candle for long trades or BEARISH candle for short trades."*
+        # ⚠ **It FALLS BACK to the whole span rather than to nothing.** A setup whose only candles
+        # point the other way still has a deepest one, and drawing none there would report "no
+        # reversal candle" for a setup that plainly had one — the same failure the fallback above
+        # exists to prevent, and the layer's whole opposing tier says the reader wants to see it.
+        # ⚠ THREE TIERS, the same preference the within-bar ordering uses one level down — preferred,
+        # then NEUTRAL, then whatever is left. Two tiers is not enough and the gap is not academic:
+        # MEASURED on the reference run, 59 of 194 spans contain no directional candle at all, so a
+        # `preferred or anything` pool picks an OPPOSING bar over a neutral one whenever the opposing
+        # one happens to sit nearer the turn. The neutral tier does most of the work here because ten
+        # of the source Pine's fifteen rules gate on a trend lookback — see the engine's CLAUDE.md.
+        tier_pref = [i for i in in_span if any(p.direction == prefer for p in hits[i])]
+        tier_neut = [i for i in in_span if any(p.direction == 0 for p in hits[i])]
+        pool = tier_pref or tier_neut or in_span
+        if pool:
+            after = [i for i in pool if i >= turn]
+            pick = after[0] if after else pool[-1]
+            at_turn.setdefault(pick, []).append(n)
+            # Name THIS anchor after a pattern pointing the way IT asked about, not after whichever
+            # the bar's `label` ordering happened to settle on for somebody else.
+            chosen = next(
+                (p for p in hits[pick] if p.direction == prefer),
+                next((p for p in hits[pick] if p.direction == 0), hits[pick][0]),
+            )
+            deepest_names.setdefault(pick, {})[str(n)] = chosen.label
 
     overlays: list[dict] = []
     for i in sorted(marked):
@@ -335,6 +415,11 @@ def build_candle_overlays(
             # turn of one setup and an ordinary mark inside another's span, and a bare boolean would
             # let the chart name it as the second setup's reversal.
             "deepestOf": at_turn.get(i, []),
+            # {anchor index (as a string key): the pattern to NAME that anchor with}. One bar can be
+            # the deepest of two anchors wanting opposite directions, and the bar's single `label` is
+            # whichever the first anchor to reach it ordered — nobody's answer in particular. The
+            # chart reads this for a trade's outcome chip and falls back to `label`.
+            "deepestNames": deepest_names.get(i, {}),
             # "with" / "neutral" / "against" — the named pattern's direction relative to the SETUP,
             # which is what the chart's direction filter is asked in. See above for why the chart
             # cannot work it out from `patternDir`.

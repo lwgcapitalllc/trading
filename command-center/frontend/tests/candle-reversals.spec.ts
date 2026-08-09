@@ -260,6 +260,46 @@ test('the Missed layer filters by SCORE as well as by reason', async ({ page }) 
   expect(await count()).toBe(all)
 })
 
+test("the Missed layer's two filters cross — each side counts what the other is showing", async ({ page }) => {
+  // Aaron, 2026-08-08, reading it off the screen: *"if I have on missed 3/3 or 2/3 shouldn't the
+  // knobs that influence that toggle accordingly also?"* With "3 of 3" alone the layer drew 35
+  // markers while the MISSING chips went on reading 179 / 238 / 21 / 10 / 4 — which sum to 452, the
+  // whole set. **A chip's number is a claim about what ticking it would change**, so conditioned on
+  // nothing it is a claim about markers that are not on the chart.
+  //
+  // ⚠ WATCHED RED against HEAD, where the reason counts do not move at all when a score is hidden.
+  await openPriceTab(page)
+  await toggleAnalysis(page)
+  await page.getByRole('button', { name: /^Missed/ }).click()
+
+  /** A chip's trailing count — `No FVG in zone 179` → 179. */
+  const chip = async (name: string) => {
+    const t = await page.getByRole('button', { name: new RegExp(`^${name}`) }).textContent()
+    return Number(t!.trim().match(/(\d+)$/)![1])
+  }
+
+  const bothScores = await chip('No FVG in zone')
+  expect(bothScores).toBeGreaterThan(0)
+
+  // Hide the 2/3s. "No FVG in zone" cannot be a 3/3's missing confluence — a 3/3 met all three —
+  // so its count must fall to exactly 0. That is a stronger assertion than "it went down", and it
+  // is the answer the reader wants: this reason does not occur at this score.
+  await page.getByRole('button', { name: /^2 of 3/ }).click()
+  await expect.poll(() => chip('No FVG in zone')).toBe(0)
+
+  // ⚠ The chip must still BE there at 0. Shrinking the roster to the values present in the filtered
+  // subset would delete the control the instant its count hit zero, and a control that disappears
+  // when it reaches zero is one the reader cannot use to get back.
+  await expect(page.getByRole('button', { name: /^No FVG in zone/ })).toBeVisible()
+
+  // …and the mirror: the SCORE counts follow the reason filter. `No retrace` starts hidden (it is
+  // in the emitter's `missNoise`), so ticking it back on can only ever ADD misses to a score.
+  await page.getByRole('button', { name: /^2 of 3/ }).click()      // both scores shown again
+  const before = await chip('2 of 3')
+  await page.getByRole('button', { name: /^No retrace/ }).click()
+  await expect.poll(() => chip('2 of 3')).toBeGreaterThan(before)
+})
+
 test('the direction filter removes marks and every direction starts shown', async ({ page }) => {
   // Aaron, 2026-08-08: *"other times it's showing candle patterns that [point] nothing in the
   // direction of the trade — if I take a long, it's showing my bearish engulfing."*
