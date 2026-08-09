@@ -647,6 +647,18 @@ class OrderBridge:
         self._log.info(description)
         return action()
 
+    def halt(self, reason: str) -> None:
+        """Halt this bridge on an OUTSIDE authority's instruction — today, the fleet switch.
+
+        A public seam rather than letting a caller reach into `_halt`, because the two have
+        genuinely different causes and only one of them is a defect: `_halt` means *this bot's
+        emulator and the broker disagree*, which is a fault to investigate, while this means
+        *somebody, or something, told the whole fleet to stop*, which is a decision to honour.
+        The EFFECT is identical on purpose — no further orders, open positions keep their
+        broker stops — so there is exactly one state a reader has to reason about.
+        """
+        self._halt(reason)
+
     def _halt(self, reason: str) -> None:
         if self.state is BridgeState.HALTED:
             return

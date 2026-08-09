@@ -72,6 +72,7 @@ from feed import BarFeed              # noqa: E402
 from ledger import Ledger             # noqa: E402
 from version import verify_pin, current_commit, VersionMismatch  # noqa: E402
 from alert_format import alert, joined, money  # noqa: E402
+from fleet_halt import read_fleet_halt  # noqa: E402  (algos/shared/fleet_halt.py)
 
 _stop_requested = False
 
@@ -165,6 +166,11 @@ class LiveRunner:
         # not every ten seconds for an hour.
         self._link_lost_at: float | None = None
         self._link_retry_at = 0.0
+        # The fleet halt LATCHES — see `algos/shared/fleet_halt.py`. Once this is True the bot
+        # places nothing for the rest of the process, even if the flag is cleared underneath it,
+        # so a flapping or intermittently-unreadable filesystem cannot toggle a live book on and
+        # off unattended. Clearing the flag and RESTARTING is the resume path.
+        self._fleet_halted = False
         # Stamped from the file `cfg` was just read from, so `_cfg_mtime` always describes
         # the config actually in memory and the first poll sees no phantom change.
         try:
@@ -780,6 +786,12 @@ class LiveRunner:
                     self.log.info("Stop requested by file — shutting down cleanly.")
                     break
 
+                # The FLEET switch, checked before any bar is read so no order can be placed on
+                # the poll that sees it. Deliberately NOT a `break`: this halts ORDERS, not the
+                # process, so the bot keeps observing, keeps its heartbeat and keeps writing its
+                # ledger while it is muzzled — and anything already open keeps its broker stop.
+                self._check_fleet_halt()
+
                 # FIRST, before anything reads a bar. Every data call below returns an empty
                 # frame on a dead link, which is indistinguishable from a market that simply
                 # has not printed a bar yet — so asking the bars whether the terminal is alive
@@ -931,7 +943,39 @@ class LiveRunner:
         except OSError:
             # An unreadable instance directory is not a stop request. Guessing True here would
             # let a transient filesystem error take a live bot down.
+            # ⚠ This defaults the OPPOSITE way to `_check_fleet_halt` below, deliberately. A false
+            # STOP ends the process; a false HALT only refuses new orders while the bot stays
+            # alive with its positions protected. Each default is safe against the failure ITS
+            # path causes — see `algos/shared/fleet_halt.py` for the table.
             return False
+
+    def _check_fleet_halt(self) -> None:
+        """Halt this bot if the fleet switch is pulled — or if it cannot be READ.
+
+        Latches: once halted, this returns early forever, so clearing the flag under a running bot
+        does not quietly put it back in the market. The alert therefore fires exactly once per
+        process, which is what stops a switch left on over a weekend from filling the health room.
+        """
+        if self._fleet_halted:
+            return
+        reading = read_fleet_halt()
+        if not reading.halted:
+            return
+        self._fleet_halted = True
+        self.log.error(f"FLEET HALT ({reading.kind}): {reading.reason}")
+        self.ledger.event("fleet_halt", reason=reading.reason, readable=reading.readable)
+        if self.bridge is not None:
+            # Routed through the bridge rather than a second flag of our own, so there is ONE
+            # place that answers "may this bot place an order" and one halt reason a reader can
+            # find. A second gate here would be a second thing to keep in step.
+            self.bridge.halt(f"fleet halt — {reading.reason}")
+        # HEALTH, not TRADE: this is the machinery refusing to trade, and it must not sit in the
+        # room that is only opened when a fill arrives.
+        self._notify_health(alert(
+            "⛔", "FLEET HALT", self.cfg.display_name,
+            reading.reason,
+            "It keeps running and keeps its open positions and their stops. Clear the flag and "
+            "restart the bots to resume — clearing it alone will not."))
 
     def _maybe_pulse(self, *, link_up: bool | None, balance: float | None) -> None:
         """Write a `pulse` to the health stream on a fixed cadence.

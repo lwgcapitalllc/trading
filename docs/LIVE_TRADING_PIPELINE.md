@@ -539,9 +539,16 @@ its stop, book its fill — which is the doubled-book failure the duplicate-proc
 prevent, arriving through configuration instead of through a second process. Per ACCOUNT, not
 global: the terminal scopes orders by login.
 
-⚠ **STILL OPEN on the live side: there is no account-level HALT or fleet kill switch** — the bridge
-halts only its own bot. And **nothing here has been exercised against a real second bot**, because
-there is no second instance to exercise it with; it is unit-tested and mutation-checked, not driven.
+✅ **THE FLEET HALT LANDED 2026-08-09** — `algos/shared/fleet_halt.py`, a flag file every bot re-reads
+each poll, plus `algos/tools/fleet_halt.py` to pull and release it. It stops NEW ORDERS across every
+bot on the box; it does not close a position, cancel a broker stop or kill a process. **Cannot-read
+HALTS** (the opposite default from `stop.request`, because a false halt only costs a missed trade
+while a false stop takes a healthy bot off the box), and it **LATCHES** — clearing the flag does not
+resume trading, the bots have to be restarted. Full rules in `algos/CLAUDE.md`.
+
+⚠ **STILL OPEN: nothing here has been exercised against a real second bot**, because there is no
+second instance to exercise it with; the cap and the halt are unit-tested and mutation-checked, not
+driven.
 
 The overlap half of this gap is **CLOSED** — see G14. What stands between here and a second bot is
 the live allocator above and the caveats on B-LEG in G15.

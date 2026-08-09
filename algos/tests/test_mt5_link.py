@@ -132,6 +132,12 @@ def _runner(monkeypatch, *, account_info):
     r.feed = _Feed()
     r._link_lost_at = None
     r._link_retry_at = 0.0
+    # Same reason as `strategy` above — `__new__` skips __init__, and the loop reads this on
+    # every pass to decide whether the fleet switch has already fired. Leaving it out does not
+    # fail politely: `_check_fleet_halt` raises AttributeError on its first line, the loop's
+    # outer handler swallows it as a generic loop error, and the pass silently reads no bars
+    # and stamps no heartbeat — which is how it was found.
+    r._fleet_halted = False
     r.notes, r.warns, r.errors = [], [], []
     r.log = SimpleNamespace(info=lambda m, *a, **k: r.notes.append(m),
                             warning=lambda m, *a, **k: r.warns.append(m),

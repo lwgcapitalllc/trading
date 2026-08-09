@@ -131,6 +131,11 @@ def test_every_event_written_in_algos_live_is_classified():
         # carrying its own code, which is the pair worth noticing: one subject, seen from the
         # two sides of this file's dividing line.
         "risk_cap",
+        # The fleet switch firing. HEALTH, and the subject test settles it cleanly: this is why
+        # the bot is not trading AT ALL, which is a fact about the machinery, where "why no trade
+        # on THAT setup" is the decision stream's question. Same side of the line as `halted`,
+        # which it routes through.
+        "fleet_halt",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (

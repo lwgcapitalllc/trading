@@ -144,6 +144,12 @@ algos/telegram_monitor_state.json
 # MT5 lock
 algos/mt5_connect.lock
 
+# The FLEET HALT switch. Per-machine runtime, and committing it would be the worst possible
+# artefact in this repo: `git pull` on the VPS would halt every bot on the box, and `git pull`
+# on a Mac would put a halt file in a working tree where nobody would think to look for it.
+# It is a decision taken on ONE box at ONE moment, never a fact about the code.
+algos/FLEET_HALT
+
 # =============================================================
 # TradingView exports — real market data, never committed
 # (chart-data exports AND Strategy Tester trade lists). They are
