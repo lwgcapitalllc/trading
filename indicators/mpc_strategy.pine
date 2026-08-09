@@ -248,32 +248,32 @@ color i_nyHLColor     = color.black
 //  INTERNAL FIB INPUTS
 //============================================================
 var GRP_IFIB      = "Internal Fib"
-bool showIFibInput     = input.bool(false, "Show Internal Fib (removed 2026-08-09 — compile tokens)", group = GRP_IFIB, active = false, display = display.none)
+bool showIFibInput     = input.bool(false, "Show Internal Fib", group = GRP_IFIB, display = display.none)
 bool showIFib = marketStructureOnly ? false : showIFibInput
-int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = false, display = display.none)
+int  iFibExtend   = input.int(30,   "Line Extension (bars)", group = GRP_IFIB, minval = 5, maxval = 500, active = showIFibInput, display = display.none)
 
-color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = false, display = display.none)
+color  iFibo1Color    = input.color(#4caf50,"TP2 / 0.382",  group = GRP_IFIB, inline = "IFibo1", active = showIFibInput, display = display.none)
 string iFibo1Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo1", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = false, display = display.none)
+color  iFibo2Color    = input.color(#4caf50,"TP1 / 0.500",  group = GRP_IFIB, inline = "IFibo2", active = showIFibInput, display = display.none)
 string iFibo2Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo2", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = false, display = display.none)
+color  iFibo3Color    = input.color(#FF9800,"E1 / 0.618",   group = GRP_IFIB, inline = "IFibo3", active = showIFibInput, display = display.none)
 string iFibo3Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo3", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = false, display = display.none)
+color  iFibo4Color    = input.color(#FF9800,"E2 / 0.702",   group = GRP_IFIB, inline = "IFibo4", active = showIFibInput, display = display.none)
 string iFibo4Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo4", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = false, display = display.none)
+color  iFibo5Color    = input.color(#FF9800,"E3 / 0.786",   group = GRP_IFIB, inline = "IFibo5", active = showIFibInput, display = display.none)
 string iFibo5Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo5", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = false, display = display.none)
+color  iFibo6Color    = input.color(#FF9800,"E4 / 0.886",   group = GRP_IFIB, inline = "IFibo6", active = showIFibInput, display = display.none)
 string iFibo6Style    = input.string("┈",   "",              group = GRP_IFIB, inline = "IFibo6", options = ["─","┈","╌"], display = display.none)
 
-color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = false, display = display.none)
+color  iFibo0Color      = input.color(#4caf50,"TP3 / 0.000",  group = GRP_IFIB, inline = "IFibo0",   active = showIFibInput, display = display.none)
 string iFibo0Style      = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo0",   options = ["─","┈","╌"], display = display.none)
 
-color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = false, display = display.none)
+color  iFibo100Color    = input.color(#4caf50,"1.000",        group = GRP_IFIB, inline = "IFibo100", active = showIFibInput, display = display.none)
 string iFibo100Style    = input.string("─",   "",              group = GRP_IFIB, inline = "IFibo100", options = ["─","┈","╌"], display = display.none)
 
 //============================================================
@@ -487,23 +487,6 @@ string execLabelWhich = input.string("All", "   ↳ keep labels for which result
 float execLabelOff = input.float(6, "   ↳ label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the label sits from the entry, in ATRs. This is the only lever on where the hover tooltip opens — push the label out and the tooltip lands over empty space instead of over the candles. A leader line always connects it back to the entry.")
 bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while it is open. On close it paints the result: green from entry to the best price actually filled, red to the stop fill on a loss, an orange line at entry on a breakeven. Replaces TradingView's built-in trade markers.")
 bool  execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, active = execShowPosBox, tooltip = "Adds a faint dashed line at each partial exit's real fill price, tagged TP1 / TP2 / TP3 at the right edge of the trade. Off = the coloured bands still paint, just untagged.")
-
-// ── 9. WHICH ZONE THE ENTRY READS ──────────────────────────────────────────
-// ⚠ THESE TWO STRINGS ARE DECLARED IN THIS ORDER ON PURPOSE AND MUST NOT BE
-// REORDERED. TradingView keys a chart's saved input values off DECLARATION ORDER
-// within each type. execTimeStopMode was the LAST input.string in this file (it
-// lived down beside the exit ladder at ~5020 for exactly that reason), and
-// execPoiSource needs to be readable ~2,500 lines earlier than that, so it cannot
-// simply be appended at the end.
-// Moving execTimeStopMode UP to here and putting the new string AFTER it keeps
-// execTimeStopMode in the same string slot it has always held and makes
-// execPoiSource the new last one — so pasting this build resets NOTHING on a
-// chart. Swapping these two lines, or putting the new input anywhere above
-// execLabelWhich, silently resets the time stop on every chart running this script.
-// execTimeStopHrs (a FLOAT) deliberately stays down at its old declaration site:
-// execBeBandR is a later float, so moving the hours up here would shift THAT.
-string execTimeStopMode = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = GRP_EXEC, tooltip = "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, so the baseline moved: measured by real replay over 6.5 years it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R for +4R. Off closes nothing and is what every result measured before that date was taken on.")
-string execPoiSource = input.string("FVG", "Zone the entry reads", options = ["FVG", "Order block", "Either", "FVG first"], group = GRP_EXEC, tooltip = "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both, pooled, nearest one wins. FVG first = both, RANKED: a gap an order block sits on beats a plain gap, which beats a block, and nearest-first only decides within a rank. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap. Blocks are drawn on the chart only while they can be traded, so what you see is what the entry reads. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R. Requiring a block is worse than requiring nothing at all (315 / +149.55R). FVG first is NOT measured yet, and note it is not FVG with a safety net: a leg whose only zone is a block still trades, so it takes strictly more setups than FVG does.")
 
 //============================================================
 //  MARKET STRUCTURE OVERRIDE — applied after every other toggle above is
@@ -1305,6 +1288,29 @@ var int   i_sos_watch_hh_loc= na
 var float i_sos_watch_ll    = na
 var int   i_sos_watch_ll_loc= na
 
+// Internal fib anchor vars — declared before internal structure block so captures work
+var float iFib_asl     = na
+var int   iFib_asl_loc = na
+var float iFib_ash     = na
+var int   iFib_ash_loc = na
+var int   iFib_dir     = 0
+
+// Internal fib touched tracking — same system as micro fib
+color IFIB_GREY           = color.new(#888888, 0)
+var bool iFib0Touched     = false   // 0.0
+var bool iFib382Touched   = false   // 0.382 TP2
+var bool iFib50Touched    = false   // 0.5  FFT
+var bool iFib618Touched   = false   // 0.618 E1 — gate
+var bool iFib702Touched   = false   // 0.702 E2
+var bool iFib786Touched   = false   // 0.786 E3
+var bool iFib886Touched   = false   // 0.886 E4
+var bool iFib100Touched   = false   // 1.0
+var bool iFib618EverReached = false  // gate flag
+var float iFib_tp3_hit_price = na    // frozen price level TP3 was hit at (for detecting a later break-through)
+var float iFibPrevAsh = na   // detects when the extending anchor itself changed this bar
+var float iFibPrevAsl = na   // (a live wick), so touched-checks don't self-trigger off it
+var bool  iFibResetActive    = false // true once TP3 has been hit — resets this internal fib immediately
+
 float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (smaller number = closer to the line)
 
 // Internal structure is naturally scoped to the current active external swing —
@@ -1533,6 +1539,15 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
         int_bull_break := true
         int_bull_bos   := true
         int_break_origin_loc := i_tracked_ext_loc
+        // Bull BOS: bottom=i_last_hl (just set above), top=i_sw_price (high being broken)
+        if showIFib and not na(i_last_hl) and not na(i_sw_price)
+            iFib_asl := i_last_hl,  iFib_asl_loc := i_last_hl_loc
+            iFib_ash := i_sw_price, iFib_ash_loc := i_sw_loc
+            iFib_dir := 1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_price       := na
         i_tracked_ext    := na
@@ -1566,6 +1581,15 @@ if internalActive and i_mode == 0 and i_seeded and not na(i_sw_price) and barsta
         int_bear_break := true
         int_bear_bos   := true
         int_break_origin_loc := i_tracked_ext_loc
+        // Bear BOS: bottom=i_sw_price (low being broken), top=i_last_lh (just set above)
+        if showIFib and not na(i_sw_price) and not na(i_last_lh)
+            iFib_asl := i_sw_price,  iFib_asl_loc := i_sw_loc
+            iFib_ash := i_last_lh,   iFib_ash_loc := i_last_lh_loc
+            iFib_dir := -1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_price        := na
         i_tracked_ext     := na
@@ -1601,6 +1625,15 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bear_break := true
         int_bear_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bear iSOS: bottom=i_tracked_ext, top=i_sw_price (iLH being confirmed as ASH)
+        if showIFib and not na(i_tracked_ext) and not na(i_sw_price)
+            iFib_asl := i_tracked_ext, iFib_asl_loc := i_tracked_ext_loc
+            iFib_ash := i_sw_price,    iFib_ash_loc := i_sw_loc
+            iFib_dir := -1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1631,6 +1664,15 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bull_break := true
         int_bull_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bull iSOS: bottom=i_sw_price (iHL), top=i_last_lh (LH being broken)
+        if showIFib and not na(i_sw_price) and not na(i_last_lh)
+            iFib_asl := i_sw_price, iFib_asl_loc := i_sw_loc
+            iFib_ash := i_last_lh,  iFib_ash_loc := i_last_lh_loc
+            iFib_dir := 1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1660,6 +1702,15 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bull_break := true
         int_bull_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bull iSOS: bottom=i_sw_price (last iHL), top=i_sos_watch_hh (level being broken)
+        if showIFib and not na(i_sw_price) and not na(i_sos_watch_hh)
+            iFib_asl := i_sw_price,      iFib_asl_loc := i_sw_loc
+            iFib_ash := i_sos_watch_hh,  iFib_ash_loc := i_sos_watch_hh_loc
+            iFib_dir := 1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1690,6 +1741,15 @@ if internalActive and i_seeded and i_had_bos and barstate.isconfirmed
         int_bear_break := true
         int_bear_sos   := true
         int_break_origin_loc := i_sw_loc
+        // Bear iSOS: bottom=i_sos_watch_ll (level being broken), top=i_sw_price (last iLH)
+        if showIFib and not na(i_sos_watch_ll) and not na(i_sw_price)
+            iFib_asl := i_sos_watch_ll,     iFib_asl_loc := i_sos_watch_ll_loc
+            iFib_ash := i_sw_price,         iFib_ash_loc := i_sw_loc
+            iFib_dir := -1
+            iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+            iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+            iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+            iFib_tp3_hit_price := na, iFibResetActive := false
 
         i_sw_lbl          := na
         i_sw_price        := na
@@ -1995,269 +2055,6 @@ if showFVG and array.size(fvgBoxes) > 0
             bool visible = nearEq or not fvgDirOnly or st.dir == 0 or (isBull ? st.dir == 1 : st.dir == -1)
             box.set_bgcolor(fb, visible ? (isBull ? fvgBullColor : fvgBearColor) : color(na))
             box.set_text_color(fb, visible ? color.new(color.gray, 30) : color(na))
-
-//============================================================
-//  ORDER BLOCKS — the ALTERNATIVE point of interest
-//============================================================
-// Ported line-for-line from mpc_assistant.pine's OB block (the 2026-07-31 turn-anchored
-// re-port). That file, this one and engines/order_blocks/ are now three copies of ONE
-// definition rather than three ideas about what a block is, and here that matters more
-// than anywhere else it has been copied: engines/order_blocks/ is the Pine-parity-
-// validated port of mpc_assistant, and the Python bot reads THAT engine. Drift this port
-// and the chart and the bot start disagreeing about the same candle, which is precisely
-// the fork the FVG settings spent a week closing.
-// The long design notes stay in mpc_assistant.pine and engines/order_blocks/CLAUDE.md.
-// Only the load-bearing ones are repeated, because this file sits near Pine's compile
-// limits (CE10117) and a comment that costs a compile is not documentation.
-//
-// Detection runs ONLY while the entry can trade a block. It is stateful over history, so
-// an FVG run pays nothing for it — and, the half that is actually worth having, there is
-// no way for the chart to draw a block the entry is not reading. What you see is the set.
-bool showOBs = not marketStructureOnly and execPoiSource != "FVG"
-
-// Appearance and caps are CONSTANTS, exactly as they are in mpc_assistant.pine — no panel
-// inputs, so nothing about what a block IS can be altered from a chart. Two reasons, and
-// the second is the one that binds: new inputs here would shift the saved-value slots of
-// every later input of their type (see the note at execPoiSource), and an input with no
-// cfg_ column in the export mirror is invisible to the parity gate by construction.
-color OB_ACCENT   = color.orange
-color colBullOB   = color.new(OB_ACCENT, 90)
-color colBearOB   = color.new(OB_ACCENT, 90)
-color OB_EDGE     = color.new(OB_ACCENT, 25)
-color obTextBull  = color.new(OB_ACCENT, 0)
-color obTextBear  = color.new(OB_ACCENT, 0)
-bool  obBodyOnly  = false
-int   maxActiveOB = 10
-int   OB_MAX_AGE  = 500
-int   OB_STUB     = 30
-// Drawing-only trend filter, shared with the gaps so one switch governs both zone kinds.
-// It recolours, it never removes — so it cannot change which blocks the entry reads.
-bool  obDirOnly   = fvgDirOnly
-
-type OrderBlock
-    box   bg
-    float top
-    float bottom
-    bool  isBullish
-    bool  fromBreak = true
-    bool  entered   = false
-    // The bar the block was ADDED on — roughly 10 bars after its anchor candle, because
-    // both sources read late. This is NOT the box's left edge, which is the anchor.
-    // ⚠ The pre-date gate must read THIS and never the anchor. At the anchor bar the
-    // block did not exist and nothing could have rested a limit on it, so gating on the
-    // anchor would let a block price an entry ten bars before it was knowable. That is
-    // look-ahead of the quiet kind — it raises nothing and backtests beautifully.
-    // Matches `created_index` in engines/order_blocks/ exactly; that engine's
-    // `origin_index` is the anchor, and it is deliberately the one NOT used here.
-    int   bornBar   = 0
-
-var array<OrderBlock> activeBullOBs = array.new<OrderBlock>()
-var array<OrderBlock> activeBearOBs = array.new<OrderBlock>()
-
-// Plain oldest-out at the cap — the newest blocks are the ones nearest price.
-method manageOBs(array<OrderBlock> arr, OrderBlock newOB) =>
-    array.push(arr, newOB)
-    if array.size(arr) > maxActiveOB
-        OrderBlock oldest = array.remove(arr, 0)
-        box.delete(oldest.bg)
-
-// dir = external structure direction, passed in for the drawing filter only.
-method extendOBs(array<OrderBlock> arr, int dir) =>
-    if array.size(arr) > 0
-        for i = array.size(arr) - 1 to 0
-            OrderBlock ob = array.get(arr, i)
-            // A block sits as a short stub at its own candle while price is elsewhere,
-            // and stretches to the live bar once price is back within one block-height.
-            // OB_STUB is a FLOOR, not a ceiling: a young block runs past the live bar.
-            int   obLeft = box.get_left(ob.bg)
-            float obH    = ob.top - ob.bottom
-            bool  obNear = ob.isBullish ? low <= ob.top + obH : high >= ob.bottom - obH
-            int   obRight = obLeft + OB_STUB
-            box.set_right(ob.bg, obNear ? math.max(bar_index + 1, obRight) : obRight)
-            bool obVis = not obDirOnly or dir == 0 or (ob.isBullish ? dir == 1 : dir == -1)
-            box.set_bgcolor(ob.bg, obVis ? (ob.isBullish ? colBullOB : colBearOB) : color(na))
-            box.set_border_color(ob.bg, obVis ? OB_EDGE : color(na))
-            box.set_text_color(ob.bg, obVis ? (ob.isBullish ? obTextBull : obTextBear) : color(na))
-            // MITIGATION — three ways out, and the zone survives exactly one thing:
-            // price still being INSIDE it at the close.
-            //   WICKED  — the range reached in and the bar closed back out. Done with.
-            //   ENTERED — the bar closed inside. Alive until a later close outside, either side.
-            //   THROUGH — a close fully past the far edge kills it outright, entered or not.
-            // Plus OB_MAX_AGE, which is the only thing that retires a block price never
-            // came back to — both halves of enter-then-leave need price at the zone.
-            // `entered` latches on the object; Pine UDTs are references, so the two halves
-            // can land hours apart. extendOBs runs BEFORE creation each bar, so a block is
-            // never mitigation-checked on the bar it is born.
-            bool obInside = close <= ob.top and close >= ob.bottom
-            bool obTouch  = low <= ob.top and high >= ob.bottom
-            if not ob.entered and obInside
-                ob.entered := true
-            bool obStale   = bar_index - obLeft > OB_MAX_AGE
-            bool obThrough = ob.isBullish ? close < ob.bottom : close > ob.top
-            bool obMitigated = obThrough or (not obInside and (obTouch or ob.entered))
-            if obStale or obMitigated
-                box.delete(ob.bg)
-                array.remove(arr, i)
-
-// ta.atr is read HERE, in global scope, never inside f_obAdd. The function is called
-// conditionally, and a ta.* call on a conditional path gets an inconsistent history — the
-// value would be wrong on exactly the bars it is asked for.
-float obAtr = ta.atr(14)
-float OB_MAX_ATR      = 2.0   // height ceiling: a block taller than this x ATR is the impulse, not its base
-float OB_DUPE_OVERLAP = 0.5   // a candidate covering this much of its own height inside a live block is the same zone
-float OB_DISP_MULT    = 1.0   // how far price must travel AWAY before a candidate counts as a level
-
-f_obAdd(array<OrderBlock> arr, int off, int dir, bool vis, bool isBrk) =>
-    int OB_MIN_BACK = 3
-    float obTop = obBodyOnly ? math.max(open[off], close[off]) : high[off]
-    float obBot = obBodyOnly ? math.min(open[off], close[off]) : low[off]
-    bool obHuge = not na(obAtr) and (obTop - obBot) > obAtr * OB_MAX_ATR
-    // Catch-up replay over the bars since the anchor: did price LEAVE the zone (travel),
-    // did it close clean through it (dead), and was it wicked after leaving (tapped).
-    bool  obDead   = false
-    bool  obLeft   = false
-    bool  obTapped = false
-    float obTravel = 0.0
-    if off >= OB_MIN_BACK
-        for j = off - 1 to 1
-            if dir == 1 ? close[j] < obBot : close[j] > obTop
-                obDead := true
-                break
-            if obLeft
-                if low[j] <= obTop and high[j] >= obBot and (close[j] > obTop or close[j] < obBot)
-                    obTapped := true
-                    break
-            float obAway = dir == 1 ? close[j] - obTop : obBot - close[j]
-            if obAway > obTravel
-                obTravel := obAway
-            if not obLeft and not na(obAtr) and obTravel >= obAtr * OB_DISP_MULT
-                obLeft := true
-    bool obGone = not na(obAtr) and obTravel >= obAtr * OB_DISP_MULT
-    // DEDUPE by OVERLAP, not equality. The push and turn sources read the same turn and
-    // often land on ADJACENT candles, whose highs differ by cents — equality never matches
-    // and both boxes print, describing one zone twice. FIRST DRAWN WINS, and the push
-    // source runs first below, so on a turn that also engulfed the push block is kept.
-    // Deliberately a fraction of the CANDIDATE's height: a small candidate inside a big
-    // live zone is a duplicate, a big candidate merely containing a small old one is not.
-    bool obDupe = false
-    if array.size(arr) > 0
-        for k = 0 to array.size(arr) - 1
-            OrderBlock oX = array.get(arr, k)
-            float obOvH = math.min(obTop, oX.top) - math.max(obBot, oX.bottom)
-            if obOvH > 0 and obOvH >= (obTop - obBot) * OB_DUPE_OVERLAP
-                obDupe := true
-                break
-    // RETURNS whether a block was actually drawn — the turn source reads this to know
-    // whether the engulf rule already claimed the turn. Every gate above can refuse, so
-    // "the push fired" and "a block exists" are different facts.
-    bool obMade = false
-    if obGone and not obDead and not obTapped and not obDupe and not obHuge
-        box nb = box.new(bar_index - off, obTop, bar_index, obBot, border_color = vis ? OB_EDGE : color(na), border_width = 1, bgcolor = vis ? (dir == 1 ? colBullOB : colBearOB) : color(na), text = "OB", text_color = vis ? (dir == 1 ? obTextBull : obTextBear) : color(na), text_size = size.tiny, text_halign = text.align_right)
-        arr.manageOBs(OrderBlock.new(nb, obTop, obBot, dir == 1, isBrk, false, bar_index))
-        obMade := true
-    obMade
-
-// Ageing and mitigation run BEFORE the two creation sources, every bar.
-if showOBs
-    activeBullOBs.extendOBs(st.dir)
-    activeBearOBs.extendOBs(st.dir)
-
-// ── EVERY BLOCK BELONGS TO A TURN ───────────────────────────────────────────
-// The pivot is shared state above both sources, because the push has to prove it is AT a
-// turn too. A turn produces at most ONE block — the engulf reading if there was one, the
-// last-candle reading if there was not — and a stretch with no turn produces none.
-int OB_TURN_LEN  = 2
-int OB_TURN_SCAN = 8
-float obPvLo = ta.pivotlow(low,  OB_TURN_LEN, OB_TURN_LEN)
-float obPvHi = ta.pivothigh(high, OB_TURN_LEN, OB_TURN_LEN)
-var int obPvLoBar = na
-var int obPvHiBar = na
-if not na(obPvLo)
-    obPvLoBar := bar_index - OB_TURN_LEN
-if not na(obPvHi)
-    obPvHiBar := bar_index - OB_TURN_LEN
-
-// ── SOURCE 1: THE PUSH (engulf reading) ─────────────────────────────────────
-int   OB_PUSH_LOOK = 5
-int   OB_PUSH_WAIT = 10
-float OB_PUSH_MULT = 0.3
-float obPushAtr  = ta.atr(14)[OB_PUSH_WAIT]
-float obPushBody = math.abs(close[OB_PUSH_WAIT] - open[OB_PUSH_WAIT])
-bool  obPushUp   = close[OB_PUSH_WAIT] > open[OB_PUSH_WAIT]
-bool  obPushOk   = barstate.isconfirmed and not na(obPushAtr) and obPushBody > obPushAtr * OB_PUSH_MULT
-int obPushIdx = na
-if obPushOk
-    for j = OB_PUSH_WAIT + 1 to OB_PUSH_WAIT + OB_PUSH_LOOK
-        if obPushUp ? close[j] < open[j] : close[j] > open[j]
-            obPushIdx := j
-            break
-// Engulfed = closed through that candle's OPEN with a bigger body than it had — AND the
-// candle consumed must clear the SAME ATR noise floor the pusher does. Against a doji
-// "bigger body" proves nothing, so every doji in a move would otherwise become a block.
-// It REFUSES rather than scanning deeper: if the nearest opposing candle is a doji, there
-// is no order block there, and walking back to a bigger one claims a level the push never
-// came off.
-bool obPushEng = false
-if not na(obPushIdx)
-    float obPushPrev = math.abs(close[obPushIdx] - open[obPushIdx])
-    bool  obPushReal = obPushPrev > obPushAtr * OB_PUSH_MULT
-    obPushEng := obPushReal and obPushBody > obPushPrev and (obPushUp ? close[OB_PUSH_WAIT] > open[obPushIdx] : close[OB_PUSH_WAIT] < open[obPushIdx])
-// The anchor must sit AT OR JUST AFTER a matching-direction pivot. "At or just after",
-// not "anywhere near" — a block BEFORE the pivot is in the leg that was still falling.
-bool obPushAtTurn = false
-if not na(obPushIdx)
-    int obPushBar = bar_index - obPushIdx
-    int obPvBar   = obPushUp ? obPvLoBar : obPvHiBar
-    obPushAtTurn := not na(obPvBar) and obPushBar >= obPvBar and obPushBar - obPvBar <= OB_TURN_SCAN
-// Latched on the RETURN of f_obAdd, not on the push firing: every gate in there can still
-// refuse, and if it did, no block exists and the turn source must get its chance.
-var int obTurnUsedL = na
-var int obTurnUsedS = na
-if showOBs and obPushEng and obPushAtTurn and obPushUp
-    if f_obAdd(activeBullOBs, obPushIdx, 1, true, false)
-        obTurnUsedL := obPvLoBar
-if showOBs and obPushEng and obPushAtTurn and not obPushUp
-    if f_obAdd(activeBearOBs, obPushIdx, -1, true, false)
-        obTurnUsedS := obPvHiBar
-
-// ── SOURCE 2: THE TURN (no-engulf reading) ──────────────────────────────────
-// The pivot only says WHERE the turn is. The anchor is DERIVED by walking FORWARD from it
-// to the first candle that CLOSES CLEAR OF EVERY BODY in the base so far, and taking the
-// bar immediately before it — the last candle of the base, at whatever distance the base
-// happened to be. No constant to retune per chart.
-// BODIES, not wicks: a wick is the highest thing in a base by definition, so demanding a
-// close above every spike fires a bar late and walks the anchor up the turn. Measured
-// against the reference overlay, that was a uniform three-dollar error in one direction.
-// Falls back to the pivot bar if nothing clears inside OB_TURN_SCAN — a base that long
-// has not displaced, and f_obAdd's displacement gate refuses it anyway.
-int OB_TURN_WAIT = 10
-int obTurnBase = OB_TURN_LEN + OB_TURN_WAIT
-float obTurnLo = obPvLo[OB_TURN_WAIT]
-float obTurnHi = obPvHi[OB_TURN_WAIT]
-int   obTurnOffL = obTurnBase
-int   obTurnOffS = obTurnBase
-bool  obTurnFndL = false
-bool  obTurnFndS = false
-float obTurnRunH = math.max(open[obTurnBase], close[obTurnBase])
-float obTurnRunL = math.min(open[obTurnBase], close[obTurnBase])
-for j = obTurnBase - 1 to math.max(3, obTurnBase - OB_TURN_SCAN)
-    if not obTurnFndL
-        if close[j] > obTurnRunH
-            obTurnOffL := j + 1
-            obTurnFndL := true
-        else
-            obTurnRunH := math.max(obTurnRunH, open[j], close[j])
-    if not obTurnFndS
-        if close[j] < obTurnRunL
-            obTurnOffS := j + 1
-            obTurnFndS := true
-        else
-            obTurnRunL := math.min(obTurnRunL, open[j], close[j])
-int obTurnPvBar = bar_index - obTurnBase
-if showOBs and not na(obTurnLo) and obTurnPvBar != obTurnUsedL
-    f_obAdd(activeBullOBs, obTurnOffL, 1, true, false)
-if showOBs and not na(obTurnHi) and obTurnPvBar != obTurnUsedS
-    f_obAdd(activeBearOBs, obTurnOffS, -1, true, false)
 
 //============================================================
 //  RSI DIVERGENCE — regular divergence at the extremes
@@ -3120,23 +2917,161 @@ if bar_index >= 0
 //  macro_origin_locked alone, so nothing the strategy reads changes.)
 
 
-// ── INTERNAL FIB REMOVED 2026-08-09 (compile tokens, CE10117) ────────────────
-// The order-block entry option pushed this file to 102,086 tokens against a cap of
-// 100,256, so real code had to go. This block was the choice, on the same test every
-// earlier cut here was made on (Kill Zones, VWAP, Order Blocks, SVP, the Cycle Fib
-// drawing): PURELY COSMETIC, DEFAULTED OFF, and read by NOTHING in the execution
-// layer — verified by grep before cutting, not assumed.
-// ⚠ THE INTERNAL STRUCTURE ENGINE STAYS AND IS TRADE-CRITICAL. Do not confuse the two.
-// `i_confirmed_low_price` / `i_confirmed_high_price` are written by the internal SWING
-// detection and adopted as the External Fib's anchors whenever they are more extreme,
-// so they set fiboP1..fiboP10 — every entry, stop and target in this file. What went is
-// only the internal fib's own LADDER: eight levels, eight touched-flags, eight lines.
-// ⚠ THE GRP_IFIB INPUTS ARE LEFT DECLARED, NOT DELETED, and must stay that way.
-// TradingView keys saved input values off declaration order within each type, and that
-// group holds 8 colours and 8 strings — deleting them would shift every later input of
-// those types and silently reset them on every chart, `execPoiSource` and the time stop
-// included. Same call, same reason, as the Cycle Fib's two parked inputs.
-// It still draws in mpc_assistant.pine. Recover from git; never rewrite from memory.
+//============================================================
+//  INTERNAL FIB
+//============================================================
+var line  iFL0   = na, var label ifLbl0   = na
+var line  iFL382 = na, var label ifLbl382 = na
+var line  iFL50  = na, var label ifLbl50  = na
+var line  iFL618 = na, var label ifLbl618 = na
+var line  iFL702 = na, var label ifLbl702 = na
+var line  iFL786 = na, var label ifLbl786 = na
+var line  iFL886 = na, var label ifLbl886 = na
+var line  iFL100 = na, var label ifLbl100 = na
+
+// Clear internal fib when external BOS/SOS fires — wait for new iBOS/iSOS
+if st.bull_bos or st.bear_bos or st.bull_sos or st.bear_sos
+    iFib_dir := 0, iFib_asl := na, iFib_asl_loc := na, iFib_ash := na, iFib_ash_loc := na
+    iFibPrevAsh := na, iFibPrevAsl := na
+    iFib0Touched := false, iFib382Touched := false, iFib50Touched := false
+    iFib618Touched := false, iFib702Touched := false, iFib786Touched := false
+    iFib886Touched := false, iFib100Touched := false, iFib618EverReached := false
+    iFib_tp3_hit_price := na, iFibResetActive := false
+    line.delete(iFL0),   label.delete(ifLbl0)
+    line.delete(iFL382), label.delete(ifLbl382)
+    line.delete(iFL50),  label.delete(ifLbl50)
+    line.delete(iFL618), label.delete(ifLbl618)
+    line.delete(iFL702), label.delete(ifLbl702)
+    line.delete(iFL786), label.delete(ifLbl786)
+    line.delete(iFL886), label.delete(ifLbl886)
+    line.delete(iFL100), label.delete(ifLbl100)
+
+// Track live low/high since iBOS fired — updates the moving anchor
+if iFib_dir == -1 and not na(iFib_ash)
+    if na(iFib_asl) or low < iFib_asl
+        iFib_asl     := low
+        iFib_asl_loc := bar_index
+else if iFib_dir == 1 and not na(iFib_asl)
+    if na(iFib_ash) or high > iFib_ash
+        iFib_ash     := high
+        iFib_ash_loc := bar_index
+
+// Internal fib touched tracking — same logic as micro fib
+bool iFibExtChanged = (not na(iFibPrevAsh) and iFib_ash != iFibPrevAsh) or (not na(iFibPrevAsl) and iFib_asl != iFibPrevAsl)
+if iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash) and not iFibExtChanged
+    float iFR  = iFib_ash - iFib_asl
+    if iFR > 0
+        // Level prices (same direction logic as micro fib)
+        float iTP618 = iFib_dir == 1 ? iFib_ash - iFR*0.618 : iFib_asl + iFR*0.618
+        float iTP702 = iFib_dir == 1 ? iFib_ash - iFR*0.702 : iFib_asl + iFR*0.702
+        float iTP786 = iFib_dir == 1 ? iFib_ash - iFR*0.786 : iFib_asl + iFR*0.786
+        float iTP886 = iFib_dir == 1 ? iFib_ash - iFR*0.886 : iFib_asl + iFR*0.886
+        float iTP50  = iFib_dir == 1 ? iFib_ash - iFR*0.5   : iFib_asl + iFR*0.5
+        float iTP382 = iFib_dir == 1 ? iFib_ash - iFR*0.382 : iFib_asl + iFR*0.382
+        float iTP0   = iFib_dir == 1 ? iFib_ash              : iFib_asl
+        float iTP100 = iFib_dir == 1 ? iFib_asl              : iFib_ash
+
+        // Gate: 0.618 must be reached first
+        bool iGate618 = iFib_dir == 1 ? low <= iTP618 : high >= iTP618
+        if iGate618 and not iFib618Touched
+            iFib618Touched := true
+
+        if iFib618Touched
+            iFib702Touched := f_checkTouch(iFib702Touched, iTP702, iFib_dir == 1 ? low <= iTP702 : high >= iTP702)
+            iFib786Touched := f_checkTouch(iFib786Touched, iTP786, iFib_dir == 1 ? low <= iTP786 : high >= iTP786)
+            iFib886Touched := f_checkTouch(iFib886Touched, iTP886, iFib_dir == 1 ? low <= iTP886 : high >= iTP886)
+            iFib100Touched := f_checkTouch(iFib100Touched, iTP100, iFib_dir == 1 ? low <= iTP100 : high >= iTP100)
+
+        if iFib618EverReached
+            iFib50Touched  := f_checkTouch(iFib50Touched,  iTP50,  iFib_dir == 1 ? high >= iTP50  : low <= iTP50)
+            iFib382Touched := f_checkTouch(iFib382Touched, iTP382, iFib_dir == 1 ? high >= iTP382 : low <= iTP382)
+            bool iFib0WasTouched = iFib0Touched
+            iFib0Touched := f_checkTouch(iFib0Touched, iTP0, iFib_dir == 1 ? high >= iTP0 : low <= iTP0)
+            if iFib0Touched and not iFib0WasTouched
+                iFib_tp3_hit_price := iTP0
+
+        if iGate618 and not iFib618EverReached
+            iFib618EverReached := true
+
+if iFib_dir != 0
+    iFibPrevAsh := iFib_ash
+    iFibPrevAsl := iFib_asl
+
+if showFibo and showIFib and iFib_dir != 0 and not na(iFib_asl) and not na(iFib_ash)
+    float iH  = iFib_ash
+    float iL  = iFib_asl
+    int   iS  = iFib_asl_loc
+    float iR  = iH - iL
+    int   iE  = bar_index + iFibExtend
+
+    if iR > 0
+        // Direction aware levels
+        // Bullish: 0=top(iH), 1=bottom(iL), levels go DOWN from top
+        // Bearish: 0=bottom(iL), 1=top(iH), levels go UP from bottom
+        float iP0   = iFib_dir == 1 ? iH : iL
+        float iP382 = iFib_dir == 1 ? iH - iR*0.382 : iL + iR*0.382
+        float iP50  = iFib_dir == 1 ? iH - iR*0.5   : iL + iR*0.5
+        float iP618 = iFib_dir == 1 ? iH - iR*0.618 : iL + iR*0.618
+        float iP702 = iFib_dir == 1 ? iH - iR*0.702 : iL + iR*0.702
+        float iP786 = iFib_dir == 1 ? iH - iR*0.786 : iL + iR*0.786
+        float iP886 = iFib_dir == 1 ? iH - iR*0.886 : iL + iR*0.886
+        float iP100 = iFib_dir == 1 ? iL : iH
+
+        // Colors — grey until touched, then the level's configured color
+        color c0 = iFib0Touched ? iFibo0Color : IFIB_GREY
+        color c382 = iFib382Touched ? iFibo1Color : IFIB_GREY
+        color c50 = iFib50Touched ? iFibo2Color : IFIB_GREY
+        color c618 = iFib618Touched ? iFibo3Color : IFIB_GREY
+        color c702 = iFib702Touched ? iFibo4Color : IFIB_GREY
+        color c786 = iFib786Touched ? iFibo5Color : IFIB_GREY
+        color c886 = iFib886Touched ? iFibo6Color : IFIB_GREY
+        color c100 = iFib100Touched ? iFibo100Color : IFIB_GREY
+
+        // FFT label when 0.5 first touched, otherwise honor TP/Entry vs Fib Value label mode
+        string tx0 = f_fiboLabel(0.0, "TP3", "TP3") + str.tostring(iP0, format.mintick) + ")"
+        string tx382 = f_fiboLabel(0.382, "TP2", "TP2") + str.tostring(iP382, format.mintick) + ")"
+        string tx50 = (iFib50Touched ? "FFT  (" : f_fiboLabel(0.5, "TP1", "TP1")) + str.tostring(iP50, format.mintick) + ")"
+        string tx618 = f_fiboLabel(0.618, "E1", "E1") + str.tostring(iP618, format.mintick) + ")"
+        string tx702 = f_fiboLabel(0.702, "E2", "E2") + str.tostring(iP702, format.mintick) + ")"
+        string tx786 = f_fiboLabel(0.786, "E3", "E3") + str.tostring(iP786, format.mintick) + ")"
+        string tx886 = f_fiboLabel(0.886, "E4", "E4") + str.tostring(iP886, format.mintick) + ")"
+        string tx100 = f_fiboLabel(1.0, "1.0", "1.0") + str.tostring(iP100, format.mintick) + ")"
+
+        bool ishow = not iFibResetActive
+        [nl0, nlb0] = f_fibLevel(ishow, iFL0, ifLbl0, iS, iP0, iE, c0, f_fiboLineStyle(iFibo0Style), tx0)
+        iFL0 := nl0, ifLbl0 := nlb0
+        [nl382, nlb382] = f_fibLevel(ishow, iFL382, ifLbl382, iS, iP382, iE, c382, f_fiboLineStyle(iFibo1Style), tx382)
+        iFL382 := nl382, ifLbl382 := nlb382
+        [nl50, nlb50] = f_fibLevel(ishow, iFL50, ifLbl50, iS, iP50, iE, c50, f_fiboLineStyle(iFibo2Style), tx50)
+        iFL50 := nl50, ifLbl50 := nlb50
+        [nl618, nlb618] = f_fibLevel(ishow, iFL618, ifLbl618, iS, iP618, iE, c618, f_fiboLineStyle(iFibo3Style), tx618)
+        iFL618 := nl618, ifLbl618 := nlb618
+        [nl702, nlb702] = f_fibLevel(ishow, iFL702, ifLbl702, iS, iP702, iE, c702, f_fiboLineStyle(iFibo4Style), tx702)
+        iFL702 := nl702, ifLbl702 := nlb702
+        [nl786, nlb786] = f_fibLevel(ishow, iFL786, ifLbl786, iS, iP786, iE, c786, f_fiboLineStyle(iFibo5Style), tx786)
+        iFL786 := nl786, ifLbl786 := nlb786
+        [nl886, nlb886] = f_fibLevel(ishow, iFL886, ifLbl886, iS, iP886, iE, c886, f_fiboLineStyle(iFibo6Style), tx886)
+        iFL886 := nl886, ifLbl886 := nlb886
+        [nl100, nlb100] = f_fibLevel(ishow, iFL100, ifLbl100, iS, iP100, iE, c100, f_fiboLineStyle(iFibo100Style), tx100)
+        iFL100 := nl100, ifLbl100 := nlb100
+    else
+        line.delete(iFL0),   label.delete(ifLbl0)
+        line.delete(iFL382), label.delete(ifLbl382)
+        line.delete(iFL50),  label.delete(ifLbl50)
+        line.delete(iFL618), label.delete(ifLbl618)
+        line.delete(iFL702), label.delete(ifLbl702)
+        line.delete(iFL786), label.delete(ifLbl786)
+        line.delete(iFL886), label.delete(ifLbl886)
+        line.delete(iFL100), label.delete(ifLbl100)
+        iFL0 := na, ifLbl0 := na
+        iFL382 := na, ifLbl382 := na
+        iFL50 := na, ifLbl50 := na
+        iFL618 := na, ifLbl618 := na
+        iFL702 := na, ifLbl702 := na
+        iFL786 := na, ifLbl786 := na
+        iFL886 := na, ifLbl886 := na
+        iFL100 := na, ifLbl100 := na
+
 //============================================================
 //  SNIPER FIB
 //============================================================
@@ -3927,105 +3862,22 @@ f_w23Arm(mwS, aplusS_stage >= 2 and aplusS_stage[1] < 2, aplusS_sweepBar, aplusS
 // setup never justified. `na(fiboHalfBar)` = price has not reached the zone yet, so
 // every gap trivially pre-dates it and the gate is inert. STRICTLY earlier: a gap born
 // on the zone-entry bar was still forming as price arrived, so it was not "present".
-// Read by BOTH zone consumers below — the confluence flag and the entry-edge loop — so a
-// zone the entry may not use can never be labelled as the confluence that armed it. Add
-// the call to any future consumer of the POI arrays, or that path becomes a way around
+// Read by BOTH gap consumers below — the confluence flag and the entry-edge loop — so a
+// gap the entry may not use can never be labelled as the confluence that armed it. Add
+// the call to any future consumer of fvgTops/fvgBots, or that path becomes a way around
 // this gate. (The old execFvg50 0.5-straddle fallback was a third consumer; it was
 // removed with the input on 2026-08-02.)
-// It reads the zone's BIRTH bar, and for an order block that is the bar it was ADDED on,
-// never its anchor candle — see OrderBlock.bornBar.
 f_gapPreZone(int _born) => not execFvgPreZone or na(fiboHalfBar) or _born < fiboHalfBar
 
-// Does a live order block sit on this gap? Read only by "FVG first", to sort a gap into
-// the top rank. INCLUSIVE at the edges, matching every other band test in this file
-// (`_gB <= fiboP2 and _gT >= fiboP6`), so a block whose top is exactly the gap's bottom
-// counts as overlapping. The caller passes the SAME-DIRECTION array — see the seam note.
-f_gapOnOb(array<OrderBlock> _arr, float _gT, float _gB) =>
-    bool _hit = false
-    if array.size(_arr) > 0
-        for _k = 0 to array.size(_arr) - 1
-            OrderBlock _o = array.get(_arr, _k)
-            if math.min(_gT, _o.top) >= math.max(_gB, _o.bottom)
-                _hit := true
-                break
-    _hit
-
-// ── THE POI SEAM — the one place that decides WHICH zones the entry may read ──
-// Everything downstream unpacks (top, bottom, isBullish, born) and knows nothing about
-// where the zone came from. That is what makes "an order block obeys the same rules as a
-// gap" true BY CONSTRUCTION rather than by two blocks of code happening to agree: the
-// deep-only gate, the pre-date gate, the four fib entry rules and the confluence flag are
-// each written once and see one kind of thing.
-// It mirrors signals.pois_for() in the Python package exactly, including the order —
-// gaps first, then bull blocks, then bear blocks. Order cannot change an outcome here
-// (the confluence flag ORs and the edge picks a max/min), but the two sides staying
-// identical is what lets the parity gate compare them at all.
-// Rebuilt every bar into `var` arrays rather than freshly allocated ones: a script that
-// allocates four arrays per bar over 20,000 bars is a memory-limit error waiting to fire.
-//
-// ── "FVG first" — the PRECEDENCE mode (2026-08-09) ──────────────────────────────
-// The seam also carries a RANK, and it is the only thing that mode adds. Same union of
-// zones as "Either", ranked rather than pooled:
-//     2  a gap an order block sits on   (strongest)
-//     1  a plain gap
-//     0  an order block                 (used only when no gap qualifies)
-// The entry loop takes the best rank that has a QUALIFYING zone and lets nearest-first
-// decide only within it. Every other mode pushes rank 0 for everything, so every
-// candidate ties and the loop collapses to the original max/min exactly — which is what
-// keeps FVG / Order block / Either byte-identical rather than merely intended to be.
-// Mirrors signals.POI_RANK_* in the Python package.
-// ⚠ The confirming block must point the SAME WAY as the gap: a bearish supply block on a
-// bullish gap is the opposite of confirmation, and ranking that gap top would promote the
-// worst candidate on the leg. Flip it here AND in signals.pois_for together, never one.
-var array<float> poiTops   = array.new<float>()
-var array<float> poiBots   = array.new<float>()
-var array<bool>  poiIsBull = array.new<bool>()
-var array<int>   poiBorn   = array.new<int>()
-var array<int>   poiRank   = array.new<int>()
-array.clear(poiTops)
-array.clear(poiBots)
-array.clear(poiIsBull)
-array.clear(poiBorn)
-array.clear(poiRank)
-bool poiWantFvg = execPoiSource != "Order block"
-bool poiWantOb  = execPoiSource != "FVG"
-bool poiPref    = execPoiSource == "FVG first"
-if poiWantFvg and array.size(fvgTops) > 0
-    for _pi = 0 to array.size(fvgTops) - 1
-        float _pgT = array.get(fvgTops, _pi)
-        float _pgB = array.get(fvgBots, _pi)
-        bool  _pgU = array.get(fvgIsBull, _pi)
-        array.push(poiTops,   _pgT)
-        array.push(poiBots,   _pgB)
-        array.push(poiIsBull, _pgU)
-        array.push(poiBorn,   array.get(fvgBorn, _pi))
-        array.push(poiRank,   poiPref ? (f_gapOnOb(_pgU ? activeBullOBs : activeBearOBs, _pgT, _pgB) ? 2 : 1) : 0)
-if poiWantOb and array.size(activeBullOBs) > 0
-    for _pi = 0 to array.size(activeBullOBs) - 1
-        OrderBlock _pob = array.get(activeBullOBs, _pi)
-        array.push(poiTops,   _pob.top)
-        array.push(poiBots,   _pob.bottom)
-        array.push(poiIsBull, true)
-        array.push(poiBorn,   _pob.bornBar)
-        array.push(poiRank,   0)
-if poiWantOb and array.size(activeBearOBs) > 0
-    for _pi = 0 to array.size(activeBearOBs) - 1
-        OrderBlock _pob = array.get(activeBearOBs, _pi)
-        array.push(poiTops,   _pob.top)
-        array.push(poiBots,   _pob.bottom)
-        array.push(poiIsBull, false)
-        array.push(poiBorn,   _pob.bornBar)
-        array.push(poiRank,   0)
-
-// Zone confluence — a live zone overlapping the entry band (0.5 to 0.886)
+// FVG confluence — a live clean gap overlapping the entry zone (0.5 to 0.886)
 bool aplusL_fvg = false
 bool aplusS_fvg = false
-if array.size(poiTops) > 0 and not na(fiboP2) and not na(fiboP6)
-    for _fi = 0 to array.size(poiTops) - 1
-        float _gT = array.get(poiTops, _fi)
-        float _gB = array.get(poiBots, _fi)
-        bool  _gOk = f_gapPreZone(array.get(poiBorn, _fi))
-        if array.get(poiIsBull, _fi)
+if array.size(fvgBoxes) > 0 and not na(fiboP2) and not na(fiboP6)
+    for _fi = 0 to array.size(fvgBoxes) - 1
+        float _gT = array.get(fvgTops, _fi)
+        float _gB = array.get(fvgBots, _fi)
+        bool  _gOk = f_gapPreZone(array.get(fvgBorn, _fi))
+        if array.get(fvgIsBull, _fi)
             // bullish zone: prices from fiboP6 (0.886, lower) up to fiboP2 (0.5)
             if fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _gOk
                 aplusL_fvg := true
@@ -4437,17 +4289,11 @@ f_fibEntry(float _gB, float _gT, bool _bull) =>
 // With "Require FVG" off, the edge falls back to the 0.618 fib (E1) line.
 float longEdge  = na
 float shortEdge = na
-// The rank the current best edge came from ("FVG first" only). Every other mode pushes
-// rank 0 for everything, so these can never differ and the choice below is the original
-// nearest-first max/min exactly.
-int longRank  = -1
-int shortRank = -1
-if fibsReady and array.size(poiTops) > 0
-    for _i = 0 to array.size(poiTops) - 1
-        float _gT = array.get(poiTops, _i)
-        float _gB = array.get(poiBots, _i)
-        bool  _gBull = array.get(poiIsBull, _i)
-        int   _gRk   = array.get(poiRank, _i)
+if fibsReady and array.size(fvgTops) > 0
+    for _i = 0 to array.size(fvgTops) - 1
+        float _gT = array.get(fvgTops, _i)
+        float _gB = array.get(fvgBots, _i)
+        bool  _gBull = array.get(fvgIsBull, _i)
         // Deep-only gate: when on, the WHOLE gap must sit past the 0.5 line —
         // long: gap top at/below 0.5; short: gap bottom at/above 0.5 (no straddle).
         bool _lDeepOk = not execFvgDeepOnly or _gT <= fiboP2
@@ -4455,25 +4301,15 @@ if fibsReady and array.size(poiTops) > 0
         // Pre-zone gate: with execFvgPreZone on, a gap the retrace itself printed cannot
         // price this entry. It is ANDed onto both sides rather than skipping the loop
         // iteration, so with the toggle off the condition is the original one exactly.
-        bool _preOk = f_gapPreZone(array.get(poiBorn, _i))
+        bool _preOk = f_gapPreZone(array.get(fvgBorn, _i))
         if _gBull and fibo_dir == 1 and _gB <= fiboP2 and _gT >= fiboP6 and _lDeepOk and _preOk
             float _df = f_fibEntry(_gB, _gT, true)
             float _e = na(_df) ? math.min(_gT, fiboP2) : _df       // snap override, else shallowest touch
-            // A HIGHER rank wins outright, however much further away it rests — that IS the
-            // precedence. Only within one rank does "first price reaches" decide.
-            if na(longEdge) or _gRk > longRank
-                longEdge := _e
-                longRank := _gRk
-            else if _gRk == longRank
-                longEdge := math.max(longEdge, _e)
+            longEdge := na(longEdge) ? _e : math.max(longEdge, _e) // first one price reaches
         if (not _gBull) and fibo_dir == -1 and _gT >= fiboP2 and _gB <= fiboP6 and _sDeepOk and _preOk
             float _df = f_fibEntry(_gB, _gT, false)
             float _e = na(_df) ? math.max(_gB, fiboP2) : _df
-            if na(shortEdge) or _gRk > shortRank
-                shortEdge := _e
-                shortRank := _gRk
-            else if _gRk == shortRank
-                shortEdge := math.min(shortEdge, _e)
+            shortEdge := na(shortEdge) ? _e : math.min(shortEdge, _e)
 // ── SNIPER ZONE — the SECOND accepted confirmation ─────────────────────────
 // The SZ is the break leg's 0.5-0.618 pocket, so it already lives inside the
 // 0.5-0.886 entry band. It is a FALLBACK only: the loop above runs first, so a
@@ -5177,18 +5013,15 @@ float lStop = lStage >= 2 ? (na(lTrail) ? lStage2Floor : math.max(lStage2Floor, 
 float sStop = sStage >= 2 ? (na(sTrail) ? sStage2Floor : math.min(sStage2Floor, sTrail)) : sStage >= 1 ? sEntry - beBuf : sSL
 
 // ── The TIME STOP — the one exit lever driven by the clock, not by price ─────────
-// ⚠ Only the HOURS is declared here now. The MODE moved up beside execPoiSource on
-// 2026-08-09 and the reason is the same one that put it down here in the first place:
-// TradingView keys a chart's saved input values off DECLARATION ORDER within each type,
-// so the mode had to stay the LAST input.string in the file. execPoiSource has to be
-// readable ~2,500 lines above this block, so it could not simply be appended after it —
-// instead the mode was moved up and the new string declared immediately AFTER it, which
-// leaves the mode in the same string slot it has always held. See the note at its new
-// declaration site before touching either.
-// The HOURS stays HERE because it is a FLOAT and execBeBandR (~4090) is a later float:
-// moving the hours up to the panel would shift that one, which is the exact silent reset
-// this whole arrangement exists to avoid. The pair being split across the file is the
-// price of that, and it is cheaper than a reset.
+// ⚠ These two inputs are declared HERE, next to the block that reads them, rather than
+// up in the GRP_EXEC panel with their siblings. That is deliberate and must not be
+// "tidied up": TradingView keys a chart's saved input values off DECLARATION ORDER
+// within each type, so inserting a string and a float up at line ~483 would shift every
+// later string/float input and silently reset them on every chart running this script.
+// The last input.float/string/int in this file is execBeBandR (~4050), so declaring the
+// pair here shifts nothing at all. `group = GRP_EXEC` still files them under Strategy
+// Execution in the settings panel — only their position WITHIN that group moves.
+string execTimeStopMode = input.string("Before TP1 only", "Time stop", options = ["Off", "Before TP1 only", "Always"], group = GRP_EXEC, tooltip = "Close a trade that has been open for the number of hours below. Before TP1 only is the measured shape: it fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss. Always ignores that and closes on the clock alone, which cuts winners too. Before TP1 only at 36 hours is the DEFAULT as of 2026-08-06, so the baseline moved: measured by real replay over 6.5 years it cuts 6 trades, all losers, and takes max drawdown from 8.0R to 5.6R for +4R. Off closes nothing and is what every result measured before that date was taken on.")
 float execTimeStopHrs = input.float(36.0, "   ↳ Time stop (hours)", group = GRP_EXEC, minval = 0.25, step = 0.25, active = execTimeStopMode != "Off", tooltip = "Calendar hours since the fill, weekends included — the same clock the swap is charged on. Measured over 6.5 years, cutting only trades that never reached TP1: 24h to 40h all give the same answer, so read it as a plateau rather than an optimum. Below 16 hours it starts cutting winners, because losers here die FASTER than winners do.")
 
 bool lTimeUp = execTimeStopMode != "Off" and strategy.position_size > 0 and not na(lEntryTime) and (execTimeStopMode == "Always" or lStage == 0) and (time - lEntryTime) >= execTimeStopHrs * 3600000
