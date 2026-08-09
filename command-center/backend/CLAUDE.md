@@ -2231,6 +2231,63 @@ columns rather than transcribed; the engine mirrors its source Pine (5 / 0.05) a
 what it reads. Repointing this at the defaults would make the chart stop matching the indicator it
 is read against — pinned by a test.
 
+### 🔴 The rules match his indicator and the PRICES do not — 16% of marks disagree, and no rule change can close it
+
+**MEASURED 2026-08-09, after Aaron reported eight candles that "are obviously engulfings" and were
+not marked. Two of the eight are genuine misses and the cause is not in this file, in the engine, or
+in the Pine — it is the BAR FEED.** This chart draws the run's own candles, which come from the MT5
+cache (`backtest/cache/XAUUSD__M15.csv`). The indicator he is comparing against runs on
+TradingView's feed. Same broker, same symbol, different tape.
+
+✅ **20,053 shared bars, the export's own `px_*` flags as the reference, engine at `CHART_PRESET`:
+the two feeds sit a systematic 6 cents apart (median close difference −0.060), and that alone
+produces 600 marks his chart draws that this one misses plus 515 it draws that his does not —
+15.9% of every mark he sees.** Bearish engulfing alone: **150 missed of 914.**
+
+🔴 **A CONSTANT offset would flip nothing** — every clause here is a comparison between two prices,
+so a whole-feed shift cancels — **so the damage is entirely the INTRA-BAR variation**, and it is
+larger than the offset. On his 2025-12-09 16:45 case the two feeds disagree by 14 cents on the open
+and 3 cents on the prior close, i.e. **17 cents on the one comparison that decides the rule**:
+TradingView clears `open >= close[1]` by +0.09, the cache misses by −0.08. Every other clause passes
+on both. That bar is the trade's adverse extreme, so the miss also changed the CHIP — the name fell
+through to the `Inverted Hammer` on the next bar, which is how the reader noticed.
+
+🔴 **A TOLERANCE WAS MEASURED AND IS STRICTLY WORSE — this is now a number, not only the standing
+rule in `engines/candlesticks/CLAUDE.md`.** Relaxing the two `>=` boundaries by an epsilon, scored
+against his own flags over the same 20,053 bars (engulfings, both directions):
+
+| epsilon | we miss | we invent |
+|---|---|---|
+| **0 (shipped)** | **243** | **190** |
+| $0.02 | 143 | 664 |
+| $0.05 | 95 | 822 |
+| $0.10 | 65 | 900 |
+
+**Two cents recovers 100 marks and manufactures 474.** The mechanism is that on a gapless intraday
+feed a bar's open sits within a cent or two of the prior close as the ORDINARY case, so any slack
+floods the rule rather than nudging it. **Zero is the minimum-disagreement setting by a factor of
+two**, which is the opposite of what "just a few cents of feed noise, allow a few cents" predicts.
+
+⚠ **The remaining six of the eight are not this layer's doing and the clause breakdown is the only
+answer that shows it** — four fail the full-body engulf by **$0.01 / $0.05 / $0.06 / $0.01 on HIS
+OWN prices**, and one passes the engulf and fails the 117-bar uptrend gate with price $13 below
+where it was 117 bars back. His indicator does not draw them either, read straight off `px_bear_eng`
+in his export rather than argued. ⚠ **Do not answer a report like this with an assurance that the
+engine is parity-green** — it is, and it is beside the point; print the failing CLAUSE with both
+feeds' numbers beside it.
+
+⚠ **The honest options are: accept it, or change the CANDLE SOURCE — and the second is not
+available**, because the chart must draw the bars the strategy actually traded or the marks stop
+lining up with the trades. **Accepted, no code change (Aaron's call, 2026-08-09.)**
+
+**The standing lesson is about what a parity gate covers.** `compare_candles.py` feeds the engine
+the EXPORT'S OWN prices, so it proves the rules agree and can never say anything about the data a
+consumer feeds them. Every layer was green and the reader still saw the wrong candle. **Before
+claiming one system matches another, ask whether they are reading the same INPUT — a validated rule
+on a different tape is a different answer.** It is the shadow diff's finding (`algos/tools/shadow_diff.py`,
+2026-08-04) arriving in a second subsystem: there four cents of broker difference moved a resting
+entry $10.12; here six cents moves one mark in six.
+
 ### The anchor set is trades and 3/3 misses, and nothing else
 
 **`reversal_anchors(trades, misses)` is public and named for one reason: it is the thing about this

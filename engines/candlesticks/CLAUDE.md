@@ -178,6 +178,15 @@ and the chart will disagree about one flag.** That is unavoidable without reimpl
 float arithmetic, and it is confined to rules whose decision was already a coin-flip. Do not build
 anything that depends on a single tie-bar agreeing.
 
+🔴 **AND THE FLOAT TIES ARE THE SMALL HALF — THE FEED IS THE BIG ONE, MEASURED 2026-08-09.** The
+ties above are a handful per 20,000 because the harness feeds both sides the SAME prices. A consumer
+does not: the command-center chart replays this engine over MT5 cache bars while the reader compares
+it against the indicator running on TradingView bars. **Same broker, same symbol, 6 cents apart in
+the median close and further within a bar — and 15.9% of every mark disagrees** (600 missed, 515
+extra, over 20,053 bars; bearish engulfing 150 of 914). **Read the "handful per 20,000" line above
+as a statement about the GATE, never about what a reader will see.** Before promising that a
+consumer matches the indicator, ask which tape each one is reading.
+
 ### The one named assumption
 
 `ta.lowest(10)[1]` is taken to return `na` — and therefore no belt — until ten bars exist. It sits
@@ -317,5 +326,17 @@ lever: the full fifteen replay 186,366 bars in **10.2s** (18k bars/s) and a two-
   is the ordinary case here, not an edge one, and a "just a few cents" tolerance would quietly
   redefine the rule for the whole family. The honest answer is the clause breakdown; the indicator
   the reader is comparing against does not draw those candles either.
+  ✅ **AND IT IS NOW MEASURED RATHER THAN ARGUED (2026-08-09).** The reader came back with four more
+  candles, two of which his indicator DOES draw, so the epsilon was swept against his own `px_*`
+  flags over 20,053 bars: engulfings miss/invent go **243 / 190 at epsilon 0**, 143 / 664 at $0.02,
+  95 / 822 at $0.05, 65 / 900 at $0.10. **Two cents recovers 100 marks and manufactures 474 — zero
+  is the minimum-disagreement setting by a factor of two.** The mechanism is the same sentence read
+  forward: because the open sits within a cent or two of the prior close as the ORDINARY case, slack
+  does not nudge the rule, it floods it.
+  ⚠ **The two genuine misses were caused by the FEED, not by the rule, and no engine change can
+  reach them** — the chart draws MT5 bars, the indicator runs on TradingView bars, the two sit 6
+  cents apart with larger intra-bar variation, and **15.9% of all marks disagree because of it.**
+  A constant offset would flip nothing (every clause compares two prices); it is the variation that
+  bites. See `command-center/backend/CLAUDE.md` → *Candlestick reversals*.
 - Never treat an unclassifiable mismatch as a tie. Not enough history to replay the bar means the
   question was not answered, and "not answered" must fail, not pass.
