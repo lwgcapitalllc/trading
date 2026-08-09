@@ -40,8 +40,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
-from services import bot_params, bot_versions, lab_db
+from models import BotAccountBot, BotAccountCapUpdate, BotAccountGroup, BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from services import bot_accounts, bot_params, bot_versions, lab_db
 from services import notify
 from services.alert_format import alert
 from services.notify import send_telegram
@@ -740,6 +740,124 @@ def get_snapshot():
     telegram = ProcessStatus(name="Telegram", status=tg_status)
 
     return BotSnapshot(fetched_at=now, bots=bots, scheduled_jobs=jobs, telegram=telegram)
+
+
+# ── Accounts — which bots share a balance, and the ceiling over it ────────────
+#
+# Registered BEFORE the `/{bot_name}/…` routes by convention, though nothing here is
+# ambiguous: these are literal segments and the per-bot routes all carry a trailing verb.
+#
+# ⚠ These endpoints do NOT touch the VPS. Grouping and the cap are read from the instance
+# configs in the repo, which is what the bots read too — so this is fast enough to poll and
+# answers while the box is unreachable. Whether a bot is RUNNING is a different question with
+# a different source (the snapshot), and the page joins the two on `key` rather than making
+# this endpoint take an SSH round trip it does not need.
+
+
+def _account_groups() -> list:
+    """Read every registered bot's config and group by account.
+
+    An unreadable config is passed through as `None` rather than dropped: a bot missing from
+    its account reads as an account with fewer bots on it, which is the most reassuring wrong
+    answer available on a page about how much risk is on.
+    """
+    configs: dict[str, dict | None] = {}
+    for reg in _BOTS:
+        try:
+            configs[reg.key] = _read_instance_config(reg.key)
+        except Exception:
+            configs[reg.key] = None
+    return bot_accounts.group_by_account(configs, {b.key: b.display for b in _BOTS})
+
+
+@router.get("/accounts", response_model=list[BotAccountGroup])
+def list_bot_accounts():
+    """Which bots share a trading account, and what ceiling that account is under.
+
+    A stack on the live side is READ, not configured: two bots naming the same `account` are
+    trading one balance whether or not anybody grouped them. See `services/bot_accounts.py`.
+    """
+    return [
+        BotAccountGroup(
+            account=g.account,
+            server=g.server,
+            bots=[BotAccountBot(**vars(b)) for b in g.bots],
+            risk_cap_pct=g.risk_cap_pct,
+            cap_agrees=g.cap_agrees,
+            cap_unknown=g.cap_unknown,
+            stacked=g.stacked,
+            cap_takes_turns=g.cap_takes_turns,
+        )
+        for g in _account_groups()
+    ]
+
+
+@router.patch("/accounts/{account}/risk-cap")
+def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
+    """Set the account-level risk cap on EVERY bot trading this account.
+
+    **One write, N files.** The cap is an account-level fact stored per instance, because an
+    instance config is the only file a bot reads — so the only safe way to change it is to
+    change it everywhere at once. `live_config._assert_account_cap_agrees` refuses to start a
+    bot into a half-applied state, which makes a partial write loud rather than silent; this
+    endpoint's job is to never produce one.
+
+    ⚠ **It NEVER reports the cap as applied.** `account_risk_cap_pct` is not in
+    `live_config.RUNTIME_RELOADABLE` — the bridge reads it and holds live order state, so it is
+    picked up at startup and nowhere else. The response says `restart_required` and names the
+    bots, because a cap that is written and not running is the one state that reads as protected
+    and is not.
+    """
+    groups = {g.account: g for g in _account_groups()}
+    group = groups.get(account)
+    if group is None:
+        raise HTTPException(status_code=404, detail=f"No registered bot trades account {account}")
+
+    try:
+        targets = bot_accounts.cap_change_plan(group, update.risk_cap_pct)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    bot_keys = [b.key for b in group.bots]
+    if not targets:
+        # Nothing to write, and therefore nothing to restart — but the bots may still be
+        # RUNNING on an older value, which this endpoint cannot see and must not imply.
+        return {"status": "ok", "changed": False, "updated": [],
+                "restart_required": False, "bots": bot_keys,
+                "detail": "Every bot on this account already states that cap."}
+
+    paths = []
+    for key in targets:
+        data = _read_instance_config(key)
+        if update.risk_cap_pct is None:
+            data["account_risk_cap_pct"] = None
+        else:
+            data["account_risk_cap_pct"] = float(update.risk_cap_pct)
+        _write_instance_config(key, data)
+        paths.append(_BOT_INSTANCE_MAP[key]["path"])
+
+    cap_s = "no cap" if update.risk_cap_pct is None else f"{update.risk_cap_pct}%"
+    changed = f"account {account} risk cap → {cap_s} ({', '.join(targets)})"
+
+    if not update.deploy:
+        return {"status": "ok", "changed": True, "deployed": False, "updated": targets,
+                "restart_required": True, "bots": bot_keys, "detail": changed}
+
+    try:
+        _git_commit_push(paths, f"risk cap: {changed} [command center]")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500,
+                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+    try:
+        out = _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+    _notify_telegram(alert("⚙️", "ACCOUNT RISK CAP", f"account {account}",
+                           f"Cap {cap_s} written to {len(targets)} bot(s).",
+                           "Restart them — the cap only applies at startup."))
+    return {"status": "ok", "changed": True, "deployed": True, "updated": targets,
+            "restart_required": True, "bots": bot_keys, "detail": changed, "output": out}
 
 
 @router.get("/{bot_name}/log", response_class=PlainTextResponse)

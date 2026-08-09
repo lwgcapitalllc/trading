@@ -362,6 +362,49 @@ export interface BotSnapshot {
   telegram: ProcessStatus
 }
 
+// ── Accounts — which bots share a balance, and the ceiling over it ────────────
+// A live "stack" is READ from the instance configs, never configured separately: two bots
+// naming the same `account` are trading one balance whether or not anybody grouped them.
+// See `backend/services/bot_accounts.py`.
+
+export interface BotAccountBot {
+  key: string
+  display: string
+  symbol: string
+  magic: number
+  strategy_package: string
+  /** Per-TRADE risk — the layer BELOW the cap, carried so the two can be read side by side. */
+  risk_pct: number | null
+  /** What THIS bot states. `null` = uncapped, which is a value and not an absence. */
+  cap_pct: number | null
+  /** Its config could not be parsed, so its cap is UNKNOWN — a third state, not "no cap". */
+  unreadable: boolean
+}
+
+export interface BotAccountGroup {
+  account: number | null
+  server: string
+  bots: BotAccountBot[]
+  /** Only meaningful when `cap_agrees`. Never the max or the min of a disagreement. */
+  risk_cap_pct: number | null
+  cap_agrees: boolean
+  cap_unknown: boolean
+  stacked: boolean
+  /** The cap is at or below the largest per-trade risk here, so the bots take turns. */
+  cap_takes_turns: boolean
+}
+
+export interface BotAccountCapResult {
+  status: string
+  changed: boolean
+  deployed?: boolean
+  updated: string[]
+  /** Always true when anything was written — the cap only applies at a bot's startup. */
+  restart_required: boolean
+  bots: string[]
+  detail?: string
+}
+
 // `BotConfigSections` / `BotConfigUpdate` deleted 2026-08-04 with the endpoints they typed —
 // see the note in `hooks/useBots.ts`. `BotParamsView` below is what reads a bot's settings.
 

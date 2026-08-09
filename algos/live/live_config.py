@@ -248,6 +248,53 @@ def _assert_magic_is_unique(bot_key: str, account, magic) -> None:
                 f"fills — so give {bot_key!r} a magic of its own before starting it.")
 
 
+def _assert_account_cap_agrees(bot_key: str, account, cap) -> None:
+    """Every bot on ONE ACCOUNT must state the SAME `account_risk_cap_pct`.
+
+    The cap is an ACCOUNT-level fact — *the most open risk this account may ever hold* — and it is
+    stored per instance, because an instance config is the only file a bot reads. Those two facts
+    together are the hazard: two bots on one account can state different numbers, and then the
+    budget is not one budget. `bridge._account_cap_check` reads the CALLER's own setting, so which
+    number binds depends on which bot happens to ask, and the account's real ceiling becomes the
+    LARGEST of them — the least protective one, chosen by nothing.
+
+    ⚠ **A missing cap is a DISAGREEMENT, not a neutral value, and this is the case worth stating.**
+    `null` means uncapped, so one capped bot beside one uncapped bot is the worst of the shapes:
+    the uncapped bot fills the account freely while the capped one is refused, so the guard is
+    doing nothing except handicapping whichever bot was configured correctly. Reading `null` as
+    "no opinion, inherit the sibling's" would be this repo's own *no* vs *cannot ask* defect — the
+    absent value would silently acquire a meaning nobody wrote down.
+
+    ⚠ **It REFUSES rather than warning, and that is a deliberate cost.** An incoherent cap takes
+    every bot on the account off the box at its next start, which is loud and recoverable; a
+    warning leaves an account trading under a ceiling that is not enforced and reads on screen as
+    though it is. The Bots page writes the number to every bot on the account in one action, so
+    this should only ever fire on a hand edit or a half-finished one.
+
+    ⚠ **Per ACCOUNT, like the magic guard**, and an unreadable sibling is SKIPPED for the same
+    reason: a half-written instance directory must not stop a healthy bot from starting.
+    """
+    for other in sorted(_INSTANCES.glob("*/config.json")):
+        try:
+            raw = json.loads(other.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if raw.get("bot_key") == bot_key or raw.get("account") != account:
+            continue
+        theirs = raw.get("account_risk_cap_pct")
+        if theirs == cap:
+            continue
+        mine_s = "no cap" if cap is None else f"{cap}%"
+        theirs_s = "no cap" if theirs is None else f"{theirs}%"
+        raise ValueError(
+            f"account risk cap disagreement on account {account}: {bot_key!r} states {mine_s} "
+            f"and {raw.get('bot_key')!r} states {theirs_s}. The cap is a ceiling on the WHOLE "
+            f"account, so two values mean the real ceiling is whichever bot asks — and a bot "
+            f"with no cap fills the account freely while the capped one is refused. Set "
+            f"account_risk_cap_pct to the same value in every instance on this account (or to "
+            f"null in all of them to run uncapped).")
+
+
 def load(bot_key: str) -> LiveConfig:
     """Read one bot's config. Raises with an actionable message if it is missing or malformed —
     a live bot must never start on a guessed configuration."""
@@ -273,6 +320,8 @@ def load(bot_key: str) -> LiveConfig:
         raise ValueError(f"{p} is missing required key(s): {', '.join(missing)}")
     raw.setdefault("display_name", raw["bot_key"])
     _assert_magic_is_unique(raw["bot_key"], raw["account"], raw["magic"])
+    _assert_account_cap_agrees(raw["bot_key"], raw["account"],
+                               raw.get("account_risk_cap_pct"))
 
     # The DEPLOYMENT record wins on the version fields. `config.json` states the intent; only a
     # promote can state what is actually on disk, and only the machine that ran it knows. Left

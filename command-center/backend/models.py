@@ -442,6 +442,63 @@ class BotRuntimeUpdate(BaseModel):
     deploy: bool = True     # commit + push + VPS pull; False writes locally only
 
 
+class BotAccountBot(BaseModel):
+    """One bot's place in a trading account."""
+    key: str
+    display: str
+    symbol: str
+    magic: int
+    strategy_package: str
+    # Per-TRADE risk, the layer BELOW the cap. Served so the page can put the two side by side:
+    # a cap at or under a bot's own risk % makes the bots take turns rather than share, and that
+    # is invisible from the cap alone.
+    risk_pct: Optional[float] = None
+    cap_pct: Optional[float] = None
+    unreadable: bool = False       # its config could not be parsed — its cap is UNKNOWN, not absent
+
+
+class BotAccountGroup(BaseModel):
+    """Every bot trading one broker account, and the ceiling they share.
+
+    ⚠ `risk_cap_pct` is only meaningful when `cap_agrees`. When the bots state different values
+    there is no account cap to report, and it is deliberately NOT the max or the min — picking one
+    would invent a ceiling nobody configured and hide the fault behind a plausible number.
+    """
+    account: Optional[int] = None
+    server: str = ""
+    bots: list[BotAccountBot] = []
+    risk_cap_pct: Optional[float] = None
+    cap_agrees: bool = True
+    cap_unknown: bool = False      # at least one config unreadable, so the cap cannot be confirmed
+    stacked: bool = False          # more than one bot on this balance
+    cap_takes_turns: bool = False  # the cap is at or below the largest per-trade risk here
+
+
+class BotAccountCapUpdate(BaseModel):
+    """Set (or clear) the account-level risk cap across EVERY bot on one account.
+
+    `risk_cap_pct` of `None` means UNCAPPED, which is a supported and honest state — not "leave it
+    alone". There is no separate clear endpoint precisely so that the absent value keeps meaning
+    the one thing.
+    """
+    risk_cap_pct: Optional[float] = None
+    deploy: bool = True            # commit + push + VPS pull; False writes locally only
+
+    @field_validator("risk_cap_pct")
+    @classmethod
+    def _sane_cap(cls, v):
+        if v is None:
+            return v
+        if v <= 0:
+            # 0 refuses every order on the account. If that is what somebody wants, they want the
+            # fleet halt, which stops orders WITHOUT making every bot log a risk refusal.
+            raise ValueError("risk_cap_pct must be greater than 0 — use null to run uncapped, "
+                             "or the fleet halt to stop trading")
+        if v > 100:
+            raise ValueError("risk_cap_pct is a percentage of the live balance and cannot exceed 100")
+        return v
+
+
 # The roles `algos/notifications/telegram_bot.py` keys `ROLE_COMMANDS` on. A value outside
 # this set is not a new role — it is a user with NO permissions, because `get_role` returns
 # the string and the command lookup then misses. `"Admin"` is the shape of that mistake.

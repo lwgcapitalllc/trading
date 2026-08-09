@@ -1,7 +1,9 @@
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api } from '@/api/client'
-import type { BotDeployedVersion, BotPromoteResult, BotSnapshot } from '@/types'
+import type {
+  BotAccountCapResult, BotAccountGroup, BotDeployedVersion, BotPromoteResult, BotSnapshot,
+} from '@/types'
 
 export function useBotSnapshot() {
   return useQuery({
@@ -185,6 +187,54 @@ export function useSaveBotRuntime() {
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
     },
     onError: (err, { botName }) => toast.error(`${botName}: ${err}`),
+  })
+}
+
+// ── Accounts — the shared-balance view and its one ceiling ────────────────────
+
+/**
+ * Which bots share a trading account.
+ *
+ * Cheap and VPS-free — the backend reads the same instance configs the bots read — so this
+ * still answers while the box is unreachable. Whether a bot is RUNNING comes from the
+ * snapshot, and the page joins the two on `key`; asking one endpoint for both would make a
+ * grouping question depend on an SSH round trip it does not need.
+ */
+export function useBotAccounts() {
+  return useQuery({
+    queryKey: ['bots', 'accounts'],
+    queryFn: () => api.get<BotAccountGroup[]>('/bots/accounts'),
+    refetchInterval: 60_000,
+  })
+}
+
+/**
+ * Set (or clear) the account-level risk cap across every bot on one account.
+ *
+ * `riskCapPct: null` means UNCAPPED, which is a value rather than "leave it alone" — there is
+ * deliberately no separate clear action, so the absent value keeps meaning the one thing.
+ *
+ * The toast always says a restart is needed when something was written: the cap is read by the
+ * order bridge at startup and is not runtime-reloadable, so a written-but-not-running cap is
+ * the one state that reads as protected and is not.
+ */
+export function useSetAccountRiskCap() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ account, riskCapPct }: { account: number; riskCapPct: number | null }) =>
+      api.patch<BotAccountCapResult>(`/bots/accounts/${account}/risk-cap`,
+        { risk_cap_pct: riskCapPct, deploy: true }),
+    onSuccess: (data) => {
+      if (!data.changed) {
+        toast.info(data.detail || 'Already at that cap')
+      } else {
+        toast.success(
+          `${data.detail} — restart ${data.updated.length === 1 ? 'it' : 'them'} to apply`)
+      }
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
+      qc.invalidateQueries({ queryKey: ['bots', 'params'] })
+    },
+    onError: (err) => toast.error(`Risk cap: ${err}`),
   })
 }
 

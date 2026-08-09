@@ -1,19 +1,20 @@
 import { useState, useEffect, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug, AlertTriangle } from 'lucide-react'
+import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug, AlertTriangle, Layers } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  useBotSnapshot, useBotLog,
+  useBotSnapshot, useBotAccounts, useBotLog,
   useBotStart, useBotStop, useBotRestart,
   useBotStartOne, useBotStopOne, useBotRestartOne,
 } from '@/hooks/useBots'
 import { StatCard } from '@/components/StatCard'
 import type { BotStatus, BotReview, JobStatus } from '@/types'
+import { AccountsTab } from './AccountsTab'
 import { ConfigureTab } from './ConfigureTab'
 import { UsersTab } from './UsersTab'
 
 type AccountFilter = 'all' | 'demo' | 'live'
-type PageTab = 'monitor' | 'configure' | 'users'
+type PageTab = 'monitor' | 'accounts' | 'configure' | 'users'
 
 function formatUptime(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
@@ -44,6 +45,28 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
       {label}
+    </span>
+  )
+}
+
+/** This bot shares its trading account with at least one other bot.
+ *
+ * ⚠ Derived from the instance configs (`GET /bots/accounts`), not from a stored grouping — two
+ * bots naming the same account ARE sharing a balance whether anybody grouped them or not.
+ * Absent when the accounts query has not answered: unknown is not "not stacked", and this is
+ * the one chip whose false absence understates how much risk is on. */
+function StackedChip({ n, cap }: { n: number; cap: number | null }) {
+  return (
+    <span
+      data-testid="row-stacked-chip"
+      title={`${n} bots trade this account, so they share one balance.\n`
+             + (cap === null
+                ? 'No account risk cap is set — nothing stops them holding full risk at once.'
+                : `Account risk cap ${cap}% of the live balance.`)}
+      className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                 rounded-pill uppercase tracking-[0.4px] bg-accent-muted text-text-primary cursor-default"
+    >
+      <Layers size={9} /> Stacked
     </span>
   )
 }
@@ -266,6 +289,17 @@ function RowActionBtn({
 
 export function Bots() {
   const { data: snapshot, isLoading, isFetching, error, dataUpdatedAt, refetch } = useBotSnapshot()
+  // Which bots share a balance. Separate query on purpose: it reads instance configs rather
+  // than the VPS, so it still answers when the box is down, and a stale snapshot must not be
+  // able to hide a stacked account.
+  const { data: accountGroups } = useBotAccounts()
+  const stackedByKey = new Map<string, { n: number; cap: number | null }>()
+  for (const g of accountGroups ?? []) {
+    if (!g.stacked) continue
+    // A disagreement is NOT a cap, so the chip says 'no cap' rather than quoting one of them.
+    const cap = g.cap_agrees ? g.risk_cap_pct : null
+    for (const b of g.bots) stackedByKey.set(b.key, { n: g.bots.length, cap })
+  }
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = (searchParams.get('tab') ?? 'monitor') as PageTab
   // Merge rather than replace — Configure keeps its selected bot in `?bot=`, and rebuilding
@@ -353,7 +387,7 @@ export function Bots() {
 
         {/* Tab switcher */}
         <div className="flex bg-bg-surface border border-border-subtle rounded-md overflow-hidden">
-          {(['monitor', 'configure', 'users'] as PageTab[]).map(t => (
+          {(['monitor', 'accounts', 'configure', 'users'] as PageTab[]).map(t => (
             <span
               key={t}
               onClick={() => setTab(t)}
@@ -507,6 +541,10 @@ export function Bots() {
                         <td className="px-6 py-[11px] align-middle">
                           <div className="flex items-center gap-[6px]">
                             <StatusPill status={bot.status} />
+                            {stackedByKey.has(bot.key) && (
+                              <StackedChip n={stackedByKey.get(bot.key)!.n}
+                                           cap={stackedByKey.get(bot.key)!.cap} />
+                            )}
                             {bot.mt5_link === false && <NoLinkChip />}
                             {bot.review && <ReviewChip review={bot.review} />}
                           </div>
@@ -762,6 +800,8 @@ export function Bots() {
       )}
 
       {/* ── Configure tab ─────────────────────────────────────────────────────── */}
+      {tab === 'accounts' && <AccountsTab />}
+
       {tab === 'configure' && <ConfigureTab />}
 
       {/* ── Users tab ─────────────────────────────────────────────────────────── */}

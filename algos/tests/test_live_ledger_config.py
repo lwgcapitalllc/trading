@@ -104,6 +104,88 @@ def _write_cfg(tmp_path, **overrides):
     return body
 
 
+def _write_sibling(tmp_path, key, **overrides):
+    """A SECOND instance directory, so the per-account guards have something to compare against."""
+    body = {"bot_key": key, "mt5_path": "C:/MT5/terminal64.exe", "account": 123,
+            "server": "Demo", "symbol": "XAUUSD", "magic": 880226}
+    body.update(overrides)
+    d = tmp_path / key
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "config.json").write_text(json.dumps(body))
+    return body
+
+
+# ── the account-level risk cap must mean ONE thing per account ────────────────
+def test_two_bots_on_one_account_may_state_the_same_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2", account_risk_cap_pct=10.0)
+    assert live_config.load("b1").account_risk_cap_pct == 10.0
+
+
+def test_two_bots_on_one_account_may_both_be_uncapped(tmp_path, monkeypatch):
+    """`null` everywhere is a coherent account: uncapped, honestly, which is what a one-bot
+    account has always been."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path)
+    _write_sibling(tmp_path, "b2")
+    assert live_config.load("b1").account_risk_cap_pct is None
+
+
+def test_two_different_caps_on_one_account_are_refused(tmp_path, monkeypatch):
+    """Whichever bot asks decides the ceiling, so the account's real cap is the largest of them
+    — the least protective, chosen by nothing."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2", account_risk_cap_pct=20.0)
+    with pytest.raises(ValueError, match="disagreement"):
+        live_config.load("b1")
+
+
+def test_a_capped_bot_beside_an_uncapped_one_is_refused(tmp_path, monkeypatch):
+    """The shape that would otherwise look fine and be the worst of the three: the uncapped bot
+    fills the account freely while the capped one is refused, so the guard only handicaps the
+    bot that was configured correctly."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2")                      # no cap at all
+    with pytest.raises(ValueError, match="no cap"):
+        live_config.load("b1")
+
+
+def test_the_refusal_names_both_bots_and_both_values(tmp_path, monkeypatch):
+    """An account-wide refusal has to say which file to edit; 'they disagree' is not actionable
+    when the fix is in a sibling directory nobody was looking at."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2", account_risk_cap_pct=20.0)
+    with pytest.raises(ValueError) as e:
+        live_config.load("b1")
+    msg = str(e.value)
+    assert "b1" in msg and "b2" in msg and "10.0%" in msg and "20.0%" in msg
+
+
+def test_a_different_account_may_carry_a_different_cap(tmp_path, monkeypatch):
+    """The ceiling is per ACCOUNT — the broker scopes exposure by login — so two accounts with
+    two caps is the ordinary case, not a clash."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2", account=999, account_risk_cap_pct=20.0)
+    assert live_config.load("b1").account_risk_cap_pct == 10.0
+
+
+def test_an_unreadable_sibling_does_not_stop_a_healthy_bot(tmp_path, monkeypatch):
+    """Same call as the magic guard: a half-written instance directory must not take a running
+    account off the box. The cost is that a clash hiding inside a broken file is missed, and a
+    broken file fails loudly on its own next start anyway."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    d = tmp_path / "b2"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "config.json").write_text("{not json")
+    assert live_config.load("b1").account_risk_cap_pct == 10.0
+
+
 def test_a_missing_config_names_the_path_and_the_fix(tmp_path, monkeypatch):
     monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
     with pytest.raises(FileNotFoundError, match="instance.template.json"):
