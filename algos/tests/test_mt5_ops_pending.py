@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import types
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -38,8 +39,27 @@ class _Tick:
 
 
 class _Result:
-    def __init__(self, retcode, order=0, price=0.0):
+    # `comment` carries the BROKER's own sentence ("AutoTrading disabled by client"). It is the
+    # field a human acts on and no refusal path in `mt5_ops` logged it until 2026-08-10.
+    def __init__(self, retcode, order=0, price=0.0, comment=""):
         self.retcode, self.order, self.price = retcode, order, price
+        self.comment = comment
+
+
+class _Deal:
+    """One MT5 deal. `time` is EPOCH SECONDS IN THE BROKER SERVER'S CLOCK — which is the whole
+    subject of the deal-history tests below."""
+
+    def __init__(self, position_id, entry, price=0.0, profit=0.0, swap=0.0,
+                 commission=0.0, volume=0.01, when=None):
+        self.position_id = position_id
+        self.entry = entry              # 0 = entry deal, 1 = exit deal
+        self.price = price
+        self.profit = profit
+        self.swap = swap
+        self.commission = commission
+        self.volume = volume
+        self.time = when
 
 
 class _Order:
@@ -85,9 +105,30 @@ def _fake_mt5():
 
     def order_send(req):
         m.sent.append(req)
+        if m._refuse_with is not None:
+            return m._refuse_with
         m._next_ticket += 1
         return _Result(m.TRADE_RETCODE_DONE, order=m._next_ticket, price=req.get("price", 0.0))
     m.order_send = order_send
+    m._refuse_with = None                     # set to a _Result (or leave None) to refuse
+
+    m._deals = []
+
+    def history_deals_get(from_, to, **kw):
+        """The REAL filter MT5 applies, and the reason the fix was needed: it compares the deal's
+        SERVER-clock time against the caller's bounds. A fake that ignored the window would have
+        made the broken code pass."""
+        out = []
+        for d in m._deals:
+            when = datetime.utcfromtimestamp(d.time)
+            if not (from_ <= when <= to):
+                continue
+            # `position=` narrows but is not trusted to be exact — production re-filters too.
+            if "position" in kw and d.position_id != kw["position"]:
+                continue
+            out.append(d)
+        return tuple(out)
+    m.history_deals_get = history_deals_get
     return m
 
 
@@ -264,3 +305,151 @@ def test_cancel_all_pending_only_touches_this_bots_orders(mt5ops):
     fake._orders = [_Order(1, 770115), _Order(2, 999999)]
     assert _bot(mt5_ops).cancel_all_pending() == 1
     assert [r["order"] for r in fake.sent] == [1]
+
+
+# ── why an order was refused ──────────────────────────────────────────────────
+#
+# Measured 2026-08-10 on a PU Prime demo with the terminal's AlgoTrading button off: the order
+# was rejected (retcode 10027, "AutoTrading disabled by client") and `place_order` logged
+# `Order failed: (1, 'Success')`, because it reported `last_error()` — the health of the API
+# CALL — instead of the result's retcode. Every test below is red against that code.
+_REFUSED = 10027
+_REFUSED_TEXT = "AutoTrading disabled by client"
+
+
+def test_refusal_names_the_retcode_and_the_brokers_own_words(mt5ops):
+    """The two facts a reader needs, and the old message carried neither."""
+    mt5_ops, fake = mt5ops
+    msg = mt5_ops.refusal_detail(_Result(_REFUSED, comment=_REFUSED_TEXT), mt5_mod=fake)
+    assert "10027" in msg
+    assert _REFUSED_TEXT in msg
+
+
+def test_refusal_distinguishes_no_reply_from_a_rejection(mt5ops):
+    """`order_send` returning None is a TRANSPORT failure — there is no retcode to report, and
+    saying "retcode=None" as though the broker had answered would be the same category error the
+    whole fix is about."""
+    mt5_ops, fake = mt5ops
+    msg = mt5_ops.refusal_detail(None, mt5_mod=fake)
+    assert "no reply" in msg.lower()
+    assert "retcode" not in msg.lower().split("last_error")[0]
+
+
+def test_a_refused_market_order_does_not_log_the_word_success(mt5ops):
+    """The incident, reproduced. `last_error()` is (0, 'ok') in this fake and (1, 'Success') on
+    the real terminal — either way it must not be the ONLY thing in the line."""
+    mt5_ops, fake = mt5ops
+    fake._refuse_with = _Result(_REFUSED, comment=_REFUSED_TEXT)
+    log = _Log()
+    ticket, price = _bot(mt5_ops, log).place_order("bullish", 0.01, sl=0.0, tp=0.0)
+    assert (ticket, price) == (None, None)
+    assert log.saw("10027") and log.saw(_REFUSED_TEXT)
+
+
+def test_a_refused_pending_limit_reports_the_brokers_words(mt5ops):
+    """This is the path the A+ bot actually enters on — every entry is a resting limit."""
+    mt5_ops, fake = mt5ops
+    fake._refuse_with = _Result(_REFUSED, comment=_REFUSED_TEXT)
+    log = _Log()
+    assert _bot(mt5_ops, log).place_pending_limit("bullish", 0.01, 3200.0, 3190.0) == (None, None)
+    assert log.saw("10027") and log.saw(_REFUSED_TEXT)
+
+
+def test_a_refused_stop_move_is_reported_at_all(mt5ops):
+    """`move_sl` logged NOTHING on failure. It is how the stop is staged to breakeven — which
+    this strategy does on essentially every trade, at a median of one bar — so a silent refusal
+    leaves the strategy believing it is protected while the broker holds the original stop."""
+    mt5_ops, fake = mt5ops
+    fake._positions = [_Order(77, 770115)]
+    fake._positions[0].symbol = "XAUUSD"
+    fake._positions[0].tp = 0.0
+    fake._refuse_with = _Result(_REFUSED, comment=_REFUSED_TEXT)
+    log = _Log()
+    assert _bot(mt5_ops, log).move_sl(77, 3210.0) is False
+    assert log.saw("10027") and log.saw(_REFUSED_TEXT)
+
+
+def test_a_refused_close_is_reported_at_all(mt5ops):
+    """`close_position` also returned a bare False. A close the broker refuses leaves the bot's
+    book and the broker's disagreeing, which is the one thing `bridge._agrees` halts on."""
+    mt5_ops, fake = mt5ops
+    pos = _Order(88, 770115)
+    pos.symbol, pos.volume, pos.profit, pos.tp = "XAUUSD", 0.01, 0.0, 0.0
+    fake._positions = [pos]
+    fake._refuse_with = _Result(_REFUSED, comment=_REFUSED_TEXT)
+    log = _Log()
+    ok, _, _ = _bot(mt5_ops, log).close_position(88, "bullish", reason="TEST")
+    assert ok is False
+    assert log.saw("10027") and log.saw(_REFUSED_TEXT)
+
+
+# ── deal history vs the broker clock ──────────────────────────────────────────
+#
+# MT5 stamps a deal's `time` in the SERVER's clock. PU Prime's server runs +3h ahead of UTC
+# (measured 2026-08-10), and both readers bounded their window with `datetime.utcnow()` — so a
+# deal that had just happened was stamped PAST THE END of its own window and neither function
+# could see it. Both tests are red against that code, and the fake's `history_deals_get` applies
+# the real time filter so they can be.
+_SERVER_AHEAD_HOURS = 3
+
+
+def _server_stamp(ahead_hours: int = _SERVER_AHEAD_HOURS) -> float:
+    """Epoch seconds for a deal that happened NOW, stamped in a server clock running ahead."""
+    return (datetime.utcnow() + timedelta(hours=ahead_hours)).timestamp()
+
+
+def test_breakdown_finds_a_deal_stamped_in_a_server_clock_ahead_of_utc(mt5ops):
+    mt5_ops, fake = mt5ops
+    when = _server_stamp()
+    fake._deals = [
+        _Deal(101, entry=0, price=4335.14, commission=-0.10, when=when),
+        _Deal(101, entry=1, price=4335.13, profit=-0.10, commission=-0.10, when=when),
+    ]
+    bd = _bot(mt5_ops).get_deal_breakdown(101)
+    assert bd["deals"] == 2
+    assert bd["commission_usd"] == pytest.approx(-0.20)
+    assert bd["close_price"] == pytest.approx(4335.13)
+
+
+def test_deal_result_finds_a_deal_stamped_in_a_server_clock_ahead_of_utc(mt5ops):
+    mt5_ops, fake = mt5ops
+    when = _server_stamp()
+    fake._deals = [_Deal(202, entry=1, price=4400.5, profit=12.5, when=when)]
+    assert _bot(mt5_ops).get_deal_result(202) == (4400.5, 12.5)
+
+
+def test_a_server_clock_BEHIND_utc_is_covered_too(mt5ops):
+    """The margin has to work in both directions. A broker on UTC-5 stamps a deal in the past,
+    which the 7-day lookback already covers — this pins that the forward margin did not break
+    it, because a window fixed only at the top would be the same bug mirrored."""
+    mt5_ops, fake = mt5ops
+    fake._deals = [_Deal(303, entry=1, price=1.0, profit=2.0, when=_server_stamp(-5))]
+    assert _bot(mt5_ops).get_deal_result(303) == (1.0, 2.0)
+
+
+def test_the_wider_window_still_refuses_another_positions_deals(mt5ops):
+    """Widening the window is only safe because correctness comes from the position filter, not
+    from the bounds. If that filter ever weakens, this fix turns into cross-contamination
+    between trades — so it is pinned here rather than assumed."""
+    mt5_ops, fake = mt5ops
+    when = _server_stamp()
+    fake._deals = [
+        _Deal(404, entry=0, commission=-0.10, when=when),
+        _Deal(404, entry=1, profit=5.0, commission=-0.10, when=when),
+        _Deal(999, entry=1, profit=1000.0, commission=-99.0, when=when),   # somebody else's
+    ]
+    bd = _bot(mt5_ops).get_deal_breakdown(404)
+    assert bd["deals"] == 2
+    assert bd["gross_usd"] == pytest.approx(5.0)
+    assert bd["commission_usd"] == pytest.approx(-0.20)
+
+
+def test_no_deals_still_reads_as_not_found_rather_than_free(mt5ops):
+    """The half of the rule that was always right, and the one a "simplification" would drop:
+    a dict of zeros with `deals: 0` means NOT FOUND. `algos/live/bridge.py` keys its fallback on
+    exactly that, so a zero commission and an unanswerable question must stay distinguishable."""
+    mt5_ops, fake = mt5ops
+    fake._deals = []
+    bd = _bot(mt5_ops).get_deal_breakdown(505)
+    assert bd["deals"] == 0
+    assert bd["commission_usd"] == 0.0

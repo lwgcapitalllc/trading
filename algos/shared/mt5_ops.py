@@ -151,6 +151,64 @@ def get_rsi(df: pd.DataFrame, period: int = 14) -> float:
     return float((100 - (100 / (1 + gain / (loss + 1e-9)))).iloc[-1])
 
 
+def refusal_detail(result, mt5_mod=None) -> str:
+    """Why an `order_send` was refused, in the words of the thing that refused it.
+
+    🔴 **Every order-sending function here used to log `mt5.last_error()` on a refusal, and that
+    reports the health of the API CALL rather than of the ORDER.** Measured on 2026-08-10 against
+    a PU Prime demo with the terminal's AlgoTrading button switched off: the order was rejected
+    and the bot logged **`Order failed: (1, 'Success')`**. The call really had succeeded; it was
+    the order that had not, and the only field that said so was on the result object, which was
+    thrown away.
+
+    That is this repo's "no data and cannot ask share one value" rule arriving in a log line, and
+    it is the shape that costs the most on the night it matters: a live bot refusing every order
+    would fill its log with the word Success.
+
+    Three things, in the order a reader needs them:
+      * `retcode` — the machine-readable reason (10027 = AutoTrading disabled by client,
+        10030 = unsupported filling mode, 10019 = no money, ...).
+      * `comment` — **the broker's own sentence**, which is the part a human acts on and the part
+        none of these functions logged.
+      * `last_error()` — kept, because it is the ONLY one of the three that exists when
+        `order_send` returns `None` outright (a transport failure rather than a rejection).
+
+    `mt5_mod` is injectable so this stays testable off Windows; it defaults to the module-level
+    `mt5` this file already binds.
+    """
+    m = mt5_mod if mt5_mod is not None else mt5
+    if result is None:
+        # No result at all is a different failure from a rejected one, and saying so is the
+        # point: there is no retcode to report, and `last_error` is all there is.
+        return f"order_send returned None (no reply) last_error={m.last_error()}"
+    rc = getattr(result, "retcode", None)
+    comment = getattr(result, "comment", "") or ""
+    return f"retcode={rc} '{comment}' last_error={m.last_error()}"
+
+
+# How far past "now" a deal-history query must reach.
+#
+# 🔴 MT5 stamps a deal's `time` in the BROKER SERVER's clock, and `history_deals_get(from_, to)`
+# filters on it — while `get_deal_result` and `get_deal_breakdown` both bounded the window with
+# `datetime.utcnow()`. PU Prime's server runs **+3h** ahead of UTC (measured 2026-08-10), so a
+# deal that had just happened was stamped PAST THE END OF ITS OWN WINDOW and both functions came
+# back empty on every real fill. `get_deal_breakdown` returning `deals: 0` is read by
+# `algos/live/bridge.py` as "not found" and falls back rather than booking zero costs — so
+# nothing would have recorded a false number — but the cost breakdown built to answer G5 would
+# have produced NOTHING, for ever, and the only symptom is a fallback that looks like normal
+# operation.
+#
+# ⚠ **The fix is a wider window, deliberately NOT a broker-clock conversion.** `algos/markets/fx/
+# tools/broker_clock.py` exists and is correct for bar timestamps, but using it here would make
+# deal history depend on the server obeying an offset rule its own docstring says can only be
+# proven by a live pull — and if that rule is ever wrong for a new broker, the deals go missing
+# again, silently, which is exactly the failure being fixed. Correctness here does not come from
+# the window at all: every caller re-filters on `position_id == ticket`, and `position=` is passed
+# to MT5 as well. The window is a bound on the QUERY, so making it generous cannot return a wrong
+# deal — only a slightly larger set to filter. Two days covers any broker offset that exists.
+_HISTORY_FORWARD_MARGIN = timedelta(days=2)
+
+
 # =============================================================================
 # BotMT5 — per-bot MT5 context and operations
 # =============================================================================
@@ -381,7 +439,8 @@ class BotMT5:
                 f"SL={sl:.{digits}f} TP={tp:.{digits}f}"
             )
             return result.order, result.price
-        self.log.error(f"Order failed: {mt5.last_error()}")
+        self.log.error(f"Order failed ({sym} {direction} {lots}L @ {price}): "
+                       f"{refusal_detail(result)}")
         return None, None
 
     # ── Pending (resting limit) orders ────────────────────────────────────────
@@ -665,9 +724,8 @@ class BotMT5:
                 f"@ {price:.{digits}f} | SL={sl:.{digits}f}"
             )
             return result.order, price
-        rc = result.retcode if result else None
         self.log.error(f"Pending failed ({sym} {direction} {vol}L @ {price}): "
-                       f"retcode={rc} {mt5.last_error()}")
+                       f"{refusal_detail(result)}")
         return None, None
 
     def modify_pending(self, ticket: int, price: float, sl: float,
@@ -688,8 +746,7 @@ class BotMT5:
         if ok:
             self.log.info(f"PENDING MOVED | T{ticket} → {price:.{digits}f} SL={sl:.{digits}f}")
         else:
-            rc = result.retcode if result else None
-            self.log.error(f"Pending modify failed T{ticket}: retcode={rc} {mt5.last_error()}")
+            self.log.error(f"Pending modify failed T{ticket}: {refusal_detail(result)}")
         return ok
 
     def cancel_pending(self, ticket: int) -> bool:
@@ -702,8 +759,7 @@ class BotMT5:
             return True
         if not mt5.orders_get(ticket=ticket):
             return True     # already gone
-        rc = result.retcode if result else None
-        self.log.error(f"Pending cancel failed T{ticket}: retcode={rc} {mt5.last_error()}")
+        self.log.error(f"Pending cancel failed T{ticket}: {refusal_detail(result)}")
         return False
 
     def cancel_all_pending(self, symbol: str = None) -> int:
@@ -730,7 +786,15 @@ class BotMT5:
             "sl":       round(new_sl, 2),
             "tp":       tp if tp is not None else pos[0].tp,
         })
-        return result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+        ok = result is not None and result.retcode == mt5.TRADE_RETCODE_DONE
+        # This one logged NOTHING on failure until 2026-08-10, and it is the worst place in the
+        # file for that: `move_sl` is how the stop gets staged to breakeven, which this strategy
+        # does on 161 of 161 trades at a median of one bar. A refusal here leaves the STRATEGY
+        # believing it is protected while the broker still holds the original stop, and the only
+        # trace was a `False` the caller might or might not act on.
+        if not ok:
+            self.log.error(f"Move SL failed T{ticket} -> {new_sl}: {refusal_detail(result)}")
+        return ok
 
     def partial_close(self, ticket: int, close_lots: float, direction: str) -> bool:
         """
@@ -769,7 +833,8 @@ class BotMT5:
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log.info(f"PARTIAL CLOSE | T{ticket} | {close_lots}L @ {price:.2f}")
             return True
-        self.log.error(f"Partial close failed T{ticket}: {mt5.last_error()}")
+        self.log.error(f"Partial close failed T{ticket} ({close_lots}L): "
+                       f"{refusal_detail(result)}")
         return False
 
     # ── Position lifecycle ────────────────────────────────────────────────────
@@ -795,8 +860,11 @@ class BotMT5:
         Kept as-is on purpose — five other callers unpack this 2-tuple, and widening it to
         smuggle costs into `pnl` would silently redefine every one of them.
         """
-        to    = datetime.utcnow()
-        from_ = to - timedelta(days=7)
+        # `+ _HISTORY_FORWARD_MARGIN` because MT5 stamps deals in SERVER time — see that
+        # constant. Without it this returned (0.0, 0.0) on every real fill against a broker whose
+        # clock runs ahead of UTC, and the caller fell back to floating P&L, which looks fine.
+        to    = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
+        from_ = datetime.utcnow() - timedelta(days=7)
         deals = mt5.history_deals_get(from_, to, position=ticket)
         if deals:
             closing = [d for d in deals if d.entry == 1 and d.position_id == ticket]
@@ -837,8 +905,12 @@ class BotMT5:
         """
         empty = {"close_price": 0.0, "gross_usd": 0.0, "swap_usd": 0.0,
                  "commission_usd": 0.0, "net_usd": 0.0, "deals": 0}
-        to    = datetime.utcnow()
-        from_ = to - timedelta(days=7)
+        # `+ _HISTORY_FORWARD_MARGIN` because MT5 stamps deals in SERVER time — see that
+        # constant. This function returned `deals: 0` on EVERY closed position against PU Prime
+        # (server +3h) until 2026-08-10, so the cost measurement it was written for had never
+        # produced a reading and never would have.
+        to    = datetime.utcnow() + _HISTORY_FORWARD_MARGIN
+        from_ = datetime.utcnow() - timedelta(days=7)
         deals = mt5.history_deals_get(from_, to, position=ticket)
         if not deals:
             return empty
@@ -897,6 +969,11 @@ class BotMT5:
             if cp == 0.0:
                 cp, pnl = price, p.profit  # fallback: pre-close floating value
             return True, cp, pnl
+        # Silent until 2026-08-10. A close that the broker refuses leaves the bot holding a
+        # position it believes it has exited — the single most consequential disagreement between
+        # the strategy's book and the broker's, and the one `bridge._agrees` HALTS on next bar.
+        # It must not be reached by way of an unexplained `False`.
+        self.log.error(f"Close failed T{ticket} (reason={reason}): {refusal_detail(result)}")
         return False, 0.0, 0.0
 
     def close_all_positions(self, reason: str = "",
@@ -946,7 +1023,7 @@ class BotMT5:
                     cp, pnl = price, p.profit  # fallback: pre-close floating value
                 results.append((p.ticket, cp, pnl))
             else:
-                self.log.error(f"  Failed T{p.ticket}: {mt5.last_error()}")
+                self.log.error(f"  Failed T{p.ticket} {p.symbol}: {refusal_detail(result)}")
         return results
 
     def lot_size(self, balance: float, sl_dist: float, risk_pct: float,
