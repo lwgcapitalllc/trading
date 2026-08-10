@@ -484,6 +484,16 @@ bool  execCloseOppSOS = input.bool(false, "Close on opposite SOS",      group = 
 // ── 8. DRAWING (cosmetic — none of this changes a trade) ───────────────────
 bool  execShowConfLabel = input.bool(true, "Show entry confluence label", group = GRP_EXEC, tooltip = "Prints one label per trade, with the full confluence breakdown in its hover tooltip. On close it recolours by result and appends the R the trade made.")
 string execLabelWhich = input.string("All", "   ↳ keep labels for which results", options = ["All", "Wins only", "Losses only", "Losses + breakevens", "None"], group = GRP_EXEC, active = execShowConfLabel, tooltip = "Which trades keep their label once the result is known. Every other label is deleted on the bar the trade closes, so the coloured result box and entry marker stay but the annotation goes. Losses + breakevens is the review view.")
+// ── The no-FVG fallback's arm gate — DECLARED HERE ON PURPOSE, NOT beside execReqFVG ──────────
+// TradingView keys a chart's saved input values off DECLARATION ORDER within each type, so
+// inserting a string next to `execReqFVG` (the 7th of 37 strings in this file) would shift the
+// thirty that follow and silently reset every one of them on a saved chart. This is the LAST
+// input.string declared before the entry ladder that reads it (line ~4340), so it shifts exactly
+// ONE later input — `execTimeStopMode` — and nothing else. Same reasoning as the time-stop pair
+// at the bottom of this file, and it must not be "tidied" up beside its sibling.
+// ⚠ After pasting this build, check the Time stop input still reads "Before TP1 only" / 36.
+string execNoGapArm = input.string("Any", "   ↳ No-FVG entries need", options = ["Any", "Sweep + RSI div"], group = GRP_EXEC, active = not execReqFVG, tooltip = "Read ONLY when Require an FVG in the zone is OFF. Which no-gap setups may fall back to the 0.618. Any = every one of them, which is what Require-FVG off did before this setting existed. Sweep + RSI div = only setups whose SOS carried BOTH a liquidity sweep and an RSI divergence. It asks what the market did at the SOS, so it is independent of the two Arm on ... toggles above and is NOT a way of saying arm on both. Measured over 6.5 years, the fallback adds 156 trades on Any and 71 on Sweep + RSI div, because the sweep-only half averages +0.007R per trade — the gate keeps the half that pays for itself once spread and commission are charged.")
+
 float execLabelOff = input.float(6, "   ↳ label distance from price (ATR)", group = GRP_EXEC, minval = 1, maxval = 40, step = 1, active = execShowConfLabel, tooltip = "How far the label sits from the entry, in ATRs. This is the only lever on where the hover tooltip opens — push the label out and the tooltip lands over empty space instead of over the candles. A leader line always connects it back to the entry.")
 bool  execShowPosBox = input.bool(true, "Show position box (result)", group = GRP_EXEC, tooltip = "One box per trade, growing right while it is open. On close it paints the result: green from entry to the best price actually filled, red to the stop fill on a loss, an orange line at entry on a breakeven. Replaces TradingView's built-in trade markers.")
 bool  execShowExitLines = input.bool(true, "   ↳ Label the TP bands (TP1/TP2/TP3)", group = GRP_EXEC, active = execShowPosBox, tooltip = "Adds a faint dashed line at each partial exit's real fill price, tagged TP1 / TP2 / TP3 at the right edge of the trade. Off = the coloured bands still paint, just untagged.")
@@ -4335,11 +4345,10 @@ if execConfSZ and fibsReady and not na(sniperZoneTop) and not na(sniperZoneBot) 
             shortEdge   := _e
             shortEdgeSz := true
 
-if not execReqFVG and fibsReady
-    if na(longEdge)  and fibo_dir == 1
-        longEdge  := fiboP3
-    if na(shortEdge) and fibo_dir == -1
-        shortEdge := fiboP3
+// (The no-FVG fallback — "no qualifying gap, so rest at the 0.618" — used to sit HERE. It was
+//  MOVED 2026-08-10 to just after the arm-source snapshot below, because `execNoGapArm` gates it
+//  on sosL_swp / sosL_div and those are not computed until then. Nothing between the two points
+//  reads longEdge / shortEdge, so at execNoGapArm = "Any" the move is behaviour-neutral.)
 
 // (The "FVG TOUCHES 0.5" fallback loop was REMOVED 2026-08-02 with its execFvg50
 //  input — see the note in the STRATEGY EXECUTION INPUTS block. It was the last
@@ -4394,6 +4403,21 @@ if retroLinkL
 if retroLinkS
     sosS_div := true
     sosS_swp := not na(armSwpSt) and armSwpSt <= lastBearSosTime and lastBearSosTime - armSwpSt <= aplusWindowMs
+
+// ── The no-FVG fallback (moved here 2026-08-10 — see the note in the entry ladder above) ──────
+// No qualifying gap on the leg, so rest the limit at the 0.618. `execNoGapArm` decides WHICH of
+// those setups may: "Any" is the original rule exactly, so the default is byte-identical and no
+// historical result moves. The gate reads the RAW sosL_swp / sosL_div, NOT useSwpL / useDivL —
+// it asks what the market did at the SOS, not which triggers you left enabled, so it stays
+// meaningful with "Arm on RSI divergence" off (which is the shipped default).
+bool noGapOkL = execNoGapArm == "Any" or (sosL_swp and sosL_div)
+bool noGapOkS = execNoGapArm == "Any" or (sosS_swp and sosS_div)
+if not execReqFVG and fibsReady
+    if na(longEdge)  and fibo_dir == 1  and noGapOkL
+        longEdge  := fiboP3
+    if na(shortEdge) and fibo_dir == -1 and noGapOkS
+        shortEdge := fiboP3
+
 
 // A source only counts if you ENABLED it AND it was live at the SOS. The trade
 // decision and the confluence label read these same two flags, so the label can

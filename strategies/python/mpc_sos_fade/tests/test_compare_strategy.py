@@ -36,6 +36,7 @@ _TP2 = {v: k for k, v in cs._TP2_STOP.items()}
 _MINSTOP = {v: k for k, v in cs._MIN_STOP.items()}
 _TIMESTOP = {v: k for k, v in cs._TIME_STOP.items()}
 _POI = {v: k for k, v in cs._POI_SOURCE.items()}
+_NOGAP = {v: k for k, v in cs._NOGAP_ARM.items()}
 
 
 def _encode_cfg(cfg: SosFadeConfig) -> dict:
@@ -71,6 +72,7 @@ def _encode_cfg(cfg: SosFadeConfig) -> dict:
             "cfg_time_stop": _TIMESTOP[cfg.exec_time_stop_mode],
             "cfg_time_stop_hrs": cfg.exec_time_stop_hrs,
             "cfg_poi_source": _POI[cfg.exec_poi_source],
+            "cfg_nogap_arm": _NOGAP[cfg.exec_nogap_arm],
             # An ENGINE setting, not a strategy one — so it is read off the bot's own
             # engine_config() rather than off `cfg`, which is what stops this encoder and the
             # pin drifting apart. It is here at all because the Pine plots it: this encoder
@@ -327,3 +329,76 @@ def test_roundtrip_parity_on_the_FVG_FIRST_precedence_mode(tmp_path):
     p, _ = _write(tmp_path, cfg)
     msgs = cs.run_parity(p, warmup=100)
     assert msgs == [], msgs[:3]
+
+
+# ── the no-FVG arm gate (2026-08-10) ────────────────────────────────────────────
+def test_nogap_arm_column_decodes_both_options():
+    import pandas as pd
+    for code, want in cs._NOGAP_ARM.items():
+        df = pd.DataFrame({"cfg_nogap_arm": [code]})
+        assert cs.config_from_export(df).exec_nogap_arm == want
+
+
+def test_the_nogap_arm_codes_are_a_WIRE_FORMAT_and_are_never_renumbered():
+    """Pinned by VALUE, not by iterating the dict — the Pine plots these integers and every
+    export ever taken carries them. Renumbering silently re-reads old exports as a run they
+    never made, which is the `cfg_eq_exempt` incident's exact shape."""
+    assert cs._NOGAP_ARM == {0: "Any", 1: "Sweep + RSI div"}
+
+
+def test_an_export_without_the_nogap_arm_column_reads_as_Any():
+    """"Absent ⇒ Any" is a FACT about those exports — before the gate existed the Pine's fallback
+    took every no-gap setup. It must NOT fall back on the base config: the day the Python default
+    changes, every older export would decode as a run it never made.
+
+    ⚠ Built by DROPPING the column from a real encoded row, never as an empty frame: an empty
+    frame short-circuits `config_from_export` and returns the base untouched, so it would pass
+    against a decoder that had no rule at all. That was this test's first draft."""
+    base = SosFadeConfig(exec_nogap_arm="Sweep + RSI div")
+    bare = pd.DataFrame([_encode_cfg(SosFadeConfig())]).drop(columns=["cfg_nogap_arm"])
+    assert cs.config_from_export(bare, base).exec_nogap_arm == "Any"
+
+
+def test_roundtrip_parity_with_the_nogap_gate_on(tmp_path):
+    """The gate only bites with Require-FVG OFF, so the round trip has to run it that way — at
+    the shipped default the branch is entered on neither side and a green means nothing.
+
+    NON-VACUITY, measured rather than assumed: over this 960-bar synth frame the two arm modes
+    price a DIFFERENT entry edge on 59 bars, so the column is genuinely steering the decision
+    stream the round trip reproduces.
+
+    ⚠ And the honest other half — on this frame both modes close the SAME 6 trades. The synth
+    bars are not a market and were never chosen to make this lever bite; the trade-level evidence
+    is the 155,531-bar replay in `config.py`'s own note (159 / 315 / 230), not this test. What
+    this test proves is that the harness can DRIVE and REPRODUCE a gated run, which is the thing
+    a real export will depend on."""
+    cfg = SosFadeConfig(exec_req_fvg=False, exec_nogap_arm="Sweep + RSI div")
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_roundtrip_parity_with_the_fallback_open_to_ANY_arm(tmp_path):
+    """The other side of the same branch, so the pair proves the COLUMN is steering the run
+    rather than both modes happening to agree."""
+    cfg = SosFadeConfig(exec_req_fvg=False, exec_nogap_arm="Any")
+    p, _ = _write(tmp_path, cfg)
+    msgs = cs.run_parity(p, warmup=100)
+    assert msgs == [], msgs[:3]
+
+
+def test_a_run_with_require_fvg_ON_is_reported_as_NOT_exercising_the_gate():
+    """The min-stop guard shipped live on a green run that never entered its own branch. A gate
+    is only evidence about code that RAN, and this is what says so out loud."""
+    import pandas as pd
+    warn = cs.warn_unexercised(SosFadeConfig(), pd.DataFrame())
+    assert any("exec_nogap_arm" in w and "NOT exercised" in w for w in warn)
+
+
+def test_a_run_that_DOES_enter_the_branch_is_not_warned_about():
+    """The other direction, so the warning cannot be "simplified" into always firing — which
+    would make it noise, and noise is ignored."""
+    import dataclasses
+    import pandas as pd
+    cfg = dataclasses.replace(SosFadeConfig(), exec_req_fvg=False)
+    assert cs.warn_unexercised(cfg, pd.DataFrame({"cfg_nogap_arm": [1]})) == []

@@ -54,6 +54,7 @@ _RUNNER_TRAIL = {0: "Fixed step", 1: "Structure (swing)", 2: "Structure + % ratc
 _TP2_STOP = {0: "TP1 price", 1: "Breakeven", 2: "One trail step behind"}
 _MIN_STOP = {0: "Off", 1: "% of price", 2: "Fixed $", 3: "x ATR(14)"}
 _TIME_STOP = {0: "Off", 1: "Before TP1 only", 2: "Always"}
+_NOGAP_ARM = {0: "Any", 1: "Sweep + RSI div"}
 # ⚠ A WIRE FORMAT, so codes are APPENDED and never renumbered — an export already on disk
 # carries the old number, and re-pointing it is silent: the file still reads, and now claims
 # to have run a mode it never ran. "FVG first" was added as 3 on 2026-08-09 for that reason.
@@ -225,6 +226,19 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
         # position one bar after its fill). A 0 in this column can only come from an export
         # taken with the lever Off, where the value is never read anyway.
         vals["exec_time_stop_hrs"] = float(tsh)
+    # No-FVG arm gate (added 2026-08-10) — WHICH no-gap setups may fall back to the 0.618. Same
+    # shape and same reasoning as the three decoders around it: an export with no column predates
+    # the lever, and before it existed the Pine's fallback took EVERY no-gap setup, so
+    # "absent ⇒ Any" is a FACT about those exports. It happens to equal the Python default today;
+    # the statement is about what the PINE did and must not be collapsed into the other one.
+    #
+    # ⚠ It only bites on an export taken with execReqFVG OFF — with the gap requirement on,
+    # neither side ever enters the fallback branch, so a green run says NOTHING about this lever.
+    # That is the min-stop guard's 2026-08-04 trap ("green on a branch neither side entered"), and
+    # `_warn_unexercised` below is what stops it being read as validation.
+    nga = get("cfg_nogap_arm")
+    vals["exec_nogap_arm"] = "Any" if nga is None else \
+        _NOGAP_ARM.get(int(round(nga)), vals["exec_nogap_arm"])
     # POI source (added 2026-08-09) — WHICH ZONE the entry may read: fair value gaps, order
     # blocks, or both. Same shape and same reasoning as the two decoders directly above: an
     # export with no column predates the lever, and the parent shipped "FVG" from the day it
@@ -250,6 +264,33 @@ def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
 
 class EqExemptUnknown(RuntimeError):
     """The export cannot say whether the EQ/FVG coupling was on, and neither can we."""
+
+
+def warn_unexercised(cfg, df) -> List[str]:
+    """Name the levers this export could NOT have tested, so a green run is not over-read.
+
+    🔴 THE TRAP THIS EXISTS FOR IS RECORDED IN THIS REPO AND COST A REAL DECISION. On 2026-08-04
+    the minimum-stop guard shipped live on a parity run that was exit 0 — and the export had run
+    it as a ten-cent floor on a $4,000 instrument, so block code 7 fired ZERO times in 21,897
+    bars. Both sides agreed perfectly about a branch neither had entered, and that read as
+    validation.
+
+    A gate is only evidence about code that RAN. Returns human-readable warnings; it never fails
+    the run, because "this export cannot test that lever" is a fact about the export rather than a
+    disagreement between the two implementations.
+    """
+    out: List[str] = []
+    if cfg.exec_req_fvg:
+        out.append(
+            "`exec_nogap_arm` was NOT exercised: this export ran with Require-FVG ON, so neither "
+            "side ever entered the no-gap fallback branch and a green run says nothing about it. "
+            "Re-export with execReqFVG OFF (once at cfg_nogap_arm 0, once at 1) to test it.")
+    elif "cfg_nogap_arm" not in df.columns:
+        out.append(
+            "This export ran Require-FVG OFF but carries no `cfg_nogap_arm` column, so it "
+            "predates the gate and is being decoded as \"Any\" — correct for that export, and "
+            "still no evidence about \"Sweep + RSI div\".")
+    return out
 
 
 def engine_config_from_export(df: pd.DataFrame, base, eq_exempt: Optional[bool] = None):
@@ -447,6 +488,8 @@ def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
     eng = engine_config_from_export(df, MpcSosFadeStrategy.engine_config(), eq_exempt)
     # keep all bars aligned to CSV rows
     strat = MpcSosFadeStrategy(cfg).run(bars, engine_config=eng, warmup=0)
+    for line in warn_unexercised(cfg, df):
+        print(f"  \u26a0 {line}")
     return compare(df, strat.decisions, warmup, price_tol, r_tol)
 
 
