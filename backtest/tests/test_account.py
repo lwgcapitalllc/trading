@@ -157,3 +157,77 @@ def test_solo_account_never_blocks_a_second_leg():
     s.request_fill("A", +1, 100.0, 95.0, desired_qty=5_000.0, point_value=1.0)  # huge
     qty = s.request_fill("B", +1, 100.0, 95.0, desired_qty=5_000.0, point_value=1.0)
     assert qty == 5_000.0                          # never contended
+
+
+# ── dust grants (2026-08-09) ────────────────────────────────────────────────────
+#
+# 🔴 The defect these pin cost a whole leg and raised nothing. With the budget almost full, a leg
+# asking for $4,385.98 of risk was granted a fraction of a cent, and `_open` scaled its qty by
+# `granted/desired` — about 1e-6 — opening a position of no meaningful size. A leg holds ONE
+# position at a time, so that dust occupied its only slot from November 2020 to August 2026:
+# 18 trades where a solo replay of the same leg made 181, and NOTHING in the contention log said
+# a word, because a grant is not a refusal.
+#
+# It survived because the first shared-account run ever made had an EMPTY contention log — the
+# budget never bound, so this branch had never once executed.
+
+
+def test_a_grant_too_small_to_be_a_position_is_a_BLOCK():
+    """A leg asking against an almost-full budget must be refused, not handed dust.
+
+    ⚠ Watched RED against `granted_risk <= 0.0`: the old test returns a qty of ~2e-9 and the
+    account opens a position with it.
+    """
+    a = _acct()                                   # cap = 1000
+    # fill 999.999 of the 1000, leaving a tenth of a cent of room
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=199.9998, point_value=1.0)
+    assert 0.0 < a.room() < 0.01
+
+    qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    assert qty == 0.0, "a sub-cent grant must not become a position"
+    assert a.contention[-1]["leg"] == "B"
+    assert a.contention[-1]["blocked"] is True
+
+
+def test_a_dust_grant_never_logs_as_an_UNBLOCKED_zero():
+    """The log's own tell, and the reason the defect read as impossible rather than as itself.
+
+    `_log_contention` rounds to 2dp, so a $0.003 grant printed `granted_risk: 0.0` with
+    `blocked: False` — a combination the shrink branch cannot produce. Any event showing a zero
+    grant must now be a block.
+    """
+    a = _acct()
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=199.9998, point_value=1.0)
+    a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    for c in a.contention:
+        assert not (c["granted_risk"] == 0.0 and c["blocked"] is False), c
+
+
+def test_the_same_bar_TIE_path_refuses_dust_too():
+    """`request_fills` splits the room by weight and has its own copy of the gate. A guard on one
+    of two entry paths is a guard on neither — the split path is what runs whenever two legs fill
+    on the same bar, which is exactly when the budget is tightest.
+
+    ⚠ Watched RED against `granted_risk <= 0.0` in `request_fills`.
+    """
+    a = _acct()
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=199.9998, point_value=1.0)
+    out = a.request_fills([
+        {"leg": "B", "dir": +1, "entry": 100.0, "stop": 95.0,
+         "desired_qty": 200.0, "point_value": 1.0},
+        {"leg": "C", "dir": -1, "entry": 100.0, "stop": 105.0,
+         "desired_qty": 200.0, "point_value": 1.0},
+    ])
+    assert out == {"B": 0.0, "C": 0.0}
+    assert all(c["blocked"] for c in a.contention if c["leg"] in ("B", "C"))
+
+
+def test_a_REAL_shrink_is_still_granted():
+    """The guard must not turn ordinary contention into refusal — shrink-to-fit is the design, and
+    a leg getting 40% of its size is a normal outcome the log calls a shrink, not a block."""
+    a = _acct()
+    a.request_fill("A", +1, entry=100.0, stop=95.0, desired_qty=120.0, point_value=1.0)  # 600
+    qty = a.request_fill("B", +1, entry=100.0, stop=95.0, desired_qty=200.0, point_value=1.0)
+    assert abs(qty - 80.0) < 1e-9, qty          # 400 of the 1000 left
+    assert a.contention[-1]["blocked"] is False
+    assert a.contention[-1]["granted_risk"] == 400.0

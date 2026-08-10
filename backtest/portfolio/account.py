@@ -44,6 +44,27 @@ __all__ = ["Position", "PortfolioAccount", "SoloAccount"]
 # scaled exactly; it only decides whether the difference is worth calling contention.
 _GRANT_EPS = 1e-9
 
+# The smallest grant that may become a POSITION, in account currency. Below this the entry is
+# refused outright, exactly as if there were no room at all.
+#
+# 🔴 Measured 2026-08-09, and it is the first time a shared run ever had a tight budget: a leg
+# asked for $4,385.98 of risk against a room of a fraction of a cent, and `_open` scaled its qty
+# by `granted/desired` — about 1e-6 — opening a position of essentially no size. Nothing errored.
+# But a leg holds ONE position at a time, so that dust occupied its only slot from November 2020
+# to August 2026: **18 trades instead of 181**, no refusal in the log, and from outside it reads
+# exactly like a strategy that stopped finding setups.
+#
+# ⚠ `entry_floor_pct` is the POLICY knob for this ("skip it rather than trickle it in") and it
+# defaults to 0.0, which switches the policy off. That default is defensible — a caller who
+# states no floor should not have one invented — but it cannot be the only guard, because a
+# position too small to matter is a CORRECTNESS problem rather than a preference: it consumes the
+# slot whatever the caller thinks about small positions.
+#
+# One cent is chosen so it lines up with `_log_contention`'s own 2dp rounding. Before this, a
+# grant of $0.003 was logged as `granted_risk: 0.0, blocked: False` — a state that branch cannot
+# produce, so the log itself read as impossible while being perfectly accurate.
+_MIN_GRANT_USD = 0.01
+
 
 @dataclass
 class Position:
@@ -117,7 +138,9 @@ class PortfolioAccount:
         desired_risk = self._risk_of(desired_qty, entry, stop, point_value)
         granted_risk = min(desired_risk, self.room())
         # a zero grant (no room) is a block, not a zero-size fill — even when the floor is 0.
-        if granted_risk <= 0.0 or granted_risk < self._floor():
+        # `_MIN_GRANT_USD` makes "essentially zero" a block too: see its note, one dust fill
+        # silently retired a leg for five and a half years.
+        if granted_risk < _MIN_GRANT_USD or granted_risk < self._floor():
             self._log_contention(leg, dir, desired_risk, 0.0, blocked=True)
             return 0.0
         if self._is_shrunk(desired_risk, granted_risk):
@@ -137,7 +160,7 @@ class PortfolioAccount:
         out: dict[str, float] = {}
         for r, desired_risk in zip(requests, risks):
             granted_risk = desired_risk * factor
-            if granted_risk <= 0.0 or granted_risk < self._floor():
+            if granted_risk < _MIN_GRANT_USD or granted_risk < self._floor():
                 self._log_contention(r["leg"], r["dir"], desired_risk, 0.0, blocked=True)
                 out[r["leg"]] = 0.0
                 continue
