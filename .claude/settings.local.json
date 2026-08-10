@@ -137,7 +137,9 @@
       "Bash(python3 -m pytest tests/test_candle_overlays.py -q)",
       "Bash(python3 -)",
       "Bash(cp services/lab_db.py /tmp/lab_db.bak)",
-      "Bash(cp routers/stacks.py /tmp/stacks.bak)"
+      "Bash(cp routers/stacks.py /tmp/stacks.bak)",
+      "Bash(cp /tmp/ba.orig.py services/bot_accounts.py)",
+      "Bash(python3 -m pytest tests/test_bot_accounts.py -q)"
     ],
     "additionalDirectories": [
       "/private/tmp",
