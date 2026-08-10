@@ -550,7 +550,7 @@ def test_deep_fib_reprices_a_deep_long_gap_to_the_nearest_shallower_fib():
     the limit re-prices to 0.702 = 102.8 (the level price reaches first)."""
     fvg = [(102.5, 101.5, True, 0)]   # (top, bot, is_bull, born) — deep, between 0.786 and 0.702
     ex_on = Execution(_m3(exec_deep_fib=True))
-    le, _ = ex_on._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))
+    le, _ = ex_on._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())
     assert abs(le - 102.8) < 1e-9          # 0.702, not the 102.5 gap edge
 
 
@@ -558,7 +558,7 @@ def test_deep_fib_off_keeps_the_gap_edge_entry():
     """Same gap, EVERY snap rule OFF: unchanged — the limit rests at the gap's own near edge."""
     fvg = [(102.5, 101.5, True, 0)]
     ex_off = Execution(_m3(exec_deep_fib=False))
-    le, _ = ex_off._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))
+    le, _ = ex_off._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())
     assert abs(le - 102.5) < 1e-9          # min(top, 0.5) = the gap edge
 
 
@@ -567,9 +567,9 @@ def test_deep_fib_leaves_a_shallow_gap_unchanged():
     not a Method 3 case — it enters at the gap edge whether the toggle is on or off."""
     fvg = [(104.0, 101.5, True, 0)]
     on = Execution(_m3(exec_deep_fib=True))._entry_edges(
-        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))[0]
+        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())[0]
     off = Execution(_m3(exec_deep_fib=False))._entry_edges(
-        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg))[0]
+        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())[0]
     assert abs(on - 104.0) < 1e-9 and abs(off - 104.0) < 1e-9
 
 
@@ -584,7 +584,7 @@ def test_deep_fib_reprices_a_deep_short_gap():
     """Short mirror: near edge is the gap BOTTOM. A gap bottom 107.5 (between 0.702 and
     0.786) re-prices to 0.702 = 107.2."""
     sig = _bear_sig([(108.0, 107.5, False, 0)])
-    _, se = Execution(_m3(exec_deep_fib=True))._entry_edges(sig)
+    _, se = Execution(_m3(exec_deep_fib=True))._entry_edges(sig, _seq_flat())
     assert abs(se - 107.2) < 1e-9
 
 
@@ -599,7 +599,7 @@ _FLOAT_GAP = [(102.7, 102.05, True, 0)]
 
 def _entry(cfg, fvg=None, sig=None):
     return Execution(cfg)._entry_edges(sig or _sig(0, 104, 104.5, 103.9, 104.2,
-                                                   fvgs=fvg or _FLOAT_GAP))[0]
+                                                   fvgs=fvg or _FLOAT_GAP), _seq_flat())[0]
 
 
 def test_nearest_fib_takes_the_DEEPER_level_when_it_is_closer():
@@ -662,7 +662,7 @@ def test_the_entry_model_mirrors_on_a_bear_leg():
     """Short mirror of rule 3: gap 107.3 -> 107.95 floats between 0.702 (107.2) and 0.786
     (108.0); 0.05 deeper vs 0.10 shallower, so the deeper level 0.786 wins."""
     sig = _bear_sig([(107.95, 107.3, False, 0)])
-    _, se = Execution(_cfg(exec_req_fvg=True))._entry_edges(sig)
+    _, se = Execution(_cfg(exec_req_fvg=True))._entry_edges(sig, _seq_flat())
     assert abs(se - 108.0) < 1e-9
 
 
@@ -676,7 +676,7 @@ def test_pre_zone_gate_refuses_a_gap_the_retrace_itself_printed():
     for born, kept in ((9, True), (10, False), (11, False)):
         sig = _sig(0, 104, 104.5, 103.9, 104.2, fibo_half_bar=10,
                    fvgs=[(102.7, 102.05, True, born)])
-        assert (ex._entry_edges(sig)[0] is not None) is kept, born
+        assert (ex._entry_edges(sig, _seq_flat())[0] is not None) is kept, born
 
 
 def test_pre_zone_gate_is_inert_when_off_and_before_the_zone_is_reached():

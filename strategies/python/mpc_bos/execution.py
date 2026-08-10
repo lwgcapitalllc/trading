@@ -170,8 +170,15 @@ class BosExecution(Execution):
                 sig.bull_div_active or sig.veto_rsi_os)
 
     # ── the entry ladder (Pine 3652-3775) ────────────────────────────────────────
-    def _entry_edges(self, sig) -> Tuple[Optional[float], Optional[float]]:  # type: ignore[override]
+    def _entry_edges(self, sig, seq) -> Tuple[Optional[float], Optional[float]]:  # type: ignore[override]
         """Where a limit would rest on each side, or None.
+
+        ⚠ `seq` is accepted to match the parent's signature (2026-08-10) and is DELIBERATELY
+        unread. The parent grew it for `exec_nogap_arm`, which gates the A+ no-FVG fallback on
+        what armed the SOS — this fork's setup has no SOS arm at all, so honouring that lever
+        here would gate a BOS entry on a confluence its own Pine never looks for. The parameter
+        is kept rather than dropped because the parent calls this by name from `step()`, and a
+        2-arg override is a `TypeError` on the first bar — which is exactly how this was found.
 
         The A+ ladder verbatim, priced off the BOS anchor leg instead of the SOS leg, and the
         FIRST source that prices the leg wins:

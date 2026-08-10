@@ -200,7 +200,7 @@ def _edges(source, **sigkw):
     # deep-only OFF so the fixture's zones are judged on the band alone — this test is about
     # RANK, and leaving the gate on would make it about which zone clears 0.5.
     cfg = dataclasses.replace(_cfg(source), exec_fvg_deep_only=False)
-    return Execution(cfg)._entry_edges(_sig(**sigkw))
+    return Execution(cfg)._entry_edges(_sig(**sigkw), _Seq())
 
 
 def test_a_higher_tier_wins_even_when_a_lower_one_rests_NEARER():
@@ -291,7 +291,7 @@ def _ob_only(**over):
     sigkw = {k: over.pop(k) for k in list(over)
              if k in ("fvgs", "obs", "fibo_dir", "fibo_half_bar") or k.startswith("fibo_p")}
     cfg = dataclasses.replace(_cfg("Order block (no FVG)"), **over)
-    return Execution(cfg)._entry_edges(_sig(**sigkw))
+    return Execution(cfg)._entry_edges(_sig(**sigkw), _Seq())
 
 
 def test_a_qualifying_gap_stands_the_block_leg_DOWN_entirely():
@@ -341,7 +341,7 @@ def test_a_gap_the_DEEP_ONLY_gate_refuses_does_NOT_stand_the_leg_down():
     assert _edges("FVG", fvgs=[shallow_gap], obs=[])[0] is not None          # gate off -> qualifies
     from strategies.python.mpc_sos_fade.execution import Execution
     gated = dataclasses.replace(_cfg("FVG"), exec_fvg_deep_only=True)
-    assert Execution(gated)._entry_edges(_sig(fvgs=[shallow_gap], obs=[]))[0] is None
+    assert Execution(gated)._entry_edges(_sig(fvgs=[shallow_gap], obs=[]), _Seq())[0] is None
 
 
 def test_a_gap_the_PRE_ZONE_gate_refuses_does_NOT_stand_the_leg_down():
@@ -456,9 +456,9 @@ def test_a_gap_seen_EARLIER_still_stands_the_leg_down_after_it_is_gone():
     ex = _leg()
     ex._sync_gap_latch(_Seq(l_sos_bar=42))
     gap, block = (102.5, 102.0, True, 7), (104.9, 104.5, True, 9)
-    assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]))[0] is None      # bar 1: gap present
+    assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]), _Seq())[0] is None      # bar 1: gap present
     ex._sync_gap_latch(_Seq(l_sos_bar=42))                               # same setup
-    assert ex._entry_edges(_sig(fvgs=[], obs=[block]))[0] is None        # bar 2: gap gone, still out
+    assert ex._entry_edges(_sig(fvgs=[], obs=[block]), _Seq())[0] is None        # bar 2: gap gone, still out
 
 
 def test_a_NEW_break_of_structure_re_opens_the_leg():
@@ -471,9 +471,9 @@ def test_a_NEW_break_of_structure_re_opens_the_leg():
     ex = _leg()
     ex._sync_gap_latch(_Seq(l_sos_bar=42))
     gap, block = (102.5, 102.0, True, 7), (104.9, 104.5, True, 9)
-    assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]))[0] is None
+    assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]), _Seq())[0] is None
     ex._sync_gap_latch(_Seq(l_sos_bar=99))                               # a new SOS arms
-    assert ex._entry_edges(_sig(fvgs=[], obs=[block]))[0] == 104.9
+    assert ex._entry_edges(_sig(fvgs=[], obs=[block]), _Seq())[0] == 104.9
 
 
 def test_the_latch_is_per_SIDE():
@@ -483,11 +483,11 @@ def test_the_latch_is_per_SIDE():
     short = dict(fibo_dir=-1, fibo_p1=100.0, fibo_p2=101.14, fibo_p3=102.36,
                  fibo_p4=103.2, fibo_p5=104.0, fibo_p6=105.0)
     ex._sync_gap_latch(_Seq(l_sos_bar=42, s_sos_bar=43))
-    ex._entry_edges(_sig(fvgs=[(102.5, 102.0, True, 7)], obs=[]))        # a LONG gap
+    ex._entry_edges(_sig(fvgs=[(102.5, 102.0, True, 7)], obs=[]), _Seq())        # a LONG gap
     assert ex._gap_seen_l and not ex._gap_seen_s
     ex._sync_gap_latch(_Seq(l_sos_bar=42, s_sos_bar=43))
     assert ex._entry_edges(_sig(fvgs=[], obs=[(101.5, 101.2, False, 9)],
-                                **short))[1] == 101.2
+                                **short), _Seq())[1] == 101.2
 
 
 def test_a_gap_the_gates_REFUSE_does_not_arm_the_latch():
@@ -497,5 +497,5 @@ def test_a_gap_the_gates_REFUSE_does_not_arm_the_latch():
     ex._cfg = dataclasses.replace(ex._cfg, exec_fvg_deep_only=True)
     ex._sync_gap_latch(_Seq(l_sos_bar=42))
     shallow_gap, block = (105.5, 104.0, True, 7), (104.9, 104.5, True, 9)
-    assert ex._entry_edges(_sig(fvgs=[shallow_gap], obs=[block]))[0] == 104.9
+    assert ex._entry_edges(_sig(fvgs=[shallow_gap], obs=[block]), _Seq())[0] == 104.9
     assert not ex._gap_seen_l

@@ -64,6 +64,17 @@ class BLegConfig(SosFadeConfig):
     #   that NotImplementedError. Same class as the `exec_min_stop_mode` pin below — a parent
     #   default that this fork's code cannot honour — but the failure is loud instead of silent,
     #   which is the only reason it was caught rather than shipped.
+    exec_nogap_arm: str = "Any"       # "↳ No-FVG entries need" — pinned, and INERT here
+    #   Added to the parent 2026-08-10 to gate its no-FVG fallback entry. Pinned to the inert
+    #   value for the same reason as `exec_min_stop_mode` below: it is read only when
+    #   `exec_req_fvg` is False, which this fork inherits as True, so it cannot fire today — and
+    #   pinning stops a future parent default silently claiming a filter this fork does not run.
+    #   ⚠ It is PYTHON-ONLY on the parent (no `execNoGapArm` input in either A+ Pine), so
+    #   `mpc_b_leg_strategy.pine` has nothing to be parity-checked against and inheriting a
+    #   non-default would put `compare_bleg.py` red with no export column able to explain it.
+    #   ⚠ Not inert by ACCIDENT: this fork overrides `_place_entries` but NOT `_entry_edges`, and
+    #   those edges feed the "A+ has priority" gate — so if `exec_req_fvg` is ever turned off
+    #   here, this field starts deciding which bars the B leg may trade on. Sweep it then.
     exec_min_stop_mode: str = "Off"   # "Minimum stop distance" — pinned OFF, and INERT here
     #   Inherited from the parent, which added it 2026-07-30 as the guard for a stop that collapses
     #   onto the entry. It does NOT apply on this path: the floor is enforced in the parent's

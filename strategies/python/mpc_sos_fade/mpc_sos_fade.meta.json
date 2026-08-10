@@ -72,6 +72,20 @@
       "desc": "On = only enter when a live gap overlaps the 0.5-0.886 zone. Off = fall back to the 0.618 fib and enter on the retrace alone. Off does not switch off the gap rules below — a qualifying gap still prices the entry first."
     },
     {
+      "name": "exec_nogap_arm",
+      "group": "Entry zone",
+      "core": true,
+      "show_if": {
+        "exec_req_fvg": false
+      },
+      "choices": [
+        "Any",
+        "Sweep + RSI div"
+      ],
+      "label": "↳ No-FVG entries need",
+      "desc": "Which no-gap setups may fall back to the 0.618. Read ONLY when \"Require an FVG in the zone\" is OFF. Any (default) = every one of them, which is exactly what Require-FVG off did before this setting existed. Sweep + RSI div = only setups whose SOS carried BOTH a liquidity sweep and an RSI divergence. It reads what the market did at the SOS, so it is independent of the two \"Arm on ...\" toggles above and is not a way of saying \"arm on both\". MEASURED over 6.5 years: the fallback adds 156 trades on Any (+7R net) and 71 on Sweep + RSI div (+14R net), because the sweep-only half averages +0.007R per trade. LAB ONLY - there is no TradingView input behind it, so a run using it cannot be parity-checked and no live bot may use it."
+    },
+    {
       "name": "exec_poi_source",
       "group": "Entry zone",
       "core": true,
@@ -84,6 +98,17 @@
       ],
       "label": "Zone the entry reads (lab only)",
       "desc": "Which kind of zone counts as the point of interest in the 0.5-0.886 band. FVG (default) = a fair value gap, the shipped rule. Order block = a block instead. Either = both, pooled, nearest one wins. FVG first = both, RANKED: a gap an order block sits on beats a plain gap, which beats a block, and nearest-first only decides within a rank. Every rule downstream is unchanged: the deep-only gate, the pre-date gate and the four fib entry rules all run on a block exactly as they do on a gap. ONLY \"FVG\" HAS A PINE INPUT BEHIND IT - execPoiSource and the order-block engine were removed from mpc_strategy.pine on 2026-08-09 once the question below was answered, so compare_strategy.py can never check another mode and no live bot may run one. Measured 2020-2026: FVG 159 trades / +142.18R / 5.61R drawdown - Order block 267 / +75.93R / 11.11R - Either 292 / +85.77R / 10.51R - FVG first 276 / +102.90R / 9.62R. Requiring a block is worse than requiring nothing at all (315 / +149.55R), and 82% of FVG first's loss is 29 baseline trades it DISPLACED rather than the trades it added, because this bot has one position slot. \"Order block (no FVG)\" is the answer to that: it trades a block ONLY where no QUALIFYING gap is in the band, so it takes exactly the setups \"FVG\" declines and the two can never take the same setup. It was built to be run as a SECOND LEG beside a \"FVG\" leg on one shared account (backtest/portfolio/run_stack), giving the order-block population its own position slot and its own exec_risk_pct instead of making it compete with the gap trades for one of each. MEASURED that way and it does not earn a slot: solo it is 133 trades / +0.02R / 21.81R drawdown / 20.3% win over 6.5 years, and stacked beside the FVG leg on one $10,000 balance the pair posts +142.19R against the FVG leg's own +142.18R alone - the second leg contributes nothing while nearly doubling the drawdown (5.61R to 10.30R). Zero contention and zero displacement, so the shared account is proven to move no decision and the order-block population is proven to have no edge of its own. The mode is KEPT because it is how anyone re-checks that."
+    },
+    {
+      "name": "exec_ob_deepen",
+      "group": "Entry zone",
+      "widget": "toggle",
+      "label": "Order block deeper than the entry → rest on the block",
+      "options": {
+        "off": "Off",
+        "on": "Re-price deeper"
+      },
+      "desc": "On = a same-direction order block sitting DEEPER than the chosen entry edge re-prices the limit onto that block's near edge, clamped into the 0.5-0.886 band. The stop is a fib and does not move, so a deeper fill is a tighter stop - a bigger position and more room to target - bought with fill rate. MEASURED AND REFUTED over 6.5 years: 159 trades / +142.18R / maxDD 5.61R becomes 102 / +73.41R / maxDD 15.20R, because TP1 is a fib ABOVE a long so a deeper entry is FURTHER from it (TP1 hit rate 65.4% -> 47.1%), and price reaches the deeper block on 35 of 37 losers but only 4 of 40 winners. Kept for future use and defaulted OFF. LAB ONLY - no TradingView input behind it."
     },
     {
       "name": "exec_fvg_deep_only",

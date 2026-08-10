@@ -856,7 +856,7 @@ class Execution:
         # Before the edges, so a new break of structure re-opens the block leg on the same bar it
         # arms rather than one bar late.
         self._sync_gap_latch(seq)
-        long_edge, short_edge = self._entry_edges(sig)
+        long_edge, short_edge = self._entry_edges(sig, seq)
         dec.long_edge, dec.short_edge = long_edge, short_edge
         dec.l_stage, dec.s_stage = seq.l_stage, seq.s_stage
         dec.long_veto, dec.short_veto = sos_aware_veto(sig, seq.l_sos_bar, seq.s_sos_bar)
@@ -1315,11 +1315,17 @@ class Execution:
         if seq.s_sos_bar != self._gap_seen_sos_s:
             self._gap_seen_sos_s, self._gap_seen_s = seq.s_sos_bar, False
 
-    def _entry_edges(self, sig) -> Tuple[Optional[float], Optional[float]]:
+    def _entry_edges(self, sig, seq) -> Tuple[Optional[float], Optional[float]]:
         """The resting-limit price on each side (Pine 3937-3959): the near edge of an
         FVG overlapping the 0.5-0.886 band, clamped into the band; the first one price
         reaches (highest for longs). With Require-FVG off it falls back to 0.618. The entry
-        model (`_fib_snap`) may re-price a qualifying gap onto a fib instead of its own edge."""
+        model (`_fib_snap`) may re-price a qualifying gap onto a fib instead of its own edge.
+
+        `seq` is REQUIRED rather than optional, and that is the point: `exec_nogap_arm` gates the
+        fallback on what armed the SOS, which only `SeqState` knows. A default of None would make
+        "the sequence was not passed" and "the confluence was not there" the same value at the one
+        place that decides whether a trade happens — this repo's own most-repeated defect. There
+        is exactly one caller (`step`), so requiring it costs nothing."""
         cfg = self._cfg
         p2, p3, p6 = sig.fibo_p2, sig.fibo_p3, sig.fibo_p6
         fibs_ready = None not in (sig.fibo_p1, p2, p3, p6, sig.fibo_p7, sig.fibo_p10)
@@ -1401,11 +1407,35 @@ class Execution:
                 # decline the gap and then re-enter the same setup one line later at a different
                 # price. The pin (`exec_req_fvg=True` on both legs) makes this unreachable today;
                 # the flag makes it wrong-proof if the pin is ever relaxed.
-                if long_edge is None and sig.fibo_dir == 1 and not long_stood_down:
+                #
+                # `exec_nogap_arm` narrows WHICH of those setups may fall back. "Any" is the
+                # original rule exactly — `_nogap_arm_ok` returns True unconditionally — so the
+                # default is byte-identical and nothing historical moves.
+                if long_edge is None and sig.fibo_dir == 1 and not long_stood_down \
+                        and self._nogap_arm_ok(seq, True):
                     long_edge = p3
-                if short_edge is None and sig.fibo_dir == -1 and not short_stood_down:
+                if short_edge is None and sig.fibo_dir == -1 and not short_stood_down \
+                        and self._nogap_arm_ok(seq, False):
                     short_edge = p3
         return long_edge, short_edge
+
+    def _nogap_arm_ok(self, seq, is_long: bool) -> bool:
+        """May a setup with NO qualifying zone rest a fallback limit at the 0.618?
+
+        Reads the RAW arm flags (`sos_*_swp` / `sos_*_div`), which are what the market did at the
+        SOS, deliberately NOT the toggle-filtered ones the arm gate uses. The two answer different
+        questions: `exec_arm_sweep` / `exec_arm_div` say which triggers the operator will act on,
+        and this says how much confluence a setup had before its gap was checked. Reading the
+        filtered pair would make this lever silently do nothing whenever `exec_arm_div` is off,
+        which is the shipped default — i.e. it would look enabled and refuse everything.
+
+        MEASURED 2026-08-10 over 155,531 M15 bars: of the 173 setups the fallback would take,
+        the 78 carrying both sources made +35.47R and the 95 carrying only a sweep made +0.71R —
+        an average of +0.007R, which is the whole reason this gate exists."""
+        if self._cfg.exec_nogap_arm == "Any":
+            return True
+        # "Sweep + RSI div"; the config refuses any third value at construction.
+        return (seq.sos_l_swp and seq.sos_l_div) if is_long else (seq.sos_s_swp and seq.sos_s_div)
 
     def _sl_anchor(self, sig, edge: Optional[float] = None, is_bull: bool = True) -> Optional[float]:
         """The fib price the stop sits at, before `exec_sl_buf_tk` (Pine `f_slAnchor`).

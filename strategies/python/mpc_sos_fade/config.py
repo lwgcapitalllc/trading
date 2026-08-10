@@ -25,6 +25,7 @@ from dataclasses import dataclass
 # The legal `exec_time_stop_mode` values, named once so `__post_init__`, the parity
 # harness and the meta file cannot drift into three different opinions about them.
 _TIME_STOP_MODES = frozenset({"Off", "Before TP1 only", "Always"})
+_NOGAP_ARMS = frozenset({"Any", "Sweep + RSI div"})
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,38 @@ class SosFadeConfig:
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require an FVG in the zone"
+    exec_nogap_arm: str = "Any"        # "↳ No-FVG entries need" ∈ {Any, Sweep + RSI div}
+    #   PYTHON-ONLY, NO PINE COUNTERPART (2026-08-10). `mpc_strategy.pine` has `execReqFVG` and
+    #   nothing beside it, so `compare_strategy.py` can never configure a non-default run and a
+    #   result taken with one is a LAB FINDING, not a validated one. No live bot may run it.
+    #
+    #   ⚠ **READ ONLY WHEN `exec_req_fvg` IS FALSE**, so at the shipped defaults it is INERT and
+    #   no historical result moves. It is deliberately a refinement of the existing fallback
+    #   rather than a second field answering the same question: `exec_req_fvg` decides WHETHER a
+    #   setup with no zone may still trade, and this decides WHICH of those setups may. Two
+    #   independent booleans would let a reader switch one on and read the other's answer.
+    #
+    #   "Any"            — every no-zone setup rests at the 0.618. This is BYTE-IDENTICAL to what
+    #                      `exec_req_fvg = False` did before this field existed, which is what
+    #                      makes the default safe and what a test pins.
+    #   "Sweep + RSI div"— only when the SOS carried BOTH arm sources. `SeqState.sos_l_swp` /
+    #                      `sos_l_div` are the RAW arm flags (before the enable toggles), which is
+    #                      correct here: the question is what the market did at the SOS, not which
+    #                      triggers the operator left switched on. It is therefore independent of
+    #                      `exec_arm_sweep` / `exec_arm_div`, and NOT a way of saying "arm on both".
+    #
+    #   MEASURED 2026-08-10, 155,531 M15 bars (2020-01-01 → 2026-08-03), one real replay per row,
+    #   `exec_secondary` off. Baseline 159 trades / +142.18R:
+    #       "Any"             315 trades / +149.55R  maxDD 12.70R
+    #       "Sweep + RSI div" 230 trades / +155.89R  maxDD  9.54R
+    #   Charged at the live account (PU Prime ECN, spread 0.12 STATED): 159 / +132.23R ·
+    #   315 / +134.78R · 230 / +144.78R — costs are what SEPARATE the two, because "Any" adds 156
+    #   trades to earn +7R and pays spread on all of them. Jittered ±$0.05/bar over 8 seeds the
+    #   gated book beat the shipped book on 8 of 8 and was never negative.
+    #   ⚠ Read the R as "not worse": the +13.71R gain sits inside this strategy's own run-to-run
+    #   spread of 15.06R. **The FREQUENCY is the measured gain** — median gap between trades
+    #   9.5 → 7.3 days, worst drought 99.7 → 54.5 days, months with no trade at all 8 of 80 → 4.
+    #   ⚠ And it is bought with drawdown: 5.61R → 9.54R free, 6.03R → 11.12R charged.
     exec_poi_source: str = "FVG"       # ∈ {FVG, Order block, Either, FVG first, Order block (no FVG)}
     #   THE PINE SIDE EXISTS (2026-08-09, later the same day). This comment previously read
     #   "PYTHON-ONLY, NO PINE COUNTERPART" and that is now FALSE — it is corrected in place
@@ -494,6 +527,18 @@ class SosFadeConfig:
                 f"exec_time_stop_hrs must be > 0 when exec_time_stop_mode is "
                 f"{self.exec_time_stop_mode!r}, got {self.exec_time_stop_hrs!r}. "
                 "Set exec_time_stop_mode='Off' to disable the time stop."
+            )
+        if self.exec_nogap_arm not in _NOGAP_ARMS:
+            # Validated ALWAYS, not only when `exec_req_fvg` is False — unlike the two below.
+            # Those are numbers whose mode may legitimately be off during a sweep; this is a
+            # closed set of strings, and an unrecognised one has no inert reading: the gate would
+            # match nothing and refuse every no-FVG setup, which is indistinguishable on the page
+            # from the feature being switched off. A typo would silently be the safest-looking
+            # answer available.
+            raise ValueError(
+                f"exec_nogap_arm must be one of {sorted(_NOGAP_ARMS)!r}, got "
+                f"{self.exec_nogap_arm!r}. It gates the no-FVG fallback entry and is read only "
+                "when exec_req_fvg is False."
             )
         if self.exec_secondary and not (0.0 <= self.exec_sec_retrace < 1.0):
             # 1.0 is the leg ORIGIN, which is where the stop sits — an entry there has a zero stop
