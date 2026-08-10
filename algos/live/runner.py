@@ -645,6 +645,25 @@ class LiveRunner:
             self.log.warning(f"Could not write the shutdown record: {e}")
 
     def _run(self) -> tuple[int, str]:
+        # ── on the bench? ─────────────────────────────────────────────────────
+        # `account: null` means this bot is registered and deliberately not on any account, which
+        # is what the Bots page writes when you remove it from one. It is checked FIRST, ahead of
+        # the version pin and the process guard, because every one of those describes a bot that
+        # is trying to trade and this one is not: refusing later would report a version problem or
+        # a credentials problem for a bot whose actual state is "nobody has assigned it".
+        #
+        # ⚠ It is an ORDINARY ending, not a fault — exit 0, and no Telegram alert. A benched bot
+        # is a deliberate configuration, and the boot task plus the watchdog would otherwise raise
+        # the same alarm on every attempt for as long as it stayed on the bench. The coordinator
+        # skips it before reaching this point; this is the backstop for anything that starts a
+        # runner directly.
+        if self.cfg.account is None:
+            self.log.warning(
+                f"{self.cfg.bot_key} is not assigned to an account (account: null), so there is "
+                f"nothing for it to trade. Assign it on the command center's Bots → Accounts "
+                f"tab, then start it.")
+            self.ledger.event("not_assigned")
+            return 0, "not assigned to an account"
         if self.already_running():
             # Not a failure — the bot IS running, just not as this process. It is still an
             # exit worth recording: a start that declined to start is exactly the event

@@ -90,11 +90,21 @@ def test_restart_bot_kills_only_this_bots_python_process(stubborn_ssh):
 
 
 def test_stop_all_kills_only_registered_bots_python_processes(stubborn_ssh):
+    """Every kill stop-all issues is scoped to a bot in the REGISTRY, and there is one per bot.
+
+    ⚠ The roster is READ from `bots._BOTS` rather than restated here. This test named
+    `mpc_sos_fade_demo` literally until 2026-08-09 and went red the moment a second bot was
+    registered — a roster stated twice is two rosters, and the one in the test is the one nobody
+    updates. What is being checked is the SCOPING rule, which is per-bot; which bots exist is the
+    registry's business.
+    """
     bots.stop_bots()
     kills = _kills(stubborn_ssh)
     assert kills, "stop-all issued no kill at all"
-    for cmd in kills:
-        _assert_scoped(cmd, "mpc_sos_fade_demo")
+    registered = [b.key for b in bots._BOTS]
+    assert len(kills) == len(registered)
+    for cmd, key in zip(kills, registered):
+        _assert_scoped(cmd, key)
 
 
 # ── asking first (2026-08-07) ────────────────────────────────────────────────

@@ -2,7 +2,8 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  BotAccountCapResult, BotAccountGroup, BotDeployedVersion, BotPromoteResult, BotSnapshot,
+  BotAccountAssignResult, BotAccountCapResult, BotAccountGroup, BotDeployedVersion,
+  BotPromoteResult, BotSnapshot,
 } from '@/types'
 
 export function useBotSnapshot() {
@@ -235,6 +236,34 @@ export function useSetAccountRiskCap() {
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })
     },
     onError: (err) => toast.error(`Risk cap: ${err}`),
+  })
+}
+
+/**
+ * Move one bot onto an account, or off one (`account: null` = the bench).
+ *
+ * ⚠ **It invalidates the SNAPSHOT as well as the accounts list**, and that is not belt-and-braces:
+ * the Accounts tab reads running state from the snapshot and joins it on `key`, so a bot that
+ * moved cards while the snapshot still described it under the old one would show a stale State
+ * beside a fresh account. The two queries have different sources and only one of them changed.
+ */
+export function useAssignBotAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ botKey, account }: { botKey: string; account: number | null }) =>
+      api.patch<BotAccountAssignResult>(`/bots/${encodeURIComponent(botKey)}/account`,
+        { account, deploy: true }),
+    onSuccess: (data) => {
+      // Never "moved and running" — a bot reads its account at startup, so the honest report is
+      // what was written plus what still has to happen. Same rule as the risk cap above.
+      toast.success(data.account === null
+        ? `${data.bot} taken off the account — it will not start until it is on one again`
+        : `${data.bot} added to account ${data.account} — start it to trade`)
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
+      qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
+      qc.invalidateQueries({ queryKey: ['bots', 'params'] })
+    },
+    onError: (err) => toast.error(`Move: ${err}`),
   })
 }
 

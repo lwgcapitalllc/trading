@@ -76,6 +76,10 @@ from credentials import env_name, get  # noqa: E402
 # ONE of them. Keep the three registries in step.
 BOTS = {
     "mpc_sos_fade_demo": "MPC SOS Fade",
+    # On the BENCH today (`account: null`). Registered anyway, and skipped per-pass by
+    # `_is_assigned` — see the same note in `monitor.py`: registering a bot only once somebody
+    # assigns it would let the Bots page arm a bot no switch is watching.
+    "mpc_bleg_demo":     "MPC B-LEG",
 }
 
 # A bot stamps its heartbeat every poll (~60s). `monitor.py` uses a 5-minute staleness floor
@@ -89,6 +93,25 @@ HEARTBEAT_STALE_SECS = 5 * 60
 FAIL_SUFFIX = "/fail"
 
 _TIMEOUT = 15
+
+
+def _is_assigned(bot_key: str) -> bool:
+    """Whether this bot has an account, i.e. whether anything should expect it to be running.
+
+    Thin wrapper over `bot_state.is_assigned` — the ONE definition of the bench, shared with the
+    boot coordinator and the process watchdog. Imported inside the function for the reason
+    `_bot_state` does the same: this module is loaded by tests off the VPS, where `algos/shared`
+    reaches the path only once something has put it there.
+
+    ⚠ **Unreadable answers True**, so a config that cannot be parsed keeps being watched. Of the
+    two wrong answers, a noisy alarm is recoverable and a switch that quietly stopped covering a
+    live trading bot is the failure this whole module exists to prevent.
+    """
+    try:
+        import bot_state as bs
+        return bs.is_assigned(bot_key)
+    except Exception:
+        return True
 
 
 def _bot_state() -> dict:
@@ -143,6 +166,12 @@ def check_health(now: float | None = None) -> list[str]:
 
     states = _bot_state()
     for key, name in BOTS.items():
+        # On the BENCH — no account, so nothing expects it to be running and its absence is not
+        # a fault. This switch's whole value is that its silence MEANS something, so a benched
+        # bot holding it permanently in the failed state would make the one alarm that fires
+        # when the box dies indistinguishable from a configuration choice.
+        if not _is_assigned(key):
+            continue
         if key not in running:
             problems.append(f"{name}: process is not running")
             continue

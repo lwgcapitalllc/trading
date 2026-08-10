@@ -3,11 +3,13 @@ import { useSearchParams } from 'react-router-dom'
 import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug, AlertTriangle, Layers } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  useBotSnapshot, useBotAccounts, useBotLog,
+  useBotSnapshot, useBotAccounts, useBotLog, useBotVersions,
   useBotStart, useBotStop, useBotRestart,
   useBotStartOne, useBotStopOne, useBotRestartOne,
 } from '@/hooks/useBots'
 import { StatCard } from '@/components/StatCard'
+import { VersionPill } from '@/components/VersionPill'
+import { BotStatusPill } from './BotStatusPill'
 import type { BotStatus, BotReview, JobStatus } from '@/types'
 import { AccountsTab } from './AccountsTab'
 import { ConfigureTab } from './ConfigureTab'
@@ -35,18 +37,6 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
-}
-
-function StatusPill({ status }: { status: string }) {
-  const isRunning = status === 'RUNNING'
-  const isError   = status === 'ERROR'
-  const cls   = isRunning ? 'bg-pos-muted text-pos-text' : 'bg-neg-muted text-neg-text'
-  const label = isRunning ? 'Running' : isError ? 'Error' : 'Stopped'
-  return (
-    <span className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill uppercase tracking-[0.4px] ${cls}`}>
-      {label}
-    </span>
-  )
 }
 
 /** This bot shares its trading account with at least one other bot.
@@ -330,6 +320,13 @@ export function Bots() {
   const allBots = snapshot?.bots ?? []
   const bots = allBots.filter(b => filter === 'all' || b.account_type === filter)
 
+  // Which version each bot is RUNNING. Shares `useBotVersion`'s cache entries, so this row, the
+  // Accounts tab and the Configure tab's banner are one fetch and cannot disagree — see
+  // `useBotVersions`. Keyed over ALL bots, not the filtered list, so switching the demo/live
+  // filter does not re-key the queries and re-fetch what is already in hand.
+  const versionQueries = useBotVersions(allBots.map(b => b.key))
+  const versionByKey = new Map(allBots.map((b, i) => [b.key, versionQueries[i]]))
+
   const running      = allBots.filter(b => b.status === 'RUNNING').length
   const total        = allBots.length
   const totalBalance = allBots.reduce((s, b) => s + (b.balance ?? 0), 0)
@@ -506,7 +503,7 @@ export function Bots() {
                   {/* "This bot" rather than "Actions": the fleet card below has buttons that
                       look the same and mean something else entirely, and the column header is
                       the only place the SCOPE of a row's buttons can be stated once. */}
-                  {['Bot', 'Status', 'Balance', 'Overall P&L', 'Account', 'Uptime', 'This bot', 'Logs'].map(h => (
+                  {['Bot', 'Status', 'Version', 'Balance', 'Overall P&L', 'Account', 'Uptime', 'This bot', 'Logs'].map(h => (
                     <th
                       key={h}
                       className="text-left text-[10px] font-semibold uppercase tracking-[0.7px] text-text-tertiary px-6 py-[10px] bg-bg-surface-2 border-b border-border-subtle whitespace-nowrap align-middle"
@@ -540,7 +537,7 @@ export function Bots() {
                         </td>
                         <td className="px-6 py-[11px] align-middle">
                           <div className="flex items-center gap-[6px]">
-                            <StatusPill status={bot.status} />
+                            <BotStatusPill status={bot.status} />
                             {stackedByKey.has(bot.key) && (
                               <StackedChip n={stackedByKey.get(bot.key)!.n}
                                            cap={stackedByKey.get(bot.key)!.cap} />
@@ -548,6 +545,10 @@ export function Bots() {
                             {bot.mt5_link === false && <NoLinkChip />}
                             {bot.review && <ReviewChip review={bot.review} />}
                           </div>
+                        </td>
+                        <td className="px-6 py-[11px] align-middle">
+                          <VersionPill version={versionByKey.get(bot.key)?.data}
+                                       loading={versionByKey.get(bot.key)?.isPending} />
                         </td>
                         <td className="px-6 py-[11px] font-mono text-small align-middle">
                           {bot.balance != null
@@ -633,7 +634,7 @@ export function Bots() {
                       {/* ── Expanded detail row ──────────────────── */}
                       {isExpanded && (
                         <tr className="bg-bg-sunken border-b border-border-subtle">
-                          <td colSpan={8} className="px-6 py-[14px]">
+                          <td colSpan={9} className="px-6 py-[14px]">
 
                             {/* ── Config strip ─────────────────────────────────────────
                                 Four stat tiles (Daily P&L / Weekly P&L / Trades Today /
@@ -671,7 +672,7 @@ export function Bots() {
                 })}
                 {bots.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-text-tertiary text-small">
+                    <td colSpan={9} className="text-center py-12 text-text-tertiary text-small">
                       No bots match filter.
                     </td>
                   </tr>
@@ -707,7 +708,7 @@ export function Bots() {
                 <p className="text-[10px] font-semibold uppercase tracking-[0.6px] text-text-tertiary mb-[6px]">Services</p>
                 <div className="flex items-center justify-between">
                   <span className="text-micro text-text-secondary">Telegram</span>
-                  <StatusPill status={snapshot.telegram.status} />
+                  <BotStatusPill status={snapshot.telegram.status} />
                 </div>
               </div>
             </div>

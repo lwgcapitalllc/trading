@@ -77,6 +77,18 @@ BOTS = {
         "log":          str(ALGOS_ROOT / "markets/fx/instances/mpc_sos_fade_demo"
                                          "/mpc_sos_fade_demo.log"),
     },
+    # Registered while it sits on the BENCH, and that pairing is deliberate. `check_bot` skips a
+    # bot with no account, so this costs nothing today — but registering it only when somebody
+    # assigns it would mean the Bots page could arm a bot the watchdog does not watch, with
+    # nothing to notice until it died unobserved. The registry is static and complete; whether a
+    # bot is EXPECTED to be running is read from its own config, every pass.
+    "mpc_bleg_demo": {
+        "name":         "MPC B-LEG",
+        "suppress_key": "mpc_bleg_demo",
+        "script":       "mpc_bleg_demo",
+        "log":          str(ALGOS_ROOT / "markets/fx/instances/mpc_bleg_demo"
+                                         "/mpc_bleg_demo.log"),
+    },
 }
 
 # How many times a bot is restarted before this gives up and asks for a human. Same shape as the
@@ -370,6 +382,13 @@ def main():
 
     # Trading bot checks
     for bot_key in BOTS:
+        # A bot on the BENCH (`account: null`) is not supposed to be running, so "the process is
+        # gone" is not a finding about it — it is the state somebody chose from the Bots page.
+        # Alerting and then RESTARTING it would be worse than noisy: this watchdog's response to
+        # an offline bot is to start it, and it would start a bot with no account to trade, every
+        # sixty seconds, for ever.
+        if not _bot_state.is_assigned(bot_key):
+            continue
         try:
             state[bot_key] = check_bot(bot_key, state, today)
         except Exception as e:

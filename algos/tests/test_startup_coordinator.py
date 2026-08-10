@@ -188,3 +188,65 @@ def test_the_baseline_still_suppresses_a_previous_runs_line_in_the_same_file(tmp
     assert sc.wait_for_connection(str(tmp_path / "bot.log"), "Connected | #",
                                   size_before, 1, "bot",
                                   baseline_path=baseline_path) is False
+
+
+# ── the bench: a bot with no account must not be launched ─────────────────────
+#
+# Added 2026-08-09. `runner.run()` refuses too, but it refuses AFTER the process has been
+# spawned — so without this the boot task and the watchdog would go on spawning a process every
+# 60 seconds for a bot somebody deliberately took off an account.
+
+
+def _instance(tmp_path, monkeypatch, key, body):
+    import json
+    d = tmp_path / "markets" / "fx" / "instances" / key
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "config.json").write_text(json.dumps(body))
+    monkeypatch.setattr(sc, "ALGOS", tmp_path)
+    return d
+
+
+def test_a_bot_with_an_account_is_assigned(tmp_path, monkeypatch):
+    _instance(tmp_path, monkeypatch, "b1", {"bot_key": "b1", "account": 700107749})
+    assert sc.bot_is_assigned("b1") is True
+
+
+def test_a_bot_with_a_null_account_is_NOT_assigned(tmp_path, monkeypatch):
+    """MUTATION: return True unconditionally -> red. This is the whole bench."""
+    _instance(tmp_path, monkeypatch, "b1", {"bot_key": "b1", "account": None})
+    assert sc.bot_is_assigned("b1") is False
+
+
+def test_a_missing_account_key_is_NOT_assigned(tmp_path, monkeypatch):
+    """A config with no `account` at all cannot trade one either. `live_config.load` refuses it
+    outright; here the honest answer is the same as the bench's."""
+    _instance(tmp_path, monkeypatch, "b1", {"bot_key": "b1"})
+    assert sc.bot_is_assigned("b1") is False
+
+
+def test_an_UNREADABLE_config_is_treated_as_assigned(tmp_path, monkeypatch):
+    """MUTATION: return False on the exception -> red.
+
+    The OPPOSITE default to a missing account, and deliberately so. A config this cannot parse is
+    a bot whose state is unknown, and every one of the runner's own checks is still in front of
+    it. Of the two wrong answers, "spawn a process that refuses and says why" is recoverable and
+    "quietly never start a live bot" is the failure with no symptom."""
+    d = _instance(tmp_path, monkeypatch, "b1", {"bot_key": "b1", "account": None})
+    (d / "config.json").write_text("{not json")
+    assert sc.bot_is_assigned("b1") is True
+
+
+def test_a_config_that_does_not_exist_is_treated_as_assigned(tmp_path, monkeypatch):
+    monkeypatch.setattr(sc, "ALGOS", tmp_path)
+    assert sc.bot_is_assigned("never_created") is True
+
+
+def test_every_bot_in_the_startup_sequence_has_an_instance_config():
+    """The two lists are edited separately and a bot listed here with no config would be
+    launched, fail on the missing file, and be reported `offline` by the boot task."""
+    from pathlib import Path
+    algos = Path(__file__).resolve().parent.parent
+    for entry in sc.STARTUP_SEQUENCE:
+        key = entry[0]
+        cfg = algos / "markets" / "fx" / "instances" / key / "config.json"
+        assert cfg.exists(), f"{key} is in STARTUP_SEQUENCE with no instance config at {cfg}"

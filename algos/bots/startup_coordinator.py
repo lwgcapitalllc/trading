@@ -16,6 +16,7 @@ launches the bot and exits immediately (bot survives via CREATE_NEW_PROCESS_GROU
 """
 
 import argparse
+import json
 import subprocess
 import sys
 import time
@@ -69,7 +70,41 @@ STARTUP_SEQUENCE = [
         "Connected | #",
         180,
     ),
+    (
+        "mpc_bleg_demo",
+        "MPC B-LEG",
+        str(ALGOS / "live" / "runner.py"),
+        ["--bot", "mpc_bleg_demo", "--live"],
+        str(ALGOS / "markets/fx/instances/mpc_bleg_demo/mpc_bleg_demo.log"),
+        "Connected | #",
+        180,
+    ),
 ]
+
+
+def bot_is_assigned(bot_key: str) -> bool:
+    """Whether this bot has an account to trade, read from its own instance config.
+
+    `account: null` is the BENCH — registered, configured, and deliberately not on any account
+    (see `algos/live/live_config.py`). Being listed in `STARTUP_SEQUENCE` says a bot CAN be
+    started; having an account says it SHOULD be. Keeping those separate is what lets a bot be
+    added to and removed from an account from the Bots page without editing this file — and
+    without a removed bot being started again by the next boot or the next watchdog pass, which
+    is the whole point: `runner.run()` refuses too, but it refuses after the process has been
+    spawned, so the coordinator would go on spawning one every 60 seconds for ever.
+
+    ⚠ **Unreadable answers True — the OPPOSITE default to the missing-account case**, and it is
+    deliberate. A config this cannot parse is a bot whose state is unknown, and the runner's own
+    checks (the version pin, the credentials lookup, this same guard) are all still in front of
+    it; refusing here would silently keep a bot off the box because of a transient read, which is
+    the failure that has no symptom. Of the two wrong answers, "spawn a process that refuses and
+    says why" is recoverable and "quietly never start a live bot" is not.
+    """
+    cfg = ALGOS / "markets" / "fx" / "instances" / bot_key / "config.json"
+    try:
+        return json.loads(cfg.read_text(encoding="utf-8")).get("account") is not None
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return True
 
 
 def clear_lock():
@@ -165,6 +200,14 @@ def main():
         bot_key, name, script, argv, log_path, *_ = entry
         print(f"Starting {name} (single-bot mode)...")
 
+        # This path is the command center's Start button, so REFUSING is right where the full
+        # sequence merely skips: somebody pressed a button and is owed an answer, and the answer
+        # is the action that fixes it. Exit 1 so the caller can tell this from a launch.
+        if not bot_is_assigned(bot_key):
+            print(f"  REFUSED {name} is not assigned to an account, so it has nothing to "
+                  f"trade. Add it to an account on Bots -> Accounts, then start it.")
+            sys.exit(1)
+
         # This is the path the command center's per-bot Start button drives, which makes it the
         # likeliest way anyone produces a duplicate — pressing Start on a bot that is already
         # running is a completely reasonable thing to do. `runner.already_running()` would
@@ -212,6 +255,14 @@ def main():
 
     for bot_key, name, script, argv, log_path, ready_str, timeout in STARTUP_SEQUENCE:
         print(f"Starting {name}...")
+
+        # On the bench — skip QUIETLY, and do not count it against `all_ok`. This is the boot
+        # sequence and the watchdog's recovery path, both of which run unattended: a bot nobody
+        # has assigned is a deliberate state, so treating it as a failed start would mark the
+        # whole boot unhealthy every time and train everyone to ignore that signal.
+        if not bot_is_assigned(bot_key):
+            print(f"  - Not assigned to an account — skipped")
+            continue
 
         # Already up? Leave it alone — the same rule the Telegram launch follows below, and
         # for a worse reason. Launching a second copy of a bot that is already trading gives

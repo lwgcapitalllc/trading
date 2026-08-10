@@ -38,28 +38,86 @@ from pathlib import Path
 # same C:/trading/algos it always was.
 ALGOS_ROOT = Path(__file__).resolve().parent.parent
 
-# Bot registries — the three of them are keyed by bot_key and must stay in step.
+# Bot registries — both are keyed by bot_key and must stay in step.
 #
-# ⚠ An unregistered key is a CRASH, not a no-op: set_started() does BOT_ACCOUNTS[key]
-# and write_bot() does BOT_INSTANCES[key], both unguarded. algos/live/runner.py calls
-# set_started() at the top of its loop, so a bot missing from here dies on startup with
-# a bare KeyError after connecting to MT5 and warming the engines.
+# ⚠ An unregistered key is a CRASH, not a no-op: write_bot() does BOT_INSTANCES[key],
+# unguarded. algos/live/runner.py calls set_started() at the top of its loop, so a bot
+# missing from here dies on startup with a bare KeyError after connecting to MT5 and
+# warming the engines.
 _INSTANCES = ALGOS_ROOT / "markets" / "fx" / "instances"
 
 # Instance directory for each bot key
 BOT_INSTANCES = {
     "mpc_sos_fade_demo": _INSTANCES / "mpc_sos_fade_demo",
-}
-
-# Account numbers for each bot
-BOT_ACCOUNTS = {
-    "mpc_sos_fade_demo": 700107749,
+    "mpc_bleg_demo":     _INSTANCES / "mpc_bleg_demo",
 }
 
 # Display names
 BOT_NAMES = {
     "mpc_sos_fade_demo": "MPC SOS Fade",
+    "mpc_bleg_demo":     "MPC B-LEG",
 }
+
+
+# 🔴 `BOT_ACCOUNTS` was DELETED 2026-08-09, and it was a second copy of a fact that can now
+# move. It hardcoded a login per bot and was stamped into `bot_state.json`, which is what the
+# command center's Bots page renders in its Account column — so the moment that page could MOVE
+# a bot between accounts (Bots → Accounts), the row would have gone on showing the old number
+# while the bot traded the new one. A page stating a value no code reads is this repo's
+# most-repeated defect; this is its sibling, a page stating a value that used to be true.
+#
+# The account is read from the bot's own instance config now — the same file the bot reads, so
+# there is one answer rather than two that can drift.
+
+
+def _instance_config(bot_key: str):
+    """A bot's instance config, or **`None` when it could not be read**.
+
+    ⚠ `None` rather than `{}`, and the distinction is the whole point: *this bot states no
+    account* and *we could not find out* need different answers from `is_assigned`, and an empty
+    dict makes them one value. That is this repo's standing rule — never let "no" and "cannot
+    ask" be the same value — and getting it wrong here would silently stop the dead-man's switch
+    watching a bot whose config had a typo in it.
+
+    It never raises: every caller is writing a STATUS record or deciding whether to watch, and
+    neither may be able to take a bot down. An unregistered key is included in the failure —
+    a bot in a watchdog's roster that `BOT_INSTANCES` does not know is a registry mismatch, which
+    is a fault to be loud about rather than a bot to quietly ignore.
+    """
+    try:
+        return json.loads(
+            (BOT_INSTANCES[bot_key] / "config.json").read_text(encoding="utf-8"))
+    except (KeyError, OSError, ValueError):
+        return None
+
+
+def read_account(bot_key: str):
+    """The login this bot trades, from its own config. `None` = on the bench, or unreadable.
+
+    ⚠ Those two are not distinguished here and deliberately so: both mean *this bot is not
+    trading an account right now*, which is the only thing the status record is claiming. The
+    Accounts tab is where the difference matters and it reads the configs directly.
+    """
+    return (_instance_config(bot_key) or {}).get("account")
+
+
+def is_assigned(bot_key: str) -> bool:
+    """Whether this bot has an account, i.e. whether anything should expect it to be running.
+
+    **This is the one definition of the BENCH, shared by everything that watches a bot** — the
+    boot coordinator, the process watchdog and the dead-man's switch. Three copies of "does it
+    have an account" is three chances for one of them to alarm about a bot somebody deliberately
+    took off an account, which is how an alert channel gets muted.
+
+    ⚠ **Unreadable answers True**, the same call `startup_coordinator.bot_is_assigned` makes: a
+    config that cannot be parsed is a bot whose state is UNKNOWN, and of the two wrong answers,
+    "watch a bot that is not running and say so" is noisy while "quietly stop watching a live
+    trading bot" is the failure with no symptom.
+    """
+    raw = _instance_config(bot_key)
+    if raw is None:
+        return True                      # could not ask — keep watching, and be noisy about it
+    return raw.get("account") is not None
 
 
 # ⚠ `BOT_THRESHOLDS` and `shared/thresholds.json` were deleted 2026-08-05 with the P&L
@@ -121,7 +179,7 @@ def set_started(bot_key: str):
     write_bot(bot_key, {
         "status":  "running",
         "started": time.time(),
-        "account": BOT_ACCOUNTS[bot_key],
+        "account": read_account(bot_key),
     })
 
 
@@ -162,7 +220,7 @@ def _default_state(bot_key: str) -> dict:
         "name":           BOT_NAMES.get(bot_key, bot_key),
         "status":         "stopped",
         "started":        0,
-        "account":        BOT_ACCOUNTS.get(bot_key, ""),
+        "account":        read_account(bot_key),
         # None, not 0.0 — a bot that has never run has NO balance and NO P&L, and a zero
         # here is the claim "flat account". `live/runner.py` writes both on every poll.
         "balance":        None,

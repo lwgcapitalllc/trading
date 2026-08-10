@@ -136,6 +136,13 @@ def test_every_event_written_in_algos_live_is_classified():
         # on THAT setup" is the decision stream's question. Same side of the line as `halted`,
         # which it routes through.
         "fleet_halt",
+        # The bot has no account, so it declined to start. HEALTH by the subject test: it is why
+        # this bot is not trading AT ALL — the same side of the line as `halted` — where the
+        # decision stream answers "why no trade on THAT setup". It also has to be written rather
+        # than merely logged, because the run ends immediately afterwards and the invariant that
+        # makes silence meaningful ("no shutdown record ⇒ killed or crashed") only holds if every
+        # deliberate ending leaves one.
+        "not_assigned",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (

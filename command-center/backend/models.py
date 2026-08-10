@@ -466,12 +466,20 @@ class BotAccountGroup(BaseModel):
     """
     account: Optional[int] = None
     server: str = ""
+    # "account" | "bench" | "unknown". The last two both have no account NUMBER and are not the
+    # same thing: `bench` is a bot somebody deliberately took off an account, `unknown` is a
+    # config that could not be read. Collapsing them puts a chosen state and a fault under one
+    # heading with one set of controls.
+    kind: str = "account"
     bots: list[BotAccountBot] = []
     risk_cap_pct: Optional[float] = None
     cap_agrees: bool = True
     cap_unknown: bool = False      # at least one config unreadable, so the cap cannot be confirmed
-    stacked: bool = False          # more than one bot on this balance
+    stacked: bool = False          # more than one bot on this BALANCE (never true off an account)
     cap_takes_turns: bool = False  # the cap is at or below the largest per-trade risk here
+    # Bots here sharing an order tag. Empty is healthy, and the page shows the fact only when it
+    # is true rather than printing a raw magic number nobody can interpret.
+    magic_clash: list[str] = []
 
 
 class BotAccountCapUpdate(BaseModel):
@@ -497,6 +505,23 @@ class BotAccountCapUpdate(BaseModel):
         if v > 100:
             raise ValueError("risk_cap_pct is a percentage of the live balance and cannot exceed 100")
         return v
+
+
+class BotAccountAssign(BaseModel):
+    """Put one bot ON an account, or take it OFF one.
+
+    `account` of `None` is the BENCH — registered, configured, trading nothing — and it is the
+    whole reason removal is expressible at all. There is no separate remove endpoint, for
+    `BotAccountCapUpdate`'s reason: one field, one meaning, and the absent value keeps saying the
+    same thing wherever it appears.
+
+    ⚠ **This writes more than `account`** (`bot_accounts.assign_plan`): joining an account also
+    adopts its server, its terminal path and its risk cap, because a bot that kept its own cap
+    would take every bot already on that account off the box at their next restart. See that
+    function for why each field is there.
+    """
+    account: Optional[int] = None
+    deploy: bool = True            # commit + push + VPS pull; False writes locally only
 
 
 # The roles `algos/notifications/telegram_bot.py` keys `ROLE_COMMANDS` on. A value outside

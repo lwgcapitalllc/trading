@@ -165,6 +165,65 @@ def test_the_refusal_names_both_bots_and_both_values(tmp_path, monkeypatch):
     assert "b1" in msg and "b2" in msg and "10.0%" in msg and "20.0%" in msg
 
 
+# ── the BENCH: account is null, and both per-account guards must stand down ───
+#
+# Added 2026-08-09 so the command center can take a bot OFF an account. `None == None`, so
+# without an exemption every one of these guards fires between two bots that are not trading.
+
+
+def test_a_benched_bot_loads_with_no_account(tmp_path, monkeypatch):
+    """`account: null` is a supported state, not a malformed file — it is what "remove this bot
+    from the account" writes, and the bot has to be loadable so it can be promoted and read."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account=None)
+    assert live_config.load("b1").account is None
+
+
+def test_the_account_KEY_is_still_required(tmp_path, monkeypatch):
+    """MUTATION: drop "account" from `load`'s required list -> red.
+
+    Deliberately unassigned and somebody forgot the account are different mistakes with
+    different fixes, and only the second should refuse to load."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    body = _write_cfg(tmp_path)
+    del body["account"]
+    (tmp_path / "b1" / "config.json").write_text(json.dumps(body))
+    with pytest.raises(ValueError, match="missing required key"):
+        live_config.load("b1")
+
+
+def test_two_benched_bots_with_different_caps_both_load(tmp_path, monkeypatch):
+    """MUTATION: remove `if account is None: return` from `_assert_account_cap_agrees` -> red.
+
+    There is no budget for them to disagree about. Without the exemption a benched bot could be
+    blocked from loading by ANOTHER benched bot's leftover cap — and worse, assigning it to a
+    capped account would be refused by whichever unrelated benched sibling sorted first."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account=None, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2", account=None, account_risk_cap_pct=20.0)
+    assert live_config.load("b1").account_risk_cap_pct == 10.0
+
+
+def test_two_benched_bots_may_share_a_magic(tmp_path, monkeypatch):
+    """MUTATION: remove `if account is None: return` from `_assert_magic_is_unique` -> red.
+
+    The rule is about two bots reading one terminal's order book; a bot on no account reads
+    nothing. It re-arms the moment either is assigned, which is when it matters."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account=None, magic=880226)
+    _write_sibling(tmp_path, "b2", account=None, magic=880226)
+    assert live_config.load("b1").magic == 880226
+
+
+def test_a_benched_sibling_does_not_disturb_a_bot_that_IS_on_an_account(tmp_path, monkeypatch):
+    """The live case this protects: benching one bot must not take the account's remaining bot
+    off the box at its next restart."""
+    monkeypatch.setattr(live_config, "_INSTANCES", tmp_path)
+    _write_cfg(tmp_path, account_risk_cap_pct=10.0)
+    _write_sibling(tmp_path, "b2", account=None, account_risk_cap_pct=None, magic=880226)
+    assert live_config.load("b1").account_risk_cap_pct == 10.0
+
+
 def test_a_different_account_may_carry_a_different_cap(tmp_path, monkeypatch):
     """The ceiling is per ACCOUNT — the broker scopes exposure by login — so two accounts with
     two caps is the ordinary case, not a clash."""

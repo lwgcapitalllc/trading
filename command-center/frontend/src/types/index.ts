@@ -384,14 +384,30 @@ export interface BotAccountBot {
 export interface BotAccountGroup {
   account: number | null
   server: string
+  /**
+   * `account` — a real login.
+   * `bench`   — bots deliberately on NO account (`account: null`); what removing one writes.
+   * `unknown` — bots whose config could not be READ.
+   *
+   * The last two both lack an account number and are NOT the same thing: one is a state somebody
+   * chose, the other is a fault. Rendering them under one heading gives a broken config the same
+   * controls as a resting bot.
+   */
+  kind: 'account' | 'bench' | 'unknown'
   bots: BotAccountBot[]
   /** Only meaningful when `cap_agrees`. Never the max or the min of a disagreement. */
   risk_cap_pct: number | null
   cap_agrees: boolean
   cap_unknown: boolean
+  /** More than one bot on this BALANCE. Never true off an account — two benched bots share
+   *  nothing, and a Stacked chip on a bot that is not trading is a false alarm about risk. */
   stacked: boolean
   /** The cap is at or below the largest per-trade risk here, so the bots take turns. */
   cap_takes_turns: boolean
+  /** Bots here sharing an order tag, which would make each read the other's orders as its own.
+   *  Empty is the healthy answer, and the page shows the fact only when it is true — which is
+   *  why there is no raw `magic` column any more. */
+  magic_clash: string[]
 }
 
 export interface BotAccountCapResult {
@@ -402,6 +418,20 @@ export interface BotAccountCapResult {
   /** Always true when anything was written — the cap only applies at a bot's startup. */
   restart_required: boolean
   bots: string[]
+  detail?: string
+}
+
+/** The result of moving one bot onto an account, or off one.
+ *
+ * `account` is `null` for the bench. `restart_required` is always true when anything was
+ * written — a bot reads its account at startup, so nothing here is in effect until it starts. */
+export interface BotAccountAssignResult {
+  status: string
+  changed: boolean
+  deployed?: boolean
+  bot: string
+  account: number | null
+  restart_required: boolean
   detail?: string
 }
 

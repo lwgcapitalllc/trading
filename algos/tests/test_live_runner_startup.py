@@ -133,3 +133,44 @@ def test_a_version_mismatch_is_recorded_and_announced(tmp_path, monkeypatch):
     rows = [json.loads(l) for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
             for l in f.read_text().splitlines()]
     assert any(row.get("event") == "version_mismatch" for row in rows)
+
+
+# ── the bench: a bot with no account must not try to trade ────────────────────
+#
+# Added 2026-08-09. `account: null` is what removing a bot from an account on the Bots page
+# writes, so the runner has to make that state mean something rather than fail obscurely on a
+# credentials lookup for account `None`.
+
+
+def test_a_bot_with_no_account_refuses_before_anything_connects(tmp_path, monkeypatch):
+    """MUTATION: delete the `cfg.account is None` block from `_run` -> red.
+
+    Checked ahead of the pin and the process guard, because both of those describe a bot that is
+    trying to trade. Refusing later would report a version problem or a credentials problem for a
+    bot whose actual state is that nobody has assigned it."""
+    cfg = _cfg(tmp_path, monkeypatch, account=None)
+    r = runner.LiveRunner(cfg)
+    monkeypatch.setattr(r, "connect", lambda: pytest.fail("connect() must not be reached"))
+    monkeypatch.setattr(r, "_notify_health", lambda text: pytest.fail("no alert for a bench"))
+    assert r.run() == 0
+
+
+def test_being_on_the_bench_is_an_ORDINARY_ending_not_a_fault(tmp_path, monkeypatch):
+    """Exit 0 and NO Telegram alert. A benched bot is a deliberate configuration, and the boot
+    task plus the watchdog would otherwise raise the same alarm on every attempt for as long as
+    it stayed benched — which is how a channel gets muted."""
+    cfg = _cfg(tmp_path, monkeypatch, account=None)
+    r = runner.LiveRunner(cfg)
+    sent = []
+    monkeypatch.setattr(r, "connect", lambda: pytest.fail("unreachable"))
+    monkeypatch.setattr(r, "_notify_health", sent.append)
+    assert r.run() == 0
+    assert sent == []
+
+    rows = [json.loads(l) for f in (cfg.instance_dir / "ledger").glob("*.jsonl")
+            for l in f.read_text().splitlines()]
+    # It still leaves a trace: "no shutdown record" must keep meaning "killed or crashed", so a
+    # deliberate ending has to write one. Both records are the evidence that it ended on purpose.
+    assert any(row.get("event") == "not_assigned" for row in rows)
+    assert any(row.get("event") == "shutdown"
+               and row.get("reason") == "not assigned to an account" for row in rows)

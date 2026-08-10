@@ -40,7 +40,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotAccountBot, BotAccountCapUpdate, BotAccountGroup, BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from models import BotAccountAssign, BotAccountBot, BotAccountCapUpdate, BotAccountGroup, BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
 from services import bot_accounts, bot_params, bot_versions, lab_db
 from services import notify
 from services.alert_format import alert
@@ -129,6 +129,19 @@ class BotReg:
 _BOTS: list[BotReg] = [
     BotReg(task="BOT_MPC_SOS_FADE", key="mpc_sos_fade_demo",
            display="MPC SOS Fade", account_type="demo"),
+    # ON THE BENCH (`account: null` in its instance config), and registered here anyway — that
+    # pairing is the point. Registration is what makes a bot ADDRESSABLE: it is what puts it on
+    # the Accounts tab so it can be added to an account from the browser, and it is what makes
+    # its version, its params and its state readable. Whether it TRADES is a different question,
+    # answered by its account, and `startup_coordinator` skips a bot that has none.
+    #
+    # ⚠ It reads STOPPED on the Monitor tab and that is correct rather than a gap: it is not
+    # running, nothing has started it, and nothing will until somebody assigns it.
+    # ⚠ It is deliberately NOT in `algos/notifications/monitor.py` or `deadman.py`. Those alarm
+    # on a bot that is not running, which is this bot's normal state — registering it there would
+    # ring the one alarm that has to stay quiet until it means something.
+    BotReg(task="BOT_MPC_BLEG", key="mpc_bleg_demo",
+           display="MPC B-LEG", account_type="demo"),
 ]
 
 # ── Derived views. Never edit one of these — add a BotReg above. ──────────────
@@ -781,12 +794,14 @@ def list_bot_accounts():
         BotAccountGroup(
             account=g.account,
             server=g.server,
+            kind=g.kind,
             bots=[BotAccountBot(**vars(b)) for b in g.bots],
             risk_cap_pct=g.risk_cap_pct,
             cap_agrees=g.cap_agrees,
             cap_unknown=g.cap_unknown,
             stacked=g.stacked,
             cap_takes_turns=g.cap_takes_turns,
+            magic_clash=g.magic_clash,
         )
         for g in _account_groups()
     ]
@@ -858,6 +873,107 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
                            "Restart them — the cap only applies at startup."))
     return {"status": "ok", "changed": True, "deployed": True, "updated": targets,
             "restart_required": True, "bots": bot_keys, "detail": changed, "output": out}
+
+
+@router.patch("/{bot_name}/account")
+def set_bot_account(bot_name: str, update: BotAccountAssign):
+    """Put this bot ON an account, or take it OFF one.
+
+    **This is add-and-remove for a live stack, and it is a config write rather than a membership
+    record** — the same reasoning `services/bot_accounts.py` opens with. Two bots naming one
+    account ARE sharing a balance, so "add B-LEG to this account" can only mean one thing: write
+    that account into B-LEG's config. There is nothing else to update, and nothing that can
+    disagree with it afterwards.
+
+    ⚠ **It writes FOUR fields, not one** — account, server, terminal path, risk cap — and
+    `assign_plan` explains why each is load-bearing. The cap is the one that bites: a bot joining
+    an account while stating a different cap does not merely misconfigure itself, it takes every
+    bot already on that account off the box at their next restart, because
+    `live_config._assert_account_cap_agrees` refuses the whole account.
+
+    ⚠ **A RUNNING bot is refused (409).** Its config was read at startup, so the file change
+    cannot reach the live process — the page would show it under a new account while it went on
+    trading the old one, which is a screen lying about a live position rather than a stale
+    setting. Stop it, move it, start it.
+
+    ⚠ **It never reports the move as in effect**, for the cap endpoint's reason: `account` is not
+    in `live_config.RUNTIME_RELOADABLE` and could not be, so the response says `restart_required`
+    and the bot has to be started before any of this is true on the box.
+    """
+    _, bot_key = _resolve_bot(bot_name)
+
+    if _bot_is_running(bot_key):
+        raise HTTPException(
+            status_code=409,
+            detail=f"{bot_key} is running, so its account cannot be changed — it read its config "
+                   f"at startup and would go on trading the old account while this page showed "
+                   f"the new one. Stop it first, then move it.")
+
+    groups = _account_groups()
+    current = next((g for g in groups if any(b.key == bot_key for b in g.bots)), None)
+    if current is not None and current.kind == "unknown":
+        raise HTTPException(
+            status_code=409,
+            detail=f"{bot_key}'s config could not be read, so there is nothing safe to write "
+                   f"over. Fix the file first.")
+
+    target = None
+    if update.account is not None:
+        target = next((g for g in groups
+                       if g.kind == "account" and g.account == update.account), None)
+        if target is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No registered bot trades account {update.account}, so there is no "
+                       f"account here to join — its server, terminal and risk cap are read off "
+                       f"the bots already on it. Assign the first bot to an account by editing "
+                       f"its instance config.")
+
+    try:
+        plan = bot_accounts.assign_plan(bot_key, target)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    data = _read_instance_config(bot_key)
+    if plan.adopt_terminal_from:
+        # Read off a PEER's config rather than trusting this bot's own: its `mt5_path` describes
+        # wherever it used to be, and a terminal that is not logged into the account the bot now
+        # claims is a connection refusal at startup with a message about credentials.
+        peer = _read_instance_config(plan.adopt_terminal_from)
+        if peer.get("mt5_path"):
+            data["mt5_path"] = peer["mt5_path"]
+    was = data.get("account")
+    data.update(plan.fields)
+    _write_instance_config(bot_key, data)
+
+    where = "the bench" if update.account is None else f"account {update.account}"
+    changed = f"{bot_key} → {where} (was {was if was is not None else 'the bench'})"
+
+    if not update.deploy:
+        return {"status": "ok", "changed": True, "deployed": False, "bot": bot_key,
+                "account": update.account, "restart_required": True, "detail": changed}
+
+    path = _BOT_INSTANCE_MAP[bot_key]["path"]
+    try:
+        _git_commit_push(path, f"bots: {changed} [command center]")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500,
+                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+    try:
+        out = _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+    _notify_telegram(alert(
+        "⚙️", "BOT MOVED", bot_key,
+        f"Now on {where}."
+        + ("" if update.account is None
+           else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."),
+        "It is not trading it yet — start the bot to apply."
+        if update.account is not None else "It will not start until it is on an account again."))
+    return {"status": "ok", "changed": True, "deployed": True, "bot": bot_key,
+            "account": update.account, "restart_required": True, "detail": changed,
+            "output": out}
 
 
 @router.get("/{bot_name}/log", response_class=PlainTextResponse)

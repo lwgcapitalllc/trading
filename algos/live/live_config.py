@@ -54,7 +54,21 @@ class LiveConfig:
 
     # ── which MT5 ───────────────────────────────────────────────────────────
     mt5_path: str                     # FULL path to terminal64.exe — this is "which instance"
-    account: int                      # login number; BotMT5.connect refuses a mismatch
+    # The login this bot trades. `BotMT5.connect` refuses a mismatch.
+    #
+    # ⚠ **`None` means ON THE BENCH: registered, configured, and deliberately not on any
+    # account.** It is what "remove this bot from the account" writes, and it has to be a real
+    # state rather than a deletion — a bot's magic, its params and its promoted version are all
+    # facts worth keeping while it is not trading, and re-adding it later must give back the same
+    # bot rather than a new one that happens to share a name. The KEY is still required in the
+    # file (see `load`), so *deliberately unassigned* and *somebody forgot the account* stay
+    # different things.
+    #
+    # ⚠ **An unassigned bot cannot START, and three separate places enforce it** rather than one:
+    # `runner.run()` refuses, `startup_coordinator` skips it in the full boot sequence and refuses
+    # in single-bot mode. Two of those are recovery paths that re-issue a start on their own, so a
+    # guard in the runner alone would leave the bench meaning "until the watchdog notices".
+    account: Optional[int]
     server: str
     symbol: str                       # the BROKER's symbol string (XAUUSD, XAUUSD.s, …)
     magic: int                        # separates this bot's orders from every other order
@@ -230,9 +244,17 @@ def _assert_magic_is_unique(bot_key: str, account, magic) -> None:
     must not stop a healthy bot from starting; the cost of skipping is that a clash hiding inside
     a broken file is missed, and a broken file fails loudly on its own next start anyway.
 
+    ⚠ **A bot on the BENCH (`account is None`) is exempt, and so is a benched sibling.** The rule
+    is about two bots reading one terminal's order book, and a bot on no account reads nothing. It
+    is not a technicality: `None == None`, so without this the guard would fire between two
+    unassigned bots — refusing to load a bot that is not trading, because of another bot that is
+    not trading either. It re-arms the moment either is assigned, which is the moment it matters.
+
     Checked at LOAD rather than in a linter, because the file is edited by hand and by the Bots
     page, and the only moment that reliably precedes trading is this one.
     """
+    if account is None:
+        return
     for other in sorted(_INSTANCES.glob("*/config.json")):
         try:
             raw = json.loads(other.read_text(encoding="utf-8"))
@@ -273,7 +295,16 @@ def _assert_account_cap_agrees(bot_key: str, account, cap) -> None:
 
     ⚠ **Per ACCOUNT, like the magic guard**, and an unreadable sibling is SKIPPED for the same
     reason: a half-written instance directory must not stop a healthy bot from starting.
+
+    ⚠ **A bot on the BENCH (`account is None`) is exempt, for the magic guard's reason and one
+    more of its own.** There is no budget to disagree about — but also, `null` is the natural cap
+    for a bot nobody has decided about yet, so without this exemption two benched bots with
+    different caps would refuse to load, and assigning a benched bot to a capped account would be
+    blocked by whichever OTHER benched bot happened to sort first. The Bots page adopts the
+    account's cap as part of the assignment precisely so the guard is satisfied on arrival.
     """
+    if account is None:
+        return
     for other in sorted(_INSTANCES.glob("*/config.json")):
         try:
             raw = json.loads(other.read_text(encoding="utf-8"))
