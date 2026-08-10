@@ -2396,3 +2396,152 @@ with it ON would be a TradingView finding, not a validated one.
   latch — 148 trades both ways — so the boundary is not a live question here. It was NOT identical
   under the raw-price definition (145 vs 149), which is one more reason to keep the latch.
 - **`mpc_bleg`** is structurally unaffected — its trigger is the band tap and it never reads an FVG.
+
+---
+
+# Run 15 — 2026-08-09 — **ORDER BLOCKS. Seven angles, two timeframes, all null. THREAD CLOSED.**
+
+Aaron: *"I'm so convinced that there's something there with order blocks, and I can't figure out
+what it is."*
+
+This is the whole record of what was tried, so nobody re-runs it. `docs/MPC_OB_FADE_SPEC.md` —
+which described a separate `mpc_ob_fade` fork — was **DELETED** in the same commit, because the
+measurement below says that bot should not be built and a spec left lying around is a signpost
+pointing the next reader at work the data already closed.
+
+## The seven angles
+
+All measured over 155,531 M15 bars (2020-01-01 → 2026-08-03), against the shipped FVG rule's
+**159 trades / +142.18R**.
+
+| # | Angle | Result |
+|---|---|---|
+| 1 | `exec_poi_source = "Order block"` — blocks INSTEAD of gaps | 267 trades / +75.93R |
+| 2 | `"Either"` — blocks OR gaps, pooled | 292 / +85.77R (worst) |
+| 3 | `"FVG first"` — gaps ranked first, blocks as fallback | 276 / +102.90R |
+| 4 | `"Order block (no FVG)"` — a block leg with its OWN slot, stacked | leg solo 133 / **+0.02R** / maxDD 21.81R; the pair posts +142.19R against the FVG leg's own +142.18R |
+| 5 | Block PRESENCE as a filter on the existing book | mildly ANTI-predictive (no-block +1.847R/trade vs +0.595R with) |
+| 6 | `exec_ob_deepen` — re-price an entry onto a deeper block | 102 / +73.41R / maxDD 15.20R |
+| 7 | **Gap-on-block as a QUALITY split of the existing book** | no separation — see below |
+
+## Why angles 1-6 could never have worked, and it is not about order blocks
+
+Every one of them asks *where do I put my limit order*, so every one lets a block ARM a setup the
+gap rule never armed. With ONE position slot that is not an addition, it is a **queue** — the Run
+12 lesson arriving through a different door.
+
+**`"Either"`'s 178 ADDED trades were +33.08R POSITIVE and the book still came out worst**, because
+it displaced 45 real ones. The `"FVG first"` decomposition is the same story in more detail:
+UNTOUCHED 130 (+110.07R) · REPRICED 0 · **DISPLACED 29 (+32.11R gone)** · NEW 146 (−7.16R, i.e.
+−0.049R each) = **−39.27R**, and ONE displaced trade (2025-10-21, +16.49R) is 42% of the damage.
+
+⚠ So **"the added block trades lose money" is the WRONG summary and must not be recorded as the
+finding.** They roughly break even. What loses is what they push out of the way.
+
+⚠ Angle 6 failed for a separate, geometric reason worth keeping: **TP1 is a fib ABOVE a long, so a
+deeper entry is FURTHER from it** — TP1 hit rate 65.4% → 47.1%, scratches 44 → 15, and a median
+79% tighter stop sits inside ordinary bar noise so the average loss went **−0.98R → −1.37R**. 57
+trades never filled at all, giving up +44.61R, and the freed slot produced **ZERO** replacements.
+
+## Angle 7 — the only order-block question the position slot cannot punish
+
+`backtest/tools/ob_confluence.py`. It splits the **already-taken** book by whether the gap each
+limit actually rested on had a same-direction order block under it. It adds no trade, removes
+none and moves no entry price, so displacement is structurally impossible. It is also the shape
+Aaron's standing requirement asks for — *"I wanna be able to tune how much risk they can take
+because some trades are just way higher quality"* — because a quality split is a SIZING lever.
+
+Control reproduced to the cent (159 trades / +142.18R) with the block engine forced on.
+
+| blocks read from | on-block | avg R | plain gap | avg R | difference |
+|---|---|---|---|---|---|
+| **15m** | 81 | +0.763R | 78 | +1.031R | −0.268R = **0.47x** its own standard error |
+| **4H** | 16 | +0.980R | 143 | +0.885R | +0.095R = **0.08x** the noise |
+
+**Neither separates anything.** The undirected reading at 15m is *byte-identical* (same 81/78
+split, same R), so whether the block points the same way as the gap decides nothing either. And
+the 4H on-block total is **one trade**: strip its best (+16.49R) and the other 15 make **−0.81R**.
+
+## 🔴 The tidy explanation for angles 1-6 was WRONG, and angle 7 at 4H is what refuted it
+
+The story offered after the first six was: an order block is **wallpaper** — a live one exists on
+**99.9% of all bars** — so it cannot separate anything because it is present on nearly everything.
+
+That story predicts a **rarer** block separates better. It does not. **4H blocks tag 16 of the 159
+trades where 15m blocks tag 81 — five times rarer at the entry — and the separation gets WORSE.**
+
+**Scarcity was never the problem.** The statement the data supports is duller and narrower:
+**an order block carries no information about how these trades turn out.**
+
+⚠ **Standing lesson, and it is about explanations rather than order blocks: six null results were
+given one story that fitted every number, and the seventh test refuted the story while agreeing
+with all of them. A story that fits the evidence is not evidence — run the test that could break
+it.** Here that test was one flag.
+
+## How the tag is kept honest
+
+- **Pinned to `Execution._entry_edges`.** Naming the winning gap means re-running the selection,
+  and a second implementation of a rule is this repo's signature defect — so the replica must
+  reproduce the real edge **to the float on every bar** and REFUSES the run otherwise. Zero
+  mismatches over 155,531 bars.
+- **The tag is taken at PLACEMENT, from the winning gap, AFTER the gates.** Not "was a block
+  nearby". A gap only becomes the entry if it cleared the band, the deep-only gate and the
+  pre-zone gate.
+- **Higher-timeframe blocks obey a hard no-lookahead rule** — a snapshot is admitted only once its
+  own coarse bar has CLOSED. Get that wrong and the tool manufactures an edge out of nothing.
+- **Non-vacuity probes refuse rather than print a confident 0%** — no bar carrying a block, or no
+  candidate ever overlapping one, is an error, not a result.
+
+---
+
+# Run 16 — 2026-08-09 — **THE TIMEFRAME SWEEP. 30m looked like the one win for an hour.**
+
+Asked in the same session: *"does this mean you gonna run the strategy... on, like, thirty
+minutes, one hour, four hour time frames?"* `backtest/tools/tf_sweep.py`, same 6.5 years,
+shipped defaults, costs off (matching every baseline figure here).
+
+| tf | bars | trades | total R | avg R | ± se | maxDD R | win% |
+|---|---|---|---|---|---|---|---|
+| **15m** | 155,531 | 159 | +142.18R | +0.894 | 0.284 | 5.61 | 39.6% |
+| **30m** | 77,784 | 106 | +94.70R | +0.893 | 0.405 | 10.07 | 34.0% |
+| 1H | 38,914 | 37 | −6.61R | −0.179 | 0.137 | 8.43 | 24.3% |
+| 4H | 10,180 | 9 | −3.99R | −0.443 | 0.163 | 3.99 | 0.0% |
+
+The 15m row is the control and reproduces the documented baseline to the cent. **Above 30m the
+edge does not weaken, it INVERTS.** The 30m row posts the same average per trade as the shipped
+bot to three decimals, which is why it needed refuting rather than celebrating.
+
+## 🔴 The 30m is NOT a second strategy — it is this bot through a coarser lens
+
+`backtest/tools/tf_overlap.py`, with the A+/B-LEG pair as the yardstick:
+
+| | 15m vs 30m | A+ vs B-LEG |
+|---|---|---|
+| shared in-market time | **37.0%** of A's | 0.5% |
+| of that, SAME direction | **95%** (1,242 of 1,305 hrs) | 1 bar of 49 |
+| same-direction entries within 4 hrs | **39** | 0 |
+| closest pair | **0 minutes apart** | — |
+| monthly R correlation | **+0.613** | +0.172 |
+
+Stacking it concentrates risk on the same swings instead of spreading it, and it would sit on the
+account risk cap constantly rather than rarely. ⚠ **It is no good as a REPLACEMENT either**: same
+average R, fewer trades, drawdown **5.61R → 10.07R**.
+
+⚠ **`overlap_audit.py` structurally could not have answered this and would have looked like it
+could** — it works in bar INDICES over ONE frame, and an index is a different amount of time on
+each side of a timeframe pair. `tf_overlap.py` measures on the trades' own `entry_ms`/`exit_ms`
+clock instead. **Before comparing two runs, check they share an axis; a bar index is not one
+whenever the bar size can differ.**
+
+## What was NOT measured
+
+- **Daily order blocks.** `--block-tf 1440` failed — D1 is not cached and the MT5 terminal was not
+  answering. Resampling M15 locally would need the 18:00-NY trading-day boundary, not UTC
+  midnight, or it is a different daily bar from the broker's.
+- **Blocks as a TARGET or an exit**, rather than an entry. Every angle above asks where to get in.
+- **Block QUALITY gates** (displacement size, ATR height, unmitigated, age). All seven angles treat
+  every block as equal. ⚠ Given angle 7's result at two timeframes, the prior on this is poor.
+- **The 30m variant with its own tuning.** It was run at the 15m bot's shipped defaults. The
+  overlap result makes this moot for stacking, so it is recorded rather than recommended.
+- **Costs.** Both runs are free-book, matching every baseline here. A higher timeframe holds longer
+  and pays more swap, so charge before quoting a 30m figure anywhere else.
