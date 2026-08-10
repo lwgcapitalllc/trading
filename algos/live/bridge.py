@@ -49,7 +49,16 @@ if str(_SHARED) not in sys.path:
 
 import alerts        # noqa: E402
 import notify        # noqa: E402  (for the TRADE/HEALTH routing kinds only)
-from alert_format import alert  # noqa: E402
+
+# A sibling module, imported the same flat way the runner imports this one — `algos/live/` is put
+# on the path by whoever loads the package, and a test that imports the bridge alone must not have
+# to know that either.
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+import position_state  # noqa: E402
+from alert_format import alert, joined  # noqa: E402
 from order_sizing import (  # noqa: E402
     DEFAULT_MARGIN_SAFETY_PCT, SizedOrder, plan_order,
 )
@@ -106,8 +115,19 @@ class OrderBridge:
     def __init__(self, bot_mt5, execution, ledger, log, *,
                  notify=None, dry_run: bool = True,
                  margin_safety_pct: float = DEFAULT_MARGIN_SAFETY_PCT,
-                 account_risk_cap_pct: Optional[float] = None) -> None:
+                 account_risk_cap_pct: Optional[float] = None,
+                 instance_dir: Optional[Path] = None) -> None:
         self._mt5 = bot_mt5
+        # Where `position.json` lives. `None` disables the whole restore path — the bridge then
+        # behaves exactly as it did before it existed, which is what every offline test that does
+        # not care about restarts gets, and what a caller with no instance directory deserves.
+        self._instance_dir = instance_dir
+        # Set by `adopt_broker_state` when it has VERIFIED a recorded position against the broker,
+        # and consumed by `apply_restore` after the warm-up. It is held rather than applied on the
+        # spot because the warm-up replays 5,000 bars through this same emulator and would
+        # overwrite anything written before it — see `apply_restore`.
+        self._pending_restore: Optional[dict] = None
+        self._restored = False
         self._ex = execution
         self._ledger = ledger
         self._log = log
@@ -172,6 +192,13 @@ class OrderBridge:
         This is why a bot's first live trade is always one whose entry decision was made on a
         live bar.
         """
+        if self._restored:
+            # A RESTORED position is not a warm-up artefact: its entry is a real fill this bot
+            # made and recorded, and the broker is holding it right now. The bridge must go
+            # straight to LIVE so the very next bar can ratchet its stop — sitting in WARMING
+            # would reproduce the exact failure the restore exists to end, one layer up.
+            self.state = BridgeState.LIVE
+            return
         if self._ex._pos_dir != 0:
             self.state = BridgeState.WARMING
             self._log.warning(
@@ -190,20 +217,215 @@ class OrderBridge:
         A position we have no record of is NOT adopted — it is a halt. Silently taking over an
         unknown position is how a restart doubles a book: the strategy would size a fresh entry
         with no idea it is already exposed.
+
+        **The one exception is a position this bot wrote down itself** (`position_state.py`): a
+        restart with a trade open used to halt and leave that trade unmanaged overnight — its
+        broker stop stood, but nothing ratcheted it and the time stop never fired. If the record
+        matches the broker on ticket, direction, size, entry and stop, the position is held for
+        `apply_restore` to hand back to the emulator after the warm-up. **Every other shape still
+        halts**, including a torn record, a ticket that does not match, and a single field that
+        disagrees.
         """
         positions = self._mt5.get_open_positions()
         orders = self._mt5.get_pending_orders()
         if positions:
-            self._halt(f"MT5 already holds {len(positions)} position(s) under magic "
-                       f"{self._mt5.magic} at startup, with no local record of them. Close them "
-                       f"by hand (or clear them into the ledger) before starting the bot.")
-            return
+            if not self._stage_restore(positions):
+                return
         for o in orders:
             # Resting orders from a previous run are stale by construction — the strategy
             # recomputes its limit every bar off state we no longer have.
             self._log.info(f"Cancelling stale pending order T{o.ticket} from a previous run")
             self._exec(lambda t=o.ticket: self._mt5.cancel_pending(t),
                        f"cancel stale pending T{o.ticket}")
+
+    def _stage_restore(self, positions) -> bool:
+        """Can this broker position be proved to be the one we wrote down? Halt if not.
+
+        Returns True when a restore has been staged, False when the bridge has halted. The five
+        refusals below are deliberately separate messages: "the two disagreed" is true of every
+        cause at once and sends the reader to the wrong half of the system — the same defect the
+        halt message for a vanished order was fixed for on 2026-08-07.
+        """
+        magic = self._mt5.magic
+        if len(positions) > 1:
+            self._halt(f"MT5 holds {len(positions)} positions under magic {magic} at startup; "
+                       f"this strategy takes one at a time, so no record can describe them. "
+                       f"Close them by hand before starting the bot.")
+            return False
+
+        p = positions[0]
+        if self._instance_dir is None:
+            self._halt(f"MT5 already holds a position under magic {magic} at startup and this "
+                       f"bridge was built with no instance directory, so it cannot read the "
+                       f"position record. Close it by hand before starting the bot.")
+            return False
+
+        record = position_state.read(self._instance_dir)
+        if record is None:
+            self._halt(
+                f"MT5 already holds position T{p.ticket} under magic {magic} at startup, and "
+                f"there is no usable record of it in "
+                f"{position_state.path_for(self._instance_dir)}. The bot will NOT take it over — "
+                f"it would size its next entry with no idea it is already exposed. The position "
+                f"keeps its broker-side stop. Close it by hand, or clear it, before restarting.")
+            return False
+
+        symbol = getattr(self._mt5, "symbol", "") or ""
+        if record.magic != magic or (symbol and record.symbol != symbol):
+            self._halt(
+                f"The position record in {position_state.path_for(self._instance_dir)} was "
+                f"written for {record.symbol} magic {record.magic}, and this bot is "
+                f"{symbol or '?'} magic {magic}. It describes a different bot's trade.")
+            return False
+
+        if int(p.ticket) != record.ticket:
+            self._halt(
+                f"MT5 holds position T{p.ticket} under magic {magic}, but the record describes "
+                f"T{record.ticket}. Whatever is open is not the trade this bot wrote down, so it "
+                f"will not be managed. The position keeps its broker-side stop.")
+            return False
+
+        diffs = position_state.disagreements(record, p, point=self._point())
+        if diffs:
+            self._halt(
+                f"The recorded position T{record.ticket} and the one MT5 holds do not match: "
+                + "; ".join(diffs)
+                + ". Something changed it outside the bot — a hand edit in the terminal is the "
+                  "usual cause. It will NOT be adopted: every later stop move would be computed "
+                  "off a level the strategy never chose. The position keeps its broker-side "
+                  "stop; fix it by hand, or close it, then restart.")
+            return False
+
+        # Verified. The bridge's own bookkeeping can be set now; the EMULATOR's cannot, because
+        # the warm-up has not run yet and would overwrite it (see `apply_restore`).
+        self._pending_restore = record.strategy
+        self._pos_ticket = int(p.ticket)
+        self._pos_dir = record.broker.dir
+        self._pos_entry = record.broker.entry
+        self._pos_lots = record.broker.lots
+        self._pos_stop = record.broker.stop
+        # NOT known across a restart, and each is left at the value that reads as "unknown"
+        # rather than at a plausible stand-in. `_pos_intended` would otherwise report a slippage
+        # of zero, which is a measurement nobody took; `_pos_opened_bar` counts from wherever
+        # this process's warm-up stopped, so a held-bars figure derived from it would be an
+        # arbitrary integer wearing a real field's name.
+        self._pos_intended = 0.0
+        self._pos_opened_bar = None
+        # No entry alert exists in this process, so the exit posts standalone instead of as a
+        # reply. One orphaned exit message beats no exit message.
+        self._pos_alert_id = None
+        self._pos_risk_usd = abs(record.broker.entry - record.broker.stop) * \
+            record.broker.lots * self._contract_size()
+        return True
+
+    def stage_rewarm(self) -> None:
+        """Carry an OPEN position across a re-warm. Call BEFORE the strategy is rebuilt.
+
+        🔴 **A re-warm mid-trade used to lose the position and halt the bot, and it is the more
+        likely door onto the same failure than a process restart.** `_recover_link` and the
+        `gap > 4` branch both rebuild the strategy and replay 5,000 bars through a fresh
+        emulator — so a link outage while a trade was open (MetaTrader auto-updated under the
+        bot for 50 minutes on 2026-08-04) left the broker holding a position the emulator knew
+        nothing about, and `_agrees` halted on the very next bar. The bot survived the outage and
+        then stopped managing the trade because of the recovery.
+
+        Nothing is verified against the broker here, and nothing needs to be: this is the same
+        process that has been holding the position all along, so the state is not a claim being
+        re-read off disk — it is being handed from one emulator instance to the next.
+        """
+        if self._pos_ticket is None:
+            self._pending_restore = None
+            return
+        try:
+            self._pending_restore = self._ex.snapshot_position()
+        except Exception as e:
+            # Deliberately not a halt: the re-warm has not happened yet, so halting here would
+            # stop a bot that is still perfectly coherent. `_agrees` halts on the next bar if the
+            # position really is lost, which is the existing, tested path.
+            self._pending_restore = None
+            self._log.error(
+                f"Could not carry the open position across the re-warm: {e}. The bridge will "
+                f"halt on the next bar if the strategy and the broker have parted.")
+
+    def apply_restore(self, *, announce: bool = True) -> bool:
+        """Hand the verified position back to the emulator. Call AFTER the warm-up.
+
+        ⚠ **The ORDER is the whole reason this is a second method.** `warm()` replays ~5,000 bars
+        through this same `Execution` object, and that replay opens and closes imaginary trades of
+        its own — so anything written into the emulator before it is overwritten by a fiction.
+        Staging at `adopt_broker_state` (which must read the broker before anything else can take
+        time) and applying here is what keeps the real position the last word.
+        """
+        if self._pending_restore is None:
+            return False
+        snap = self._pending_restore
+        self._pending_restore = None
+        try:
+            self._ex.restore_position(snap)
+        except Exception as e:
+            # A record that got past every check above and still cannot be applied means the
+            # emulator's own state shape moved under a record written by an older build. Halting
+            # is the same answer as an unreadable record, for the same reason.
+            self._halt(f"The recorded position T{self._pos_ticket} passed every broker check and "
+                       f"the strategy refused to restore it: {e}. This usually means the record "
+                       f"was written by a different version of the strategy. The position keeps "
+                       f"its broker-side stop; close it by hand, or clear the record, then "
+                       f"restart.")
+            return False
+        self._restored = True
+        self._log.info(
+            f"Restored position T{self._pos_ticket} — {self._side(self._pos_dir)} "
+            f"{self._pos_lots} lots @ {self._pos_entry}, stop {self._pos_stop}, "
+            f"stage {getattr(self._ex, '_stage', '?')}. It will be managed from the next bar.")
+        self._ledger.event("position_restored", ticket=self._pos_ticket, dir=self._pos_dir,
+                           lots=self._pos_lots, entry=self._pos_entry, stop=self._pos_stop,
+                           stage=getattr(self._ex, "_stage", None),
+                           reason="restart" if announce else "rewarm")
+        # ⚠ A re-warm passes `announce=False` and the record above still lands. `_recover_link`
+        # and the gap branch each already send their own message for the SAME event, and two
+        # alerts for one event is how a channel gets muted — but the ledger has to carry it
+        # either way, because "the position survived the re-warm" is exactly what a later audit
+        # needs and it is invisible from the outside.
+        if announce:
+            self._notify(alert(
+                "🔄", "TRADE RESUMED", self._strategy_name,
+                joined([f"{self._side(self._pos_dir)} {self._pos_lots} lots @ {self._pos_entry}",
+                        f"stop {self._pos_stop}"]),
+                "The bot restarted and picked its open trade back up. It manages it from the "
+                "next bar. Nothing to do."),
+                notify.HEALTH)
+        return True
+
+    def _save_position(self) -> None:
+        """Write the open position down, so a restart can pick it up. Never raises.
+
+        Called after every change to the position — the fill, and every stop move — because the
+        stop is the field that moves, and a record holding last hour's stop would be REFUSED at
+        the next start (the broker's real stop would disagree with it). A stale record does not
+        adopt a wrong stop; it costs the restore.
+        """
+        if self._instance_dir is None or self._pos_ticket is None:
+            return
+        try:
+            snap = self._ex.snapshot_position()
+        except Exception as e:
+            self._log.warning(f"Could not snapshot the position for the restart record: {e}")
+            return
+        ok = position_state.write(
+            self._instance_dir,
+            bot=getattr(self._ledger, "bot_key", "") or self._strategy_name,
+            symbol=getattr(self._mt5, "symbol", "") or "",
+            magic=self._mt5.magic,
+            ticket=self._pos_ticket,
+            broker=position_state.BrokerFacts(
+                dir=self._pos_dir, lots=self._pos_lots,
+                entry=self._pos_entry, stop=self._pos_stop),
+            strategy=snap,
+        )
+        if not ok:
+            self._log.warning(
+                "Could not write the position record. The trade is unaffected; a restart before "
+                "it closes would halt rather than resume it.")
 
     # ── the per-bar entry point ──────────────────────────────────────────────
     def sync(self, dec, sig) -> None:
@@ -299,6 +521,13 @@ class OrderBridge:
         self._pos_risk_usd = 0.0
         self._pos_opened_bar = None
         self._pos_alert_id = None
+        # The trade is over, so the restart record describes a ticket that no longer exists. It
+        # could not restore anything (the ticket cannot match a position that is not there), but
+        # leaving it would put a dead trade in front of the next person reading the instance
+        # directory. `_restored` is cleared too: the NEXT position is an ordinary live fill.
+        self._restored = False
+        if self._instance_dir is not None:
+            position_state.clear(self._instance_dir)
 
     def _observe_open(self, positions, dec, sig) -> None:
         if self._pos_ticket is not None or not positions:
@@ -345,6 +574,9 @@ class OrderBridge:
             risk_pct=getattr(getattr(self._ex, "cfg", None), "exec_risk_pct", None),
             when=self._bar_time(sig)),
             notify.TRADE)
+        # Record it the moment it exists, not at the end of the bar: a process that dies between
+        # the fill and the next stop move must still leave a resumable trade behind.
+        self._save_position()
 
     def _observe_vanished(self) -> None:
         """A resting order that is gone from the broker WITHOUT having filled.
@@ -628,6 +860,9 @@ class OrderBridge:
             self._ledger.event("stop_moved", ticket=self._pos_ticket,
                                was=self._pos_stop, now=want)
             self._pos_stop = want
+            # Re-record: the stop is the field that moves, and a record holding the previous
+            # stop would be REFUSED at the next start because the broker's real one disagrees.
+            self._save_position()
 
     def _cancel_all_rest(self, why: str) -> None:
         for d, held in list(self._rest.items()):

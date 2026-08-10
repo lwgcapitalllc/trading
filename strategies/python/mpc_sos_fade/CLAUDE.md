@@ -264,6 +264,47 @@ silently, as a missing trade rather than an error — and the **no-minimum-stop-
 below scales linearly with the risk %, so a degenerate stop that realised ~180% of equity at
 `exec_risk_pct = 10` realises the same multiple of whatever is typed here.
 
+## The restart seam — `snapshot_position()` / `restore_position()` (2026-08-10)
+
+`Execution` can write its whole open-trade state down and put it back. **It exists for
+`algos/live/` and nothing in a backtest calls it** — the full design, and every refusal around
+it, is in `algos/live/position_state.py`.
+
+**Why it had to live here rather than in the live package.** A restart rebuilds this object EMPTY
+from a warm-up replay, so the live bridge used to HALT on any position the broker already held and
+the trade sat unmanaged until somebody looked — its broker stop stood, but nothing ratcheted it and
+the time stop never fired. Putting the state back means writing ~30 private fields, and the live
+package reaching across a subsystem boundary to set them would be a second, silent copy of what an
+open trade IS. One method here is the honest seam, the same standing as the `account` / `leg` pair
+above.
+
+⚠ **`_POSITION_FIELDS` is the whole open-trade state and a missing entry is SILENT.** Leave one out
+and the restored trade manages against a constructor default — a zero `_max_fav` un-ratchets the
+trail, a zero `_stage` puts a breakeven stop back to the full stop, a missing `_entry_ms` resets the
+time stop's clock. Nothing raises.
+`test_the_snapshot_covers_every_field_open_position_assigns` therefore **DERIVES the required set by
+reading `_open_position`'s own source**, because a hand-written list would re-freeze exactly the
+assumption that fails — the same guard `run_dual`'s 1m signal needed after it shipped missing two
+fields that three weeks of green tests never saw.
+
+⚠ **`_traded_sos_l` / `_traded_sos_s` are carried even though `_open_position` does not assign
+them there.** They are the one-trade-per-15m-leg latch, and without them a restored bot could
+re-enter the very setup it is already holding, the moment that trade closes.
+
+⚠ **`restore_position` REFUSES an incomplete record rather than filling defaults**, and that is the
+safety property. A record missing `_stage` is not "a trade at stage 0", it is a record that cannot
+be trusted; the caller halts, which is what the bot did in every case before this existed.
+
+✅ **Parity is structurally unaffected and it is CHECKED rather than asserted**: a test reads the
+source of `step`, `step_secondary` and `_manage_open` and fails if either method is ever called
+from the bar path. A lab replay only ever holds a position it filled itself.
+
+⚠ **`mpc_bleg` and `mpc_bos` inherit both methods**, which is correct — they share this exit ladder
+and this emulator — but neither has been driven live, so treat the inheritance as untested there.
+
+⚠ **It needs a PROMOTE to reach the live bot.** This package is version-pinned, so the running bot
+keeps the old code until `algos/tools/promote.py` runs.
+
 ## The portfolio-account seam (2026-07-17)
 
 `Execution.__init__` takes an injected `account` (default `SoloAccount`) and a `leg` name — the seam

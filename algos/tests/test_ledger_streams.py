@@ -143,6 +143,12 @@ def test_every_event_written_in_algos_live_is_classified():
         # makes silence meaningful ("no shutdown record ⇒ killed or crashed") only holds if every
         # deliberate ending leaves one.
         "not_assigned",
+        # A restart picked its own open trade back up. HEALTH by the subject test, and the pair
+        # is worth noticing: the TRADE was already fully recorded in the decision stream when it
+        # opened, and this says nothing new about the setup — it says this PROCESS is now the one
+        # managing it. Same family as `went_live`. Its opposite number, a restart that could NOT
+        # prove the position was its own, is `halted`, which is health for the same reason.
+        "position_restored",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (

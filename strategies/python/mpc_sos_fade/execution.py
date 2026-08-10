@@ -659,6 +659,94 @@ class Execution:
     def entry_kind(self) -> str:
         return self._entry_kind
 
+    # ── position snapshot / restore (for the LIVE bot only) ───────────────────────
+    #
+    # **Why these exist.** `algos/live/` runs this same object against a real broker, and a
+    # restart rebuilds it EMPTY from a warm-up replay. Before this, a bot that restarted while a
+    # trade was open HALTED and left that trade unmanaged — its broker-side stop stood, but
+    # nothing ratcheted it again and the time stop never fired. See
+    # `algos/live/position_state.py` for the whole design; this end is only the state itself.
+    #
+    # **REPORTING-NEUTRAL and DECISION-NEUTRAL in a backtest.** Nothing in `step()`,
+    # `step_secondary()` or the parity harness calls either method, so `compare_strategy.py` is
+    # structurally unaffected — the same standing the `account` / `leg` seam has. A lab replay
+    # never opens a position it did not itself fill.
+    #
+    # ⚠ **`_POSITION_FIELDS` is the WHOLE open-trade state and a missing entry is silent.** Leave
+    # one out and the restored trade manages against a default — a zero `_max_fav` un-ratchets the
+    # trail, a zero `_stage` puts a breakeven stop back to the full stop, a missing `_entry_ms`
+    # resets the time stop's clock. None of those raise; they just trade differently.
+    # `test_position_snapshot_covers_every_field_open_position_assigns` DERIVES the required set
+    # by reading `_open_position`'s own source, because a hand-written list would re-freeze
+    # exactly the assumption that fails — the same guard `run_dual`'s 1m signal needed after it
+    # shipped missing two fields that three weeks of green tests never saw.
+
+    _POSITION_FIELDS = (
+        "_pos_dir", "_entry_kind", "_qty", "_entry", "_entry_index", "_entry_ms",
+        "_init_stop", "_exit_notional", "_exit_qty", "_exit_ms", "_exit_reason",
+        "_sl", "_tp1", "_tp2", "_fib", "_stage", "_filled_qty", "_sos_bar_open",
+        "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
+        "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
+        "_pending_close",
+        # SETUP-scoped rather than position-scoped, and carried anyway: it is the
+        # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
+        # it is already holding, the moment this trade closes.
+        "_traded_sos_l", "_traded_sos_s",
+    )
+
+    def snapshot_position(self) -> dict:
+        """Everything needed to carry on managing the open trade, as plain JSON types."""
+        if self._pos_dir == 0:
+            raise ValueError("snapshot_position() called while flat — there is nothing to record")
+        snap: dict = {}
+        for name in self._POSITION_FIELDS:
+            value = getattr(self, name)
+            if name == "_fib":
+                value = None if value is None else {
+                    "levels": [[float(r), float(p)] for r, p in value.levels],
+                    "start_ms": value.start_ms,
+                }
+            elif name == "_legs":
+                value = [dict(leg) for leg in value]
+            elif name == "_pending_close":
+                value = None if value is None else list(value)
+            snap[name] = value
+        return snap
+
+    def restore_position(self, snap: dict) -> None:
+        """Put a recorded position back, exactly. REFUSES an incomplete record.
+
+        ⚠ **It refuses rather than filling a default, and that is the whole safety property.** A
+        record missing `_stage` is not "a trade at stage 0" — it is a record we cannot trust, and
+        managing a real position against a guess is the failure this is meant to end. The caller
+        halts, which is what the bot did in every case before this existed.
+
+        ⚠ **It does NOT touch the structure/fib/gap state** — the warm-up replay rebuilds all of
+        that from real bars, which is the correct source and the only one that stays current
+        across an outage of unknown length. This restores the EMULATOR's own book and nothing
+        else, so it must be called AFTER the warm-up, never before: a warm-up run afterwards
+        would overwrite it with whatever the replay imagined.
+        """
+        missing = [n for n in self._POSITION_FIELDS if n not in snap]
+        if missing:
+            raise ValueError(
+                "refusing to restore an incomplete position record; missing: "
+                + ", ".join(sorted(missing)))
+        for name in self._POSITION_FIELDS:
+            value = snap[name]
+            if name == "_fib" and value is not None:
+                value = TradeFib(
+                    levels=[(float(r), float(p)) for r, p in value["levels"]],
+                    start_ms=value.get("start_ms"),
+                )
+            elif name == "_pending_close" and value is not None:
+                value = tuple(value)
+            setattr(self, name, value)
+        # The resting limits are NOT part of the record and must be cleared: a position is open,
+        # so the strategy holds no pending entry, and `algos/live/bridge.py` cancels every stale
+        # broker-side order at startup for the same reason.
+        self._pend_long = self._pend_short = self._pend_sec = None
+
     @property
     def traded_sos_l(self) -> Optional[int]:
         return self._traded_sos_l

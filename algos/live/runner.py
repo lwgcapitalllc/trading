@@ -365,9 +365,15 @@ class LiveRunner:
             self.log.warning("Reconnect failed — will retry.")
             return
 
+        # Carry any OPEN position across the rebuild. Without this a link outage while a trade
+        # was open left the broker holding a position the fresh emulator knew nothing about, and
+        # the bridge halted on the next bar — the bot surviving the outage and then being stopped
+        # by its own recovery.
+        self.bridge.stage_rewarm()
         self.strategy, _ = self._build_strategy()
         self.bridge._ex = self.strategy.execution
         self.warm()
+        self.bridge.apply_restore(announce=False)
         self.bridge.begin_live()
 
         down = now - self._link_lost_at
@@ -733,7 +739,8 @@ class LiveRunner:
             self.bridge = OrderBridge(self.mt5, self.strategy.execution, self.ledger, self.log,
                                       notify=self._notify, dry_run=self.dry_run,
                                       margin_safety_pct=self.cfg.margin_safety_pct,
-                                      account_risk_cap_pct=self.cfg.account_risk_cap_pct)
+                                      account_risk_cap_pct=self.cfg.account_risk_cap_pct,
+                                      instance_dir=self.cfg.instance_dir)
             # SAY which state the account-level cap is in, every start. An absent guard is
             # silent by construction, and "no cap" and "a cap that is not working" look
             # identical from outside — the same reason `deadman.py --status` reports an unset
@@ -743,6 +750,13 @@ class LiveRunner:
             if self.bridge.state is BridgeState.HALTED:
                 return 4, "bridge halted while adopting the broker's state"
             self.warm()
+            # AFTER the warm-up, never before: `warm()` replays 5,000 bars through this same
+            # emulator and opens imaginary trades of its own, so a position applied earlier
+            # would be overwritten by a fiction. `adopt_broker_state` above has already proved
+            # the record matches what the broker holds; this is the moment it takes effect.
+            self.bridge.apply_restore()
+            if self.bridge.state is BridgeState.HALTED:
+                return 4, "bridge halted while restoring its open position"
             self.bridge.begin_live()
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")
@@ -832,9 +846,14 @@ class LiveRunner:
                                          f"than resuming with a hole in the stream.")
                         self.ledger.event("rewarm", missed_bars=gap,
                                           after_bar_error=stream_broken)
+                        # Same reason as `_recover_link`: a hole in the stream must not cost the
+                        # open trade. The re-warm rebuilds the ENGINES from real bars, which is
+                        # right; the emulator's own book is handed across intact.
+                        self.bridge.stage_rewarm()
                         self.strategy, _ = self._build_strategy()
                         self.bridge._ex = self.strategy.execution
                         self.warm()
+                        self.bridge.apply_restore(announce=False)
                         self.bridge.begin_live()
                         stream_broken = False
 

@@ -62,9 +62,22 @@ class _Bridge:
         # runtime config reload and the equity re-anchor both hang off). A fake missing it makes
         # the loop raise, which reads as a link failure — the wrong diagnosis entirely.
         self.is_flat = True
+        # The re-warm path calls these either side of the rebuild, to carry an open position
+        # across it. A fake missing one raises INSIDE the loop's own try, which the handler
+        # swallows as a generic loop error — so the pass reads no bars, stamps no heartbeat and
+        # still looks like a link failure. Same trap the fleet-halt latch hit on 2026-08-09.
+        self.staged = 0
+        self.restored = 0
 
     def begin_live(self):
         self.began += 1
+
+    def stage_rewarm(self):
+        self.staged += 1
+
+    def apply_restore(self, *, announce=True):
+        self.restored += 1
+        return False
 
 
 class _Feed:

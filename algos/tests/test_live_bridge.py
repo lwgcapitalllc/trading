@@ -167,8 +167,23 @@ class _FakeExecution:
         self._pend_long = pend_long
         self._pend_short = pend_short
         self._entry = 0.0
+        self._stage = 0
         self.blocks: list = []
         self.misses: list = []
+        # The restart/re-warm seam. The real `Execution` has both (see its
+        # `_POSITION_FIELDS` block) and the bridge calls them whenever a position is open, so a
+        # fake without them would raise inside the per-bar path — the fixture-less-complete-than-
+        # production trap this file was already bitten by on 2026-08-07.
+        self.snapshot: dict = {}
+        self.restored = None
+
+    def snapshot_position(self) -> dict:
+        return dict(self.snapshot)
+
+    def restore_position(self, snap: dict) -> None:
+        self.restored = snap
+        self._pos_dir = snap.get("_pos_dir", 0)
+        self._stage = snap.get("_stage", 0)
 
 
 class _Dec:
@@ -251,7 +266,7 @@ def _stub_mt5(monkeypatch):
 
 
 def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, kinds=None,
-            account_risk_cap_pct=None):
+            account_risk_cap_pct=None, instance_dir=None):
     mt5ops = mt5ops or _FakeMt5Ops()
     ledger = ledger or _FakeLedger()
     notes = notes if notes is not None else []
@@ -271,7 +286,8 @@ def _bridge(execution, *, dry_run=False, mt5ops=None, ledger=None, notes=None, k
 
     b = live_bridge.OrderBridge(mt5ops, execution, ledger, _Log(),
                                 notify=_notify, dry_run=dry_run,
-                                account_risk_cap_pct=account_risk_cap_pct)
+                                account_risk_cap_pct=account_risk_cap_pct,
+                                instance_dir=instance_dir)
     b.state = live_bridge.BridgeState.LIVE
     return b, mt5ops, ledger, notes
 
@@ -506,15 +522,21 @@ def test_a_halted_bridge_places_nothing_further():
     assert ops.actions == []
 
 
-def test_startup_refuses_to_adopt_an_unknown_position():
+def test_startup_refuses_to_adopt_an_unknown_position(tmp_path):
     """Silently taking over an unknown position is how a restart doubles a book — the strategy
-    would size a fresh entry with no idea it is already exposed."""
+    would size a fresh entry with no idea it is already exposed.
+
+    ⚠ The instance directory is REAL and EMPTY, which is the case this test is about: the bot can
+    read its own records perfectly well and there simply is not one for this position. Running it
+    with `instance_dir=None` would halt too, for the unrelated reason that the bridge cannot look
+    — a pass that says nothing about the rule being pinned here.
+    """
     ops = _FakeMt5Ops()
     ops.positions = [_Pos(1, 0, 3290.0, 0.42, 3280.0)]
-    b, ops, _, _ = _bridge(_FakeExecution(), mt5ops=ops)
+    b, ops, _, _ = _bridge(_FakeExecution(), mt5ops=ops, instance_dir=tmp_path)
     b.adopt_broker_state()
     assert b.state is live_bridge.BridgeState.HALTED
-    assert "no local record" in b.halt_reason
+    assert "no usable record" in b.halt_reason
 
 
 def test_startup_clears_stale_resting_orders():
