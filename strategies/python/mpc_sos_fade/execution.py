@@ -46,7 +46,7 @@ from backtest.portfolio.account import SoloAccount
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
 from engines.fibonacci.geometry import fib_level
 
-from .signals import pois_for, sos_aware_veto
+from .signals import POI_SOURCE_OB_NO_FVG, poi_rank_is_fvg, pois_for, sos_aware_veto
 
 
 def _first(pred, values):
@@ -596,6 +596,14 @@ class Execution:
         self._pend_sec: Optional[_Pending] = None
 
         # one-trade-per-leg latches (Pine tradedSosL / tradedSosS)
+        # "Order block (no FVG)" only: has a QUALIFYING gap ever been in the band on this setup?
+        # Per SETUP, keyed on the SOS bar and cleared by `_sync_gap_latch` when a new break arms —
+        # the same shape as `_traded_sos_*` below, and for the same reason: a setup is the unit a
+        # decision like this belongs to, and a bar is not.
+        self._gap_seen_l = False
+        self._gap_seen_s = False
+        self._gap_seen_sos_l: Optional[int] = None
+        self._gap_seen_sos_s: Optional[int] = None
         self._traded_sos_l: Optional[int] = None
         self._traded_sos_s: Optional[int] = None
         # secondary eligibility: the 15m leg whose PRIMARY reached at least TP1 (moved to
@@ -757,6 +765,9 @@ class Execution:
 
         # Decision context the Pine computes EVERY bar (not just when flat), so the
         # decision streams line up bar-for-bar: the entry edges, the A+ stage, the veto.
+        # Before the edges, so a new break of structure re-opens the block leg on the same bar it
+        # arms rather than one bar late.
+        self._sync_gap_latch(seq)
         long_edge, short_edge = self._entry_edges(sig)
         dec.long_edge, dec.short_edge = long_edge, short_edge
         dec.l_stage, dec.s_stage = seq.l_stage, seq.s_stage
@@ -1173,6 +1184,49 @@ class Execution:
             return _s
         return None
 
+    def _deepen(self, edge: float, sig, is_bull: bool, p2, p6) -> float:
+        """The deepest same-direction order block edge past `edge`, or `edge` unchanged.
+
+        DEEPEST rather than nearest, deliberately: the question this answers is "how much better
+        a price was available", and taking the nearest would measure a diluted version of the
+        idea and then be read as a verdict on the idea itself. If the deepest is refused by the
+        minimum-stop floor the trade simply does not happen, which is a real answer.
+
+        Direction is written against `is_bull` throughout — the fib ladder inverts on a short, so
+        deeper means a LOWER price on a long and a HIGHER one on a short, and a `<` written once
+        would be silently backwards on half the book.
+        """
+        lo, hi = min(p2, p6), max(p2, p6)
+        best = edge
+        for top, bot, ob_bull, _born in sig.obs:
+            if ob_bull != is_bull:
+                continue
+            if min(top, hi) < max(bot, lo):          # not in the tradable band at all
+                continue
+            near = min(top, hi) if is_bull else max(bot, lo)
+            if is_bull and near < best:
+                best = near
+            elif (not is_bull) and near > best:
+                best = near
+        # never past the deep edge of the band — that line is the stop
+        return max(best, lo) if is_bull else min(best, hi)
+
+    def _sync_gap_latch(self, seq) -> None:
+        """Clear the "a gap has been here" latch when a NEW setup arms on that side.
+
+        Per SETUP, never per lifetime: the block leg standing down for ever after one gap would
+        retire the side entirely. The key is the SOS bar because that is what identifies a setup
+        — stable across replays, since `signals` and `sequence` are driven by the engine stack
+        alone and nothing in `execution` can move them. Entry time is not stable and the death
+        bar is not either (giving a setup an entry changes the bar it dies on).
+
+        A side with no live SOS keys on `None` and simply stays cleared.
+        """
+        if seq.l_sos_bar != self._gap_seen_sos_l:
+            self._gap_seen_sos_l, self._gap_seen_l = seq.l_sos_bar, False
+        if seq.s_sos_bar != self._gap_seen_sos_s:
+            self._gap_seen_sos_s, self._gap_seen_s = seq.s_sos_bar, False
+
     def _entry_edges(self, sig) -> Tuple[Optional[float], Optional[float]]:
         """The resting-limit price on each side (Pine 3937-3959): the near edge of an
         FVG overlapping the 0.5-0.886 band, clamped into the band; the first one price
@@ -1186,6 +1240,7 @@ class Execution:
         # mode hands back one flat tier, so these never differ and the choice below collapses to
         # the original nearest-first max/min exactly.
         long_rank = short_rank = None
+        long_stood_down = short_stood_down = False
         if fibs_ready:
             for top, bot, is_bull, born, rank in pois_for(self._cfg, sig):
                 l_deep_ok = not cfg.exec_fvg_deep_only or top <= p2
@@ -1209,10 +1264,58 @@ class Execution:
                         short_edge, short_rank = e, rank
                     elif rank == short_rank:
                         short_edge = min(short_edge, e)
+            # "Order block (no FVG)" — the second LEG of the pair, not a second strategy. It trades
+            # a block ONLY where the FVG leg would not have traded at all, so the two can never
+            # take the same setup and never double the risk on one idea.
+            #
+            # ⚠ The test is on the WINNING TIER, after the loop, and that is the whole correctness
+            # argument. A gap only reaches `*_rank` if it overlapped the band AND passed the
+            # deep-only gate AND passed the pre-zone gate — i.e. only if the FVG leg would really
+            # have rested an entry on it. A gap those gates REFUSED never enters the comparison, so
+            # it cannot stand this leg down over a setup the other leg was never going to take;
+            # testing `sig.fvgs` directly would do exactly that and leave the setup untraded by
+            # both legs. Same ordering `pois_for`'s tier comment already pins for "FVG first".
+            if cfg.exec_poi_source == POI_SOURCE_OB_NO_FVG:
+                # ⚠ A LATCH, not this bar's answer, and the difference is 60 setups in 6.5 years.
+                # "Is there a gap right now" is far weaker than "has this setup ever had one":
+                # price runs into the zone, CREATES a gap, and the FVG leg takes a setup this leg
+                # entered a bar earlier — or the gap that armed the FVG leg is later mitigated,
+                # leaving a block behind and this leg re-trading the same structure hours later.
+                # MEASURED before the latch existed: 60 of 181 setups (33%) were traded by BOTH
+                # legs, 44 of them with the FVG leg first. `_sync_gap_latch` clears it on a new
+                # SOS, so it is per SETUP and a fresh break re-opens the leg.
+                if long_rank is not None and poi_rank_is_fvg(long_rank):
+                    self._gap_seen_l = True
+                if short_rank is not None and poi_rank_is_fvg(short_rank):
+                    self._gap_seen_s = True
+                if self._gap_seen_l:
+                    long_edge, long_stood_down = None, True
+                if self._gap_seen_s:
+                    short_edge, short_stood_down = None, True
+            # `exec_ob_deepen` — re-price an entry we are ALREADY taking onto a deeper order
+            # block. It does not create or remove a setup, it moves where the limit rests, so it
+            # only ever applies to a side that already has an edge.
+            #
+            # ⚠ Clamped into the band at `p6`, because 0.886 IS the stop: a limit resting there
+            # has a zero stop distance and `qty = risk / dist` is the hazard the minimum-stop
+            # guard exists for. That guard (ON by default at 0.08% of price) is what refuses the
+            # rest, and it is expected to refuse a lot of these — a 79% tighter stop is 5x the
+            # position.
+            if cfg.exec_ob_deepen and sig.obs_available:
+                if long_edge is not None:
+                    long_edge = self._deepen(long_edge, sig, True, p2, p6)
+                if short_edge is not None:
+                    short_edge = self._deepen(short_edge, sig, False, p2, p6)
             if not cfg.exec_req_fvg:
-                if long_edge is None and sig.fibo_dir == 1:
+                # ⚠ A stand-down must not be undone here. `exec_req_fvg` off falls back to 0.618
+                # whenever no zone qualified, and "I deliberately declined this setup" reads
+                # identically to "I found nothing" from a None edge alone — so the leg would
+                # decline the gap and then re-enter the same setup one line later at a different
+                # price. The pin (`exec_req_fvg=True` on both legs) makes this unreachable today;
+                # the flag makes it wrong-proof if the pin is ever relaxed.
+                if long_edge is None and sig.fibo_dir == 1 and not long_stood_down:
                     long_edge = p3
-                if short_edge is None and sig.fibo_dir == -1:
+                if short_edge is None and sig.fibo_dir == -1 and not short_stood_down:
                     short_edge = p3
         return long_edge, short_edge
 

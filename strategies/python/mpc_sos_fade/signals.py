@@ -493,11 +493,19 @@ class PoiSourceUnavailable(RuntimeError):
 # Every accepted value of `exec_poi_source`, and which lists it reads. A dict rather than an
 # if-chain so an unrecognised value RAISES instead of quietly falling through to gaps — a typo
 # that silently ran the default would make a whole replay a lie about what it tested.
+#
+# ⚠ "Order block (no FVG)" reads the GAP list without ever trading a gap. It needs it to answer
+# the only question that mode asks — *is a qualifying gap already here?* — because a gap in the
+# band means the setup belongs to the FVG leg and this one must stand down. Reading a list it
+# cannot trade looks wrong until you know that; it is not a leftover.
+POI_SOURCE_OB_NO_FVG = "Order block (no FVG)"
+
 _POI_SOURCES = {
     "FVG": (True, False),
     "Order block": (False, True),
     "Either": (True, True),
     "FVG first": (True, True),
+    POI_SOURCE_OB_NO_FVG: (True, True),
 }
 
 # The PRECEDENCE tiers, read only by "FVG first" (2026-08-09, Aaron: "if there is fair value
@@ -521,6 +529,22 @@ POI_RANK_FVG_ON_OB = 2   # a gap an order block sits on: the strongest tier
 # back to their original nearest-first choice. That is what keeps "FVG" / "Order block" / "Either"
 # byte-identical to before this mode existed, rather than merely intended to be.
 _POI_RANK_FLAT = 0
+
+# The modes that RANK rather than pool. Both need the same union and the same tiers; they differ
+# only in what the consumer does when a GAP tier wins — "FVG first" rests an entry on it,
+# `POI_SOURCE_OB_NO_FVG` stands the whole leg down (`Execution._entry_edges`).
+_POI_RANKED = frozenset({"FVG first", POI_SOURCE_OB_NO_FVG})
+
+
+def poi_rank_is_fvg(rank: int) -> bool:
+    """Did this tier come from a fair value gap rather than an order block?
+
+    One predicate rather than `rank > POI_RANK_OB` written at each call site, because there are
+    TWO gap tiers (a plain gap and a gap on a block) and a reader comparing against the wrong one
+    would silently let gaps-on-blocks through the stand-down — the exact overlap case the mode
+    exists to hand to the other leg.
+    """
+    return rank in (POI_RANK_FVG, POI_RANK_FVG_ON_OB)
 
 
 def _zones_overlap(a_top: float, a_bot: float, b_top: float, b_bot: float) -> bool:
@@ -561,7 +585,7 @@ def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int, int]]:
             f"EngineConfig(order_blocks=True) — MpcSosFadeStrategy.run() does this from the config, "
             f"so a caller passing its own engine_config must too."
         )
-    if cfg.exec_poi_source != "FVG first":
+    if cfg.exec_poi_source not in _POI_RANKED:
         pois = []
         if want_fvg:
             pois += [(t, b, d, n, _POI_RANK_FLAT) for (t, b, d, n) in sig.fvgs]
@@ -569,7 +593,7 @@ def pois_for(cfg, sig) -> List[Tuple[float, float, bool, int, int]]:
             pois += [(t, b, d, n, _POI_RANK_FLAT) for (t, b, d, n) in sig.obs]
         return pois
 
-    # "FVG first" — the same UNION as "Either", ranked rather than pooled. Order is gaps then
+    # The RANKED modes — the same UNION as "Either", ranked rather than pooled. Order is gaps then
     # blocks purely to match "Either" and the Pine seam; with tiers in play it cannot decide an
     # outcome, because a strictly-higher tier replaces outright and a tie is resolved by a
     # min/max that does not care what order it saw its candidates in.

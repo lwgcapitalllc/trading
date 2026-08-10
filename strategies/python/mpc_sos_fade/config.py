@@ -41,7 +41,7 @@ class SosFadeConfig:
     exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
     exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
     exec_req_fvg: bool = True          # "Require an FVG in the zone"
-    exec_poi_source: str = "FVG"       # ∈ {FVG, Order block, Either, FVG first}
+    exec_poi_source: str = "FVG"       # ∈ {FVG, Order block, Either, FVG first, Order block (no FVG)}
     #   THE PINE SIDE EXISTS (2026-08-09, later the same day). This comment previously read
     #   "PYTHON-ONLY, NO PINE COUNTERPART" and that is now FALSE — it is corrected in place
     #   rather than left to be read as current. `mpc_strategy.pine` and its export mirror carry
@@ -114,6 +114,27 @@ class SosFadeConfig:
     #   down to the level below, and rests on whichever is closer (ties go to the shallower). Not
     #   free: when the deeper level wins the limit rests PAST the gap, so a setup that only tags the
     #   gap and turns never fills. Deeper entry and a tighter stop, bought with fill rate.
+    exec_ob_deepen: bool = False       # "Order block deeper than the entry → rest on the block"
+    #   Aaron's confluence question, 2026-08-09: a same-direction order block sitting DEEPER than
+    #   the chosen entry edge re-prices the limit onto that block's near edge (clamped into the
+    #   0.5-0.886 band). The stop is a fib and does not move, so a deeper fill is a TIGHTER stop —
+    #   a bigger position for the same risk and more room to the targets — bought with FILL RATE.
+    #   ⚠ MEASURED FIRST, and the selection is brutal: over 159 baseline trades a deeper block
+    #   existed on 113, and price actually reached it on 4 of 40 winners, 11 of 36 scratches and
+    #   35 of 37 LOSERS. A winner leaves and never comes back; a loser grinds down through the
+    #   block to the stop. So this rule fills almost exclusively on the trades that were going to
+    #   lose — which is why it is a REPLAY question and not an arithmetic one, and why it is OFF.
+    #   🔴 REPLAYED and REFUTED, 155,807 M15 bars: 159 trades / +142.18R / maxDD 5.61R becomes
+    #   102 / +73.41R / maxDD 15.20R. The theory it was built to test — a deeper fill reaches TP1
+    #   more often, stages to breakeven and scratches instead of losing — runs BACKWARDS, and the
+    #   mechanism is geometry rather than luck: TP1 is a fib ABOVE a long, so entering deeper puts
+    #   it FURTHER away. TP1 hit rate 65.4% → 47.1%, LOSERS 52 → 52 (unchanged) and their R
+    #   −50.86 → −71.30, scratches 44 → 15. See `### The deeper-entry test` in CLAUDE.md.
+    #   ⚠ The average loss exceeding 1R (−0.98R → −1.37R) is the min-stop hazard arriving by a new
+    #   route: a stop a median 79% tighter sits inside ordinary bar noise, so price runs through it
+    #   and the exit no longer happens at the stop price. A risk % is only the real risk if it does.
+    #   ⚠ NO PINE COUNTERPART, so `compare_strategy.py` can never configure it and any result is a
+    #   LAB finding. Python-first, the same standing as `exec_sl_custom`.
     exec_deep_fib: bool = False        # "Floating gap → nearest fib shallower"
     #   Method 3 (Pine execDeepFib) — the original one-sided form of rules 2 and 3, kept so any
     #   historical result reproduces. Reachable only with rules 2 AND 3 both off. It never looks at
