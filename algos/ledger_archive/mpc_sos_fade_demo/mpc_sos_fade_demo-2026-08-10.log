@@ -1364,3 +1364,27 @@
 2026-08-10 04:05:57,129 [INFO] Warmed 5000 bars (2026-05-25 08:30:00+00:00 → 2026-08-10 03:45:00+00:00) in 2.8s
 2026-08-10 04:05:57,130 [INFO] Equity re-anchored to the account after warm-up: 3,966.26 → 1,992.50
 2026-08-10 04:05:57,648 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-10 14:00:05,364 [INFO] Stop requested by file — shutting down cleanly.
+2026-08-10 14:00:05,365 [INFO] Stop requested — shutting down.
+2026-08-10 14:00:05,366 [INFO] Cleared a stale stop.request from a previous run.
+2026-08-10 14:00:06,284 [INFO] MT5 disconnected.
+2026-08-10 14:00:38,300 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash 47fbc9adce1f | commit 71b311e | frozen | LIVE
+2026-08-10 14:00:38,866 [INFO] Connected | #700107749 | $1,992.50 | PUPrime-Demo
+2026-08-10 14:00:38,867 [INFO] MT5 connection lock released
+2026-08-10 14:00:40,979 [INFO] Sizing against account balance $1,992.50
+2026-08-10 14:00:41,097 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-10 14:00:56,445 [INFO] Warmed 5000 bars (2026-05-25 22:00:00+00:00 → 2026-08-10 13:45:00+00:00) in 14.8s
+2026-08-10 14:00:56,459 [INFO] Equity re-anchored to the account after warm-up: 3,966.26 → 1,992.50
+2026-08-10 14:00:59,387 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-10 15:03:38,631 [INFO] Stop requested by file — shutting down cleanly.
+2026-08-10 15:03:38,877 [INFO] Stop requested — shutting down.
+2026-08-10 15:03:38,895 [INFO] Cleared a stale stop.request from a previous run.
+2026-08-10 15:03:41,225 [INFO] MT5 disconnected.
+2026-08-10 15:04:07,155 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash e2eaa05de60f | commit 52dc538 | frozen | LIVE
+2026-08-10 15:04:07,748 [INFO] Connected | #700107749 | $1,992.50 | PUPrime-Demo
+2026-08-10 15:04:07,749 [INFO] MT5 connection lock released
+2026-08-10 15:04:07,956 [INFO] Sizing against account balance $1,992.50
+2026-08-10 15:04:07,958 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-10 15:04:15,951 [INFO] Warmed 5000 bars (2026-05-25 23:00:00+00:00 → 2026-08-10 14:45:00+00:00) in 7.7s
+2026-08-10 15:04:15,954 [INFO] Equity re-anchored to the account after warm-up: 3,966.26 → 1,992.50
+2026-08-10 15:04:16,958 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
