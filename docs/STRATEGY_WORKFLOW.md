@@ -103,6 +103,7 @@ commit. A lab row saying something different from the chart is how a rule gets r
 | **B-LEG** (`mpc_bleg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
 | **D** (`mpc_d`) | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | No — and its one measurement was indistinguishable from zero |
+| **OB Fade** (`mpc_ob_fade`) | ✅ draft | ❌ | ❌ | ❌ | ❌ | ❌ | No — stage 1 only, `docs/MPC_OB_FADE_SPEC.md` |
 | **H4 sweep** | study only | ✅ | ❌ | ❌ | ❌ | ❌ | No |
 
 ### BOS — green as of 2026-08-07, and what that is worth
