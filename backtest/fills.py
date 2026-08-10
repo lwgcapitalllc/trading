@@ -436,6 +436,26 @@ PROFILES = {
     # the block above `_XAUUSD_SWAP`. The SPREAD is still refused: the only readings taken were the
     # last quotes before a Friday close (Standard 37 points, both raw tiers 17), and a stale
     # close-time quote is not a spread. Measure it on an open market before removing the sentinel.
+    # ✅ **COMMISSION MEASURED 2026-08-10, and these two numbers were right all along.** They had
+    # been typed in off PU Prime's account-types page while a third-party breakdown REVERSED the
+    # tiers, so nobody knew which source to believe. Settled by filling something: one 0.10-lot
+    # round turn on each demo, read back through `mt5_ops.get_deal_breakdown()` — Prime charged
+    # $0.35/side on 0.10 lots and ECN $0.10/side, i.e. **$3.50 and $1.00 per side per standard
+    # lot**, booked on the entry deal AND the exit deal, identical long and short.
+    # ⚠ The first attempt used 0.01 lots and read "$0.01 per side", which is MT5's smallest
+    # non-zero cent — anything from $0.50 to $1.49 per lot prints the same thing. It looked like
+    # an answer and was a rounding floor. Size the probe so the charge clears the cent.
+    #
+    # ⚠ **THE SPREAD IS STILL REFUSED, AND THAT IS DELIBERATE AFTER MEASURING IT.** Both raw
+    # tiers read a median **$0.12** on 2026-08-10 against a simultaneous Standard control of
+    # $0.31 — a real reading, on a live market, paired so the moment could not be doing the work.
+    # It is not here because it is FIVE MINUTES of one quiet Asian session, where the $0.32 above
+    # is a median over 1,893,438 ticks covering all 23 traded hours, and on this broker the ONLY
+    # wide hour is the 22:00 UTC reopen. Both tiers sat pinned at 11-12 points throughout, which
+    # is flat enough to want the reopen before trusting it.
+    # **Use `backtest/tools/cost_tiers.py --spread puprime_ecn=0.12` to model it; that flag
+    # labels the row `stated` and does not touch this table.** Replace the sentinel only with a
+    # figure read off that tier's own tick stream over a full day.
     "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP,
                                        spread=SPREAD_UNMEASURED),
     "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP,

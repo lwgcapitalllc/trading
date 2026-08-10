@@ -265,7 +265,43 @@ recorded against a real refusal; note our own `exec_min_stop_mode` floor of 0.08
 $4,000 gold) binds ~16x earlier, so the broker's limit should never be the one that bites.
 **Three days is three days** — it covers every hour but no weekend and no major news cycle.
 
-#### G5a — WHICH PU PRIME ACCOUNT TYPE (measured 2026-08-06)
+#### G5a — WHICH PU PRIME ACCOUNT TYPE — ✅ **ANSWERED 2026-08-10: ECN**
+
+🟢 **The tiers were MEASURED on an open market, and the answer is ECN.** Everything below this
+box was decided on figures off a marketing page; the table that decides it now is ours.
+
+| tier | account | spread (median) | commission /side /lot | swap long / short | min stop |
+|---|---|---|---|---|---|
+| Standard | 700119432 | **$0.31** | $0.00 | −79.60 / +30.25 | 20 pts |
+| Prime | 700152904 | **$0.12** | **$3.50** | −79.60 / +30.25 | 20 pts |
+| **ECN** | 700152905 | **$0.12** | **$1.00** | −79.60 / +30.25 | 20 pts |
+
+**Prime and ECN are the same account with two commission rates** — same `XAUUSD.p`, same spread,
+same swap, same stops level — so the cheaper toll wins outright and there is no trade-off to weigh.
+Replayed at those figures (`backtest/tools/cost_tiers.py`, 155,531 M15 bars, one real replay per
+row): free 159 / +142.18R · Standard 156 / **+141.87R** · Prime 157 / **+150.23R** · **ECN 157 /
++151.39R**. ⚠ The Prime↔ECN gap is **1.16R**, far inside this strategy's sd of **15.06R** — the case
+for ECN is *strictly cheaper at identical everything else*, not that number.
+
+⚠ **Each raw-tier reading was PAIRED with a simultaneous Standard control** off the live MT5_FFT
+terminal ($0.31–$0.32 through all three windows), because one terminal means three sequential
+logins and gold's spread moves through a session — without the control, a tier gap and a moment gap
+are the same measurement.
+
+⚠ **The spread is still `SPREAD_UNMEASURED` in `backtest/fills.py`.** Five minutes of one quiet
+Asian session is not a spread, and the 22:00 UTC reopen — the only wide hour on this broker — was
+not covered. Model it with `cost_tiers.py --spread puprime_ecn=0.12`. Full detail and how to close
+it: `docs/BROKER_QUESTIONS.md`.
+
+⚠ **Commission was settled by FILLING something**, since it is not a symbol property — 0.10-lot
+round turns on each demo through `get_deal_breakdown()`. A first attempt at 0.01 lots read "$0.01
+per side", which is MT5's smallest non-zero cent and matches every rate from $0.50 to $1.49 per lot:
+**size a cost probe so the charge clears the rounding floor.**
+
+**Everything below is the 2026-08-06 analysis on published figures. Its reasoning still holds and
+its numbers are superseded.**
+
+#### G5a (original) — WHICH PU PRIME ACCOUNT TYPE (measured 2026-08-06)
 
 Aaron's question, ahead of funding a live account: PU Prime sell **Standard** (no commission, wide
 spread), **Prime** and **ECN** (both raw-ish spread + a per-lot commission). Minimum deposits are

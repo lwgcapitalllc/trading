@@ -178,6 +178,30 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/cost_tiers.py`** (new 2026-08-10) — replays one strategy under several BROKER ACCOUNT
+  TIERS and prints trades / total R / delta-vs-free, one real replay per row. It exists because
+  `docs/LIVE_TRADING_PIPELINE.md` → G5a answers *which PU Prime account type* with exactly that
+  table, and the table was built by hand on 2026-08-06 and had to be rebuilt on 2026-08-10 when the
+  raw tiers' spread and commission stopped being marketing figures and became measurements.
+  **A measurement nobody can re-run in one command is a claim.**
+  `cost_tiers.py --spread puprime_ecn=0.12` · defaults to the three PU Prime tiers over
+  2020-01-01 → 2026-08-03, which is the window every G5a figure is quoted on.
+  ⚠ **`--spread TIER=VALUE` is a WHAT-IF and the output labels it `stated`, never `measured`.**
+  `fills.py` carries `SPREAD_UNMEASURED` on any tier nobody has read a spread off and REFUSES
+  rather than borrowing a sibling's — this flag overrides for one run and **writes nothing back**.
+  It is per TIER and not one global number on purpose: a single spread applied to every row would
+  hand Standard the raw tiers' quote and flatten the one difference the table is about.
+  ⚠ **It charges `bid_ask_fills`, which REPLACES the flat spread charge rather than adding to it**,
+  and it is the only cost model here that can change WHICH trades exist. That is why a tier
+  comparison has to be replayed and cannot be re-priced: the cost acts by removing trades, and a
+  trade that never happened has no P&L to charge.
+  ⚠ **It deliberately does NOT report "setups never filled"**, the most informative column in the
+  G5a table. Nothing in `Execution` counts a resting order that expired — that figure came from
+  hand instrumentation nobody kept — and deriving a proxy from the trade list would answer a
+  different question under the same heading, because with one position slot a refused setup lets a
+  DIFFERENT setup take the slot. Add the counter to `Execution` if the column is wanted again.
+  ⚠ Reads the R column only. Costs are size-independent in R while dollars compound, and this
+  strategy's run-to-run spread is **sd 15.06R** (`jitter_audit.py`) — a smaller gap is noise.
 - **`tools/verify_parity.py`** — the one "is everything in sync?" command. Point it at the TradingView
   export CSV(s) you just pulled; it runs every parity check (all nine engine `compare_*.py` + the
   mpc_sos_fade `compare_strategy.py` + the mpc_bleg `compare_bleg.py`) whose MARKER column is present in the CSV, and prints one

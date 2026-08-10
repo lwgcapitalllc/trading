@@ -3,9 +3,12 @@
 **Purpose:** The questions to put to PU Prime before funding a live account, why each one is
 being asked, and what to do with the answer.
 **Scope:** PU Prime, XAUUSD, the `mpc_sos_fade` A+ bot. Not a general broker checklist.
-**Status:** Open — sent nothing yet, and **questions 1-3 no longer need to be asked** (see below).
-**Recommendation as it stands:** a **raw-spread tier (ECN, or Prime)** — **not Standard**.
-**Evidence:** `docs/LIVE_TRADING_PIPELINE.md` → **G5a**, measured 2026-08-06.
+**Status:** Largely closed by measurement — **Q1, Q2, Q3 and Q5 are answered from our own terminals**
+and nothing was ever sent to support. Q4 (swap-free) and Q6 (limit handling by tier) are still human
+questions and are the only reason to send the message below.
+**Recommendation, now MEASURED rather than quoted: the ECN account.** Same spread as Prime, same
+swap, same minimum stop, and 3.5x cheaper commission — strictly better, with no trade-off to weigh.
+**Evidence:** the 2026-08-10 section below; `docs/LIVE_TRADING_PIPELINE.md` → **G5a**.
 
 ---
 
@@ -64,11 +67,81 @@ for a marked-up tier against a raw one, and it is not evidence.
 | | status |
 |---|---|
 | Q3 swap by tier | ✅ **measured — identical**, in `fills.py` |
-| Q1 spread by tier | ⏳ needs an open market (Sunday 22:00 UTC onwards) |
-| Q2 commission per lot per side | ⏳ two 0.01-lot round turns, or ask |
+| Q1 spread by tier | 🟡 **measured on an open market 2026-08-10 — Standard $0.31, Prime $0.12, ECN $0.12.** Five minutes each, so NOT yet in `fills.py` — see below |
+| Q2 commission per lot per side | ✅ **measured — Prime $3.50, ECN $1.00** per side per standard lot |
 | Q4 swap-free / Islamic | ❓ still a human question |
 | Q5 min stop | ✅ measured — 20 points ($0.20) on all three |
 | Q6 limit-order handling by tier | ❓ still a human question |
+
+---
+
+## 🟢 2026-08-10 — THE ANSWER IS **ECN**, AND IT IS NOW MEASURED RATHER THAN QUOTED
+
+The market reopened, `MT5_Lab` was logged into each demo in turn, and every raw-tier reading was
+**paired with a simultaneous Standard control** off the live `MT5_FFT` terminal. One terminal means
+the three logins are sequential and gold's spread moves through a session, so without the control a
+tier-to-tier gap could just as well have been a moment-to-moment one.
+
+| tier | account | symbol | spread (median) | commission /side /lot | swap long / short | min stop |
+|---|---|---|---|---|---|---|
+| Standard | 700119432 | `XAUUSD.s` | **$0.31** | $0.00 | −79.60 / +30.25 | 20 pts |
+| Prime | 700152904 | `XAUUSD.p` | **$0.12** | **$3.50** | −79.60 / +30.25 | 20 pts |
+| **ECN** | 700152905 | `XAUUSD.p` | **$0.12** | **$1.00** | −79.60 / +30.25 | 20 pts |
+
+The Standard control read $0.31–$0.32 through all three windows, ~280 fresh ticks per five-minute
+sample, so the market held still while the tiers were compared.
+
+**Prime and ECN are the same account with two commission rates.** Same symbol, same spread, same
+swap, same stops level — so there is no trade-off to weigh and the cheaper toll simply wins. This is
+the branch the 2026-08-08 entry predicted: *"if they quote the same spread, commission is the only
+thing between them."*
+
+✅ **Q2 was settled by FILLING something, because commission is not a symbol property.** One
+0.10-lot round turn on each demo, read through `mt5_ops.get_deal_breakdown()`: booked on the entry
+deal and the exit deal, identical long and short. **PU Prime's own account-types page was right and
+the third-party breakdown that reversed the tiers was wrong.**
+
+⚠ **The first probe used 0.01 lots and produced a number that was not a measurement.** It read
+−$0.01 per side, which is MT5's smallest non-zero cent — every commission from $0.50 to $1.49 per
+lot prints exactly that. **Size a cost probe so the charge clears the rounding floor**, or it
+returns the confident-looking wrong answer rather than no answer.
+
+**Replayed at the measured figures** — `backtest/tools/cost_tiers.py`, 155,531 M15 bars,
+2020-01-01 → 2026-08-03, one real replay per row, `bid_ask_fills` for the spread:
+
+| tier | trades | total R | vs free |
+|---|---|---|---|
+| free (no costs) | 159 | +142.18 | — |
+| Standard ($0.32 measured, $0.00) | 156 | +141.87 | −0.31 |
+| Prime ($0.12 stated, $3.50) | 157 | +150.23 | +8.05 |
+| **ECN ($0.12 stated, $1.00)** | 157 | **+151.39** | +9.22 |
+
+**ECN beats Standard by 9.5R and Prime by 1.16R over 6.5 years**, which is the same shape the
+published-figure table produced and lands within 0.7R of it — so getting the real numbers moved the
+magnitude and not the decision. ⚠ **The Prime↔ECN gap of 1.16R is far inside this strategy's
+run-to-run spread of sd 15.06R**, so read it as *commission is nearly irrelevant and ECN is not
+worse*, never as a measured 1.16R edge. The case for ECN rests on it being strictly cheaper at
+identical everything else, not on that number.
+
+⚠ **The spread is NOT in `backtest/fills.py` and the `SPREAD_UNMEASURED` sentinel stays.** Five
+minutes of one quiet Asian session is not a spread — the $0.32 it is being compared against is a
+median over 1,893,438 ticks across all 23 traded hours, and the only wide hour on this broker is the
+22:00 UTC reopen, which these samples did not cover. Both raw tiers sat pinned at 11–12 points
+throughout, flat enough to want that hour before trusting it. **Model it with
+`cost_tiers.py --spread puprime_ecn=0.12`, which labels the row `stated` and touches nothing.**
+
+**To close it:** log the idle `C:\MT5_Scalper` terminal into the ECN demo and leave it running — it
+builds its own tick store without borrowing `MT5_Lab` back from the Vantage backtest feed — then
+`broker_facts.py --path C:\MT5_Scalper\terminal64.exe --account 700152905 --symbol XAUUSD.p
+--history-days 1` for the by-hour distribution.
+
+🔴 **Two live-path defects were found by taking these measurements, both now fixed** — see
+`algos/CLAUDE.md`. A refused order logged `(1, 'Success')` because it reported the API call's health
+instead of the order's, and `get_deal_breakdown` / `get_deal_result` bounded their history window
+with `datetime.utcnow()` while MT5 stamps deals in SERVER time (+3h here), so **they returned empty
+on every real fill and the cost measurement they were written for had never produced a reading.**
+⚠ **That is the argument for probes like this one being run rather than reasoned about: both bugs
+sat in code with green tests, and only placing an order surfaced them.**
 
 ---
 
