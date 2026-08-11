@@ -267,7 +267,14 @@ export function useRunReprice(runId: string | null, layers: CostLayer[], enabled
   return useQuery({
     queryKey: ['lab', 'run', runId, 'repriced', key],
     queryFn: () => api.get<RunRepriceReport>(
-      `/backtests/runs/${runId}/repriced?layers=${encodeURIComponent(key)}`),
+      `/backtests/runs/${runId}/repriced?layers=${encodeURIComponent(key)}`,
+      // ⚠ `silent`, because the refusal is RENDERED — the pill reads "Can't price this run" with
+      // the server's own sentence in its popover (`useCostFilter` reads `isError` deliberately).
+      // A toast on top is the same message twice, and `retry: 1` makes it twice again: a Rerun
+      // deletes the run's artefacts, so this fires against a run with no curve and put TWO red
+      // popups over the page for a state already on screen. Silent hides the TOAST, never the
+      // error — do not use it here without keeping the pill's `failed` branch.
+      { silent: true }),
     // Fetched even with NOTHING ticked: the response carries every layer's own price, which is
     // what the pill shows on each row before you turn any of them on.
     enabled: !!runId && enabled,
@@ -463,7 +470,14 @@ export function useRetryBacktest() {
       toast.success('Rerun started')
       qc.invalidateQueries({ queryKey: ['lab', 'progress'] })
       qc.invalidateQueries({ queryKey: ['lab', 'runs'] })
-      qc.invalidateQueries({ queryKey: ['lab', 'run', data.run_id] })
+      // 🔴 TWO calls, and the split is the fix. `['lab','run',id]` is a PREFIX, so it also matches
+      // this run's re-price and news queries — and a retry has just DELETED every artefact those
+      // read (`_clear_run_dir`), so re-asking them here can only produce a refusal. They are marked
+      // stale WITHOUT being re-asked; both are gated on the run having an equity curve, so they
+      // switch off the moment the run's own refetch lands and re-ask themselves once the new
+      // attempt finishes. The second call re-fetches the RUN and nothing else.
+      qc.invalidateQueries({ queryKey: ['lab', 'run', data.run_id], refetchType: 'none' })
+      qc.invalidateQueries({ queryKey: ['lab', 'run', data.run_id], exact: true })
       qc.invalidateQueries({ queryKey: ['lab', 'sweep'] })
       qc.invalidateQueries({ queryKey: ['lab', 'sweeps'] })
       qc.invalidateQueries({ queryKey: ['lab', 'optimization'] })
