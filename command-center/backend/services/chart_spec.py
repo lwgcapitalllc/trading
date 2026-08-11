@@ -825,20 +825,75 @@ def build_chart_spec(run_id: str, refresh: bool = False) -> Optional[dict]:
     return spec
 
 
-def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
+#: The overlay groups every leg computes for ITSELF, anchored to that leg's own trades / blocked /
+#: missed bars. They are the ones a merged stack has to carry PER LEG rather than once — see
+#: `build_stack_chart_spec`.
+_ANCHORED_GROUPS = (GROUP_FVG, GROUP_OB, *GROUPS_LIQ)
+
+
+def _overlay_identity(o: dict) -> tuple:
+    """What makes two legs' copies of one anchored overlay the SAME drawing.
+
+    A fair value gap, an order block and a liquidity level are facts about the MARKET; two legs that
+    both fired near one gap each report it, and drawing it twice would double the layer's box count
+    and stack two identical rectangles. Geometry plus the label IS the identity — nothing here is
+    per-leg — so the dedupe merges their `layers` instead.
+    """
+    return (o.get("group"), o.get("type"), o.get("t0"), o.get("t1"),
+            o.get("t"), o.get("p0"), o.get("p1"), o.get("price"), o.get("label"))
+
+
+def build_stack_chart_spec(stack_id: str, refresh: bool = False) -> Optional[dict]:
     """Build a MERGED ChartSpec for a portfolio stack — one shared candle chart carrying every
-    completed leg's trades, each tagged with `layer` = its strategy_id so the frontend can filter
-    by the SAME per-strategy toggle it uses for the equity chart (and colour each layer to match).
+    completed leg's trades, blocked setups, missed setups and anchored analysis, each tagged with
+    `layer` = its strategy_id so the frontend can filter by the SAME per-strategy toggle it uses for
+    the equity chart (and colour each layer to match).
 
     Reuses each leg's own `build_chart_spec` (all legs share one instrument/TF/window, so the
-    candles are identical) and drops the per-strategy structure overlays/indicators — a portfolio
-    price view stays readable with trades only. Blocked AND missed setups are dropped for a second
-    reason: neither carries a `layer`, so on a merged chart there would be no way to tell WHOSE
-    rule refused a setup or WHOSE confluence was missing. Omitting the keys hides both toggles; a
-    leg's own page still has them. Returns
-    None if the stack is unknown; a spec with
-    empty candles if no leg produced any (frontend shows "no price data"). Not cached (legs can
-    complete incrementally); each leg's own spec is cached, so the merge is cheap."""
+    candles are identical). Returns None if the stack is unknown; a spec with empty candles if no
+    leg produced any (frontend shows "no price data"). Not cached (legs can complete
+    incrementally); each leg's own spec is cached, so the merge is cheap.
+
+    ⚠ **`refresh=True` rebuilds EVERY leg's own spec, and that is where the cost is.** The merge
+    itself holds no cache to drop — it is recomputed on every request — so a Rebuild that only
+    re-ran the merge would hand back the identical stale layers and read as a broken button. It is
+    therefore N leg rebuilds, each re-fetching candles and replaying the engines, which is what a
+    Rebuild on each leg's own page would cost anyway. Every leg is rebuilt rather than the base one
+    alone: blocked setups, missed setups and the anchored analysis come from EACH leg's spec, so
+    refreshing only the leg that supplies the candles would leave most of the chart stale.
+
+    🔴 **Blocked setups, missed setups and the anchored analysis groups were DROPPED here until
+    2026-08-10, and the reason given was that none of them carried a `layer`.** That was true and
+    it was an argument for TAGGING them, not for omitting them: with the layers off, isolating one
+    strategy on a stack left the reader with winners, losers and fibs while a single backtest of the
+    same strategy had ten more rows. Reported off the screen in exactly those words — *"I don't have
+    all my analysis tools… fair value gaps are gone, missed trades, blocked trades, all that stuff
+    is gone."*
+
+    Two rules hold the merge together, and they differ because the layers answer different
+    questions:
+
+      - **A block or a miss belongs to ONE strategy.** It is that strategy's own rule refusing its
+        own setup, so it is tagged and never deduped — two legs refusing on the same bar are two
+        separate facts, and merging them would erase whose rule spoke.
+      - **A gap, an order block and a liquidity level are facts about the MARKET**, selected for
+        drawing by whichever leg fired near them. So identical copies from two legs are ONE overlay
+        carrying both layers (`_overlay_identity`), and it draws while EITHER leg is shown. Keeping
+        two would double the box count the menu reports and stack two identical rectangles.
+
+    ⚠ **The structure overlays and the indicators still come from the BASE leg alone**, unchanged:
+    they are computed from the candles rather than from any leg's trades, so every leg's copy is
+    byte-identical and a merge would be N copies of one answer.
+
+    ⚠ **CANDLESTICK REVERSALS ARE STILL DROPPED, and this is the one genuine refusal left.** A
+    candle mark carries `spans` / `deepestOf` / `deepestNames` as INDICES into its own run's anchor
+    list (`reversal_anchors`: that run's trades, then its 3/3 misses). A stack re-sorts every leg's
+    trades into one list by entry time AND `StackDetail` filters that list by which legs are switched
+    on — so an index minted against one run addresses a different trade here, and would name the
+    wrong trade's outcome chip. That is a defect that renders a confident wrong answer rather than a
+    missing layer, which is the worse of the two. Carrying it needs the marks to reference a trade's
+    ID rather than its position; a leg's own page has the layer in the meantime.
+    """
     rows = lab_db.list_stack_runs(stack_id)
     if not rows:
         return None
@@ -847,33 +902,76 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
     base_spec: Optional[dict] = None      # first leg that actually has candles
     base_run_id: Optional[str] = None     # its run_id — drives the price chart's drill-down/fullscreen
     all_trades: list[dict] = []
+    all_blocks: list[dict] = []
+    all_misses: list[dict] = []
+    miss_noise: list[str] = []
     layers: list[dict] = []
+    # Anchored overlays, keyed by identity so two legs reporting one market fact land on one entry.
+    anchored: dict[tuple, dict] = {}
+
     for r in rows:
         if r["status"] != "complete":
             continue
-        spec = build_chart_spec(r["run_id"])
+        spec = build_chart_spec(r["run_id"], refresh)
         if not spec:
             continue
+        sid = r["strategy_id"]
         first_spec = first_spec or spec
         if base_spec is None and spec.get("candles"):
             base_spec = spec
             base_run_id = r["run_id"]
         layers.append({
-            "strategy_id": r["strategy_id"],
+            "strategy_id": sid,
             "strategy_name": r.get("strategy_name", ""),
             "run_id": r["run_id"],
         })
         for tr in spec.get("trades", []):
             t = dict(tr)
-            t["layer"] = r["strategy_id"]
-            t["id"] = f"{r['strategy_id']}:{tr.get('id', '')}"  # unique across layers
+            t["layer"] = sid
+            t["id"] = f"{sid}:{tr.get('id', '')}"  # unique across layers
             all_trades.append(t)
+        for b in spec.get("blocks", []):
+            bl = dict(b)
+            bl["layer"] = sid
+            bl["id"] = f"{sid}:{b.get('id', '')}"
+            all_blocks.append(bl)
+        for m in spec.get("misses", []):
+            ms = dict(m)
+            ms["layer"] = sid
+            ms["id"] = f"{sid}:{m.get('id', '')}"
+            all_misses.append(ms)
+        # A union, order-preserving. `missNoise` is a list of reason LABELS to open unticked, and a
+        # label one leg calls routine is routine on the merged chart too — a leg that never produced
+        # it has no opinion, so it cannot vote against.
+        for lbl in spec.get("missNoise", []):
+            if lbl not in miss_noise:
+                miss_noise.append(lbl)
+        for o in spec.get("overlays", []):
+            if o.get("group") not in _ANCHORED_GROUPS:
+                continue
+            key = _overlay_identity(o)
+            hit = anchored.get(key)
+            if hit is None:
+                ov = dict(o)
+                ov["layers"] = [sid]
+                anchored[key] = ov
+            elif sid not in hit["layers"]:
+                hit["layers"].append(sid)
 
     src = base_spec or first_spec
     if src is None:
         return None
 
     all_trades.sort(key=lambda t: t.get("entryTime", 0))
+    # Structure overlays + indicators are a property of the MARKET on these candles, not of any one
+    # strategy — identical for every leg (same instrument/timeframe/window). So the stack's price
+    # chart carries the base leg's, giving it full BacktestDetail parity (structure layers, ATR pane,
+    # fib/measurement tools all read the same spec). The anchored groups are merged above instead,
+    # and the candle marks are dropped — see the docstring for why that one cannot be merged.
+    overlays = [dict(o) for o in src.get("overlays", [])
+                if o.get("group") not in (*_ANCHORED_GROUPS, GROUP_CANDLES)]
+    overlays.extend(anchored.values())
+
     return {
         "instrument": src["instrument"],
         "baseTimeframe": src["baseTimeframe"],
@@ -883,22 +981,10 @@ def build_stack_chart_spec(stack_id: str) -> Optional[dict]:
         "candles": src["candles"],
         "sessions": [dict(s) for s in src.get("sessions", [])],
         "trades": all_trades,
-        # Structure overlays + indicators are a property of the MARKET on these candles, not of
-        # any one strategy — identical for every leg (same instrument/timeframe/window). So the
-        # stack's price chart carries the base leg's, giving it full BacktestDetail parity
-        # (structure layers, ATR pane, fib/measurement tools all read the same spec).
-        # The ANCHORED groups — fair value gaps, order blocks, candlestick reversals and the three
-        # liquidity tiers — are the exception, dropped for the same reason blocks and misses are:
-        # every one of them is anchored
-        # to the BASE leg's trades, so on a merged chart they would draw at one strategy's entries and
-        # nothing at the others' — which reads as "these setups had gaps and those didn't" rather than
-        # "only one leg was measured". A leg's own page still carries all of them.
-        # ⚠ The liquidity tiers are dropped even though a LEVEL is a property of the market rather
-        # than of a strategy — the same as the structure overlays kept above. What is leg-specific is
-        # not the level, it is WHICH levels were selected for drawing, and that selection is the base
-        # leg's alone. A market fact filtered through one strategy's anchors is not a market fact.
-        "overlays": [dict(o) for o in src.get("overlays", [])
-                     if o.get("group") not in (GROUP_FVG, GROUP_OB, GROUP_CANDLES, *GROUPS_LIQ)],
+        "blocks": all_blocks,
+        "misses": all_misses,
+        "missNoise": miss_noise,
+        "overlays": overlays,
         "indicators": [dict(i) for i in src.get("indicators", [])],
         "layers": layers,
         # The base leg's run_id — the frontend routes M1/M5 drill-down + fullscreen candle fetches

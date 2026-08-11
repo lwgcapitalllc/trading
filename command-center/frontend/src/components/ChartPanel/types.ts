@@ -131,6 +131,13 @@ export interface ChartBlock {
   dir: TradeDir      // the side that was refused — tag sits below for a long, above for a short
   price: number      // where the entry limit would have rested
   reasons: ChartBlockReason[]
+  /** Portfolio stack only — the strategy whose rule refused it. Absent on a single-run spec, which
+   *  is what keeps every stack affordance invisible on an ordinary backtest.
+   *
+   *  ⚠ A block belongs to ONE strategy and is never merged with another leg's, unlike a gap or a
+   *  liquidity level: two legs refusing on the same bar are two separate facts, and the whole
+   *  question this layer answers is WHOSE rule spoke. */
+  layer?: string
 }
 
 /** A setup that got PARTWAY and then died without ever becoming a trade — the companion of a
@@ -155,6 +162,8 @@ export interface ChartMiss {
   near: boolean
   metLines: string[]
   reasons: ChartBlockReason[]
+  /** Portfolio stack only — the strategy whose setup this was. Same rule as `ChartBlock.layer`. */
+  layer?: string
 }
 
 /** Generic styling hints shared by overlays. All optional — the panel has defaults. */
@@ -170,7 +179,19 @@ export interface OverlayStyle {
  *  it to mirror the TradingView toggles: a swing-point tag needs its owning structure on
  *  ("External Structure" / "Internal Structure"), and historic internal content needs
  *  "Internal Structure" on top of its own group. Absent = the overlay's own group is the only gate. */
-type OverlayRequires = { requires?: string[] }
+type OverlayRequires = {
+  requires?: string[]
+  /** Portfolio stack only — which strategies' setups caused this overlay to be drawn. Absent on a
+   *  single-run spec, and on a stack's structure overlays, which are computed from the candles and
+   *  belong to no leg.
+   *
+   *  ⚠ **A LIST, and the overlay draws while ANY of them is shown.** A gap, an order block and a
+   *  liquidity level are facts about the MARKET, selected for drawing by whichever leg fired near
+   *  them — so two legs reporting one gap is ONE drawing carrying both names, and hiding one leg
+   *  must not remove a gap the other leg also fired into. That is the opposite rule from a block or
+   *  a miss, which belongs to exactly one strategy. */
+  layers?: string[]
+}
 
 /** A filled rectangle spanning a time and price range (e.g. a range box, an order block).
  *  `label` names the zone in its corner — `labelAlign: 'right'` parks it at the box's right edge,

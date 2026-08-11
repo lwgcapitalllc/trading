@@ -14,6 +14,7 @@ import type {
   OptimizationRequest, OptimizationSummary, OptimizationDetail,
   InstrumentSummary, RunningJobStatus,
   StrategyFile, StrategyFilesResponse, StrategyFileSyncResponse, CompileJobStatus,
+  RegimeDay,
 } from '@/types'
 import type { ChartSpec, ChartPage } from '@/components/ChartPanel/types'
 
@@ -725,16 +726,44 @@ export function useStacks() {
   })
 }
 
+// 🔴 The poll is keyed on the stack's own STATUS, not on `completed < total` (fixed 2026-08-10).
+// A leg that FAILED never completes, so that comparison is permanently true on a failed or partial
+// stack — and this response is not small: MEASURED at 226,036 bytes / 38 ms on the live lab, i.e.
+// ~270 MB an hour for a tab left open on a broken stack, for ever, with nothing on screen moving.
+// `status` is computed off the same rows (`routers/stacks.get_stack`) and is `running` only while
+// a leg genuinely is, so it is the fact the poll is actually waiting on.
+// ⚠ `timeline=false` — the regime calendar is 43% of this payload (96,766 of 226,036 bytes,
+// measured on `st_94aeb25f0c`) and the overlay it feeds defaults OFF, so it is fetched separately
+// by `useStackRegimeTimeline` when the reader actually switches the overlay on. The page must read
+// `has_regime_timeline` — never `regime_timeline.length` — to decide whether to offer the control.
 export function useStack(stackId: string | null) {
   return useQuery({
     queryKey: ['lab', 'stack', stackId],
-    queryFn: () => api.get<StackDetail>(`/backtests/stacks/${stackId}`),
+    queryFn: () => api.get<StackDetail>(`/backtests/stacks/${stackId}?timeline=false`),
     enabled: !!stackId,
     refetchInterval: (query) => {
       const data = query.state.data as StackDetail | undefined
       if (!data) return 5_000
-      return data.completed_strategies < data.total_strategies ? 3_000 : false
+      return data.status === 'running' ? 3_000 : false
     },
+  })
+}
+
+// The regime calendar, fetched only once the overlay is switched on.
+//
+// ⚠ Its own cache key, deliberately NOT part of `['lab','stack',id]`. A slimmed response and a full
+// one sharing a key is the trap `GET /runs/{id}?timeline=false` already records: whichever fetch
+// landed last decides whether the calendar exists, so the overlay would blink out on the next poll.
+// ⚠ This is the only path that will CLASSIFY an unclassified window (it fetches OHLC), which is
+// exactly why it is gated on `enabled` rather than fired on page load.
+export function useStackRegimeTimeline(stackId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['lab', 'stack-regimes', stackId],
+    queryFn: () => api.get<{ regime_timeline: RegimeDay[] }>(
+      `/backtests/stacks/${stackId}/regime-timeline`,
+    ),
+    enabled: !!stackId && enabled,
+    staleTime: Infinity,   // a finished stack's calendar is a fixed window; it cannot change
   })
 }
 
@@ -748,7 +777,18 @@ export function useStack(stackId: string | null) {
 //
 // ⚠ Enabled only for a SHARED stack. A screen has no account to contend over, and polling one
 // forever would be asking a question that can never be answered.
-export function useStackContention(stackId: string | null, enabled: boolean) {
+// 🔴 It had TWO ways to poll for ever, and both are ordinary rather than exotic (fixed 2026-08-10).
+// `progress` lives in an IN-PROCESS dict (`services/portfolio_runner._PROGRESS`), so a backend
+// restart erases it — the report then reads `{available: false, progress: null}` while
+// `reset_stale_runs` has already marked the legs crashed, and the old conditions polled a report
+// that could never arrive. A CANCELLED run was the second: it sets `phase: "cancelled"`, which is
+// not `"failed"`.
+//
+// ⚠ `stackRunning` is what separates "nobody is driving this" from the ordinary window where the
+// legs are already `complete` and the artefact is a beat behind — `_persist` marks the last leg
+// complete BEFORE it writes `shared_summary.json`, so stopping on the stack's status alone would
+// give up exactly one poll early. Progress being present is the proof somebody is still working.
+export function useStackContention(stackId: string | null, enabled: boolean, stackRunning: boolean) {
   return useQuery({
     queryKey: ['lab', 'stack-contention', stackId],
     queryFn: () => api.get<StackSharedReport>(`/backtests/stacks/${stackId}/contention`),
@@ -756,8 +796,13 @@ export function useStackContention(stackId: string | null, enabled: boolean) {
     refetchInterval: (query) => {
       const data = query.state.data as StackSharedReport | undefined
       if (!data) return 3_000
-      // A finished report never changes; a failed one will not start moving again either.
-      if (data.available || data.progress?.phase === 'failed') return false
+      if (data.available) return false            // a finished report never changes
+      const phase = data.progress?.phase
+      // `complete` is a stop too: the summary is written BEFORE that phase is set, so a report
+      // still unavailable there is a write that failed rather than one still in flight.
+      if (phase === 'failed' || phase === 'cancelled' || phase === 'complete') return false
+      // No progress and nothing running = the process that was driving this is gone.
+      if (!data.progress && !stackRunning) return false
       return 3_000
     },
   })
@@ -772,6 +817,25 @@ export function useStackChartSpec(stackId: string | null, readyKey: string, enab
     queryFn: () => api.get<StackChartSpec>(`/backtests/stacks/${stackId}/chart-spec`),
     enabled: !!stackId && !!readyKey && enabled,
     staleTime: Infinity,
+  })
+}
+
+// Rebuild the stack's merged spec — the sibling of `useRefreshChartSpec`, and it exists because
+// the price chart on a stack is the SAME panel with the same Rebuild button, so a reader who has
+// just fixed what a layer draws must be able to act on it from either page.
+//
+// ⚠ The query key carries `readyKey`, so the mutation cannot name it — it takes the key it must
+// write back, rather than reconstructing one that would silently miss by a leg. Writing the wrong
+// key is invisible: the fetch succeeds, the button stops spinning, and the chart keeps the old spec.
+export function useRefreshStackChartSpec() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ stackId }: { stackId: string; readyKey: string }) =>
+      api.get<StackChartSpec>(`/backtests/stacks/${stackId}/chart-spec?refresh=true`),
+    onSuccess: (data, { stackId, readyKey }) => {
+      qc.setQueryData(['lab', 'stack-chart-spec', stackId, readyKey], data)
+    },
+    onError: () => toast.error('Failed to rebuild the chart'),
   })
 }
 

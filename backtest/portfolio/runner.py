@@ -59,6 +59,13 @@ class StackRun:
     contention: list = field(default_factory=list)      # every shrink and refusal, time-stamped
     solo_per_leg: dict = field(default_factory=dict)    # leg -> its trades run ALONE (control)
     solo_closing: dict = field(default_factory=dict)    # leg -> its own closing balance, alone
+    # leg -> the setups its OWN rules refused, and the ones that died partway, in the SHARED run.
+    # Reporting-only, exactly as they are on a standalone run: a refused setup places no order, so
+    # it is in no trade list and this is its only channel out. They are taken from the SHARED
+    # replay rather than the solo control so they line up with `per_leg` — a block recorded in a
+    # different replay would sit beside trades it never competed with.
+    blocked_per_leg: dict = field(default_factory=dict)
+    missed_per_leg: dict = field(default_factory=dict)
     peak_reserved_pct: float = 0.0                      # most open risk carried, % of balance
     peak_concurrent: int = 0                            # most legs holding a position at once
     cancelled: bool = False                             # stopped early — every book is PARTIAL
@@ -101,6 +108,17 @@ def run_stack(specs: Sequence[LegSpec], *, balance: float, risk_cap_pct: float,
                    peak_reserved_pct=account.peak_reserved_pct,
                    peak_concurrent=account.peak_concurrent,
                    cancelled=result.cancelled)
+    # ⚠ `getattr` with a default, never a direct read: `blocks` / `misses` are OPTIONAL on a
+    # strategy's execution (`mpc_bleg` records neither by construction — those codes describe why
+    # an A+ setup was refused, and A+ never trades in that fork), so requiring them would refuse a
+    # legitimate leg. An empty list and an absent attribute mean the same thing HERE — nothing was
+    # recorded — which is the one place in this repo where collapsing them is right, because a
+    # strategy that records none is a strategy with no such rule rather than one that could not be
+    # asked.
+    for leg in legs:
+        ex = getattr(leg.strategy, "execution", None)
+        run.blocked_per_leg[leg.name] = list(getattr(ex, "blocks", None) or [])
+        run.missed_per_leg[leg.name] = list(getattr(ex, "misses", None) or [])
     if result.cancelled:
         # No solo controls for a cancelled shared run. A control's whole job is to be
         # comparable to the shared book, and a control over the FULL history beside a shared

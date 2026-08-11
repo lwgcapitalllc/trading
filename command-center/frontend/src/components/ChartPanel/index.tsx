@@ -149,6 +149,11 @@ interface MarkerTip {
   met: string[]
   reasons: ChartBlockReason[]
   price: number
+  /** Portfolio stack only — WHOSE rule refused this setup, or whose confluence was missing. Absent
+   *  on a single run, where the question does not arise. It is the reason these two layers were
+   *  dropped from a stack chart until 2026-08-10: a merged chart with no name on the card cannot
+   *  say which strategy is speaking, and a refusal attributed to the wrong bot is worse than none. */
+  strategy?: string
 }
 
 /** The card itself. ONE component for both marker layers: they answer the same question ("why is
@@ -170,6 +175,9 @@ function MarkerTipCard({ tip, precision }: { tip: MarkerTip; precision: number }
       className="rounded-md border border-border-subtle bg-bg-surface px-2.5 py-2 shadow-lg"
     >
       <div className="text-[11px] font-semibold" style={{ color: tip.color }}>{tip.title}</div>
+      {tip.strategy && (
+        <div className="text-[10px] text-text-tertiary">{tip.strategy}</div>
+      )}
       {/* What it HAD — only a miss carries these; a block had everything by definition. */}
       {tip.met.length > 0 && (
         <div className="mt-1.5">
@@ -1439,6 +1447,27 @@ export default function ChartPanel({
   // Page coords have one origin, in every layout and fullscreen.
   const [markerTip, setMarkerTip] = useState<MarkerTip | null>(null)
 
+  // Layers hidden from the chart (isolate one strategy on a portfolio stack). Ids only — a stale id
+  // from a spec change is inert, so no reconciliation needed.
+  //
+  // ⚠ **Declared HERE, above every predicate that reads it**, which is further up than it belongs
+  // by subject. `blockVisible` / `missVisible` / `overlayLayerVisible` all list it in a dependency
+  // array, and a `const` referenced above its own declaration is a TDZ crash at render — the same
+  // trap the two Missed-layer filters already carry a note about, and the one `tsc` cannot see when
+  // the reference is inside a closure.
+  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set())
+
+  /** Does this overlay belong to a strategy that is currently shown?
+   *
+   *  ⚠ **ANY, not every.** A gap / order block / liquidity level on a stack carries the layers of
+   *  EVERY leg that fired near it, because it is one market fact selected for drawing by several
+   *  strategies — so isolating one leg must not remove a zone the other leg also traded into. An
+   *  overlay with no `layers` (a single run, or a stack's structure overlays) always draws. */
+  const overlayLayerVisible = useCallback(
+    (ov: ChartOverlay) => !ov.layers?.length || ov.layers.some(l => !hiddenLayers.has(l)),
+    [hiddenLayers],
+  )
+
   // Per-reason filters. The roster is DERIVED from the blocks themselves — first-seen order, keyed
   // on the strategy's own label — so the panel stays strategy-agnostic: it sees reasons as data,
   // exactly like overlay groups and stack layers, and a strategy with a different rule set needs no
@@ -1458,9 +1487,14 @@ export default function ChartPanel({
   })
   // A block draws while ANY of its reasons is still on. Requiring ALL would make "show me the veto
   // blocks" hide the ones the final hour was also refusing — which are still veto blocks.
+  //
+  // ⚠ **The layer gate is INSIDE the predicate, not applied at the call sites**, so the Step
+  // navigator, the counts on the menu rows and the drawing effect all agree — the navigator must
+  // never park on a marker belonging to a strategy the reader has isolated away.
   const blockVisible = useCallback(
-    (b: ChartBlock) => b.reasons.some(r => !hiddenReasons.has(r.label)),
-    [hiddenReasons],
+    (b: ChartBlock) => (!b.layer || !hiddenLayers.has(b.layer))
+      && b.reasons.some(r => !hiddenReasons.has(r.label)),
+    [hiddenReasons, hiddenLayers],
   )
   const shownBlockCount = useMemo(
     () => blocks.reduce((n, b) => n + (blockVisible(b) ? 1 : 0), 0),
@@ -1567,9 +1601,10 @@ export default function ChartPanel({
   // Score AND reason. Two independent axes, so unticking "2 of 3" must not also decide anything
   // about the reasons — that is the whole point of splitting them.
   const missVisible = useCallback(
-    (m: ChartMiss) => !hiddenMissScores.has(`${m.met}/${m.of}`)
+    (m: ChartMiss) => (!m.layer || !hiddenLayers.has(m.layer))
+      && !hiddenMissScores.has(`${m.met}/${m.of}`)
       && m.reasons.some(r => !hiddenMissReasons.has(r.label)),
-    [hiddenMissReasons, hiddenMissScores],
+    [hiddenMissReasons, hiddenMissScores, hiddenLayers],
   )
   const shownMissCount = useMemo(
     () => misses.reduce((n, m) => n + (missVisible(m) ? 1 : 0), 0),
@@ -1590,9 +1625,13 @@ export default function ChartPanel({
     }
     return Array.from(seen.values())
   }, [spec.trades])
-  // Layers hidden from the chart (isolate one strategy). Ids only — a stale id from a spec change
-  // is inert, so no reconciliation needed.
-  const [hiddenLayers, setHiddenLayers] = useState<Set<string>>(new Set())
+  // A leg's display name for the marker hover cards. It falls back to the id rather than to nothing:
+  // a raw `mpc_bleg` is worse to read than the name and is still an ANSWER, where a blank line would
+  // read as a marker belonging to no strategy.
+  const layerName = useCallback(
+    (id: string) => tradeLayers.find(l => l.id === id)?.name ?? id,
+    [tradeLayers],
+  )
   const toggleLayer = (id: string) => setHiddenLayers(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -1765,10 +1804,17 @@ export default function ChartPanel({
   const structureGroups = useMemo(() => overlayGroups.filter(g => !isAnalysisGroup(g.name)), [overlayGroups])
   // Each analysis group carries its BOX COUNT, the way Blocked and Missed carry theirs — a layer
   // that draws 41 gaps and one that draws 4 read very differently before you switch it on.
+  //
+  // ⚠ **The ROSTER comes from every overlay and only the COUNT is layer-filtered** — the same rule
+  // the Missed layer's chips follow. A row that vanished when the reader isolated a strategy would
+  // be a control they could not use to get back, and a `0` beside a live row is an answer.
   const analysisGroups = useMemo(() => {
     const counts = new Map<string, number>()
+    const present = new Set<string>()
     for (const ov of allOverlays) {
-      if (isAnalysisGroup(ov.group)) counts.set(ov.group, (counts.get(ov.group) ?? 0) + 1)
+      if (!isAnalysisGroup(ov.group)) continue
+      present.add(ov.group)
+      if (overlayLayerVisible(ov)) counts.set(ov.group, (counts.get(ov.group) ?? 0) + 1)
     }
     return ANALYSIS_GROUPS
       // ⚠ The candle repaint is DROPPED off the timeframe it was computed on, and the row goes with
@@ -1776,11 +1822,11 @@ export default function ChartPanel({
       // bar size — an M15 hammer is not an H1 hammer — so painting the H1 bar that happens to
       // CONTAIN it would state something nobody measured, and at M1 there is no single bar that is
       // the pattern at all. Every other analysis group is a price/time zone and resamples fine.
-      .filter(g => counts.has(g) && (g !== GROUP_CANDLE_MARKS || atBaseTf))
+      .filter(g => present.has(g) && (g !== GROUP_CANDLE_MARKS || atBaseTf))
       .map(g => ({
         name: g as string, color: ANALYSIS_GROUP_COLOR[g], count: counts.get(g) ?? 0,
       }))
-  }, [allOverlays, atBaseTf])
+  }, [allOverlays, atBaseTf, overlayLayerVisible])
 
   // Candlestick reversals — a DIRECTION filter, the same shape as the Missed layer's score rows
   // (Aaron, 2026-08-08: *"other times it's showing candle patterns that [point] nothing in the
@@ -2463,13 +2509,14 @@ export default function ChartPanel({
             met: [],
             reasons: b.reasons,
             price: b.price,
+            strategy: b.layer ? layerName(b.layer) : undefined,
           })
           return true
         },
         onMouseLeave: () => { setMarkerTip(null); return true },
       })
     }
-  }, [blocks, blocksOn, blockVisible, displayCandles, loadedLoTs, loadedHiTs])
+  }, [blocks, blocksOn, blockVisible, displayCandles, loadedLoTs, loadedHiTs, layerName])
 
   // Missed setups — identical machinery to Blocked (same template, same clipping, same hover
   // card), with the score on the tag instead of a rule count. `row: 1` parks these one step
@@ -2501,13 +2548,14 @@ export default function ChartPanel({
             met: m.metLines,
             reasons: m.reasons,
             price: m.price,
+            strategy: m.layer ? layerName(m.layer) : undefined,
           })
           return true
         },
         onMouseLeave: () => { setMarkerTip(null); return true },
       })
     }
-  }, [misses, missesOn, missVisible, displayCandles, loadedLoTs, loadedHiTs])
+  }, [misses, missesOn, missVisible, displayCandles, loadedLoTs, loadedHiTs, layerName])
 
   // The Step navigator's parked marker — one accent vline through it. A step CENTRES its target
   // rather than isolating it, so with several markers on screen "which one am I on?" has no answer
@@ -2579,6 +2627,10 @@ export default function ChartPanel({
       // TradingView ones — e.g. swing tags vanish with the structure that owns them, and historic
       // internal content needs "Internal Structure" on as well as its own toggle.
       if (ov.requires?.some(g => groupsOn[g] === false)) continue
+      // Portfolio stack: an anchored overlay draws while ANY leg that reported it is shown, so
+      // isolating one strategy removes only the zones nothing else fired into. Inert on a single
+      // run, where nothing carries `layers`.
+      if (!overlayLayerVisible(ov)) continue
       // Skip any structure overlay outside the DRAW WINDOW — the viewport widened by a screen
       // either side, itself already clipped to the loaded candles (klinecharts clamps an
       // out-of-range point onto the plot edge, which is what piles old markers into the no-data
@@ -2669,7 +2721,8 @@ export default function ChartPanel({
       chart.createOverlay({ name: LABEL, lock: true, points: labelPoints, extendData: { items: labelItems } })
     }
     // `chartSettings` is a dep because the candle-mark tag reads it; toggling it must redraw.
-  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs, atBaseTf, chartSettings, hiddenCandleDirs])
+  }, [allOverlays, baseCandles, groupsOn, displayCandles, drawLoTs, drawHiTs, atBaseTf, chartSettings,
+      hiddenCandleDirs, overlayLayerVisible])
 
   // Daily session-break vlines. Rebuilt after data changes (applyNewData can clear overlays).
   useEffect(() => {

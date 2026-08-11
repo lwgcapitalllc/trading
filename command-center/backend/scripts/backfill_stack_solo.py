@@ -1,4 +1,8 @@
-"""Backfill the SOLO CONTROL books for shared stacks replayed before 2026-08-10.
+"""Backfill the artefacts a shared stack was never asked to keep, for stacks replayed before
+2026-08-10 — the SOLO CONTROL books, and each leg's BLOCKED and MISSED setups.
+
+Both come out of one `run_stack` call, which is why they share a script: the replay is the expensive
+part and running it twice to write two files would be the only wasteful way to do this.
 
 `run_stack` has always replayed each leg alone as a control, and `_persist` kept only two scalars
 from it (`solo_r`, `solo_closing_balance`). The trades were discarded — so a stack could not answer
@@ -10,7 +14,11 @@ window, on the same 99 trades, at the same 17.8674R.
 ⚠ This RE-RUNS the replay — it does not recover anything from disk, because nothing was written.
 It is `1 + legs` full replays (`run_stack` builds the shared book first), which is the same work a
 Rerun does; the difference is that this leaves every stored row, KPI and leg curve untouched and
-writes only the missing artefact.
+writes only the missing artefacts.
+
+⚠ **The blocked / missed setups come from the SHARED replay, the solo book from the CONTROL** — the
+same split `_persist` uses. A block recorded in the solo replay would sit on a chart beside trades
+it never competed with.
 
 ⚠ It REFUSES to overwrite a solo book that already exists unless `--force`. A stack replayed after
 this landed has the real thing on disk, and re-deriving it from today's code would silently swap a
@@ -30,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from services import lab_db, portfolio_runner  # noqa: E402
+from services.portfolio_runner import _LAB_RESULTS_DIR  # noqa: E402
 
 
 def _settings_for(stack_id: str) -> dict | None:
@@ -56,10 +65,17 @@ def backfill(stack_id: str, *, force: bool = False) -> str:
     if not rows or any(r["status"] != "complete" for r in rows):
         return f"{stack_id}: legs are not all complete — skipped"
 
-    have = [r["strategy_id"] for r in rows
-            if portfolio_runner.solo_book(stack_id, r["strategy_id"])[0]]
-    if have and not force:
-        return f"{stack_id}: already has solo books for {', '.join(have)} — skipped (use --force)"
+    # ⚠ **The skip is PER ARTEFACT, not per stack.** This script writes two unrelated things now,
+    # and a stack can legitimately have one and not the other — the solo books were backfilled
+    # earlier the same day, the diagnostics were not. An all-or-nothing guard would make the second
+    # backfill impossible without `--force`, i.e. without also re-deriving a stored measurement.
+    have_solo = {r["strategy_id"] for r in rows
+                 if portfolio_runner.solo_book(stack_id, r["strategy_id"])[0]}
+    have_diag = {r["strategy_id"] for r in rows
+                 if (_LAB_RESULTS_DIR / r["run_id"] / "blocked_setups.json").exists()
+                 or (_LAB_RESULTS_DIR / r["run_id"] / "missed_setups.json").exists()}
+    if not force and len(have_solo) == len(rows) and len(have_diag) == len(rows):
+        return f"{stack_id}: already has everything — skipped (use --force to re-derive)"
 
     symbol = settings["instrument"]
     tf = _timeframe_minutes(settings)
@@ -95,15 +111,38 @@ def backfill(stack_id: str, *, force: bool = False) -> str:
 
     sdir = portfolio_runner.stack_dir(stack_id)
     sdir.mkdir(parents=True, exist_ok=True)
+    run_id_of = {r["strategy_id"]: r["run_id"] for r in rows}
     written = []
     for spec in specs:
-        trades = run.solo_per_leg.get(spec.name, [])
-        results = build_results(trades, point_value=getattr(spec.config, "point_value", 1.0),
-                                initial_capital=run.opening_balance)
-        portfolio_runner._write_solo(sdir, spec.name, results)
-        written.append(f"{spec.name} ({len(trades)} trades, "
-                       f"{sum(getattr(t, 'r', 0.0) for t in trades):+.4f}R, "
-                       f"${run.solo_closing.get(spec.name, 0.0):,.2f})")
+        pv = getattr(spec.config, "point_value", 1.0)
+        parts = []
+
+        if force or spec.name not in have_solo:
+            trades = run.solo_per_leg.get(spec.name, [])
+            results = build_results(trades, point_value=pv, initial_capital=run.opening_balance)
+            portfolio_runner._write_solo(sdir, spec.name, results)
+            parts.append(f"solo {len(trades)} trades, "
+                         f"{sum(getattr(t, 'r', 0.0) for t in trades):+.4f}R, "
+                         f"${run.solo_closing.get(spec.name, 0.0):,.2f}")
+
+        if force or spec.name not in have_diag:
+            # The leg's own diagnostic layers, off the SHARED book. `build_results` is called
+            # separately from the solo one because these belong to a different replay — reusing it
+            # would file the control's refusals against the shared trade list.
+            shared = build_results(run.per_leg.get(spec.name, []), point_value=pv,
+                                   initial_capital=run.opening_balance,
+                                   blocked=run.blocked_per_leg.get(spec.name),
+                                   missed=run.missed_per_leg.get(spec.name))
+            portfolio_runner.write_leg_diagnostics(run_id_of[spec.name], shared)
+            # ⚠ **The leg's cached `chart_spec.json` has to go with them.** It is built from these
+            # files and then cached for ever, so writing the artefacts without dropping the cache
+            # leaves the chart serving a spec that predates them — the reader would see the backfill
+            # report a number and the layer still be missing, which reads as the backfill failing.
+            (_LAB_RESULTS_DIR / run_id_of[spec.name] / "chart_spec.json").unlink(missing_ok=True)
+            parts.append(f"{len(shared.get('blocked_setups') or [])} blocked, "
+                         f"{len(shared.get('missed_setups') or [])} missed")
+
+        written.append(f"{spec.name} ({' · '.join(parts) or 'nothing to do'})")
     return f"{stack_id}: wrote {' · '.join(written)}"
 
 

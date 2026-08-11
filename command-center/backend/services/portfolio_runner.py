@@ -215,8 +215,15 @@ def _persist(stack_id: str, legs: list[dict], specs: list, run, settings: dict,
         solo_trades = run.solo_per_leg.get(spec.name, [])
         point_value = getattr(spec.config, "point_value", 1.0)
 
+        # 🔴 `blocked` / `missed` were NOT passed here until 2026-08-10, so a shared stack's legs
+        # wrote no `blocked_setups.json` / `missed_setups.json` and both chart layers were absent
+        # from the leg's own detail page as well as from the stack's — while the identical leg run
+        # through the screen path (`sweep_runner`) had them. Reported off the stack chart as
+        # "missed trades, blocked trades, all that stuff is gone".
         results = build_results(shared_trades, point_value=point_value,
-                                initial_capital=run.opening_balance)
+                                initial_capital=run.opening_balance,
+                                blocked=run.blocked_per_leg.get(spec.name),
+                                missed=run.missed_per_leg.get(spec.name))
         _write_leg(leg["run_id"], results, leg.get("ruleset_ids") or [])
 
         # The SOLO control's own book, kept in full rather than as two scalars. This is the ONLY
@@ -326,6 +333,29 @@ def _read_json_list(p: Path) -> list:
         return []
 
 
+def write_leg_diagnostics(run_id: str, results: dict) -> None:
+    """The two optional artefacts a leg's chart layers read — its refused and its died-partway setups.
+
+    ⚠ **WRITE-OR-UNLINK, never `if rows:`.** An optional artefact's ABSENCE is what removes its
+    chart layer, so leaving a previous attempt's file behind publishes last run's refusals under
+    this run's name — the defect the 2026-08-06 rerun audit found in `backtest_runner`, and a shared
+    stack rewrites these same run ids on every rerun.
+
+    Public because `scripts/backfill_stack_solo.py` writes them for a stack replayed before they
+    were persisted, and a second copy of the write-or-unlink rule is how one of the two copies
+    eventually keeps a stale file.
+    """
+    run_dir = _LAB_RESULTS_DIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for name, rows in (("blocked_setups.json", results.get("blocked_setups") or []),
+                       ("missed_setups.json", results.get("missed_setups") or [])):
+        path = run_dir / name
+        if rows:
+            path.write_text(json.dumps(rows, default=str))
+        else:
+            path.unlink(missing_ok=True)
+
+
 def _write_leg(run_id: str, results: dict, ruleset_ids: list[str]) -> None:
     """Persist one leg exactly the way `sweep_runner._handle_complete` persists a child run, so
     the existing drill-in detail page works on a shared leg with no branch of its own."""
@@ -339,6 +369,8 @@ def _write_leg(run_id: str, results: dict, ruleset_ids: list[str]) -> None:
     dpnl_path = run_dir / "daily_pnl.json"
     eq_path.write_text(json.dumps(equity_curve, default=str))
     dpnl_path.write_text(json.dumps(daily_pnl, default=str))
+
+    write_leg_diagnostics(run_id, results)
 
     apply_canonical_sharpe(kpis, daily_pnl)
 
