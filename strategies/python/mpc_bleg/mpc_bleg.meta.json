@@ -1,26 +1,26 @@
 {
-  "_comment": "Editor UI metadata for MPC B-LEG. Overlaid onto the schema built from BLegConfig (a SosFadeConfig superset). UI ONLY — never touches a trade decision or the source hash. Click Scan Strategies after editing. Params not listed here fall back to their raw field names; the A+ gate params (arm sources, FVG/entry, HTF, veto) are inherited from the A+ bot and still matter because the B-LEG keeps the 'A+ has priority' stand-down — see the A+ strategy's own meta for their descriptions. Labels and descs are shared with indicators/mpc_b_leg_strategy.pine the same way the A+ meta is — label == the Pine input title, desc == its tooltip, changed in the same commit.",
-  "edge": "The B LEG is the SOS whose retrace arrived LATE. A reversal setup fires its shift-of-structure, but price expands and breaks structure AGAIN in the same direction before it ever pulls back — so the normal A+ leg dies at two-thirds with no entry. On a higher timeframe that is one clean leg, and the retrace does come, just later. The B LEG freezes the Sniper-Zone band (0.382–0.5) of that original break and rests a limit at the 0.5 edge; the tap IS the entry. Stop sits beyond the leg origin (fib 1.0); the target ladder is the broken swing extreme, then the expansion extreme, then a runner. Turned on alongside the A+ engine last night it added significant profit, which is why it was split into its own bot to run in parallel. This is the baseline port — faithful to the Pine — before any of its own entry/stop tuning.",
+  "_comment": "Editor UI metadata for MPC B-LEG. Overlaid onto the schema built from BLegConfig (a SosFadeConfig superset). UI ONLY — never touches a trade decision or the source hash. Click Scan Strategies after editing. Params not listed here fall back to their raw field names; the A+ gate params (arm sources, FVG/entry, HTF, veto) are inherited from the A+ bot and still matter because the B-LEG keeps the 'A+ has priority' stand-down — see the A+ strategy's own meta for their descriptions. Labels and descs are shared with indicators/mpc_b_leg_strategy.pine the same way the A+ meta is — label == the Pine input title, desc == its tooltip, changed in the same commit. COPY STYLE (2026-08-10, Aaron's call): every desc is SHORT and PLAIN — what the setting does, what each choice means, and the one fact that changes the decision. No measurement dumps, no trade counts, no R figures, no dates, no file references: the strategy detail page is for reading, and the evidence behind a default lives in this package's CLAUDE.md and its optimization doc. Same rule for `edge` and `steps`.",
+  "edge": "This is the reversal whose pullback turned up late. Structure breaks, but instead of pulling back the market runs on, so the normal setup dies with no trade at all. This one remembers the level and leaves an order there for a few days in case price comes back. Often it does. Everything after the entry is handled the same way as the main bot.",
   "steps": [
     {
-      "label": "01 · SOS",
+      "label": "01 · Break",
       "title": "A reversal fires",
-      "detail": "An A+ shift-of-structure prints and freezes its Sniper-Zone band (0.382–0.5 of the break leg). The B LEG watches that band even though the A+ setup itself is still just armed."
+      "detail": "Structure breaks and the level to watch is marked, even though the reversal itself has not traded yet."
     },
     {
-      "label": "02 · Dies at 2/3",
-      "title": "It breaks structure again first",
-      "detail": "Price expands and prints a continuation BOS BEFORE retracing, so the A+ reversal leg dies with no entry (neither 0.5 nor 0.618 was tapped). That death is exactly what ARMS the B LEG on the frozen band."
+      "label": "02 · Runs on",
+      "title": "The pullback never comes",
+      "detail": "Price expands and breaks structure again before pulling back, so the normal reversal dies with no trade. That death is what starts this setup."
     },
     {
-      "label": "03 · Late retrace",
-      "title": "Wait for price to come back",
-      "detail": "A resting limit sits at the band's 0.5 edge for up to a tunable number of days (bleg_max_days). If price trades back into the band, the tap fills it. If it never comes back, or closes past the leg origin, the leg goes stale and is dropped."
+      "label": "03 · Late",
+      "title": "The pullback arrives anyway",
+      "detail": "An order rests at the marked level for a few days. If price comes back to it, the order fills. If it never comes back, or runs too far the other way, the setup is dropped."
     },
     {
       "label": "04 · Manage",
-      "title": "Ladder out",
-      "detail": "Same machinery as the A+ bot: 30% at TP1 (the broken swing extreme) and stop to breakeven, 40% at TP2 (the expansion extreme) and stop to TP1, then trail the runner."
+      "title": "Let it run",
+      "detail": "The same machinery as the main bot: the first target moves the stop to breakeven, the second lifts it further, and the trailing stop takes the rest."
     }
   ],
   "params": [
@@ -31,10 +31,10 @@
       "unit": "days",
       "label": "Days to watch for the late retrace",
       "step": 0.25,
-      "desc": "How long a B leg watches its frozen band for the late retrace before it goes stale. Set in days but counted in bars, so weekends and the daily close do not burn it. 1.25 = the original 120 bars on 15m. Lower means quick retraces only. Measured over the full history: 1.25 gives 59 trades, 3 gives 92, 4 gives 112, 5 gives 118, and it degrades past 5. The old maxval of 3 was cutting off the best region.",
+      "desc": "How long the order waits at the frozen level for the late pullback before the setup is dropped. Set in days but counted in bars, so weekends and the daily close do not use it up. Lower means only quick pullbacks fill; four to five days tested best.",
       "guide": [
-        "Only quick retraces fill",
-        "A band waits longer for a late return — 4-5 days measured best"
+        "Only quick pullbacks fill",
+        "Waits longer for a late return — 4 to 5 days tested best"
       ],
       "min": 1,
       "max": 6
@@ -80,7 +80,7 @@
         "off": "Allow",
         "on": "Block 16:00–17:00 NY"
       },
-      "desc": "On = no new entries in the last hour before the daily close. Gold closes 17:00 New York and reopens at 18:00, so this bars 16:00-17:00 New York. It stops trades that get gapped out over the break."
+      "desc": "On = no new entries in the last hour before the daily close. Gold closes at 17:00 New York and reopens at 18:00, so a trade opened late can be gapped out over the break."
     },
     {
       "name": "exec_runner_trail",
@@ -92,10 +92,10 @@
         "Structure (swing)",
         "Structure + % ratchet"
       ],
-      "desc": "How the runner is trailed once TP2 is hit, and which setting below is live. Fixed step is a dollar grid. Structure parks the stop at the last confirmed swing — it breathes with the trend, but a swing lags, so it hands a lot back at the turn. Structure + % ratchet is the default: the same anchor, but the stop climbs one step per step of favourable move. Measured over 6.6 years, that lifted the share of each run actually banked from 43% to 53% on the same 164 trades.",
+      "desc": "How the stop follows the trade once the second target is hit, and which setting below is live. Fixed step is a plain dollar grid. Structure parks the stop at the last swing, which breathes with the trend but hands a lot back at the turn. Structure + ratchet is the default and banks more of each run.",
       "guide": [
-        "Fixed step — mechanical, worst on a multi-year price range",
-        "Structure + % ratchet — measured best on the A+ bot, unswept here"
+        "Fixed step — simplest, and the worst of the three",
+        "Structure + ratchet — best on the main bot, untested here"
       ]
     },
     {
@@ -103,7 +103,7 @@
       "group": "Exit ladder",
       "unit": "ticks",
       "label": "Structure trail buffer (ticks)",
-      "desc": "Used by both structure trail methods. The runner stop sits this many ticks beyond the last confirmed swing, so a wick through the swing does not clip it.",
+      "desc": "Used by both structure methods. The trailing stop sits this many ticks beyond the last swing, so a wick through it does not clip you.",
       "guide": [
         "Tight to the swing — clipped by wicks",
         "Wide of the swing — survives noise, gives back more"
@@ -119,10 +119,10 @@
       "show_if": {
         "exec_runner_trail": "Structure + % ratchet"
       },
-      "desc": "The stop starts at the last confirmed swing and climbs one step of this size for every step of favourable move. A percent of price rather than dollars, because gold ran 1,500 to 3,400. It must be far smaller here than on the A+ chart: a B leg risks 0.13% to 1.25% of price, so at 1.0 one step is bigger than the whole trade and the ratchet never lifts off its floor — the runner then banks exactly 1R and hands back the rest.",
+      "desc": "How big each step of the trailing stop is, as a percent of price. It has to be far smaller here than on the main bot: these trades risk very little of the price, so a big step is bigger than the whole trade and the stop never moves at all.",
       "guide": [
-        "Tighter — banks more of each run on this fork",
-        "Above ~0.25 the ratchet stops lifting off its floor here"
+        "Tighter — banks more of each run on this setup",
+        "Too big and the stop never moves at all here"
       ]
     },
     {
@@ -134,7 +134,7 @@
       "show_if": {
         "exec_runner_trail": "Fixed step"
       },
-      "desc": "Read by two settings, so it is never greyed out: the fixed-step trail, and the one-trail-step-behind stop floor. On gold 1 pip is 10 cents of price, so 50 pips = 5.0.",
+      "desc": "The step size in dollars. Read by two settings, so it is never greyed out: the fixed-step trail, and the one-step-behind stop floor. On gold 1 pip is 10 cents, so 50 pips = 5.0.",
       "guide": [
         "Tighter trail — banks sooner, cuts runners short",
         "Looser trail — lets winners breathe, gives back more"
@@ -149,7 +149,7 @@
         "Breakeven",
         "One trail step behind"
       ],
-      "desc": "What the stop floor becomes the moment TP2 is hit, before the runner trail takes over. TP1 price is tight and can scratch the runner on the first pullback. Breakeven gives it the most room. One trail step behind keeps it under the high-water mark. The trail can still tighten past this floor.",
+      "desc": "Where the stop jumps to the moment the second target is hit, before the trail takes over. TP1 price is tight and can scratch the trade on the first pullback. Breakeven gives it the most room. One trail step behind keeps it just under the best price seen. The trail can still tighten past this.",
       "guide": [
         "TP1 price — protects the gain, scratches runners",
         "Breakeven — maximum room for the runner"
@@ -159,7 +159,7 @@
       "name": "exec_time_stop_mode",
       "group": "Exit ladder",
       "label": "Time stop",
-      "desc": "Close a trade that has been open for the number of hours below. Before TP1 only fires only while the trade has never touched TP1, because touching TP1 moves the stop to breakeven and the trade can no longer take a full loss — so it cuts no winners. Always drops that gate and closes on the clock alone. Off closes nothing and is the worst of the three here. Measured on THIS fork over the full history with costs charged: Before TP1 only at 8h gives +17.56R and a 5.15R max drawdown, against +12.02R / 8.89R at 36h and +6.50R / 12.01R with it Off.",
+      "desc": "Close a trade that has been open longer than the hours set below. Before TP1 only fires while the trade has never reached the first target, so it cuts no winners. Always closes on the clock alone. Off closes nothing, and on this setup that tested worst.",
       "choices": [
         "Off",
         "Before TP1 only",
@@ -174,7 +174,7 @@
       "name": "exec_time_stop_hrs",
       "group": "Exit ladder",
       "label": "Time stop (hours)",
-      "desc": "Calendar hours since the fill, weekends included — the same clock the swap is charged on. Re-defaulted 36 → 8 on 2026-08-06 after a sweep on this fork's own trades: 4h, 6h, 8h and 12h all land near a 5R max drawdown against 8.89R at 36h, so it is a plateau rather than a lucky point, and 8 is the best of it on every column and on both halves of the history. ⚠ Read the DRAWDOWN, not the R — +5.5R over 114 trades in 7.9 years is inside a noise band this strategy has never had measured.",
+      "desc": "How long a trade may stay open, in hours, weekends included. Anything from about 4 to 12 hours gives the same answer here. What it buys is a smaller drawdown rather than more profit.",
       "step": 0.25,
       "show_if": {
         "exec_time_stop_mode": [
@@ -196,7 +196,7 @@
         "off": "Every B leg trades",
         "on": "A+ stands the B leg down"
       },
-      "desc": "In this fork the A+ setup never places an order — it only holds priority: on a side where A+ would have armed, the B leg stands down. On keeps that gate, so results stay comparable to the parent file. Off lets every B leg trade on its own merit."
+      "desc": "In this bot the main reversal setup never places an order — it only holds first claim. On = on a side where the main setup would have armed, this one stands down, which keeps results comparable with the parent. Off = every setup here trades on its own merit."
     }
   ]
 }
