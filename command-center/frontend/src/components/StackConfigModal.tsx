@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Layers, X, Play, Loader2 } from 'lucide-react'
 import { useStrategies, useTriggerStack, useRunningVpsJob, useStackPreview, useHistoryLimit } from '@/hooks/useLab'
 import { PeriodPicker, today, yearsAgo } from '@/components/PeriodPicker'
+import { useDebounced } from '@/lib/useDebounced'
 import type { StackMode } from '@/types'
 
 const BAR_PRESETS: [number, string][] = [[5, '5m'], [15, '15m'], [30, '30m'], [60, '1H'], [240, '4H']]
@@ -19,6 +20,11 @@ export interface StackConfigInitial {
   accountSize?: number
   riskCapPct?: number
   entryFloorPct?: number
+  // Per-leg param overrides, keyed by strategy id. A RERUN must pass what each leg actually ran
+  // with — the backend falls back to the strategy's stored `default_params` for any leg it is not
+  // given, so omitting this turns "rerun" into "run today's defaults" with nothing on screen
+  // saying so. It is the stack's version of carrying the baseline's costs into a tuning child.
+  paramsByStrategy?: Record<string, Record<string, unknown>>
 }
 
 // 🔴 THE MODE PICKER IS GONE AND EVERY NEW STACK IS A SHARED ACCOUNT (2026-08-10, Aaron's call):
@@ -95,6 +101,18 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
   const accountValid = !shared || (riskCapPct > 0 && accountSize > 0)
   const settingsReady = selected.size >= 2 && !!instrument.trim() && validPeriod && accountValid
 
+  // Scoped to the legs that are actually SELECTED. The backend ignores an override for a strategy
+  // outside `strategy_ids`, so this changes no result — but it does change the preview's query key,
+  // and an unticked leg leaving its override behind would mint a new key for a body that means the
+  // same thing.
+  const paramsByStrategy = useMemo(() => {
+    const src = initial?.paramsByStrategy
+    if (!src) return {}
+    const out: Record<string, Record<string, unknown>> = {}
+    for (const id of selected) if (src[id]) out[id] = src[id]
+    return out
+  }, [initial?.paramsByStrategy, selected])
+
   const previewBody = useMemo(() => ({
     strategy_ids: Array.from(selected),
     instrument: instrument.trim(),
@@ -105,16 +123,34 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
     commission_per_side: commPerSide,
     slippage_ticks: slippageTicks,
     mode,
-  }), [selected, instrument, barValue, start, end, commPerSide, slippageTicks, mode])
-  const { data: preview } = useStackPreview(previewBody, settingsReady)
+    // Sent to the PREVIEW as well as to the launch, because an override disables reuse for that
+    // leg — a preview that did not know about it would badge the leg green "Reuse" and then watch
+    // it re-run.
+    params_by_strategy: paramsByStrategy,
+  }), [selected, instrument, barValue, start, end, commPerSide, slippageTicks, mode, paramsByStrategy])
+
+  // ⚠ NOT asked in shared mode, and the answer is not merely unused there — it is KNOWN. A shared
+  // stack reuses nothing by construction (`routers/stacks.py` refuses to drop a finished standalone
+  // run, measured un-contended, into a contended portfolio), so every leg always runs. Asking would
+  // be a POST that can only ever come back saying so.
+  //
+  // ⚠ It is also DEBOUNCED, because the query key is the whole body — so typing `XAUUSD` into the
+  // instrument field minted six keys and fired six POSTs, five of them for a symbol nobody finished
+  // spelling. A screen's rerun is the only path that still asks.
+  const askPreview = settingsReady && !shared
+  const debouncedBody = useDebounced(previewBody, 350)
+  const { data: preview } = useStackPreview(debouncedBody, askPreview)
   const actionByStrategy = useMemo(() => {
     const m = new Map<string, 'reuse' | 'run'>()
     preview?.legs.forEach(l => m.set(l.strategy_id, l.action))
     return m
   }, [preview])
 
-  const canRun = settingsReady && !triggerStack.isPending &&
-    (!pythonBusy || (preview != null && preview.run_count === 0))
+  // ⚠ Derived from the MODE first, never from `preview == null`. The old expression was accidentally
+  // right for a shared stack only because the preview happened to be in flight; the moment it is not
+  // fetched at all, "we have no answer" and "nothing needs running" must not collapse into one.
+  const nothingToRun = !shared && preview != null && preview.run_count === 0
+  const canRun = settingsReady && !triggerStack.isPending && (!pythonBusy || nothingToRun)
 
   const submit = () => {
     if (!canRun) return
@@ -308,7 +344,7 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
             </div>
           )}
 
-          {pythonBusy && preview != null && preview.run_count > 0 && (
+          {pythonBusy && !nothingToRun && (
             <div className="flex items-center gap-2 text-[12px] text-warn-text bg-warn-muted/30 border border-warn-text/20 rounded-lg px-3 py-2">
               <Loader2 size={13} className="animate-spin" /> A Python job is already running — the legs that need a fresh run must wait.
             </div>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Play, Pencil, Check, X, ArrowRight, ChevronRight } from 'lucide-react'
-import { useStrategy, useBacktestRuns, useUpdateStrategyDescription } from '@/hooks/useLab'
+import { useStrategy, useBacktestRuns, useUpdateStrategyDescription, useStacks } from '@/hooks/useLab'
 import { RunBacktestModal } from '@/components/RunBacktestModal'
 import { EmptyState } from '@/components/EmptyState'
 import { RunnerBadge } from '@/components/RunnerBadge'
@@ -206,6 +206,13 @@ export function StrategyDetail() {
 
   const { data: strategy, isLoading } = useStrategy(strategyId ?? null)
   const { data: runs } = useBacktestRuns(strategyId ? { strategy_id: strategyId } : undefined)
+  // Shares the Stacks tab's own cache entry — this is a lookup over a list the app already holds,
+  // not a new endpoint, so it costs nothing on a page that is already open elsewhere.
+  const { data: allStacks } = useStacks()
+  const stacksWithThis = useMemo(
+    () => (allStacks ?? []).filter(s => s.strategy_ids?.includes(strategyId ?? '')),
+    [allStacks, strategyId],
+  )
 
   const groups = useMemo(() => strategy ? groupParams(strategy.param_schema) : [], [strategy])
   const byName = useMemo(() => new Map((strategy?.param_schema ?? []).map(p => [p.name, p])), [strategy])
@@ -300,6 +307,44 @@ export function StrategyDetail() {
           <span className="font-semibold">{visibleParams.length}{essentialCount ? ` · ${essentialCount} essential` : ''}</span>
         </span>
       </div>
+
+      {/* Which portfolio stacks this strategy is in.
+          The Strategies LIST can START a stack (tick 2+ python rows) and nothing anywhere could
+          answer the reverse — given a strategy, what has it already been run alongside? That is
+          the question this page exists for, and on a repo whose stated design is that sample size
+          arrives at the PORTFOLIO level it is the one a reader asks before running anything.
+          ⚠ Matched on `strategy_ids`, never on the joined display names. */}
+      {stacksWithThis.length > 0 && (
+        <div className="mb-7" data-testid="strategy-stacks">
+          <p className="text-[10.5px] font-bold uppercase tracking-[0.6px] text-text-tertiary mb-2">
+            In {stacksWithThis.length} portfolio stack{stacksWithThis.length === 1 ? '' : 's'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {stacksWithThis.map(st => (
+              <button
+                key={st.stack_id}
+                onClick={() => navigate(`/backtests/stacks/${st.stack_id}`)}
+                className="inline-flex items-center gap-2 border border-border-subtle bg-bg-surface hover:bg-bg-hover
+                           rounded-md px-2.5 py-1.5 text-[12px] transition-colors"
+              >
+                {/* ⚠ The WINDOW and the MODE are on the chip, not just the leg names. Driven
+                    against the live lab, all three of this strategy's stacks are the same two
+                    legs on XAUUSD — so a chip naming only those is three identical buttons and
+                    the reader cannot tell which one they are opening. */}
+                <span className="font-medium">{st.strategy_names}</span>
+                <span className="text-text-tertiary font-mono tabular-nums">
+                  {st.instrument} · {st.start_date} → {st.end_date}
+                </span>
+                <span className={`text-[10px] uppercase tracking-[0.4px] font-semibold ${
+                  st.mode === 'shared' ? 'text-accent' : 'text-text-tertiary'}`}>
+                  {st.mode === 'shared' ? 'Shared' : 'Screen'}
+                </span>
+                <ChevronRight size={12} className="text-text-tertiary" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Overview */}
       <div className="border border-border-subtle rounded-2xl bg-gradient-to-b from-bg-surface to-bg-sunken mb-7 overflow-hidden">

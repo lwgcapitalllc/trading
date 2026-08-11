@@ -1265,6 +1265,11 @@ class StackPreviewRequest(BaseModel):
     # beside contended ones. The preview has to say that, or the modal offers a reuse count for
     # a run that will re-run every leg regardless.
     mode: str = "screen"
+    # Mirrors `StackRequest.params_by_strategy` and exists for one reason: an override DISABLES
+    # reuse for that leg ("run it my way", not "reuse whatever exists"). Without it here the badge
+    # promises a reuse the launch cannot honour — the preview and the thing it previews would be
+    # answering the request differently.
+    params_by_strategy: dict[str, dict] = {}
 
 
 class StackPreviewLeg(BaseModel):
@@ -1300,11 +1305,20 @@ class StackSummary(BaseModel):
     status: str
     created_at: datetime
     strategy_names: str = ""                 # " + "-joined display names
+    # Keyed by ID rather than by the joined names, so "which stacks is this strategy in" is a
+    # lookup and not a string match on a label somebody can rename.
+    strategy_ids: list[str] = []
     # A screen and a shared simulation are different experiments over the same legs, so the row
     # has to say which. Without it two rows sit side by side reporting different numbers with
     # nothing on screen explaining the gap.
     mode: str = "screen"
     risk_cap_pct: Optional[float] = None     # None on a screen — there is no account to cap
+    # The portfolio's own result, so a reader can rank the list instead of opening every row. It
+    # is the sum of the legs' — the same arithmetic the detail page composes its Made hero from,
+    # not a second definition. ⚠ `None` = nothing has finished yet, never 0.0; and it covers only
+    # the COMPLETED legs, which `completed_strategies`/`total_strategies` let the caller say.
+    net_pnl: Optional[float] = None
+    trade_count: Optional[int] = None
 
 
 class StackStrategyLeg(BaseModel):
@@ -1318,6 +1332,13 @@ class StackStrategyLeg(BaseModel):
     sharpe: Optional[float] = None
     avg_trade_duration_min: Optional[float] = None   # trade-weighted into the stack's AVG TRADE KPI
     error_message: Optional[str] = None
+    # What this leg was ACTUALLY replayed with, off the child run's own row. Two things need it and
+    # neither can derive it: the page has no other way to show a param a stack PINNED (a shared leg
+    # is forced `exec_secondary: false` by the router, which is invisible everywhere else), and a
+    # RERUN has to carry it forward or a stack built on per-strategy overrides silently reverts each
+    # leg to its stored defaults — the same class as a tuning child launched without its parent's
+    # costs. `{}` = a leg row written before this was served, never "it had no params".
+    params: dict = {}
     daily_pnl: list[dict] = []              # [{date, pnl}]
     equity_curve: list[EquityPoint] = []
     # The SOLO CONTROL's book — this leg replayed ALONE on its own full account, which is the only
@@ -1347,7 +1368,14 @@ class StackDetail(BaseModel):
     # Full-calendar regime timeline for the shared window (from a leg — regime is a property of the
     # market on a date, identical for every leg). Drives the equity chart's regime overlay, same as
     # a single backtest's `regime_timeline`.
+    #
+    # ⚠ EMPTY under `?timeline=false`, which is 43% of this payload (96,766 of 226,036 bytes,
+    # measured). `has_regime_timeline` is the field that stays honest across that switch: `[]` alone
+    # cannot say whether the calendar is absent or merely unasked-for, and the page hides the regime
+    # toggle on that answer — so reading emptiness as "no regimes" removes the reader's only way to
+    # ask for them. Fetch the calendar itself from `GET /stacks/{id}/regime-timeline`.
     regime_timeline: list[dict] = []
+    has_regime_timeline: bool = False
     # One entry per strategy sleeve — carries the child run id + its daily P&L and equity curve
     # so the frontend can sum enabled sleeves into a portfolio line and recompute KPIs on toggle.
     strategies: list[StackStrategyLeg] = []

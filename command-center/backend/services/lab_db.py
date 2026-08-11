@@ -2408,6 +2408,16 @@ def list_stack_runs(stack_id: str) -> list[dict]:
     return [_parse_json_fields(dict(r), ["params"]) for r in rows]
 
 
+def _sum_or_none(values) -> Optional[float]:
+    """Sum of the values that exist, or None when NONE of them does.
+
+    ⚠ The two answers it keeps apart are "every leg is still running" and "the legs made
+    exactly nothing" — `sum()` of an empty list is 0.0, and a fabricated zero is
+    indistinguishable from a measured one on the page that renders it."""
+    present = [v for v in values if v is not None]
+    return sum(present) if present else None
+
+
 def list_stacks() -> list[dict]:
     """One aggregate row per stack — strategy count, shared settings, roll-up status.
     Driven by the `stacks` settings table so a fully-reused stack (no owned child) still
@@ -2419,7 +2429,8 @@ def list_stacks() -> list[dict]:
         result = []
         for st in stacks:
             members = conn.execute("""
-                SELECT r.status AS status, s.name AS name
+                SELECT r.status AS status, s.name AS name, s.id AS strategy_id,
+                       r.net_pnl AS net_pnl, r.trade_count AS trade_count
                 FROM stack_members m
                 JOIN backtest_runs r ON r.run_id = m.run_id
                 JOIN strategies s ON s.id = r.strategy_id
@@ -2451,11 +2462,28 @@ def list_stacks() -> list[dict]:
                 "failed_strategies":    failed,
                 "status":               status,
                 "strategy_names":       " + ".join(m["name"] for m in members),
+                # The ids beside the names, so a caller can ask "which stacks is THIS strategy
+                # in" without matching on a display name — a name is a label somebody renames,
+                # and this app already keys bots by their key for exactly that reason.
+                "strategy_ids":         [m["strategy_id"] for m in members],
                 # A screen and a shared simulation answer different questions, so the list has
                 # to say which one a row is. Without it two rows over the same legs and window
                 # sit side by side reporting different numbers, and nothing explains why.
                 "mode":                 st["mode"] if "mode" in st.keys() else "screen",
                 "risk_cap_pct":         st["risk_cap_pct"] if "risk_cap_pct" in st.keys() else None,
+                # The portfolio's own result, so the list can be READ rather than opened row by
+                # row. Both modes sum the same way — a stack's combined P&L is the sum of its
+                # legs', which is exactly what the detail page composes — so this is the same
+                # number that page's Made hero shows, not a second definition of it.
+                #
+                # ⚠ `None` when NO leg has finished, never 0.0. A stack still replaying and a
+                # stack that made nothing are different facts, and 0.0 is the one that reads as
+                # a measurement.
+                # ⚠ It is INCOMPLETE while `completed_strategies < total_strategies`, and the
+                # caller has both counts to say so. Summing what has landed so far is right —
+                # the alternative is withholding the number for the whole of a long replay.
+                "net_pnl":              _sum_or_none(m["net_pnl"] for m in members),
+                "trade_count":          _sum_or_none(m["trade_count"] for m in members),
             })
     return result
 

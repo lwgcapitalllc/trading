@@ -456,12 +456,20 @@ test.describe('the regime overlay', () => {
     // and an SVG `ReferenceArea` is not something a locator can count reliably. `aria-pressed`
     // would be better and the pill does not carry one; the accent class is what it has.
     await mock(page, 'shared')
-    // ⚠ The pill is gated on the stack HAVING a regime timeline, and the shared fixture ships an
-    // empty one — so without this override the check passes on an absent pill, which is the
-    // vacuous shape this file already carries three notes about. Registered after `mock` so it
-    // wins (Playwright matches the most recently registered route first).
+    // ⚠ The pill is gated on the stack HAVING a regime timeline, and the shared fixture ships
+    // none — so without this override the check passes on an absent pill, which is the vacuous
+    // shape this file already carries three notes about. Registered after `mock` so it wins
+    // (Playwright matches the most recently registered route first).
+    //
+    // ⚠ It is `has_regime_timeline`, NOT a populated `regime_timeline` — the page fetches the
+    // stack with `?timeline=false` (the calendar is 43% of that payload and this overlay defaults
+    // OFF), so `regime_timeline` is empty on every real response and a fixture that populated it
+    // would be testing a shape production never sends.
     await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => r.fulfill({
-      json: { ...stackDetail('shared'), regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
+      json: { ...stackDetail('shared'), has_regime_timeline: true },
+    }))
+    await page.route(u => u.pathname.endsWith('/regime-timeline'), r => r.fulfill({
+      json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
     }))
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const pill = page.getByRole('button', { name: 'Regimes' })
@@ -475,5 +483,366 @@ test.describe('the regime overlay', () => {
     await expect(pill).toHaveAttribute('title', 'Hide regime bands')
     await page.reload()
     await expect(page.getByRole('button', { name: 'Regimes' })).toHaveAttribute('title', 'Hide regime bands')
+  })
+})
+
+// ── The 2026-08-10 audit — five things this page said that were not true ──────
+//
+// Every check below is a defect that rendered no error. That is the shape this whole page keeps
+// producing: a confident sentence, a plausible number, a spinner that never stops.
+test.describe('the stack detail audit', () => {
+  test('the per-strategy table names the BOOK its dollars came from', async ({ page }) => {
+    // MUTATION: drop the `isShared` branch from the table header (back to a plain "Net P&L" with
+    // no solo column) → red on the first assertion.
+    //
+    // 🔴 This is the $47M defect, repeated one section below the Verdict card that was rebuilt to
+    // fix it. On a shared stack `net_pnl` is the leg's dollars INSIDE the portfolio, where it
+    // sizes off a balance every strategy grew — measured on `st_94aeb25f0c`, one leg reads
+    // $47,758,999 here and $21,064 alone, for the identical trades at the identical R. The column
+    // said "Net P&L" and nothing else on the row disagreed.
+    await mock(page, 'shared')
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const table = page.getByTestId('per-strategy-table')
+    await expect(table).toBeVisible()
+
+    // The dollars are named for the book they came from, and BOTH books are on the row.
+    await expect(table).toContainText('In this stack')
+    await expect(table).toContainText('On its own')
+    // The fixture's shared-vs-solo pair for MPC B-LEG: +$2,622 inside the stack, +$500 alone.
+    const bleg = table.locator('tr', { hasText: 'MPC B-LEG' })
+    await expect(bleg).toContainText('+$2,622')
+    await expect(bleg).toContainText('+$500')
+    // ⚠ And R leads, because it is the one per-trade figure a change of position size cannot
+    // move — the same reasoning that put it at the front of the Verdict card's rows.
+    await expect(bleg).toContainText('+6.31R')
+  })
+
+  test('a SCREEN keeps the plain column, because there is only one book', async ({ page }) => {
+    // MUTATION: render the shared header unconditionally → red.
+    // ⚠ The half that stops the fix becoming noise: on a screen every leg already traded its own
+    // full account, so "In this stack" and "On its own" are the same number and offering both
+    // would invent a distinction that does not exist there.
+    await mock(page, 'screen')
+    await page.goto(`${UI}/backtests/stacks/${SCREEN_ID}`)
+    const table = page.getByTestId('per-strategy-table')
+    await expect(table).toContainText('Net P&L')
+    await expect(table).not.toContainText('On its own')
+  })
+
+  test('an unreplayed COMBINATION never claims there are no completed runs', async ({ page }) => {
+    // MUTATION: restore the `!isRunning` empty-state as the fallback for `unmeasured` → red.
+    //
+    // 🔴 `hasResults` is false on the `unmeasured` basis, so the charts slot rendered "No
+    // completed strategy runs to compose" — while the Verdict card two feet above was listing the
+    // completed runs and explaining, correctly, that this SUBSET has no book. One screen, two
+    // answers, and the false one is the larger.
+    //
+    // ⚠ `solo: false` is what makes the selection unmeasured rather than solo: with no control
+    // book stored, one leg left on is a combination nobody replayed.
+    await mock(page, 'shared', undefined, { solo: false })
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await expect(verdict).toBeVisible()
+    await verdict.getByText('MPC B-LEG').click()
+
+    await expect(page.getByTestId('unmeasured-card')).toBeVisible()
+    await expect(page.getByText('No completed strategy runs to compose')).toHaveCount(0)
+    // ⚠ And the way back is still on screen — the reader got here by clicking, so they must be
+    // able to click out. This is what the refusal is allowed to cost.
+    await expect(verdict).toBeVisible()
+  })
+
+  test('a stack that cannot be loaded says so instead of rendering nothing', async ({ page }) => {
+    // MUTATION: drop the `isError` block → red.
+    // 🔴 `useStack`'s `isError` was never read, so a bad id, a stale bookmark, or a stack deleted
+    // in another tab left the back button over an empty page — which is pixel-identical to a page
+    // still loading, i.e. the reader waits instead of going back.
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
+      r.fulfill({ status: 404, json: { detail: "Stack 'st_gone' not found" } }))
+    await page.goto(`${UI}/backtests/stacks/st_gone`)
+    await expect(page.getByTestId('stack-not-found')).toBeVisible()
+    await expect(page.getByRole('button', { name: /back to stacks/i })).toBeVisible()
+  })
+
+  test('a stack with a FAILED leg stops polling', async ({ page }) => {
+    // MUTATION: put the refetch condition back to `completed_strategies < total_strategies` → red.
+    //
+    // 🔴 A failed leg never completes, so that comparison is permanently true — and this response
+    // is MEASURED at 226,036 bytes / 38 ms on the live lab, i.e. ~270 MB an hour for a tab left
+    // open on a broken stack, with nothing on screen moving.
+    //
+    // ⚠ It counts REQUESTS rather than asserting on the DOM: a poll that never stops changes
+    // nothing visible, which is exactly why it survived. The window is 8s against a 3s interval,
+    // so a still-polling page lands at 3 or 4 and a fixed one stays at 1.
+    let fetches = 0
+    await page.route(u => u.pathname.endsWith('/contention'), r => r.fulfill({ json: sharedReport() }))
+    await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
+      r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
+      fetches++
+      const d = stackDetail('shared')
+      return r.fulfill({
+        json: {
+          ...d, status: 'partial', completed_strategies: 1,
+          strategies: [d.strategies[0],
+                       { ...d.strategies[1], status: 'failed_error', error_message: 'boom' }],
+        },
+      })
+    })
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('stack-verdict-card')).toBeVisible()
+    await page.waitForTimeout(8_000)
+    expect(fetches, 'a stack with a failed leg never completes — polling it is unbounded').toBe(1)
+  })
+
+  test('an ABANDONED shared replay says it will not arrive', async ({ page }) => {
+    // MUTATION: drop the `!running && !progress` branch from `SharedAccountPanel` → red (it falls
+    // through to the spinner, which is what it did until 2026-08-10).
+    //
+    // 🔴 `progress` lives in an IN-PROCESS dict, so a backend restart erases it while
+    // `reset_stale_runs` marks the legs crashed. The panel then span "Replaying the strategies on
+    // one account…" for ever, over a run that had been dead since the restart — and the poll
+    // behind it never stopped either.
+    await mock(page, 'shared', { stack_id: SHARED_ID, available: false, progress: null,
+                                 legs: [], events: [] })
+    // Registered AFTER `mock` so it wins — Playwright matches the most recently registered route
+    // first, and a counter installed before it is shadowed and never increments.
+    let asked = 0
+    await page.route(u => u.pathname.endsWith('/contention'), r => {
+      asked++
+      return r.fulfill({ json: { stack_id: SHARED_ID, available: false, progress: null,
+                                 legs: [], events: [] } })
+    })
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const panel = page.getByTestId('shared-account-panel')
+    await expect(panel).toContainText('did not finish')
+    await expect(panel).toContainText('Rerun the stack')
+    // ⚠ And it must NOT be the spinner — asserting only the sentence above would pass against a
+    // panel that rendered both.
+    await expect(panel).not.toContainText('Replaying the strategies')
+
+    // ⚠ The SECOND half, and it is the one nothing on screen could ever show: the poll behind that
+    // spinner never stopped either, because it only ever stood down on `available` or a `failed`
+    // phase. A report that will never arrive was requested every 3s for as long as the tab stayed
+    // open. MUTATION: drop the `!data.progress && !stackRunning` clause from `useStackContention`
+    // → this lands at 3 or 4 instead of 1.
+    await page.waitForTimeout(8_000)
+    expect(asked, 'nothing is driving this replay — the report will never arrive').toBe(1)
+  })
+})
+
+// The regime calendar is 43% of the stack payload (96,766 of 226,036 bytes, measured on the live
+// stack `st_94aeb25f0c`) and the overlay it feeds defaults OFF — so the common page load has no
+// use for it at all. It is fetched separately, only once the reader switches the overlay on.
+test.describe('the regime calendar is fetched only when it is wanted', () => {
+  test('loading the page asks for the stack WITHOUT its calendar, and never fetches one', async ({ page }) => {
+    // MUTATION: drop `?timeline=false` from `useStack`, or fire `useStackRegimeTimeline` without
+    // its `enabled` gate → red on the respective assertion.
+    await mock(page, 'shared')
+    let calendars = 0
+    await page.route(u => u.pathname.endsWith('/regime-timeline'), r => {
+      calendars++
+      return r.fulfill({ json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] } })
+    })
+    const slim: boolean[] = []
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
+      slim.push(new URL(r.request().url()).searchParams.get('timeline') === 'false')
+      return r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: true } })
+    })
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    // ⚠ Wait on the PAGE having rendered, not on a timer — asserting a request count straight
+    // after `goto` is the vacuous shape this file records four times, because zero fetches is also
+    // what an unmounted page produces.
+    await expect(page.getByRole('button', { name: 'Regimes' })).toBeVisible()
+
+    expect(slim.length).toBeGreaterThan(0)
+    expect(slim.every(Boolean)).toBe(true)
+    expect(calendars).toBe(0)
+  })
+
+  test('switching the overlay on fetches it once, and switching off and on again does not refetch', async ({ page }) => {
+    // MUTATION: remove `staleTime: Infinity` from `useStackRegimeTimeline` → the second toggle
+    // refetches and the final count is 2.
+    // ⚠ The second half is the one worth having: a finished stack's window is fixed, so the
+    // calendar cannot change, and a reader flicking the overlay to compare should not pay for it.
+    await mock(page, 'shared')
+    let calendars = 0
+    await page.route(u => u.pathname.endsWith('/regime-timeline'), r => {
+      calendars++
+      return r.fulfill({ json: { regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] } })
+    })
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
+      r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: true } }))
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const pill = page.getByRole('button', { name: 'Regimes' })
+    await expect(pill).toHaveAttribute('title', 'Show regime bands')
+    expect(calendars).toBe(0)
+
+    await pill.click()
+    await expect(pill).toHaveAttribute('title', 'Hide regime bands')
+    await expect.poll(() => calendars).toBe(1)
+
+    await pill.click()
+    await expect(pill).toHaveAttribute('title', 'Show regime bands')
+    await pill.click()
+    await expect(pill).toHaveAttribute('title', 'Hide regime bands')
+    expect(calendars).toBe(1)
+  })
+
+  test('a stack with NO calendar offers no overlay control at all', async ({ page }) => {
+    // MUTATION: make the page gate on `regime_timeline.length` again → the pill disappears on the
+    // check above too, so BOTH go red; gate on nothing → this one goes red alone.
+    // ⚠ `has_regime_timeline: false` is a MEASUREMENT — the window was classified and has nothing
+    // to show — so offering a toggle that draws nothing would read as a broken overlay.
+    await mock(page, 'shared')
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
+      r.fulfill({ json: { ...stackDetail('shared'), has_regime_timeline: false } }))
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    // ⚠ Scoped to a control that only exists once the page has rendered its charts, so "absent"
+    // cannot be satisfied by the page simply not being there yet.
+    await expect(page.getByTestId('per-strategy-table')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Regimes' })).toHaveCount(0)
+  })
+})
+
+// A shared stack REUSES NOTHING by construction — `routers/stacks.py` refuses to drop a finished
+// standalone run, measured un-contended, into a contended portfolio — so the preview can only ever
+// come back saying every leg runs. And when a screen's rerun DOES ask, the query key is the whole
+// request body, so a body rebuilt on every keystroke fired a POST on every keystroke.
+test.describe('the stack preview is only asked when it has something to say', () => {
+  test('configuring a NEW (shared) stack never asks for a reuse preview', async ({ page }) => {
+    // MUTATION: pass `settingsReady` instead of `askPreview` to `useStackPreview` → red.
+    await mock(page, 'shared')
+    let previews = 0
+    await page.route(u => u.pathname.endsWith('/stacks/preview'), r => {
+      previews++
+      return r.fulfill({ json: { legs: [], reuse_count: 0, run_count: 2 } })
+    })
+    await page.route(u => u.pathname.endsWith('/api/strategies'), r => r.fulfill({
+      json: [
+        { id: 'mpc_sos_fade', name: 'MPC SOS Fade', runner: 'python', suggested_instrument: 'XAUUSD',
+          param_schema: [], default_params: {}, needs_scan: false },
+        { id: 'mpc_bleg', name: 'MPC B-LEG', runner: 'python', suggested_instrument: 'XAUUSD',
+          param_schema: [], default_params: {}, needs_scan: false },
+      ],
+    }))
+
+    await page.goto(`${UI}/backtests?tab=stacks`)
+    await page.getByRole('button', { name: /new stack/i }).click()
+    await page.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await page.getByRole('button', { name: /MPC B-LEG/ }).click()
+
+    // ⚠ Wait on the settings genuinely being COMPLETE — the account fields visible with two legs
+    // ticked is the state that would have fired the preview. Asserting a count of 0 before that is
+    // satisfied by a modal that has not finished opening, which is this file's recorded trap.
+    await expect(page.getByTestId('stack-account-fields')).toBeVisible()
+    await expect(page.getByTestId('stack-mode-blurb')).toContainText('nothing is reused')
+    await page.waitForTimeout(1200)   // past the 350ms debounce, several times over
+    expect(previews).toBe(0)
+  })
+})
+
+// ── Round 4 of the stacks audit ────────────────────────────────────────────────────────────
+//
+// Two defects with no backend surface at all, so a browser check is the only thing that can see
+// either of them. Non-vacuity is by MUTATION, named on each check.
+
+test.describe('a leg the reader switched off stays off while the stack finishes', () => {
+  /**
+   * 🔴 The enabled set was RE-SEEDED from the completed legs on every poll, and a running stack
+   * polls every 3s with its legs landing one at a time. So switching a leg off and waiting was
+   * the page undoing your click the moment its sibling finished — the exact "a roster DERIVED
+   * from data must be RECONCILED, never re-seeded" rule the price chart's `groupsOn` already
+   * carries, met again two pages over.
+   *
+   * MUTATION: replace the reconcile effect in `StackDetail` with
+   * `setEnabled(new Set(completeIds ? completeIds.split(',') : []))` and this goes red — the
+   * switched-off leg comes back on when the third leg lands.
+   *
+   * 🔴 THIS CHECK WAS VACUOUS ON ITS FIRST WRITING AND PASSED AGAINST THAT MUTATION, which is
+   * the only reason the fixture is this shape. It used TWO legs and toggled after the last one
+   * landed — and the effect is keyed on `completeIds`, so with nothing left to finish it never
+   * re-ran and the re-seed had no moment to happen in. Two legs cannot express this at all: with
+   * one complete you cannot switch it off (the toggle refuses to remove the last leg on), and
+   * once both are complete nothing changes again. **The defect needs a leg landing AFTER the
+   * reader has answered**, so it needs three.
+   */
+  test('a third leg finishing does not switch a chosen one back on', async ({ page }) => {
+    const THIRD = { run_id: 'r_c', strategy_id: 'mpc_bos', strategy_name: 'MPC BOS' }
+    let allDone = false
+    await page.route(u => u.pathname.endsWith('/contention'), r => r.fulfill({ json: sharedReport() }))
+    await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
+      r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
+      const d = stackDetail('shared') as Record<string, unknown>
+      const third = leg(THIRD, 900, 3.5, 400)
+      d.strategies = [
+        ...(d.strategies as unknown[]),
+        allDone ? third : { ...third, status: 'running' },
+      ]
+      d.total_strategies = 3
+      d.completed_strategies = allDone ? 3 : 2
+      d.status = allDone ? 'complete' : 'running'
+      return r.fulfill({ json: d })
+    })
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    // Two finished, one still replaying. Both finished legs start ON, which is the right default.
+    await expect(verdict).toContainText('2 of 3 on')
+
+    // The reader answers: switch the first one off.
+    await verdict.getByRole('button', { name: new RegExp(LEGS[0].strategy_name) }).click()
+    await expect(verdict).toContainText('1 of 3 on')
+
+    // 🔴 The third leg lands. This is the moment `completeIds` changes, i.e. the only moment the
+    // re-seed could ever have fired — and the observation is that the answer already given
+    // SURVIVES it while the newly-finished leg comes on by itself: 1 chosen + 1 new = 2 of 3.
+    // A re-seed reads 3 of 3.
+    allDone = true
+    await expect.poll(async () => verdict.innerText(), { timeout: 15_000 }).toContain('of 3 on')
+    await expect(verdict).toContainText('2 of 3 on')
+  })
+})
+
+test.describe('a stack says what it was replayed with', () => {
+  /**
+   * 🔴 A single backtest has carried its params in a side panel since the day it existed and a
+   * stack had them NOWHERE — which left one class of value invisible: a param the STACK pinned.
+   * The backend forces `exec_secondary: false` onto every shared leg before it replays, so the
+   * run genuinely differs from the strategy's own default for a reason nothing on screen said.
+   *
+   * MUTATION: drop the `params` field from the leg fixture (or the Settings block from
+   * `StackDetail`) and this goes red.
+   */
+  test('each leg lists the settings it ran with, including a pinned one', async ({ page }) => {
+    await page.route(u => u.pathname.endsWith('/contention'), r => r.fulfill({ json: sharedReport() }))
+    await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
+      r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => {
+      const d = stackDetail('shared')
+      d.strategies = d.strategies.map(s => ({
+        ...s,
+        // `exec_secondary` is the PINNED one: the strategy's own default is true and a shared
+        // leg cannot run it, so this is the value that exists nowhere else on the page.
+        params: { exec_secondary: false, exec_risk_pct: 10 },
+      }))
+      return r.fulfill({ json: d })
+    })
+
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const settings = page.getByTestId('stack-settings')
+    await expect(settings).toBeVisible()
+
+    // Open the first leg's disclosure and read the pinned value.
+    await settings.locator('summary').first().click()
+    await expect(settings).toContainText('exec_secondary')
+    // 🔴 `false` must RENDER. A boolean dropped as falsy, or printed as an em-dash, would hide
+    // exactly the pinned value this section exists to show — and it would look like a tidy
+    // empty cell rather than a missing fact.
+    await expect(settings.getByText('false', { exact: true }).first()).toBeVisible()
   })
 })

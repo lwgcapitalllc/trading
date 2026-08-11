@@ -1,8 +1,8 @@
-import { useMemo, useState, useEffect, useCallback } from 'react'
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, ChevronDown, Loader2, XCircle, Layers, Trash2, Square, Play } from 'lucide-react'
 import StickyHeader from '@/components/StickyHeader'
-import { useStack, useDeleteStack, useCancelStack, useStackChartSpec, useRunCandles, useStackContention } from '@/hooks/useLab'
+import { useStack, useDeleteStack, useCancelStack, useStackChartSpec, useRefreshStackChartSpec, useRunCandles, useStackContention, useStackRegimeTimeline } from '@/hooks/useLab'
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import { StackConfigModal } from '@/components/StackConfigModal'
 import { XModeToggle } from '@/components/XModeToggle'
@@ -29,6 +29,20 @@ function fmtMoney(v: number, signed = true): string {
   return `${sign}$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`
 }
 function dateMsOf(s?: string): number { return s ? new Date(s).getTime() : 0 }
+
+// Net P&L of a leg's SOLO CONTROL book — what it made ALONE on its own full account, which is a
+// different question from what its trades are worth inside the shared portfolio. `null` = no
+// control was stored (a screen has none; a shared stack replayed before 2026-08-10 kept only the
+// scalars), and it must never be rendered as a leg that made nothing.
+//
+// ⚠ One definition, read by the Verdict card's rows AND the per-strategy table. Two copies of this
+// arithmetic is two ways to answer "what did it make alone" that can disagree on one screen.
+function soloNetOf(leg: StackStrategyLeg): number | null {
+  const solo = leg.solo_equity_curve
+  if (!solo?.length) return null
+  const opening = (solo[0].equity ?? 0) - (solo[0].profit ?? 0)
+  return (solo[solo.length - 1].equity ?? 0) - opening
+}
 
 // Strategy-line palette. The PORTFOLIO line is `C.pos` (green) and a leg must be a colour nobody
 // could mistake for it — or for the loss red.
@@ -374,8 +388,7 @@ function StackVerdictCard({ legs, enabled, colorFor, onToggle, counts, legR, tot
     // "It made <net_pnl> on its own account" — and on a SHARED stack `net_pnl` is the leg's dollars
     // inside the portfolio, sized off a balance every leg compounded onto, so that sentence was
     // false by 2,266x on the measured stack. R is the same number either way.
-    const solo = leg.solo_equity_curve?.length ? leg.solo_equity_curve : null
-    const soloNet = solo ? (solo[solo.length - 1].equity ?? 0) - ((solo[0].equity ?? 0) - (solo[0].profit ?? 0)) : null
+    const soloNet = soloNetOf(leg)
     const made = mode === 'shared'
       ? (soloNet != null
           ? ` Alone on its own account it makes ${fmtMoney(soloNet)}; inside this stack the same trades are worth ${fmtMoney(leg.net_pnl ?? 0)}, because here it sizes off a balance every strategy grew.`
@@ -467,16 +480,18 @@ const CHART_SUBS: Record<string, string> = {
 // ⚠ The two facts that must never be dropped: the peak open risk has to be stated WITH the cap
 // (10% is either the ceiling or a third of it, and the number alone cannot say which), and an
 // empty contention log has to be stated in WORDS as a measurement.
-function SharedAccountPanel({ report, colorFor, nameFor }: {
+function SharedAccountPanel({ report, colorFor, nameFor, running }: {
   report: StackSharedReport
   colorFor: (id: string) => string
   nameFor: (id: string) => string
+  /** Is the stack still replaying? Separates "a beat behind" from "nothing is driving this". */
+  running: boolean
 }) {
   const [showLegs, setShowLegs] = useState(false)
-  // ⚠ The test seam is on ALL THREE branches, not only the finished one. A panel that is still
-  // replaying and a panel that failed are both this panel — putting the id on the happy path only
-  // means a check for "it says what it is doing while running" can never find it, and would pass
-  // or fail for the wrong reason.
+  // ⚠ The test seam is on ALL FOUR branches, not only the finished one. A panel that is still
+  // replaying, one that failed and one that was abandoned are all this panel — putting the id on
+  // the happy path only means a check for "it says what it is doing while running" can never find
+  // it, and would pass or fail for the wrong reason.
   if (!report.available) {
     const p = report.progress
     if (p && p.phase === 'failed') {
@@ -485,6 +500,28 @@ function SharedAccountPanel({ report, colorFor, nameFor }: {
              className="rounded-lg border border-neg-text/25 bg-neg-muted/20 px-4 py-3">
           <div className="text-[13px] font-semibold text-neg-text mb-1">The shared replay failed</div>
           <div className="text-[12px] text-text-secondary font-mono break-words">{p.message}</div>
+        </div>
+      )
+    }
+    // 🔴 The abandoned case, and it had no branch of its own until 2026-08-10 — it fell through to
+    // the spinner below and span for ever. `progress` lives in an IN-PROCESS dict, so a backend
+    // restart erases it while `reset_stale_runs` marks the legs crashed: the honest reading of
+    // "no progress, nothing running" is that whatever was replaying this is gone. A CANCELLED run
+    // lands here too (its phase is `cancelled`, which is not `failed`), and both want the same
+    // sentence: this will not arrive on its own, rerun it.
+    if (!running && (!p || p.phase === 'cancelled')) {
+      return (
+        <div data-testid="shared-account-panel"
+             className="rounded-lg border border-border-default bg-bg-surface px-4 py-3">
+          <div className="text-[13px] font-semibold text-text-primary mb-1">
+            {p?.phase === 'cancelled' ? 'The shared replay was cancelled' : 'The shared replay did not finish'}
+          </div>
+          <div className="text-[12.5px] text-text-secondary leading-[1.5]">
+            {p?.phase === 'cancelled'
+              ? 'It was stopped part-way, so no shared-account result was written — a partial book would be indistinguishable from a complete short one.'
+              : 'No result was written and nothing is replaying now, so this will not appear on its own. The backend was most likely restarted mid-run.'}
+            {' '}Rerun the stack to produce it.
+          </div>
         </div>
       )
     }
@@ -635,12 +672,13 @@ function SharedAccountPanel({ report, colorFor, nameFor }: {
 export function StackDetail() {
   const { stackId } = useParams<{ stackId: string }>()
   const navigate = useNavigate()
-  const { data: stack, isLoading } = useStack(stackId ?? null)
+  const { data: stack, isLoading, isError } = useStack(stackId ?? null)
   const mode: StackMode = stack?.mode ?? 'screen'
   const isShared = mode === 'shared'
+  const stackRunning = stack?.status === 'running'
   // Gated on the mode: a screen has no account to contend over, so polling one would be asking a
-  // question that can never be answered.
-  const { data: shared } = useStackContention(stackId ?? null, isShared)
+  // question that can never be answered. `stackRunning` is the other half — see `useStackContention`.
+  const { data: shared } = useStackContention(stackId ?? null, isShared, stackRunning)
   const deleteStack = useDeleteStack()
   const cancelStack = useCancelStack()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -649,17 +687,42 @@ export function StackDetail() {
   // same panel must not remember two answers depending on which page you last pressed it on.
   const [perfCollapsed, togglePerfCollapsed] = usePerfCollapsed()
 
-  const isRunning = stack?.status === 'running'
+  const isRunning = stackRunning
   const legs = useMemo(() => stack?.strategies ?? [], [stack])
   const stackTitle = legs.map(l => l.strategy_name).join(' + ')
 
-  // Enabled set — every completed leg starts on. Rebuilds when the completed set changes.
+  // Enabled set — a completed leg starts ON, and an answer the reader has already given is KEPT.
+  //
+  // 🔴 This RECONCILES; it used to RE-SEED. A running stack polls every 3s and its legs finish one
+  // at a time, so `completeIds` changes underneath the reader — and rebuilding the set from it
+  // switched every leg back on the moment a sibling landed. Watching a two-leg stack replay, that
+  // is the page undoing your click while you are looking at it. Same rule the price chart's
+  // `reconcileToggles` follows: a roster DERIVED from data must be reconciled, never re-seeded.
   const completeIds = useMemo(
     () => legs.filter(l => l.status === 'complete').map(l => l.strategy_id).join(','),
     [legs],
   )
   const [enabled, setEnabled] = useState<Set<string>>(new Set())
-  useEffect(() => { setEnabled(new Set(completeIds ? completeIds.split(',') : [])) }, [completeIds])
+  // The legs we have already offered a toggle for. It is what separates "switched off" from "only
+  // just finished" — without it the two are the same absence, and defaulting either way is wrong
+  // for the other.
+  const seenLegsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const ids = completeIds ? completeIds.split(',') : []
+    const seen = seenLegsRef.current
+    seenLegsRef.current = new Set(ids)
+    setEnabled(prev => {
+      const next = new Set<string>()
+      for (const id of ids) {
+        if (!seen.has(id) || prev.has(id)) next.add(id)
+      }
+      // Never leave the page with nothing on: every KPI below is composed off this set, and the
+      // toggle itself refuses to remove the last leg — so an empty set here can only ever be an
+      // artefact of legs disappearing, not something the reader asked for.
+      if (next.size === 0) ids.forEach(id => next.add(id))
+      return next
+    })
+  }, [completeIds])
 
   const colorFor = useMemo(() => {
     const idx = new Map(legs.map((l, i) => [l.strategy_id, i]))
@@ -719,17 +782,28 @@ export function StackDetail() {
   const hasExcursion = combined.equity.some(d => d.favorable != null || d.adverse != null)
 
   // Regime bands from the stack's full-calendar timeline (a market property, same as a backtest).
-  const hasRegimes = (stack?.regime_timeline?.length ?? 0) > 0
+  //
+  // ⚠ The calendar is NOT on the stack payload — it is 43% of it and this overlay defaults OFF, so
+  // it is fetched only once the reader switches the overlay on. Whether to OFFER the control is a
+  // different question from whether the data is in hand, and it is answered by the backend's
+  // `has_regime_timeline`: reading `regime_timeline.length` here would hide the toggle for ever,
+  // since the payload deliberately never carries one.
+  const hasRegimes = stack?.has_regime_timeline ?? false
+  const { data: regimeData } = useStackRegimeTimeline(stackId ?? null, hasRegimes && overlayOn)
+  const regimeTimeline = regimeData?.regime_timeline
   const regimeBands = useMemo(() => {
-    if (!overlayOn || !stack?.regime_timeline?.length) return []
+    if (!overlayOn || !regimeTimeline?.length) return []
     return xMode === 'trade'
-      ? regimeBandsByIndex(combined.equity, new Map(stack.regime_timeline.map(d => [d.date, d.regime])))
-      : regimeBandsFromTimeline(stack.regime_timeline)
-  }, [overlayOn, xMode, stack?.regime_timeline, combined.equity])
+      ? regimeBandsByIndex(combined.equity, new Map(regimeTimeline.map(d => [d.date, d.regime])))
+      : regimeBandsFromTimeline(regimeTimeline)
+  }, [overlayOn, xMode, regimeTimeline, combined.equity])
 
   // Merged price-chart spec — loads once results exist (candles come from the base leg's cached spec).
   const { data: rawSpec, isLoading: specLoading, isError: specError } = useStackChartSpec(stackId ?? null, completeIds, hasResults)
   const requestCandles = useRunCandles(rawSpec?.base_run_id ?? null)
+  // Rebuild chart — the same control a run page carries, on the panel's own tool strip. It rebuilds
+  // EVERY leg's cached spec, because the layers on this chart come from all of them.
+  const rebuild = useRefreshStackChartSpec()
   const priceSpec = useMemo(() => {
     if (!rawSpec) return undefined
     // Each trade carries its strategy's colour AND name — the chart prints the name in the trade's
@@ -738,7 +812,21 @@ export function StackDetail() {
     const trades = rawSpec.trades
       .filter(t => t.layer && enabled.has(t.layer))
       .map(t => ({ ...t, layerColor: colorFor(t.layer!), layerName: nameOf.get(t.layer!) ?? t.layer }))
-    return { ...rawSpec, trades }
+    // 🔴 **The analysis layers follow the SAME leg toggles as the trades (2026-08-10).** They were
+    // absent from the merged spec entirely until then, so switching a stack down to one strategy
+    // left the reader with winners, losers and fibs while that strategy's own backtest page carried
+    // ten more rows — reported off the screen in exactly those words.
+    //
+    // ⚠ **A block and a miss belong to ONE leg and are filtered on it. An anchored OVERLAY carries
+    // `layers` and survives while ANY of them is on**, because a gap or a liquidity level is a fact
+    // about the market that several strategies can have fired into — removing it with one leg would
+    // delete a zone the other leg still traded.
+    const blocks = (rawSpec.blocks ?? []).filter(b => !b.layer || enabled.has(b.layer))
+    const misses = (rawSpec.misses ?? []).filter(m => !m.layer || enabled.has(m.layer))
+    const overlays = rawSpec.overlays.filter(
+      o => !o.layers?.length || o.layers.some(l => enabled.has(l)),
+    )
+    return { ...rawSpec, trades, blocks, misses, overlays }
   }, [rawSpec, enabled, colorFor])
 
   const chartControls = (key: string) => key === 'equity' ? (
@@ -781,6 +869,8 @@ export function StackDetail() {
             height={h}
             isFullscreen={fullscreen === 'price'}
             onFullscreenClose={() => setFullscreen(null)}
+            onRebuild={stackId ? () => rebuild.mutate({ stackId, readyKey: completeIds }) : undefined}
+            rebuilding={rebuild.isPending}
           />
         )
       }
@@ -894,6 +984,15 @@ export function StackDetail() {
             accountSize: stack.account_size ?? undefined,
             riskCapPct: stack.risk_cap_pct ?? undefined,
             entryFloorPct: stack.entry_floor_pct ?? undefined,
+            // What each leg ACTUALLY ran with, so a rerun reproduces this stack rather than
+            // today's stored defaults. The same rule the tuning workbench learned the hard way:
+            // anything that recreates a run for comparison must carry everything that decides
+            // what it is measured on. A leg served before the backend sent params contributes
+            // nothing, which correctly falls back to the defaults it would have used anyway.
+            paramsByStrategy: Object.fromEntries(
+              legs.filter(l => l.params && Object.keys(l.params).length)
+                  .map(l => [l.strategy_id, l.params as Record<string, unknown>]),
+            ),
           }}
           onClose={() => setShowRerun(false)}
         />
@@ -904,6 +1003,26 @@ export function StackDetail() {
           <div className="h-7 w-80 bg-bg-surface rounded" />
           <div className="h-4 w-56 bg-bg-surface rounded" />
           <div className="h-[300px] bg-bg-surface rounded-xl" />
+        </div>
+      )}
+
+      {/* 🔴 `isError` was never read until 2026-08-10, so a stack id that does not resolve — a bad
+          URL, a stale bookmark, or a stack deleted in another tab — rendered the back button over
+          an empty page. A blank page is indistinguishable from one still loading, and it is the
+          one state where the reader needs to be told to go back rather than left waiting. */}
+      {isError && !stack && (
+        <div data-testid="stack-not-found"
+             className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center">
+          <div className="text-[14px] font-semibold text-text-primary mb-1">This stack could not be loaded</div>
+          <div className="text-[12.5px] text-text-secondary">
+            It may have been deleted, or the id in the address bar is wrong.
+          </div>
+          <button
+            onClick={() => navigate('/backtests?tab=stacks')}
+            className="mt-4 text-[12px] px-3 py-[6px] rounded border border-accent/30 text-accent hover:bg-accent/10 transition-colors"
+          >
+            Back to stacks
+          </button>
         </div>
       )}
 
@@ -1016,6 +1135,7 @@ export function StackDetail() {
                 report={shared}
                 colorFor={colorFor}
                 nameFor={(id) => legs.find(l => l.strategy_id === id)?.strategy_name ?? id}
+                running={stackRunning}
               />
             </div>
           )}
@@ -1043,6 +1163,14 @@ export function StackDetail() {
                 />
               )}
             </div>
+          ) : combined.basis === 'unmeasured' ? (
+            /* 🔴 Nothing here, deliberately (fixed 2026-08-10). `hasResults` is false on the
+               `unmeasured` basis, so this slot used to render "No completed strategy runs to
+               compose" — a sentence that is FLATLY FALSE while the Verdict card two feet above is
+               listing the completed runs and explaining, correctly, why this particular COMBINATION
+               has no book. Two answers to one question, on one screen, and the wrong one is the
+               larger. The `UnmeasuredCard` already carries the reason and the way back. */
+            null
           ) : !isRunning ? (
             <div className="rounded-xl border border-border-subtle bg-bg-surface px-6 py-10 text-center text-[13px] text-text-tertiary">
               No completed strategy runs to compose. {legs.some(l => l.status.startsWith('failed')) && 'Some runs failed — check the chips above.'}
@@ -1053,18 +1181,63 @@ export function StackDetail() {
             </div>
           )}
 
-          {/* Per-strategy table — each row opens that leg's own backtest (back returns here) */}
+          {/* ── Per-strategy results ──
+              Each row opens that leg's own backtest (its Back returns here).
+
+              🔴 EVERY DOLLAR IN THIS TABLE WAS A SHARED-ACCOUNT FIGURE WEARING A NEUTRAL LABEL
+              until 2026-08-10, which is the exact mistake the Verdict card was rebuilt to fix the
+              same day — repeated one section further down, on the same page, against the same
+              stack. `net_pnl`, `max_drawdown` and `sharpe` on a shared leg are that leg's numbers
+              INSIDE the portfolio, where it sizes off a balance every strategy grew: measured on
+              `st_94aeb25f0c`, MPC B-LEG reads $47,758,999 here and $21,064 on its own account, for
+              the identical 99 trades at the identical +17.8674R. The column said "Net P&L".
+
+              ⚠ **R leads**, because it is the one per-trade figure a change of position size cannot
+              move — the same reasoning that put it at the front of the Verdict card's rows.
+              ⚠ On a shared stack the dollars are named for the book they came from, and the SOLO
+              CONTROL sits beside them rather than replacing them: what a leg contributed to this
+              portfolio and what it makes alone are both real, and the defect was never that one of
+              them was wrong — it was that only one was shown, under a name that fits the other. */}
           {legs.some(l => l.status === 'complete') && (
             <div>
               <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Per-strategy results</h2>
-              <div className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto">
+              {/* ⚠ A test seam, and this folder has recorded four vacuous passes from unscoped
+                  locators. The shared-account panel carries its own seven-column table behind a
+                  disclosure, so a page-wide `locator('table')` matches whichever renders first. */}
+              <div data-testid="per-strategy-table"
+                   className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden overflow-x-auto">
                 <table className="w-full text-[12px]">
                   <thead>
                     <tr className="border-b border-border-subtle bg-bg-sunken">
                       <th className="text-left px-3 py-2 text-text-tertiary font-medium">Strategy</th>
-                      <th className="text-left px-3 py-2 text-text-tertiary font-medium">Net P&L</th>
-                      <th className="text-left px-3 py-2 text-text-tertiary font-medium">Max DD</th>
-                      <th className="text-left px-3 py-2 text-text-tertiary font-medium">Sharpe</th>
+                      <th className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
+                        R
+                        <InfoTip text="Its result over the risk it was sized to. This is the one figure that is the same inside this stack as it is alone — R is normalised to each trade's own risk, so re-sizing a position cannot move it. Rank the strategies on this column, never on the dollars." />
+                      </th>
+                      <th className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
+                        {isShared ? 'In this stack' : 'Net P&L'}
+                        {isShared && (
+                          <InfoTip text="What this strategy's trades were worth INSIDE the shared account — not what it would have made alone. Here it sizes off a balance every strategy grew, so this figure says what it contributed to an account the others helped build." />
+                        )}
+                      </th>
+                      {isShared && (
+                        <th className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
+                          On its own
+                          <InfoTip text="The SOLO CONTROL: the same strategy replayed alone on its own full account over the same window, exactly as if the others never existed. Same trades and same R as the column beside it — only the position sizes differ. An em-dash means no control was stored for this stack." />
+                        </th>
+                      )}
+                      <th className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
+                        Max DD
+                        {isShared && (
+                          <InfoTip text="Measured inside the shared account, so it is in the same inflated dollars as “In this stack”. Read it against that column, never against the solo one." />
+                        )}
+                      </th>
+                      <th className="text-left px-3 py-2 text-text-tertiary font-medium whitespace-nowrap">
+                        Sharpe
+                        {isShared && (
+                          <InfoTip text="Also measured inside the shared account. It is computed from daily dollars, so a growing shared balance flatters it the same way profit factor is flattered — measured on this stack, one leg reads 1.505 alone and 3.111 here on identical trades." />
+                        )}
+                      </th>
                       <th className="text-left px-3 py-2 text-text-tertiary font-medium">Trades</th>
                       <th className="text-left px-3 py-2 text-text-tertiary font-medium">Status</th>
                       <th className="px-3 py-2 w-16" />
@@ -1074,6 +1247,8 @@ export function StackDetail() {
                     {legs.map(leg => {
                       const done = leg.status === 'complete'
                       const failed = leg.status.startsWith('failed')
+                      const r = combined.legR.get(leg.strategy_id)
+                      const soloNet = soloNetOf(leg)
                       return (
                         <tr
                           key={leg.run_id}
@@ -1086,9 +1261,21 @@ export function StackDetail() {
                               {leg.strategy_name}
                             </span>
                           </td>
+                          <td className={`px-3 py-[9px] font-mono tabular-nums font-semibold ${
+                            r == null ? 'text-text-tertiary' : r >= 0 ? 'text-pos-text' : 'text-neg-text'
+                          }`}>
+                            {r != null && done ? `${r > 0 ? '+' : ''}${r.toFixed(2)}R` : '—'}
+                          </td>
                           <td className={`px-3 py-[9px] font-mono tabular-nums ${(leg.net_pnl ?? 0) >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
                             {leg.net_pnl != null ? fmtMoney(leg.net_pnl) : '—'}
                           </td>
+                          {isShared && (
+                            <td className={`px-3 py-[9px] font-mono tabular-nums ${
+                              soloNet == null ? 'text-text-tertiary' : soloNet >= 0 ? 'text-pos-text/80' : 'text-neg-text/80'
+                            }`}>
+                              {soloNet != null ? fmtMoney(soloNet) : '—'}
+                            </td>
+                          )}
                           <td className="px-3 py-[9px] font-mono tabular-nums text-neg-text">
                             {leg.max_drawdown != null ? fmtMoney(-Math.abs(leg.max_drawdown), false) : '—'}
                           </td>
@@ -1107,6 +1294,51 @@ export function StackDetail() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Settings ──
+              What each leg was ACTUALLY replayed with. A single backtest has carried this in its
+              params side panel since the day it existed and a stack had it nowhere, which left one
+              class of value invisible on this page: a param the STACK pinned. A shared leg is
+              forced `exec_secondary: false` by the backend before it replays, so the run differs
+              from the strategy's own defaults for a reason nothing on screen stated — and the
+              reader's only route to it was opening a leg's own page and knowing to look.
+
+              ⚠ It is per LEG rather than one merged list: two strategies can hold the same key at
+              different values, and a merged view would have to pick one. */}
+          {legs.some(l => l.params && Object.keys(l.params).length > 0) && (
+            <div>
+              <h2 className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] mb-3">Settings</h2>
+              <div className="space-y-2" data-testid="stack-settings">
+                {legs.filter(l => l.params && Object.keys(l.params).length > 0).map(leg => (
+                  <details key={leg.strategy_id}
+                           className="bg-bg-surface border border-border-subtle rounded-xl overflow-hidden">
+                    <summary className="px-4 py-2.5 cursor-pointer select-none flex items-center gap-2 text-[12px]">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ background: colorFor(leg.strategy_id) }} />
+                      <span className="font-medium text-text-primary">{leg.strategy_name}</span>
+                      <span className="text-text-tertiary">
+                        {Object.keys(leg.params!).length} settings
+                      </span>
+                    </summary>
+                    <div className="border-t border-border-subtle px-4 py-3 grid gap-x-6 gap-y-1
+                                    grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                      {Object.entries(leg.params!).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => (
+                        <div key={k} className="flex items-baseline justify-between gap-3 text-[11px] py-[2px]">
+                          <span className="text-text-tertiary truncate" title={k}>{k}</span>
+                          <span className="font-mono tabular-nums text-text-secondary whitespace-nowrap">
+                            {/* Rendered as written. A `false` printed as an em-dash, or a 0 dropped
+                                as falsy, would hide exactly the pinned value this section exists
+                                to show. */}
+                            {typeof v === 'boolean' ? (v ? 'true' : 'false') : String(v)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
               </div>
             </div>
           )}

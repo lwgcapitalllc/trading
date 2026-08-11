@@ -93,7 +93,11 @@ def preview_stack(req: StackPreviewRequest) -> StackPreviewResponse:
     legs: list[StackPreviewLeg] = []
     reuse = 0
     for strat in strategies:
-        match = None if req.mode == "shared" else lab_db.find_matching_stack_run(
+        # Two independent reasons a leg cannot be reused, and BOTH have to be mirrored from
+        # `trigger_stack` or the badge promises something the launch will not do: a shared stack
+        # reuses nothing at all, and a per-strategy param override means "run it my way".
+        forced = bool(req.params_by_strategy.get(strat["id"]))
+        match = None if (req.mode == "shared" or forced) else lab_db.find_matching_stack_run(
             strat["id"], req.instrument, req.bar_type, req.bar_value,
             req.start_date, req.end_date, req.commission_per_side, req.slippage_ticks,
         )
@@ -439,18 +443,90 @@ def delete_stack(stack_id: str) -> Response:
 
 
 @router.get("/stacks/{stack_id}/chart-spec")
-async def get_stack_chart_spec(stack_id: str) -> dict:
+async def get_stack_chart_spec(stack_id: str, refresh: bool = False) -> dict:
     """Merged ChartSpec for the stack's price chart — shared candles + every completed leg's
     trades tagged with `layer` (strategy_id). camelCase (the chart contract) + a `layers` list.
-    The candle fetch is heavy, so it runs off-thread like the single-run chart-spec."""
-    spec = await asyncio.to_thread(chart_spec.build_stack_chart_spec, stack_id)
+    The candle fetch is heavy, so it runs off-thread like the single-run chart-spec.
+
+    `refresh=true` rebuilds every leg's own cached spec first — the merge holds no cache of its
+    own, so nothing else would change. Same flag, same meaning, as `/runs/{id}/chart-spec`."""
+    spec = await asyncio.to_thread(chart_spec.build_stack_chart_spec, stack_id, refresh)
     if spec is None:
         raise HTTPException(404, f"No completed runs in stack '{stack_id}' yet")
     return spec
 
 
+def _cached_regime_timeline(rows: list[dict]) -> tuple[list, bool]:
+    """The regime calendar off a completed leg's cache — `(timeline, a_cache_exists)`.
+
+    ⚠ The two halves answer different questions and a caller needs both. `[]` with
+    `cached=True` is a MEASUREMENT ("we classified this window and it has nothing to show");
+    `[]` with `cached=False` means nobody has looked yet. Collapsing them is what made every
+    poll of this endpoint re-fetch OHLC before 2026-08-10.
+    """
+    cached = False
+    for r in rows:
+        if r["status"] != "complete":
+            continue
+        cache = _LAB_RESULTS_DIR / r["run_id"] / "regime_timeline.json"
+        if cache.exists():
+            cached = True
+            tl = _load_json(str(cache))
+            if tl:
+                return tl, True
+    return [], cached
+
+
+async def _build_regime_timeline(rows: list[dict], first: dict, status: str) -> list:
+    """Read the calendar off a leg's cache, or classify the shared window once and cache it.
+
+    Regime is a property of the MARKET on a date, so it is the same for every leg — but a
+    Python sweep-child leg is never regime-tagged, so on most stacks nobody has one and it has
+    to be computed here. `[]` is WRITTEN on an empty result, because it is a real answer.
+    """
+    timeline, cached = _cached_regime_timeline(rows)
+    if cached or status == "running":
+        return timeline
+
+    first_complete = next((r for r in rows if r["status"] == "complete"), None)
+    if first_complete is None:
+        return []
+    try:
+        from services.backtest_runner import build_regime_timeline_and_tag
+        tl, _ = await asyncio.to_thread(
+            build_regime_timeline_and_tag,
+            first["instrument"], first["start_date"], first["end_date"], [], "python",
+        )
+        timeline = tl or []
+        cache = _LAB_RESULTS_DIR / first_complete["run_id"] / "regime_timeline.json"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(timeline))
+    except Exception:  # noqa: BLE001 — regimes are a nice-to-have overlay, never block the page
+        pass
+    return timeline
+
+
+@router.get("/stacks/{stack_id}/regime-timeline")
+async def get_stack_regime_timeline(stack_id: str) -> dict:
+    """The full-calendar regime timeline on its own — the equity chart's regime overlay.
+
+    It is split out because it is the single biggest slice of the stack detail (**96,766 of
+    226,036 bytes, 43%, measured on `st_94aeb25f0c`**) and the overlay it feeds defaults OFF,
+    so the common page load has no use for it at all. This is also the only path that will
+    CLASSIFY a window that has never been classified — `GET /stacks/{id}?timeline=false`
+    deliberately will not, since that fetches OHLC for something nobody asked to see.
+    """
+    rows = lab_db.list_stack_runs(stack_id)
+    settings = lab_db.get_stack_settings(stack_id)
+    if not rows and not settings:
+        raise HTTPException(404, f"Stack '{stack_id}' not found")
+    first  = settings or (rows[0] if rows else {})
+    status = "running" if any(r["status"] == "running" for r in rows) else "other"
+    return {"regime_timeline": await _build_regime_timeline(rows, first, status)}
+
+
 @router.get("/stacks/{stack_id}", response_model=StackDetail)
-async def get_stack(stack_id: str) -> StackDetail:
+async def get_stack(stack_id: str, timeline: bool = True) -> StackDetail:
     rows = lab_db.list_stack_runs(stack_id)
     settings = lab_db.get_stack_settings(stack_id)
     if not rows and not settings:
@@ -482,6 +558,10 @@ async def get_stack(stack_id: str) -> StackDetail:
             sharpe=r.get("sharpe"),
             avg_trade_duration_min=r.get("avg_trade_duration_min"),
             error_message=r.get("error_message"),
+            # `list_stack_runs` already parses this column, so it arrives as a dict. A leg's params
+            # are the only record of what the stack PINNED onto it (`_SHARED_LEG_PINS`) and the only
+            # thing a rerun can carry forward — see the field's note on the model.
+            params=r.get("params") or {},
             daily_pnl=_load_json(r.get("daily_pnl_path")),
             equity_curve=_load_json(r.get("equity_curve_path")),
             # The mode comes off the SETTINGS row, the same source `StackDetail.mode` reads below —
@@ -492,31 +572,25 @@ async def get_stack(stack_id: str) -> StackDetail:
         for r in rows
     ]
 
-    # Full-calendar regime timeline — the same for every leg (market property). Read it from the
-    # first complete leg that has one; if none does (Python sweep-child legs aren't regime-tagged),
-    # compute it once for the shared window and cache it to that leg's dir so later polls are cheap.
-    regime_timeline: list = []
-    first_complete = next((r for r in rows if r["status"] == "complete"), None)
-    for r in rows:
-        if r["status"] != "complete":
-            continue
-        tl = _load_json(str(_LAB_RESULTS_DIR / r["run_id"] / "regime_timeline.json"))
-        if tl:
-            regime_timeline = tl
-            break
-    if not regime_timeline and first_complete is not None and status != "running":
-        try:
-            from services.backtest_runner import build_regime_timeline_and_tag
-            tl, _ = await asyncio.to_thread(
-                build_regime_timeline_and_tag,
-                first["instrument"], first["start_date"], first["end_date"], [], "python",
-            )
-            if tl:
-                regime_timeline = tl
-                cache = _LAB_RESULTS_DIR / first_complete["run_id"] / "regime_timeline.json"
-                cache.write_text(json.dumps(tl))
-        except Exception:  # noqa: BLE001 — regimes are a nice-to-have overlay, never block the page
-            pass
+    # Full-calendar regime timeline — the same for every leg, because regime is a property of the
+    # MARKET on a date. It is 43% of this response (96,766 of 226,036 bytes, measured), and the
+    # overlay it feeds defaults OFF, so `?timeline=false` drops it and the page fetches it from
+    # `/stacks/{id}/regime-timeline` only when the reader switches the overlay on.
+    #
+    # ⚠ The DEFAULT stays `true`. A caller that says nothing gets the whole run — the same rule
+    # `GET /runs/{id}?timeline=false` states, and for the same reason: `[]` on the slim response is
+    # indistinguishable from a stack whose window has no regimes, so it is only ever safe for a
+    # caller that knows it is asking for the rest of the fields.
+    regime_timeline: list = await _build_regime_timeline(rows, first, status) if timeline else []
+
+    # ⚠ Served on BOTH branches, and it is what makes the slim one usable: the page hides the
+    # regime toggle when there is nothing to overlay, so without this a slimmed response would
+    # remove the CONTROL rather than the payload — the reader could never turn it back on.
+    # It never classifies: an uncached window answers from whether one COULD be built.
+    _cached_tl, _tl_cached = _cached_regime_timeline(rows)
+    has_regime_timeline = bool(_cached_tl) if _tl_cached else (
+        status != "running" and any(r["status"] == "complete" for r in rows)
+    )
 
     _created_ts = min((r["created_at"] for r in rows), default=None) or (
         settings["created_at"] if settings else int(time.time())
@@ -543,6 +617,7 @@ async def get_stack(stack_id: str) -> StackDetail:
         created_at=created_at,
         completed_at=completed_at,
         regime_timeline=regime_timeline,
+        has_regime_timeline=has_regime_timeline,
         strategies=legs,
         mode=(settings or {}).get("mode") or "screen",
         # Served from the settings row and NOT defaulted to a number. A screen has no account —

@@ -331,3 +331,599 @@ def test_r_reaches_the_API_because_the_model_declares_it(client, tmp_path, monke
 
     point = client.get("/backtests/stacks/st_r").json()["strategies"][0]["equity_curve"][0]
     assert point["r"] == 6.31
+
+
+# ── The merged price chart carries every leg's analysis ───────────────────────
+#
+# 🔴 It carried NONE of it until 2026-08-10. `build_stack_chart_spec` dropped blocked setups,
+# missed setups and every anchored overlay group, on the argument that none of them carried a
+# `layer` — which was true, and was a reason to TAG them rather than to omit them. With the layers
+# gone, isolating one strategy on a stack left the reader with winners, losers and fibs while that
+# same strategy's own backtest page carried ten more rows.
+
+
+class _FakeSpec(dict):
+    """Just enough of a leg's ChartSpec for the merge to work on."""
+
+
+def _leg_spec(*, gap_t0: int, block_time: int, layer_only_group: str = "Order Blocks") -> dict:
+    return {
+        "instrument": "XAUUSD", "baseTimeframe": "M15", "runTimeframe": "M15",
+        "historyStartMs": 0, "brokerGmtOffsetHours": 0,
+        "candles": [{"time": 1, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0}],
+        "sessions": [], "indicators": [],
+        "trades": [{"id": "T1", "entryTime": 10, "dir": "long", "pnl": 1.0}],
+        "blocks": [{"id": "B1", "time": block_time, "dir": "long", "price": 1.0,
+                    "reasons": [{"label": "Veto", "reason": "…"}]}],
+        "misses": [{"id": "M1", "time": 20, "dir": "long", "price": 1.0, "met": 2, "of": 3,
+                    "near": True, "metLines": [], "reasons": [{"label": "No FVG", "reason": "…"}]}],
+        "missNoise": ["No retrace"],
+        "overlays": [
+            # A market fact selected for drawing by whichever leg fired near it.
+            {"type": "box", "group": "Fair Value Gaps", "t0": gap_t0, "t1": gap_t0 + 100,
+             "p0": 1.0, "p1": 2.0},
+            # …and one only this leg reported, so the dedupe has something to leave alone.
+            {"type": "box", "group": layer_only_group, "t0": 999, "t1": 1099, "p0": 3.0, "p1": 4.0},
+            # Structure — computed from the CANDLES, so it belongs to no leg.
+            {"type": "hline", "group": "External Structure", "t0": 1, "t1": 2, "price": 1.5},
+            # The candle repaint, whose spans/deepestOf are indices into THIS run's anchor list.
+            {"type": "candle", "group": "Candlestick Reversals", "t": 10, "spans": [0],
+             "deepestOf": [0], "deepestNames": {"0": "Hammer"}},
+        ],
+    }
+
+
+def _merged(monkeypatch, specs: dict[str, dict], *, refresh: bool = False,
+            seen: list | None = None) -> dict:
+    from services import chart_spec
+
+    rows = [{"run_id": f"run_{sid}", "strategy_id": sid, "strategy_name": sid.upper(),
+             "status": "complete"} for sid in specs]
+
+    def _fake(run_id, refresh_arg=False):
+        if seen is not None:
+            seen.append((run_id, refresh_arg))
+        return specs[run_id.removeprefix("run_")]
+
+    monkeypatch.setattr(chart_spec.lab_db, "list_stack_runs", lambda _sid: rows)
+    monkeypatch.setattr(chart_spec, "build_chart_spec", _fake)
+    return chart_spec.build_stack_chart_spec("st_x", refresh)
+
+
+def test_a_block_and_a_miss_are_TAGGED_with_the_leg_that_produced_them(monkeypatch):
+    """Both were dropped entirely because they carried no layer. Tagging is the fix, not omission.
+
+    ⚠ The id is namespaced too: two legs both numbering their setups from B1 would collide, and the
+    chart keys its markers on the id.
+    """
+    merged = _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                                   "b": _leg_spec(gap_t0=500, block_time=2)})
+    assert [b["layer"] for b in merged["blocks"]] == ["a", "b"]
+    assert [m["layer"] for m in merged["misses"]] == ["a", "b"]
+    assert sorted(b["id"] for b in merged["blocks"]) == ["a:B1", "b:B1"]
+
+
+def test_two_legs_reporting_ONE_market_fact_produce_ONE_overlay_carrying_BOTH(monkeypatch):
+    """A gap is a fact about the market, so identical copies merge and the overlay draws while
+    EITHER leg is shown.
+
+    That is the opposite rule from a block, which belongs to one strategy — and it is what stops a
+    stack double-counting its own box counts and stacking two identical rectangles.
+    """
+    merged = _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                                   "b": _leg_spec(gap_t0=500, block_time=2)})
+    gaps = [o for o in merged["overlays"] if o["group"] == "Fair Value Gaps"]
+    assert len(gaps) == 1, "one gap reported by both legs must not be drawn twice"
+    assert gaps[0]["layers"] == ["a", "b"]
+
+
+def test_a_gap_only_ONE_leg_saw_stays_that_leg_s(monkeypatch):
+    """The dedupe must key on the DRAWING, not on the group — otherwise two different gaps merge
+    into one and a zone the other leg never traded into survives its leg being switched off."""
+    merged = _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                                   "b": _leg_spec(gap_t0=900, block_time=2)})
+    gaps = sorted((o for o in merged["overlays"] if o["group"] == "Fair Value Gaps"),
+                  key=lambda o: o["t0"])
+    assert [g["layers"] for g in gaps] == [["a"], ["b"]]
+
+
+def test_the_structure_overlays_belong_to_NO_leg(monkeypatch):
+    """They are computed from the candles, which every leg shares, so the base leg's are the
+    stack's — and they must carry no `layers`, or isolating a strategy would blank the market
+    structure underneath it."""
+    merged = _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                                   "b": _leg_spec(gap_t0=900, block_time=2)})
+    struct = [o for o in merged["overlays"] if o["group"] == "External Structure"]
+    assert len(struct) == 1
+    assert "layers" not in struct[0]
+
+
+def test_the_candle_repaint_is_DROPPED_because_its_anchors_are_run_relative(monkeypatch):
+    """`spans` / `deepestOf` / `deepestNames` are INDICES into one run's own anchor list, and a
+    stack re-sorts every leg's trades into one list and then filters it by which legs are on. An
+    index minted against one run addresses a different trade here — so it would name the wrong
+    trade's outcome chip, which is a confident wrong answer rather than a missing layer.
+    """
+    merged = _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                                   "b": _leg_spec(gap_t0=900, block_time=2)})
+    assert not [o for o in merged["overlays"] if o["group"] == "Candlestick Reversals"]
+
+
+def test_missNoise_is_a_UNION_across_the_legs(monkeypatch):
+    """A reason one leg calls routine is routine on the merged chart too. A leg that never produced
+    that reason has no opinion, so it cannot vote against it."""
+    a = _leg_spec(gap_t0=500, block_time=1)
+    b = _leg_spec(gap_t0=900, block_time=2)
+    b["missNoise"] = ["Never filled"]
+    merged = _merged(monkeypatch, {"a": a, "b": b})
+    assert merged["missNoise"] == ["No retrace", "Never filled"]
+
+
+def test_the_shared_runner_captures_each_leg_s_blocked_and_missed_setups():
+    """`StackRun` carries them per leg, off the SHARED replay.
+
+    Without this the lab's `_persist` had nothing to hand `build_results`, so a shared stack's legs
+    wrote no `blocked_setups.json` at all — and the layer was therefore missing from the leg's OWN
+    detail page as well as from the stack's, while the identical leg run through the screen path
+    had it.
+    """
+    from backtest.portfolio.runner import StackRun
+
+    run = StackRun(opening_balance=0.0, risk_cap_pct=0.1, entry_floor_pct=0.0,
+                   closing_balance=0.0)
+    assert run.blocked_per_leg == {}
+    assert run.missed_per_leg == {}
+
+
+def test_a_stack_rebuild_reaches_EVERY_leg_s_cached_spec(monkeypatch):
+    """`refresh=True` must rebuild each leg's own cached spec, not just re-run the merge.
+
+    The merge holds no cache — it is recomputed on every request — so a Rebuild that stopped at the
+    merge would return byte-identical stale layers while the button spun and stopped. And it has to
+    reach EVERY leg rather than the base one: the blocked setups, missed setups and anchored
+    analysis on this chart come from all of them, so refreshing only the leg that supplies the
+    candles would leave most of the chart stale.
+    """
+    seen: list = []
+    _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                          "b": _leg_spec(gap_t0=900, block_time=2)},
+            refresh=True, seen=seen)
+    assert seen == [("run_a", True), ("run_b", True)]
+
+
+def test_a_stack_chart_spec_does_NOT_rebuild_the_legs_by_default(monkeypatch):
+    """The other half of the same rule, and the one that keeps the page usable.
+
+    The stack spec is fetched on every visit to the price section, and a leg rebuild re-fetches
+    candles and replays the engines — measured at ~55s for two legs of a full-history run. Defaulting
+    to a rebuild would turn opening the chart into that wait, every time.
+    """
+    seen: list = []
+    _merged(monkeypatch, {"a": _leg_spec(gap_t0=500, block_time=1),
+                          "b": _leg_spec(gap_t0=900, block_time=2)}, seen=seen)
+    assert seen == [("run_a", False), ("run_b", False)]
+
+
+# ── The regime timeline is computed ONCE, including when the answer is "nothing" ──
+
+def _stack_with_one_complete_leg(client_db: Path, reports: Path) -> None:
+    """One shared stack, one finished leg, no `regime_timeline.json` anywhere."""
+    lab_db.init_db()
+    lab_db.upsert_strategy({
+        "id": "mpc_bleg", "name": "MPC B-LEG", "runner": "python",
+        "class_name": "MpcBLegStrategy", "source_path": "strategies/python/mpc_bleg",
+        "scanned_at": 1, "param_schema": [], "default_params": {},
+    })
+    lab_db.insert_stack({
+        "stack_id": "st_rg", "instrument": "XAUUSD", "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "created_at": 1, "mode": "shared",
+        "account_size": 10_000.0, "risk_cap_pct": 10.0, "entry_floor_pct": 0.0,
+    })
+    curve = reports / "curve.json"
+    curve.parent.mkdir(parents=True, exist_ok=True)
+    curve.write_text(json.dumps([{"index": 1, "equity": 10_500.0, "profit": 500.0,
+                                  "r": 1.0, "direction": "Long", "date": "2024-03-01"}]))
+    lab_db.insert_run({
+        "run_id": "r_rg", "strategy_id": "mpc_bleg", "instrument": "XAUUSD",
+        "params": {}, "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "status": "complete",
+        "created_at": 1, "stack_id": "st_rg", "runner": "python",
+    })
+    lab_db.update_run_complete("r_rg", {"trade_count": 1, "net_pnl": 500.0},
+                               {"equity_curve": str(curve), "trades": None, "daily_pnl": None})
+    lab_db.add_stack_member("st_rg", "r_rg", owned=1, position=0)
+
+
+def test_an_EMPTY_regime_timeline_is_cached_so_it_is_not_recomputed_every_poll(
+    client, tmp_path, monkeypatch,
+):
+    """🔴 The "have we tried" test was whether the timeline came back NON-EMPTY, so a window the
+    classifier legitimately answers nothing for was recomputed on every single GET — and that
+    recompute FETCHES OHLC.
+
+    This endpoint is polled every 3 seconds while a stack runs, so the cost is not theoretical and
+    it compounds with the poll that never stopped on a failed stack. `[]` on disk is a real answer
+    ("measured, nothing to show"), which is exactly why it has to be written.
+
+    ⚠ Watched RED against HEAD: the old code called the builder on every request (2 calls).
+    """
+    from routers import stacks as stacks_router
+    from services import backtest_runner
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_with_one_complete_leg(tmp_path / "lab.db", tmp_path / "reports")
+
+    calls: list = []
+
+    def _empty(instrument, start, end, daily, runner):
+        calls.append(instrument)
+        return [], daily
+
+    monkeypatch.setattr(backtest_runner, "build_regime_timeline_and_tag", _empty)
+
+    assert client.get("/backtests/stacks/st_rg").json()["regime_timeline"] == []
+    assert client.get("/backtests/stacks/st_rg").json()["regime_timeline"] == []
+    assert calls == ["XAUUSD"], f"the builder ran {len(calls)} times, not once"
+    assert (tmp_path / "reports" / "r_rg" / "regime_timeline.json").read_text() == "[]"
+
+
+def test_a_real_regime_timeline_is_still_computed_once_and_served(client, tmp_path, monkeypatch):
+    """The other half, kept because a fix that stops computing anything would pass the test above.
+
+    ⚠ This one CANNOT be watched red — the old code served a computed timeline too — so it is a pin
+    on the half that was already right, not a catch.
+    """
+    from routers import stacks as stacks_router
+    from services import backtest_runner
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_with_one_complete_leg(tmp_path / "lab.db", tmp_path / "reports")
+
+    calls: list = []
+    timeline = [{"date": "2024-03-01", "regime": "TRENDING"}]
+
+    def _real(instrument, start, end, daily, runner):
+        calls.append(instrument)
+        return timeline, daily
+
+    monkeypatch.setattr(backtest_runner, "build_regime_timeline_and_tag", _real)
+
+    assert client.get("/backtests/stacks/st_rg").json()["regime_timeline"] == timeline
+    assert client.get("/backtests/stacks/st_rg").json()["regime_timeline"] == timeline
+    assert calls == ["XAUUSD"]
+
+
+def test_timeline_false_drops_the_calendar_and_changes_NOTHING_else(client, tmp_path, monkeypatch):
+    """The regime calendar is 43% of this payload (96,766 of 226,036 bytes, measured on the live
+    stack) and the overlay it feeds defaults OFF, so `?timeline=false` leaves it out.
+
+    ⚠ The assertion that matters is the SECOND one: a slimmed response must be the same run. The
+    point of the flag is a smaller payload, not a different answer, and a caller reading the slim
+    response must never be told something a caller reading the full one is not.
+
+    ⚠ Non-vacuity by MUTATION (the parameter did not exist at HEAD): making the slim branch drop
+    any other field, or making `timeline=True` also drop the calendar, turns this red.
+    """
+    from routers import stacks as stacks_router
+    from services import backtest_runner
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_with_one_complete_leg(tmp_path / "lab.db", tmp_path / "reports")
+
+    timeline = [{"date": "2024-03-01", "regime": "TRENDING"}]
+    monkeypatch.setattr(backtest_runner, "build_regime_timeline_and_tag",
+                        lambda i, s, e, d, r: (timeline, d))
+
+    full = client.get("/backtests/stacks/st_rg").json()
+    slim = client.get("/backtests/stacks/st_rg?timeline=false").json()
+
+    assert full["regime_timeline"] == timeline
+    assert slim["regime_timeline"] == []
+    assert {k: v for k, v in slim.items() if k != "regime_timeline"} == \
+           {k: v for k, v in full.items() if k != "regime_timeline"}
+
+
+def test_the_DEFAULT_still_carries_the_calendar(client, tmp_path, monkeypatch):
+    """⚠ A caller that says nothing gets the whole run, exactly as `GET /runs/{id}` states.
+
+    Defaulting this to False would silently empty `regime_timeline` for every existing consumer,
+    and `[]` there is indistinguishable from a stack whose window genuinely has no regimes — so the
+    breakage would render as a missing overlay rather than as an error. This is a pin on a rule
+    that is right today, not a catch; it exists because the tempting "optimisation" is to flip it.
+    """
+    import inspect
+    from routers import stacks as stacks_router
+
+    assert inspect.signature(stacks_router.get_stack).parameters["timeline"].default is True
+
+
+def test_the_slim_branch_does_NOT_classify_a_window_nobody_asked_to_see(client, tmp_path, monkeypatch):
+    """Classifying a window FETCHES OHLC, so the slim branch must never trigger it.
+
+    ⚠ This is the whole point of splitting the calendar out. Dropping the field from the response
+    while still computing it would move bytes off the wire and leave the expensive half exactly
+    where it was — a saving the reader can see and the server cannot.
+
+    ⚠ Non-vacuity by MUTATION: computing unconditionally and slicing the field out afterwards
+    turns this red.
+    """
+    from routers import stacks as stacks_router
+    from services import backtest_runner
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_with_one_complete_leg(tmp_path / "lab.db", tmp_path / "reports")
+
+    calls: list = []
+
+    def _build(instrument, start, end, daily, runner):
+        calls.append(instrument)
+        return [{"date": "2024-03-01", "regime": "TRENDING"}], daily
+
+    monkeypatch.setattr(backtest_runner, "build_regime_timeline_and_tag", _build)
+
+    client.get("/backtests/stacks/st_rg?timeline=false")
+    assert calls == [], f"the slim branch classified the window ({len(calls)} OHLC fetches)"
+
+    # ...and the dedicated endpoint is the path that DOES, so the calendar is still reachable.
+    assert client.get("/backtests/stacks/st_rg/regime-timeline").json()["regime_timeline"] == \
+        [{"date": "2024-03-01", "regime": "TRENDING"}]
+    assert calls == ["XAUUSD"]
+
+
+def test_the_slim_response_still_says_whether_a_calendar_EXISTS(client, tmp_path, monkeypatch):
+    """🔴 Without this the flag would remove the CONTROL rather than the payload.
+
+    The page hides the regime toggle when there is nothing to overlay, and it decided that by
+    reading `regime_timeline.length`. On a slimmed response that is always 0 — so the reader would
+    lose the only way to ask for the overlay, and the page would look like a build with the feature
+    removed. `has_regime_timeline` is the answer that survives the switch.
+
+    ⚠ It must NOT classify to answer: an uncached window reports whether one COULD be built, which
+    is why this asserts the builder was never called.
+
+    ⚠ Non-vacuity by MUTATION: deriving the flag from `regime_timeline` turns this red.
+    """
+    from routers import stacks as stacks_router
+    from services import backtest_runner
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_with_one_complete_leg(tmp_path / "lab.db", tmp_path / "reports")
+
+    calls: list = []
+    monkeypatch.setattr(backtest_runner, "build_regime_timeline_and_tag",
+                        lambda i, s, e, d, r: (calls.append(i), ([], d))[1])
+
+    slim = client.get("/backtests/stacks/st_rg?timeline=false").json()
+    assert slim["has_regime_timeline"] is True
+    assert slim["regime_timeline"] == []
+    assert calls == [], "answering whether a calendar exists must not classify one"
+
+
+def test_a_window_MEASURED_as_having_no_regimes_reports_no_calendar(client, tmp_path, monkeypatch):
+    """The other side of the flag, and the reason it is not simply "is this stack complete".
+
+    An empty calendar on disk is a MEASUREMENT — we classified the window and it has nothing to
+    show — so the overlay control is correctly withheld. Reporting `true` there would offer a
+    toggle that draws nothing, which reads as the overlay being broken.
+    """
+    from routers import stacks as stacks_router
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_with_one_complete_leg(tmp_path / "lab.db", tmp_path / "reports")
+
+    cache = tmp_path / "reports" / "r_rg" / "regime_timeline.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text("[]")
+
+    assert client.get("/backtests/stacks/st_rg?timeline=false").json()["has_regime_timeline"] is False
+
+
+# ── A leg's PARAMS, and the two things that could not be answered without them ──────────────
+#
+# Round 4 of the stacks audit. Both defects are the same missing field, and neither produced an
+# error: the page had no way to show a param the STACK pinned, and a rerun silently substituted
+# today's stored defaults for what each leg actually ran with.
+
+
+def _stack_leg_with_params(db: Path, reports: Path, params: dict, mode: str = "shared") -> None:
+    """One stack, one finished leg, replayed with `params`."""
+    lab_db.init_db()
+    lab_db.upsert_strategy({
+        "id": "mpc_bleg", "name": "MPC B-LEG", "runner": "python",
+        "class_name": "MpcBLegStrategy", "source_path": "strategies/python/mpc_bleg",
+        "scanned_at": 1, "param_schema": [],
+        # Deliberately DIFFERENT from what the leg ran with — that difference is the whole
+        # subject. A fixture where the two agree cannot tell a carried-forward param from a
+        # defaulted one.
+        "default_params": {"exec_secondary": True, "exec_risk_pct": 10.0},
+    })
+    lab_db.insert_stack({
+        "stack_id": "st_p", "instrument": "XAUUSD", "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "created_at": 1, "mode": mode,
+        "account_size": 10_000.0, "risk_cap_pct": 10.0, "entry_floor_pct": 0.0,
+    })
+    curve = reports / "curve_p.json"
+    curve.parent.mkdir(parents=True, exist_ok=True)
+    curve.write_text(json.dumps([{"index": 1, "equity": 10_500.0, "profit": 500.0,
+                                  "r": 1.0, "direction": "Long", "date": "2024-03-01"}]))
+    lab_db.insert_run({
+        "run_id": "r_p", "strategy_id": "mpc_bleg", "instrument": "XAUUSD",
+        "params": params, "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "status": "complete",
+        "created_at": 1, "stack_id": "st_p", "runner": "python",
+    })
+    lab_db.update_run_complete("r_p", {"trade_count": 1, "net_pnl": 500.0},
+                               {"equity_curve": str(curve), "trades": None, "daily_pnl": None})
+    lab_db.add_stack_member("st_p", "r_p", owned=1, position=0)
+
+
+def test_a_leg_carries_the_params_it_was_REPLAYED_with(client, tmp_path, monkeypatch):
+    """🔴 `StackStrategyLeg` served no params, so the one value a stack PINS was invisible.
+
+    `_SHARED_LEG_PINS` forces `exec_secondary: false` onto every shared leg before it replays,
+    because a leg on a merged clock is one bar frame and the 1-minute re-entry cannot run there.
+    The strategy's own stored default is `true`. So the run genuinely differs from the strategy,
+    for a reason nothing on the stack page could state — the reader's only route to it was
+    opening the leg's own page and knowing to look for it.
+
+    MUTATION: drop `params=` from the `StackStrategyLeg(...)` constructor in `routers/stacks.py`
+    and this goes red on the pinned value.
+    """
+    from routers import stacks as stacks_router
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_leg_with_params(tmp_path / "lab.db", tmp_path / "reports",
+                           {"exec_secondary": False, "exec_risk_pct": 2.5})
+
+    leg = client.get("/backtests/stacks/st_p?timeline=false").json()["strategies"][0]
+
+    # The PINNED value, which is the one that cannot be recovered from anywhere else on the page.
+    assert leg["params"]["exec_secondary"] is False
+    # And it must be what the RUN carried, not what the strategy stores.
+    assert leg["params"]["exec_risk_pct"] == 2.5
+
+
+def test_a_leg_that_stored_no_params_reports_an_empty_dict_not_a_missing_field(
+    client, tmp_path, monkeypatch,
+):
+    """A leg written before params were served must not break the response.
+
+    `{}` renders as no settings section, which is honest: the run recorded none. It is the
+    absence of a SECTION, never a claim that the leg ran on nothing.
+
+    ⚠ VACUOUS against the mutation its sibling names, and kept anyway. Dropping `params=` from
+    the constructor leaves the model's own `{}` default, so this stays green — it was RUN under
+    that mutation and confirmed to pass, rather than assumed to fail. What it pins is the shape a
+    caller may rely on, which is the half that gets "simplified" to `None` later.
+    """
+    from routers import stacks as stacks_router
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    _stack_leg_with_params(tmp_path / "lab.db", tmp_path / "reports", {})
+
+    leg = client.get("/backtests/stacks/st_p?timeline=false").json()["strategies"][0]
+    assert leg["params"] == {}
+
+
+def test_the_PREVIEW_refuses_to_reuse_a_leg_the_launch_would_re_run(client, tmp_path, monkeypatch):
+    """🔴 A per-strategy param override DISABLES reuse, and the preview did not know.
+
+    `trigger_stack` skips `find_matching_stack_run` entirely for a leg carrying an override —
+    "run it my way", not "reuse whatever exists". The preview had no such field, so on a rerun
+    (which now carries every leg's params forward) it would badge the leg green **Reuse** and
+    then watch it replay. The preview and the thing it previews would be answering the same
+    request differently.
+
+    MUTATION: drop the `or forced` clause from `preview_stack` and this goes red.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    # A SCREEN, because a shared stack reuses nothing regardless — the override rule is only
+    # observable where reuse is otherwise possible.
+    _stack_leg_with_params(tmp_path / "lab.db", tmp_path / "reports", {"exec_risk_pct": 2.5},
+                           mode="screen")
+    lab_db.upsert_strategy({
+        "id": "mpc_sos_fade", "name": "MPC SOS Fade", "runner": "python",
+        "class_name": "MpcSosFadeStrategy", "source_path": "strategies/python/mpc_sos_fade",
+        "scanned_at": 1, "param_schema": [], "default_params": {},
+    })
+    # A standalone completed run per leg at exactly these settings — genuine reuse candidates.
+    for i, sid in enumerate(("mpc_bleg", "mpc_sos_fade")):
+        lab_db.insert_run({
+            "run_id": f"r_free_{i}", "strategy_id": sid, "instrument": "XAUUSD",
+            "params": {}, "bar_type": "Minute", "bar_value": 15,
+            "start_date": "2024-01-01", "end_date": "2024-12-31",
+            "commission_per_side": 0.0, "slippage_ticks": 0, "status": "complete",
+            "created_at": 2, "runner": "python",
+        })
+        lab_db.update_run_complete(f"r_free_{i}", {"trade_count": 1, "net_pnl": 1.0},
+                                   {"equity_curve": None, "trades": None, "daily_pnl": None})
+
+    body = {
+        "strategy_ids": ["mpc_bleg", "mpc_sos_fade"], "instrument": "XAUUSD",
+        "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "mode": "screen",
+    }
+    # Without an override BOTH reuse — this half is what makes the assertion below mean something
+    # rather than passing on legs that could never have been reused.
+    assert client.post("/backtests/stacks/preview", json=body).json()["reuse_count"] == 2
+
+    # Override ONE leg. The other must be untouched, or the rule is "any override disables all
+    # reuse", which is a different and wrong thing.
+    forced = {**body, "params_by_strategy": {"mpc_bleg": {"exec_risk_pct": 2.5}}}
+    out = client.post("/backtests/stacks/preview", json=forced).json()
+    assert out["reuse_count"] == 1
+    by_id = {leg["strategy_id"]: leg["action"] for leg in out["legs"]}
+    assert by_id == {"mpc_bleg": "run", "mpc_sos_fade": "reuse"}
+
+
+# ── The Stacks LIST could not be read without opening every row ────────────────────────────
+
+
+def test_the_list_carries_the_portfolios_own_result(client, tmp_path, monkeypatch):
+    """The stacks list had no result column at all — every other list in this app has one.
+
+    It is the SUM of the legs', which is the same arithmetic the detail page composes its Made
+    hero from, so the two cannot disagree about what a stack made.
+
+    MUTATION: drop `net_pnl`/`trade_count` from the members SELECT in `list_stacks` and this
+    goes red.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    _stack_leg_with_params(tmp_path / "lab.db", tmp_path / "reports", {})
+
+    row = next(r for r in client.get("/backtests/stacks").json() if r["stack_id"] == "st_p")
+    assert row["net_pnl"] == 500.0
+    assert row["trade_count"] == 1
+    # And by ID, so a strategy page can find its stacks without matching a display name.
+    assert row["strategy_ids"] == ["mpc_bleg"]
+
+
+def test_a_stack_with_nothing_finished_reports_NO_result_rather_than_zero(
+    client, tmp_path, monkeypatch,
+):
+    """🔴 `sum([])` is `0.0`, and a fabricated zero is indistinguishable from a measured one.
+
+    A stack still replaying and a stack that made exactly nothing are different facts, and the
+    list renders the first as an em-dash. This is the repo's own rule — never let "no" and
+    "cannot ask" be the same value — reaching the newest column on the page.
+
+    MUTATION: replace `_sum_or_none` with a plain `sum(...)` and this goes red on `None`.
+    """
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    lab_db.init_db()
+    lab_db.upsert_strategy({
+        "id": "mpc_bleg", "name": "MPC B-LEG", "runner": "python",
+        "class_name": "MpcBLegStrategy", "source_path": "strategies/python/mpc_bleg",
+        "scanned_at": 1, "param_schema": [], "default_params": {},
+    })
+    lab_db.insert_stack({
+        "stack_id": "st_run", "instrument": "XAUUSD", "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "created_at": 1, "mode": "shared",
+        "account_size": 10_000.0, "risk_cap_pct": 10.0, "entry_floor_pct": 0.0,
+    })
+    lab_db.insert_run({
+        "run_id": "r_run", "strategy_id": "mpc_bleg", "instrument": "XAUUSD",
+        "params": {}, "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "status": "running",
+        "created_at": 1, "stack_id": "st_run", "runner": "python",
+    })
+    lab_db.add_stack_member("st_run", "r_run", owned=1, position=0)
+
+    row = next(r for r in client.get("/backtests/stacks").json() if r["stack_id"] == "st_run")
+    assert row["net_pnl"] is None
+    assert row["trade_count"] is None

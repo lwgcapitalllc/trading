@@ -1196,6 +1196,8 @@ function StacksTab() {
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Mode</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Instrument</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Date Range</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Trades</th>
+                <th className="text-left px-4 py-3 text-text-tertiary font-medium">Net P&L</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Progress</th>
                 <th className="text-left px-4 py-3 text-text-tertiary font-medium">Status</th>
                 <th className="px-3 py-3 w-20" />
@@ -1233,6 +1235,20 @@ function StacksTab() {
                     </td>
                     <td className="px-4 py-3 text-text-secondary font-mono">{st.instrument}</td>
                     <td className="px-4 py-3 text-text-secondary font-mono tabular-nums">{fmtDateRange(st.start_date, st.end_date)}</td>
+                    {/* The result, so this list can be READ rather than opened row by row — it is
+                        the one thing every other list in this app has had and this one did not.
+                        ⚠ An em-dash means NOTHING HAS FINISHED, not a flat result: `net_pnl` is
+                        null until a leg lands, and a rendered 0 would be a measurement nobody
+                        took. While a stack is still replaying it is a running total, which is
+                        what the Progress column beside it is for. */}
+                    <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
+                      {st.trade_count ?? '—'}
+                    </td>
+                    <td className={`px-4 py-3 font-mono tabular-nums font-medium ${
+                      st.net_pnl == null ? 'text-text-tertiary'
+                        : st.net_pnl >= 0 ? 'text-pos-text' : 'text-neg-text'}`}>
+                      {st.net_pnl == null ? '—' : fmtMoney(st.net_pnl)}
+                    </td>
                     <td className="px-4 py-3 font-mono tabular-nums text-text-secondary">
                       {st.completed_strategies}/{st.total_strategies}
                       {st.failed_strategies > 0 && <span className="ml-1 text-neg-text text-[11px]">({st.failed_strategies} failed)</span>}

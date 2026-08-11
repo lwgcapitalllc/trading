@@ -1209,6 +1209,9 @@ export interface StackPreviewRequest {
   // A shared stack reuses nothing, so the preview must not offer a reuse count for a run that
   // will replay every leg regardless.
   mode?: StackMode
+  // An override disables reuse for that leg, so the preview has to see it or it badges a leg
+  // "Reuse" that the launch will re-run. Mirrors `StackRequest.params_by_strategy`.
+  params_by_strategy?: Record<string, Record<string, unknown>>
 }
 
 export interface StackPreviewLeg {
@@ -1238,8 +1241,15 @@ export interface StackSummary {
   status: string
   created_at: string
   strategy_names: string
+  // By ID, so a strategy page can find the stacks it is in without matching a display name.
+  strategy_ids: string[]
   mode: StackMode
   risk_cap_pct: number | null   // null on a screen — there is no account to cap
+  // The portfolio's own result — the sum of the legs', which is the same arithmetic the detail
+  // page's Made hero uses. `null` = nothing has finished, never 0. It covers only the COMPLETED
+  // legs, so on a partial stack it is a running total and the row's progress column says so.
+  net_pnl: number | null
+  trade_count: number | null
 }
 
 export interface StackStrategyLeg {
@@ -1253,6 +1263,11 @@ export interface StackStrategyLeg {
   sharpe: number | null
   avg_trade_duration_min: number | null
   error_message: string | null
+  // What this leg was actually replayed with. It is the only place a param the STACK pinned is
+  // visible (a shared leg is forced `exec_secondary: false` by the backend), and it is what a
+  // rerun carries forward — without it a stack built on per-strategy overrides quietly reverts
+  // each leg to its stored defaults. `{}` on a leg served before this existed.
+  params?: Record<string, unknown>
   daily_pnl: Array<{ date: string; pnl: number }>
   equity_curve: EquityPoint[]
   // The SOLO CONTROL — this leg replayed ALONE on its own full account. On a SHARED stack it holds
@@ -1277,7 +1292,11 @@ export interface StackDetail {
   status: string
   created_at: string
   completed_at: string | null
+  // ⚠ EMPTY on the page's own fetch — `useStack` asks with `?timeline=false`, because this is 43%
+  // of the payload and the overlay it feeds defaults OFF. Read `has_regime_timeline` to decide
+  // whether the overlay control is offered, and `useStackRegimeTimeline` to get the calendar.
   regime_timeline: RegimeDay[]
+  has_regime_timeline: boolean
   strategies: StackStrategyLeg[]
   mode: StackMode
   // null on a screen: each leg traded its own full account, so there is no shared one to state.
