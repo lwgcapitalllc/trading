@@ -8,7 +8,7 @@ import { ArrowLeft, Play, RotateCcw, AlertTriangle, Star, Loader2, ChevronLeft, 
 import { copyChartAsPng } from '@/lib/chartImage'
 import { balTick, balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, tradeTicks, type XMode } from '@/lib/chartAxis'
 import { XModeToggle } from '@/components/XModeToggle'
-import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
+import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverlayToggle'
 import { WorthinessBadge } from '@/components/WorthinessBadge'
 import { useBacktestRun, useStrategy, useBacktestRuns, useTriggerBacktest, useStopBacktest, useRunningVpsJob, useLabProgress } from '@/hooks/useLab'
 import { ParamEditor, ParamCoach, type ParamValue } from '@/components/ParamEditor'
@@ -160,7 +160,7 @@ export function TuningWorkbench() {
   }, [edits, editsKey])
 
   const [coachParam, setCoachParam] = useState<string | null>(null)
-  const [showRegime, setShowRegime] = useState(true)
+  const [showRegime, setShowRegime] = useRegimeOverlay()
   // Same stored preference the run page's equity chart uses, so the two never disagree.
   const [xMode, setXMode] = useState<XMode>(getXMode)
   const toggleXMode = (v: XMode) => { setXMode(v); setXModePref(v) }

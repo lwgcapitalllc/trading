@@ -219,6 +219,22 @@ def _persist(stack_id: str, legs: list[dict], specs: list, run, settings: dict,
                                 initial_capital=run.opening_balance)
         _write_leg(leg["run_id"], results, leg.get("ruleset_ids") or [])
 
+        # The SOLO control's own book, kept in full rather than as two scalars. This is the ONLY
+        # honest answer to "what would the rest of the stack have made if this strategy never
+        # existed", and until 2026-08-10 nothing kept it: `shared_summary.json` stored `solo_r` and
+        # `solo_closing_balance` and the trades were discarded.
+        #
+        # 🔴 Without it, switching a leg off on the stack page recomposed the remaining leg from its
+        # SHARED trades — which are sized off a balance the leg it just removed had grown. Measured
+        # on `st_94aeb25f0c`: mpc_bleg posts 17.8674R either way, 99 trades, identical entry and stop
+        # prices — and $47,758,999 shared against $21,064 alone, because the last trade risks
+        # $16,925,791 of a shared balance instead of $3,102 of its own. Same R, 2,266x the dollars.
+        # Reported off the screen as "how is it the b leg make forty seven million on the stack, but
+        # only twenty one thousand by itself".
+        solo_results = build_results(solo_trades, point_value=point_value,
+                                     initial_capital=run.opening_balance)
+        _write_solo(sdir, spec.name, solo_results)
+
         per_leg_rows.append({
             "strategy_id": spec.name,
             "run_id": leg["run_id"],
@@ -270,6 +286,44 @@ def _neutrality(run, rows: list[dict]) -> dict:
     return {"checkable": True, "ok": True,
             "reason": "nothing was refused and every leg posts the same R shared as solo, so "
                       "the shared account changed the dollars and moved no decision"}
+
+
+def _write_solo(sdir: Path, strategy_id: str, results: dict) -> None:
+    """Persist one leg's SOLO control book beside the stack's other artefacts.
+
+    ⚠ It gets NO run row and NO evaluation, deliberately. A solo control is not a lab run — it was
+    never requested, has no id anybody can navigate to, and putting it in `backtest_runs` would make
+    it appear in the Runs list as a backtest nobody launched. It is read only by
+    `GET /stacks/{id}`, which serves it as the leg's `solo_equity_curve` / `solo_daily_pnl`.
+    """
+    d = sdir / "solo" / strategy_id
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "equity_curve.json").write_text(
+        json.dumps(results.get("equity_curve", []), default=str))
+    (d / "daily_pnl.json").write_text(
+        json.dumps(results.get("daily_pnl", []), default=str))
+
+
+def solo_book(stack_id: str, strategy_id: str) -> tuple[list, list]:
+    """The leg's solo control book, or `([], [])` when this stack predates it being kept.
+
+    ⚠ Empty means "not stored", and the caller must render that as a REFUSAL rather than as a leg
+    that made nothing — see `routers/stacks.py`. A stack run before 2026-08-10 has the scalars in
+    `shared_summary.json` and no book, so the page can state the closing balance and must not draw
+    a curve.
+    """
+    d = stack_dir(stack_id) / "solo" / strategy_id
+    eq = _read_json_list(d / "equity_curve.json")
+    dp = _read_json_list(d / "daily_pnl.json")
+    return eq, dp
+
+
+def _read_json_list(p: Path) -> list:
+    try:
+        v = json.loads(p.read_text())
+        return v if isinstance(v, list) else []
+    except Exception:      # noqa: BLE001 — absent or unreadable both mean "no book stored"
+        return []
 
 
 def _write_leg(run_id: str, results: dict, ruleset_ids: list[str]) -> None:

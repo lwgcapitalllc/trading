@@ -29,19 +29,36 @@ const LEGS = [
   { run_id: 'r_b', strategy_id: 'mpc_bleg', strategy_name: 'MPC B-LEG' },
 ]
 
-function leg(l: typeof LEGS[number], pnl: number) {
+/**
+ * One leg, with the two books a SHARED stack really has on disk.
+ *
+ * ⚠ `pnl` and `soloPnl` differ by design and `r` is IDENTICAL between them — that is the whole
+ * shape of the defect this fixture exists to pin. Inside a shared account a leg sizes off a
+ * balance every strategy grew, so the same trades at the same R are worth wildly different
+ * dollars; measured on the live stack `st_94aeb25f0c`, MPC B-LEG posts 17.8674R either way and
+ * $47,758,999 against $21,064. `solo` omitted models a stack replayed before the control book was
+ * kept (or a screen, which has no control at all).
+ */
+function leg(l: typeof LEGS[number], pnl: number, r: number, soloPnl?: number) {
+  const point = (profit: number) => ({
+    trade_number: 1, equity: 10000 + profit, profit, date: '2024-03-01',
+    direction: 'Long', entry_ms: 1709251200000, exit_ms: 1709254800000, r,
+  })
   return {
     ...l, status: 'complete', net_pnl: pnl, max_drawdown: -100, trade_count: 17,
     sharpe: 1.2, avg_trade_duration_min: 60, error_message: null,
     daily_pnl: [{ date: '2024-03-01', pnl }],
-    equity_curve: [{
-      trade_number: 1, equity: 10000 + pnl, profit: pnl, date: '2024-03-01',
-      direction: 'Long', entry_ms: 1709251200000, exit_ms: 1709254800000,
-    }],
+    equity_curve: [point(pnl)],
+    ...(soloPnl == null ? {} : {
+      solo_equity_curve: [point(soloPnl)],
+      solo_daily_pnl: [{ date: '2024-03-01', pnl: soloPnl }],
+    }),
   }
 }
 
-function stackDetail(mode: 'screen' | 'shared') {
+/** `solo: false` models a shared stack replayed before the control book was kept. */
+function stackDetail(mode: 'screen' | 'shared', opts: { solo?: boolean } = {}) {
+  const keepSolo = mode === 'shared' && opts.solo !== false
   return {
     stack_id: mode === 'shared' ? SHARED_ID : SCREEN_ID,
     instrument: 'XAUUSD', start_date: '2024-01-01', end_date: '2024-12-31',
@@ -49,7 +66,10 @@ function stackDetail(mode: 'screen' | 'shared') {
     total_strategies: 2, completed_strategies: 2, status: 'complete',
     created_at: '2026-08-09T10:00:00Z', completed_at: '2026-08-09T10:20:00Z',
     regime_timeline: [],
-    strategies: [leg(LEGS[0], 14183), leg(LEGS[1], 2622)],
+    strategies: [
+      leg(LEGS[0], 14183, 20.04, keepSolo ? 3000 : undefined),
+      leg(LEGS[1], 2622, 6.31, keepSolo ? 500 : undefined),
+    ],
     mode,
     account_size: mode === 'shared' ? 10000 : null,
     risk_cap_pct: mode === 'shared' ? 10 : null,
@@ -94,11 +114,16 @@ function sharedReport(over: Record<string, unknown> = {}) {
 // instead — which is how three of these checks passed on their first run while asserting on
 // whichever stacks happened to be in the database. That is the same vacuous-pass trap this
 // folder already records for `svg.first()` and the page-header Retry button.
-async function mock(page: Page, mode: 'screen' | 'shared', report?: Record<string, unknown>) {
+async function mock(
+  page: Page,
+  mode: 'screen' | 'shared',
+  report?: Record<string, unknown>,
+  opts: { solo?: boolean } = {},
+) {
   await page.route(u => u.pathname.endsWith('/contention'), r =>
     r.fulfill({ json: report ?? sharedReport() }))
   await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r =>
-    r.fulfill({ json: stackDetail(mode) }))
+    r.fulfill({ json: stackDetail(mode, opts) }))
   await page.route(u => u.pathname.endsWith('/chart-spec'), r =>
     r.fulfill({ status: 404, json: { detail: 'no chart in this test' } }))
   await page.route(u => u.pathname.endsWith('/api/backtests/stacks'), r => r.fulfill({
@@ -153,7 +178,9 @@ test.describe('shared-account stacks', () => {
     let asked = 0
     await page.route(u => u.pathname.endsWith('/contention'), r => { asked++; return r.fulfill({ json: sharedReport() }) })
     await page.goto(`${UI}/backtests/stacks/${SCREEN_ID}`)
-    await expect(page.getByText('Strategies in this stack')).toBeVisible()
+    // ⚠ Wait on the Verdict card, not on the shared panel — the panel's absence is the thing under
+    // test, so waiting for anything derived from it would be waiting for the assertion.
+    await expect(page.getByTestId('stack-verdict-card')).toBeVisible()
     await expect(page.getByTestId('shared-account-panel')).toHaveCount(0)
     expect(asked, 'a screen has no account to contend over — it must not poll for one').toBe(0)
   })
@@ -166,23 +193,36 @@ test.describe('shared-account stacks', () => {
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const panel = page.getByTestId('shared-account-panel')
-    await expect(panel).toContainText('Nothing was ever refused')
-    await expect(panel).toContainText('current')          // ...to each trade's CURRENT stop
-    await expect(panel).toContainText('rarely have had anything to arbitrate')
+    // Visible on the chip, at a glance.
+    await expect(panel).toContainText('Nothing refused')
+    // ⚠ And the REASONING is still reachable — it moved onto the chip's ⓘ when the panel was
+    // condensed (2026-08-10), it was not deleted. Asserting only the chip would pass against a
+    // build that dropped the explanation entirely, which is what turns a measured result back
+    // into a number nobody can interpret.
+    await panel.getByTestId('contention-chip').locator('.cursor-help').hover()
+    const tip = page.locator('body > span', { hasText: 'rarely have had anything to arbitrate' })
+    await expect(tip).toContainText('Nothing was ever refused')
+    await expect(tip).toContainText('current')          // ...to each trade's CURRENT stop
   })
 
-  test('the screen-vs-shared delta is computed off the SOLO controls', async ({ page }) => {
+  test('together-vs-apart is computed off the SOLO controls', async ({ page }) => {
     // MUTATION: sum the legs' shared R instead of their solo closing balances → red.
-    // The solo controls ARE the screen — each leg on its own full account — so this is a
-    // like-for-like comparison against a replay that really happened rather than an estimate.
-    // 21,681.11 + 15,188.43 − 10,000 = 26,869.54 promised; 36,805.85 delivered; +9,936.31.
+    // The solo controls are each leg on its own full account, so this is a like-for-like
+    // comparison against a replay that really happened rather than an estimate.
+    // 21,681.11 + 15,188.43 − 10,000 = 26,869.54 apart; 36,805.85 together; +9,936.31.
     // (`fmtMoney` renders whole dollars, so the assertions are on the rounded figures.)
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
-    const panel = page.getByTestId('shared-account-panel')
-    await expect(panel).toContainText('$36,806')
-    await expect(panel).toContainText('$26,870')
-    await expect(panel).toContainText('+$9,936 on one account')
+    const row = page.getByTestId('together-apart')
+    await expect(row).toContainText('$36,806')
+    await expect(row).toContainText('$26,870')
+    await expect(row).toContainText('+$9,936')
+    // ⚠ The gap is meaningless — worse, it reads as extra RISK — without the sentence saying it is
+    // compounding: on one account the second strategy sizes off a balance the first has grown, and
+    // `docs/SHARED_RISK_STACK.md` predicted the opposite SIGN from exactly that misreading. When
+    // the panel was condensed the sentence moved onto the ⓘ; it must still be reachable.
+    await row.locator('.cursor-help').hover()
+    await expect(page.locator('body > span', { hasText: 'COMPOUNDING' })).toContainText('never on these dollars')
   })
 
   test('the cap and the peak risk are stated together', async ({ page }) => {
@@ -192,8 +232,146 @@ test.describe('shared-account stacks', () => {
     await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
     const panel = page.getByTestId('shared-account-panel')
     await expect(panel).toContainText('10.00%')
-    await expect(panel).toContainText('against a 10.00% cap')
+    await expect(panel).toContainText('of a 10.00% cap')
     await expect(panel).toContainText('2 of 2 holding at once')
+  })
+
+  test('the per-strategy table is folded away when the budget refused nothing', async ({ page }) => {
+    // MUTATION: render the table unconditionally → the first assertion goes red.
+    // On every run measured so far its Shrunk / Blocked / Risk-refused columns are entirely
+    // em-dashes, so unfolded it is the largest thing on the page saying the least.
+    // ⚠ The SECOND half is the one that matters: with contention it must open ITSELF, or the one
+    // state the table exists for is a click away behind a control nobody has reason to press.
+    await mock(page, 'shared')
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const panel = page.getByTestId('shared-account-panel')
+    // 🔴 WAIT FOR THE PANEL FIRST. `locator('table')).toHaveCount(0)` is satisfied the instant the
+    // PANEL is absent too, so asserting it straight after `goto` passed against the mutation that
+    // renders the table unconditionally — a fourth instance of this folder's vacuous-pass trap,
+    // caught only by running the mutation.
+    await expect(panel.getByRole('button', { name: /per-strategy detail/i })).toBeVisible()
+    await expect(panel.locator('table')).toHaveCount(0)
+    await panel.getByRole('button', { name: /per-strategy detail/i }).click()
+    await expect(panel.locator('table')).toBeVisible()
+
+    await mock(page, 'shared', sharedReport({ contention_events: 3 }))
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    await expect(page.getByTestId('shared-account-panel').locator('table')).toBeVisible()
+  })
+
+  test('the strategies are toggled from INSIDE the Verdict card, and the KPIs follow', async ({ page }) => {
+    // MUTATION: pass a fixed leg set to `composeCombined` instead of `enabled` → red.
+    // This is the whole reason the legs moved into the Verdict card: the control that decides
+    // what Made / Risked / Trusted count now sits in the same row as the numbers it recomputes,
+    // where it used to be a chip strip in a section of its own further down the page.
+    await mock(page, 'shared')
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    // Both legs on: 17 + 1 trades in the fixture's equity curves (one point each carries a
+    // direction, so the union is 2 — the hero counts the UNION, not the legs' own totals).
+    await expect(verdict).toContainText('2 of 2 on')
+    const before = await verdict.locator('.text-\\[34px\\]').innerText()
+
+    await verdict.getByRole('button', { name: /MPC B-LEG/ }).click()
+    await expect(verdict).toContainText('1 of 2 on')
+    await expect(verdict.locator('.text-\\[34px\\]')).not.toHaveText(before)
+  })
+
+  test('the last strategy left on cannot be switched off', async ({ page }) => {
+    // MUTATION: drop the `isLastOn` guard → red. A portfolio of no strategies has nothing to
+    // measure, so every card beside this one would render an empty run rather than a smaller one.
+    await mock(page, 'shared')
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await verdict.getByRole('button', { name: /MPC B-LEG/ }).click()
+    await expect(verdict).toContainText('1 of 2 on')
+    // The remaining leg is no longer a button at all — a disabled-looking control you can still
+    // press is the version of this that fails silently.
+    await expect(verdict.getByRole('button', { name: /MPC SOS Fade/ })).toHaveCount(0)
+  })
+
+  test('switching a strategy off swaps in the SOLO control, not its share of the stack', async ({ page }) => {
+    // 🔴 THE DEFECT THIS FILE EXISTS FOR MOST. Reported off the screen 2026-08-10: with MPC SOS
+    // Fade switched off, the page said MPC B-LEG had made $47,758,999 — while the same strategy
+    // run standalone over the same window made $21,064. Both were right. Composing the remaining
+    // leg from its SHARED trades answers "what did it contribute to an account the others built";
+    // the reader hears "what would this have made alone", and inside the stack it sizes off a
+    // balance every strategy grew (measured: same 99 trades, same 17.8674R, 2,266x the dollars).
+    //
+    // MUTATION: drop the `basis === 'solo'` branch in `composeCombined`, so `books` always uses
+    // `equity_curve` → Made reads the shared +$2,622 instead of the solo +$500 → red.
+    await mock(page, 'shared')
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await expect(verdict).toContainText('2 of 2 on')
+    // Both on: the shared book, exactly as replayed — 14,183 + 2,622.
+    await expect(page.getByTestId('basis-chip')).toContainText('the shared account, as it ran')
+    await expect(page.locator('.text-\\[34px\\]').nth(1)).toContainText('16,805')
+
+    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await expect(verdict).toContainText('1 of 2 on')
+    // The SOLO figure ($500), never the leg's share of the shared book ($2,622).
+    await expect(page.locator('.text-\\[34px\\]').nth(1)).toContainText('500')
+    await expect(page.locator('.text-\\[34px\\]').nth(1)).not.toContainText('2,622')
+    // And the page SAYS which book it is showing — the numbers move by orders of magnitude here,
+    // so a silent swap is its own defect even when every number is right.
+    await expect(page.getByTestId('basis-chip')).toContainText('on its own account')
+  })
+
+  test('a leg row is stated in R, which is the one figure a shared account cannot move', async ({ page }) => {
+    // MUTATION: make the row value `counts.get(id)` again → red on the R assertions.
+    // The row used to read the trade count with "It made <net_pnl> on its own account" on its
+    // tooltip — and on a shared stack `net_pnl` is the leg's dollars INSIDE the portfolio, so that
+    // sentence was false by 2,266x on the measured stack. R is normalised to each trade's own
+    // risk, so it is identical shared or solo; the dollars are the thing that moves.
+    await mock(page, 'shared')
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await expect(verdict).toContainText('+20.04R')
+    await expect(verdict).toContainText('+6.31R')
+
+    // ⚠ And it stays in R when the leg is switched OFF. It fell back to the trade count there,
+    // so one row read `+20.04R` and the other `17` on the same card — two units, one column.
+    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await expect(verdict).toContainText('1 of 2 on')
+    await expect(verdict).toContainText('+20.04R')
+  })
+
+  test('a shared stack with no stored control REFUSES rather than composing one', async ({ page }) => {
+    // MUTATION: fall back to the shared curves when `solo_equity_curve` is absent → red, because
+    // the page would then render KPIs (and no refusal card) off the wrong book.
+    // A stack replayed before 2026-08-10 kept only `solo_r` and `solo_closing_balance`, so there
+    // is no control book to show. Composing one from the shared trades is precisely the defect —
+    // this is the *no data is not the same as cannot ask* rule, on the page that met it.
+    await mock(page, 'shared', undefined, { solo: false })
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await expect(verdict).toContainText('1 of 2 on')
+    await expect(page.getByTestId('basis-chip')).toContainText('never replayed')
+    await expect(page.getByTestId('unmeasured-card')).toBeVisible()
+    // ⚠ The toggles have to survive it. The Verdict card holds them, so hiding the panel with the
+    // KPIs would strand the reader in a state they cannot click their way out of.
+    await expect(verdict).toBeVisible()
+    await page.getByRole('button', { name: /switch every strategy back on/i }).click()
+    await expect(verdict).toContainText('2 of 2 on')
+    await expect(page.getByTestId('unmeasured-card')).toHaveCount(0)
+  })
+
+  test('a SCREEN stays additive — any subset of it is a real reading', async ({ page }) => {
+    // MUTATION: drop the `mode !== 'shared'` branch so a screen takes the shared rules → red,
+    // because one leg of a screen would then be called `never replayed`.
+    // On a screen every leg traded its OWN full account, so nothing could block anything and
+    // removing one removes only its own trades. It needs no control book and must never refuse.
+    await mock(page, 'screen')
+    await page.goto(`${UI}/backtests/stacks/${SCREEN_ID}`)
+    const verdict = page.getByTestId('stack-verdict-card')
+    await expect(page.getByTestId('basis-chip')).toContainText('own account')
+    await verdict.getByRole('button', { name: /MPC SOS Fade/ }).click()
+    await expect(verdict).toContainText('1 of 2 on')
+    await expect(page.getByTestId('unmeasured-card')).toHaveCount(0)
+    // Its own dollars, straight from the leg — a screen has one book and this is it.
+    await expect(page.locator('.text-\\[34px\\]').nth(1)).toContainText('2,622')
   })
 
   test('a shared run still replaying shows its phase, not an empty panel', async ({ page }) => {
@@ -239,29 +417,63 @@ test.describe('shared-account stacks', () => {
 })
 
 test.describe('the stack config modal', () => {
-  test('the account fields appear only in shared mode', async ({ page }) => {
-    // MUTATION: render the fields unconditionally → red. On a screen there is no account — each
-    // leg traded its own — so a balance and a cap there would be settings the run never had, and
-    // the backend stores NULL for all three.
+  test('a NEW stack is a shared account, with no screen to pick by mistake', async ({ page }) => {
+    // MUTATION: default `mode` back to 'screen', or restore the two-button picker → red.
+    // Aaron never wants a screen ("that's what a stack IS — we're sharing the same resource"), and
+    // offering it as an equal choice made the one mode he wants a coin flip. The account fields
+    // are the tell that it really is shared: a screen has no account, so the backend stores NULL
+    // for all three and the fields would be settings the run never had.
     await mock(page, 'shared')
     await page.goto(`${UI}/backtests?tab=stacks`)
     await page.getByRole('button', { name: /new stack/i }).click()
 
-    await expect(page.getByTestId('stack-account-fields')).toHaveCount(0)
-    await page.getByTestId('stack-mode-shared').click()
     await expect(page.getByTestId('stack-account-fields')).toBeVisible()
-    await page.getByTestId('stack-mode-screen').click()
-    await expect(page.getByTestId('stack-account-fields')).toHaveCount(0)
+    await expect(page.getByTestId('stack-mode-screen')).toHaveCount(0)
+    await expect(page.getByTestId('stack-mode-shared')).toHaveCount(0)
+    // ⚠ And it says what it is measuring — the replay cost is not optional information: `1 + legs`
+    // full replays is minutes of work, and the solo control is what separates *the cap bit* from
+    // *the shared balance re-sized everything*.
+    await expect(page.getByTestId('stack-mode-blurb')).toContainText('nothing is reused')
+    await expect(page.getByTestId('stack-mode-blurb')).toContainText('compete for')
   })
+})
 
-  test('shared mode says it reuses nothing and costs a control per leg', async ({ page }) => {
-    // MUTATION: drop the replay-count line → red. `1 + legs` full replays is minutes of work, and
-    // the solo control is not optional: without it a difference in the shared book is a mixture
-    // of *the cap bit* and *the shared balance re-sized everything*.
+// ── Chart preferences shared across every page with an equity curve ────────────
+//
+// Aaron, 2026-08-10: *"Regimes, take it off by default. I don't wanna see the regimes on the
+// equity curve — that's the same thing whether I'm on a backtest, a stack, an optimization, a
+// tune, all those pages that have equity curves."*
+//
+// ⚠ There were THREE definitions of this before that day — BacktestDetail's `getOverlayPref`
+// (persisted, defaulted ON) plus a bare `useState(true)` on the stack page and another in the
+// tuning workbench (neither persisted at all) — so switching it off on two of the three surfaces
+// did not even survive a navigation. `useRegimeOverlay` is the single one now.
+test.describe('the regime overlay', () => {
+  test('is OFF by default on every page that draws an equity curve', async ({ page }) => {
+    // MUTATION: flip `useRegimeOverlay`'s stored check back to `!== 'false'` (i.e. default ON), or
+    // point either page back at its own `useState(true)` → red.
+    // ⚠ The state is read off the pill's own styling, because the bands are drawn INTO the chart
+    // and an SVG `ReferenceArea` is not something a locator can count reliably. `aria-pressed`
+    // would be better and the pill does not carry one; the accent class is what it has.
     await mock(page, 'shared')
-    await page.goto(`${UI}/backtests?tab=stacks`)
-    await page.getByRole('button', { name: /new stack/i }).click()
-    await page.getByTestId('stack-mode-shared').click()
-    await expect(page.getByText(/Every leg is re-run — nothing is reused/)).toBeVisible()
+    // ⚠ The pill is gated on the stack HAVING a regime timeline, and the shared fixture ships an
+    // empty one — so without this override the check passes on an absent pill, which is the
+    // vacuous shape this file already carries three notes about. Registered after `mock` so it
+    // wins (Playwright matches the most recently registered route first).
+    await page.route(u => /\/api\/backtests\/stacks\/st_\w+$/.test(u.pathname), r => r.fulfill({
+      json: { ...stackDetail('shared'), regime_timeline: [{ date: '2024-03-01', regime: 'TRENDING' }] },
+    }))
+    await page.goto(`${UI}/backtests/stacks/${SHARED_ID}`)
+    const pill = page.getByRole('button', { name: 'Regimes' })
+    await expect(pill).toBeVisible()
+    await expect(pill).toHaveAttribute('title', 'Show regime bands')   // i.e. it is currently OFF
+
+    // ...and the answer PERSISTS, which is the half that never worked on this page: turn it on,
+    // reload, and it must still be on. A `useState(true)` would come back on regardless, so this
+    // assertion only means anything alongside the default check above.
+    await pill.click()
+    await expect(pill).toHaveAttribute('title', 'Hide regime bands')
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Regimes' })).toHaveAttribute('title', 'Hide regime bands')
   })
 })

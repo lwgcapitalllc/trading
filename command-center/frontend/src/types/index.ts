@@ -29,6 +29,11 @@ export interface EquityPoint {
   favorable?: number   // most this trade was ever showing in profit before it closed (≥0)
   adverse?: number     // deepest it sat against us before it closed (≤0)
   costs_usd?: number   // commission + swap + slippage charged to this trade (negative)
+  // The trade's result in R (P&L over the risk it was sized to). The one per-trade figure that does
+  // NOT move when position size does — which is why a stack's per-leg row leads with it: a leg posts
+  // the same R in a shared book as it does alone, while its dollars differ by whatever the other
+  // legs grew the balance to. Absent on NT8/MT5 and on python runs made before 2026-08-03.
+  r?: number
 }
 
 // Post-run news/holiday tagging of a run's trades (GET /backtests/runs/{id}/news).
@@ -1250,6 +1255,12 @@ export interface StackStrategyLeg {
   error_message: string | null
   daily_pnl: Array<{ date: string; pnl: number }>
   equity_curve: EquityPoint[]
+  // The SOLO CONTROL — this leg replayed ALONE on its own full account. On a SHARED stack it holds
+  // the SAME trades at the SAME R as `equity_curve` and wildly different DOLLARS, because the
+  // shared book is sized off a balance every leg compounded onto. `null`/absent = not stored (a
+  // screen has no control; a shared stack run before 2026-08-10 kept only the scalars).
+  solo_equity_curve?: EquityPoint[] | null
+  solo_daily_pnl?: Array<{ date: string; pnl: number }> | null
 }
 
 export interface StackDetail {

@@ -189,3 +189,145 @@ def test_an_empty_contention_log_is_a_MEASUREMENT(tmp_path, monkeypatch):
     }))
     assert portfolio_runner.read_shared_summary("st_ok")["contention_events"] == 0
     assert portfolio_runner.read_shared_summary("st_missing") is None
+
+
+# ── The SOLO CONTROL book — "what would this have made if the others never existed" ───
+
+def test_the_solo_control_book_is_KEPT_not_reduced_to_two_scalars(tmp_path, monkeypatch):
+    """🔴 `_persist` stored `solo_r` and `solo_closing_balance` and threw the control's TRADES away,
+    so the only book a subset of a shared stack could be composed from was the SHARED one — where
+    every leg is sized off a balance all of them grew.
+
+    Measured on the live stack `st_94aeb25f0c`: MPC B-LEG posts 17.8674R and 99 trades either way,
+    at identical entry and stop prices, and reads **$47,758,999 shared against $21,064 alone**,
+    because its last trade risks $16,925,791 of the shared balance instead of $3,102 of its own.
+    """
+    from services import portfolio_runner
+
+    sdir = tmp_path / "st_solo"
+    portfolio_runner._write_solo(sdir, "mpc_bleg", {
+        "equity_curve": [{"index": 1, "equity": 10_500.0, "profit": 500.0, "r": 1.25,
+                          "direction": "Long", "date": "2024-03-01"}],
+        "daily_pnl": [{"date": "2024-03-01", "pnl": 500.0}],
+    })
+    monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path)
+    eq, dp = portfolio_runner.solo_book("st_solo", "mpc_bleg")
+    assert [p["profit"] for p in eq] == [500.0]
+    assert [d["pnl"] for d in dp] == [500.0]
+    # ⚠ R is what makes the two books comparable at all, so it has to survive the round trip.
+    assert eq[0]["r"] == 1.25
+
+
+def test_a_missing_solo_book_is_EMPTY_and_never_an_exception(tmp_path, monkeypatch):
+    """A shared stack replayed before 2026-08-10 has no control book on disk, and neither does a
+    screen. ⚠ The caller must be able to tell that apart from a leg that made nothing — the page
+    renders a refusal there rather than composing an answer out of the shared trades, which is the
+    defect this whole section exists for."""
+    from services import portfolio_runner
+
+    monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path)
+    assert portfolio_runner.solo_book("st_nothing", "mpc_bleg") == ([], [])
+
+
+def test_the_leg_serves_its_solo_book_on_a_SHARED_stack_and_not_on_a_screen(
+    client, tmp_path, monkeypatch,
+):
+    """⚠ A screen gets NOTHING, and that is not a gap: there every leg already traded its own full
+    account, so the leg's own curve IS the solo answer and a second copy would be two fields
+    holding one fact. Only a shared stack has two different books for one leg."""
+    from services import portfolio_runner
+    from routers import stacks as stacks_router
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    lab_db.init_db()
+    lab_db.upsert_strategy({
+        "id": "mpc_bleg", "name": "MPC B-LEG", "runner": "python",
+        "class_name": "MpcBLegStrategy", "source_path": "strategies/python/mpc_bleg",
+        "scanned_at": 1, "param_schema": [], "default_params": {},
+    })
+
+    for sid, mode in (("st_sh", "shared"), ("st_sc", "screen")):
+        lab_db.insert_stack({
+            "stack_id": sid, "instrument": "XAUUSD", "bar_type": "Minute", "bar_value": 15,
+            "start_date": "2024-01-01", "end_date": "2024-12-31",
+            "commission_per_side": 0.0, "slippage_ticks": 0, "created_at": 1, "mode": mode,
+            "account_size": 10_000.0, "risk_cap_pct": 10.0, "entry_floor_pct": 0.0,
+        })
+        run_id = f"r_{sid}"
+        curve = tmp_path / f"{run_id}.json"
+        curve.write_text(json.dumps([{"index": 1, "equity": 12_622.0, "profit": 2_622.0,
+                                      "r": 6.31, "direction": "Long", "date": "2024-03-01"}]))
+        lab_db.insert_run({
+            "run_id": run_id, "strategy_id": "mpc_bleg", "instrument": "XAUUSD",
+            "params": {}, "bar_type": "Minute", "bar_value": 15,
+            "start_date": "2024-01-01", "end_date": "2024-12-31",
+            "commission_per_side": 0.0, "slippage_ticks": 0, "status": "complete",
+            "created_at": 1, "stack_id": sid, "runner": "python",
+        })
+        lab_db.update_run_complete(run_id, {"trade_count": 1, "net_pnl": 2_622.0},
+                                   {"equity_curve": str(curve), "trades": None, "daily_pnl": None})
+        lab_db.add_stack_member(sid, run_id, owned=1, position=0)
+        # BOTH get a control book on disk. The mode alone must decide whether it is served — a
+        # screen that happened to have one must not start reporting two answers for one leg.
+        portfolio_runner._write_solo(portfolio_runner.stack_dir(sid), "mpc_bleg", {
+            "equity_curve": [{"index": 1, "equity": 10_500.0, "profit": 500.0, "r": 6.31,
+                              "direction": "Long", "date": "2024-03-01"}],
+            "daily_pnl": [{"date": "2024-03-01", "pnl": 500.0}],
+        })
+
+    shared = client.get("/backtests/stacks/st_sh").json()["strategies"][0]
+    assert shared["solo_equity_curve"][0]["profit"] == 500.0
+    assert shared["solo_daily_pnl"][0]["pnl"] == 500.0
+    # The shared curve is untouched beside it — two books, both served, neither substituted.
+    assert shared["equity_curve"][0]["profit"] == 2_622.0
+
+    screen = client.get("/backtests/stacks/st_sc").json()["strategies"][0]
+    assert screen["solo_equity_curve"] is None
+    assert screen["solo_daily_pnl"] is None
+
+
+def test_r_reaches_the_API_because_the_model_declares_it(client, tmp_path, monkeypatch):
+    """🔴 `r` has been written to `equity_curve.json` since 2026-08-03 and `models.EquityPoint` did
+    not declare it, so Pydantic dropped it on the way out — the FIFTH time this model has done that
+    (`entry_ms`, `exit_ms`, `favorable`, `adverse`, now `r`).
+
+    It matters here specifically: R is the one per-trade figure a change of position SIZE cannot
+    move, which is what lets a stack's per-leg row read the same number shared or solo while the
+    dollars differ by orders of magnitude. Without it the row falls back to a trade count.
+    """
+    from services import portfolio_runner
+    from routers import stacks as stacks_router
+
+    monkeypatch.setattr(lab_db, "DB_PATH", tmp_path / "lab.db")
+    monkeypatch.setattr(portfolio_runner, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(stacks_router, "_LAB_RESULTS_DIR", tmp_path / "reports")
+    lab_db.init_db()
+    lab_db.upsert_strategy({
+        "id": "mpc_bleg", "name": "MPC B-LEG", "runner": "python",
+        "class_name": "MpcBLegStrategy", "source_path": "strategies/python/mpc_bleg",
+        "scanned_at": 1, "param_schema": [], "default_params": {},
+    })
+    lab_db.insert_stack({
+        "stack_id": "st_r", "instrument": "XAUUSD", "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "created_at": 1, "mode": "shared",
+        "account_size": 10_000.0, "risk_cap_pct": 10.0, "entry_floor_pct": 0.0,
+    })
+    curve = tmp_path / "r_r.json"
+    curve.write_text(json.dumps([{"index": 1, "equity": 12_622.0, "profit": 2_622.0,
+                                  "r": 6.31, "direction": "Long", "date": "2024-03-01"}]))
+    lab_db.insert_run({
+        "run_id": "r_r", "strategy_id": "mpc_bleg", "instrument": "XAUUSD",
+        "params": {}, "bar_type": "Minute", "bar_value": 15,
+        "start_date": "2024-01-01", "end_date": "2024-12-31",
+        "commission_per_side": 0.0, "slippage_ticks": 0, "status": "complete",
+        "created_at": 1, "stack_id": "st_r", "runner": "python",
+    })
+    lab_db.update_run_complete("r_r", {"trade_count": 1, "net_pnl": 2_622.0},
+                               {"equity_curve": str(curve), "trades": None, "daily_pnl": None})
+    lab_db.add_stack_member("st_r", "r_r", owned=1, position=0)
+
+    point = client.get("/backtests/stacks/st_r").json()["strategies"][0]["equity_curve"][0]
+    assert point["r"] == 6.31

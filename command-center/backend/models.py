@@ -45,6 +45,16 @@ class EquityPoint(BaseModel):
     # this model drops any field it doesn't declare, so these MUST be here to reach the equity chart.
     favorable: Optional[float] = None
     adverse: Optional[float] = None
+    # The trade's result in R — its P&L over the risk it was sized to. Same story as entry_ms and
+    # favorable above, and this is the FIFTH time this model has dropped a field that was on disk:
+    # `backtest/output.py` has written it since 2026-08-03 (`reprice.py` reads it straight off the
+    # file) and nothing declared it, so it never reached the browser.
+    #
+    # It is the one per-trade figure that survives a change of position SIZE, which is what makes it
+    # the honest unit for a portfolio stack: a leg posts the same R in a shared book as it does
+    # alone, while its DOLLARS differ by whatever the other legs grew the balance to (measured
+    # 2026-08-10 on `st_94aeb25f0c` — 17.8674R either way, $47,758,999 against $21,064).
+    r: Optional[float] = None
     # Commission + swap + slippage charged to this trade (negative). `profit` is already net of
     # it. Declared here for the SAME reason entry_ms/exit_ms above had to be: this model drops any
     # field it does not declare, so a value that reaches equity_curve.json still never reaches the
@@ -1310,6 +1320,14 @@ class StackStrategyLeg(BaseModel):
     error_message: Optional[str] = None
     daily_pnl: list[dict] = []              # [{date, pnl}]
     equity_curve: list[EquityPoint] = []
+    # The SOLO CONTROL's book — this leg replayed ALONE on its own full account, which is the only
+    # answer to "what would this have made if the other strategies never existed". On a SHARED stack
+    # the two curves hold the same trades at the same R and wildly different DOLLARS, because the
+    # shared one is sized off a balance every leg compounded onto (measured: 17.8674R either way,
+    # $47,758,999 vs $21,064). `None` = not stored — a screen has no control, and a shared stack run
+    # before 2026-08-10 kept only the scalars. It must never be rendered as a leg that made nothing.
+    solo_equity_curve: Optional[list[EquityPoint]] = None
+    solo_daily_pnl: Optional[list[dict]] = None
 
 
 class StackDetail(BaseModel):

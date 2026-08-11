@@ -21,7 +21,7 @@ import { C } from '@/themes/chart'
 import { REGIME_COLORS, REGIME_LABEL } from '@/lib/regime'
 import { balanceTicks, dateMs, getXMode, monthLabel, monthTicks, regimeBandsByIndex, regimeBandsFromTimeline, setXModePref, type XMode } from '@/lib/chartAxis'
 import { XModeToggle } from '@/components/XModeToggle'
-import { RegimeOverlayToggle } from '@/components/RegimeOverlayToggle'
+import { RegimeOverlayToggle, useRegimeOverlay } from '@/components/RegimeOverlayToggle'
 
 import { ChartTabPanel, ChartModal } from '@/components/ChartTabPanel'
 import type { ChartSpec } from '@/components/ChartPanel/types'
@@ -841,7 +841,7 @@ function DrawdownMeter({ pct, limitPct, tailPct }: {
   )
 }
 
-type PanelRow = {
+export type PanelRow = {
   key: string
   label: string
   /** Usually a formatted number. A node so a pass/fail rule can render its tick or cross here. */
@@ -861,6 +861,18 @@ type PanelRow = {
   cmp?: (k: DerivedKpis) => number | null | undefined
   fmt?: (delta: number) => string
   goodWhen?: 'higher' | 'lower' | 'none'
+  /**
+   * Renders the row as a button. A stack's Verdict card lists one row per strategy leg and
+   * toggling it in or out recomputes every number beside it, so the control has to BE the row —
+   * a second control elsewhere is a second place the panel and the roster can disagree about
+   * what is being counted.
+   */
+  onClick?: () => void
+  /** A swatch or icon before the label — a leg's colour, so the row matches its chart line. */
+  lead?: React.ReactNode
+  /** This row is switched OFF. Dims the WHOLE row, not just the value: an excluded leg is not a
+   *  soft number, it is a row that is not in the totals above. */
+  muted?: boolean
 }
 
 // ── Card anatomy ─────────────────────────────────────────────────────────────
@@ -873,7 +885,7 @@ type PanelRow = {
 
 /** Expanded, the last row's own padding is the card's bottom margin; collapsed, the meter's
  *  scale labels would otherwise sit on the border. */
-function panelCardCls(collapsed: boolean, filtered: boolean, topBorder: string): string {
+export function panelCardCls(collapsed: boolean, filtered: boolean, topBorder: string): string {
   return `flex flex-col min-w-0 rounded-xl border border-border-subtle px-4 pt-[13px] ${
     collapsed ? 'pb-[12px]' : 'pb-[6px]'} ${filtered ? 'bg-accent/[0.06]' : 'bg-bg-surface'} ${topBorder}`
 }
@@ -881,7 +893,7 @@ function panelCardCls(collapsed: boolean, filtered: boolean, topBorder: string):
 /** Title and question share ONE line. The question is orientation you read once; on its own row
  *  it charged ~16px of card height per card, forever, for a sentence nobody re-reads. The narrow
  *  fourth card has no room for one at all, so it passes the slot to its aside instead. */
-function CardHead({ title, question, aside }: {
+export function CardHead({ title, question, aside }: {
   title: string; question?: string; aside?: React.ReactNode
 }) {
   return (
@@ -895,7 +907,7 @@ function CardHead({ title, question, aside }: {
   )
 }
 
-function CardHero({ value, unit, cls, tip }: {
+export function CardHero({ value, unit, cls, tip }: {
   value: React.ReactNode; unit: React.ReactNode; cls: string; tip: string
 }) {
   return (
@@ -906,23 +918,34 @@ function CardHero({ value, unit, cls, tip }: {
   )
 }
 
-/** Label + ⓘ on the left, value on the right, nothing else. See PanelRow.tip for why. */
-function PanelRows({ rows, delta }: {
+/** Label + ⓘ on the left, value on the right, nothing else. See PanelRow.tip for why.
+ *  A row carrying `onClick` renders as a button in the SAME shape — extending this rather than
+ *  forking it is what keeps a stack's toggleable leg rows at the 24px every other row is. */
+export function PanelRows({ rows, delta }: {
   rows: PanelRow[]; delta?: (r: PanelRow) => React.ReactNode
 }) {
   return (
     <div className="mt-auto pt-2.5 border-t border-border-subtle">
-      {rows.map((r, i) => (
-        <div key={r.key}
-          className={`flex items-baseline justify-between gap-3 py-[4px] text-[12px] leading-[1.3] ${i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}`}>
-          <span className="flex items-center text-text-tertiary min-w-0">
-            <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
-          </span>
-          <span className={`font-mono tabular-nums text-right whitespace-nowrap ${r.cls ?? 'text-text-primary'}`}>
-            {r.value}{delta?.(r)}
-          </span>
-        </div>
-      ))}
+      {rows.map((r, i) => {
+        const cls = `flex w-full items-baseline justify-between gap-3 py-[4px] text-[12px] leading-[1.3] ${
+          i < rows.length - 1 ? 'border-b border-border-subtle/60' : ''}`
+        const body = (
+          <>
+            <span className={`flex items-center min-w-0 ${r.muted ? 'text-text-tertiary/55' : 'text-text-tertiary'}`}>
+              {r.lead}
+              <span className="truncate">{r.label}</span><InfoTip text={r.tip} />
+            </span>
+            <span className={`font-mono tabular-nums text-right whitespace-nowrap ${
+              r.cls ?? (r.muted ? 'text-text-tertiary/55' : 'text-text-primary')}`}>
+              {r.value}{delta?.(r)}
+            </span>
+          </>
+        )
+        return r.onClick
+          ? <button key={r.key} type="button" onClick={r.onClick}
+              className={`${cls} text-left transition-colors hover:text-text-primary`}>{body}</button>
+          : <div key={r.key} className={cls}>{body}</div>
+      })}
     </div>
   )
 }
@@ -1255,14 +1278,8 @@ export function PerformancePanel({
   )
 }
 // ── Regime overlay — colored line design ──────────────────────────────────────
-
-const _OVERLAY_KEY = 'regime_overlay_enabled'
-function getOverlayPref(): boolean {
-  try { return localStorage.getItem(_OVERLAY_KEY) !== 'false' } catch { return true }
-}
-function setOverlayPref(v: boolean) {
-  try { localStorage.setItem(_OVERLAY_KEY, String(v)) } catch { /* quota */ }
-}
+// The preference lives with its control (`components/RegimeOverlayToggle` → `useRegimeOverlay`),
+// not here: this page's private copy was one of three, and the other two never persisted at all.
 
 // Per-series equity-chart toggles (histogram / excursions / run-ups & drawdowns). Default OFF so the
 // chart stays clean until the user opts in; each persists like the regime overlay.
@@ -1283,6 +1300,39 @@ const _RUD_KEY  = 'equity_runup_drawdown_enabled'
 const _PERF_COLLAPSED_KEY = 'performance_panel_collapsed'
 function getPerfCollapsed(): boolean {
   try { return localStorage.getItem(_PERF_COLLAPSED_KEY) !== 'false' } catch { return true }
+}
+
+/** ONE preference behind ONE key, shared by this page and StackDetail. A stack renders the same
+ *  panel, so a second copy of this state would mean the same control remembered two answers
+ *  depending on which page you last pressed it on. */
+export function usePerfCollapsed(): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState(getPerfCollapsed)
+  const toggle = useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(_PERF_COLLAPSED_KEY, String(next)) } catch { /* quota */ }
+      return next
+    })
+  }, [])
+  return [collapsed, toggle]
+}
+
+/** The section header's collapse control. Shared so a stack's Performance section and a run's are
+ *  the same control — same words, same chevron, same hit area — rather than two look-alikes. */
+export function PerfCollapseToggle({ collapsed, onToggle, suffix }: {
+  collapsed: boolean; onToggle: () => void; suffix?: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      title={collapsed ? 'Show the supporting metrics' : 'Hero numbers only'}
+      className="flex items-center gap-1.5 text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] transition-colors hover:text-text-primary"
+    >
+      <ChevronDown size={13} className={`transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+      Performance
+      {suffix}
+    </button>
+  )
 }
 
 interface RegimeBand { x1: number; x2: number; regime: string }
@@ -4193,19 +4243,15 @@ function PerformanceHeader({ news, costs, blocked, filtered, collapsed, onToggle
       {/* The suffix names the SIZE of the exclusion, not the fact of it. "news filtered" told you a
           filter existed without saying what it did or how much it moved — and it was wrong half the
           time, since holidays are excluded whether or not the news rule is on. */}
-      <button
-        onClick={onToggle}
-        title={collapsed ? 'Show the supporting metrics' : 'Hero numbers only'}
-        className="flex items-center gap-1.5 text-[11px] font-semibold text-text-secondary uppercase tracking-[0.7px] transition-colors hover:text-text-primary"
-      >
-        <ChevronDown size={13} className={`transition-transform ${collapsed ? '-rotate-90' : ''}`} />
-        Performance
-        {filtered && (
+      <PerfCollapseToggle
+        collapsed={collapsed}
+        onToggle={onToggle}
+        suffix={filtered && (
           <span className="text-accent normal-case tracking-normal font-medium">
             · {news.totalTrades - news.excluded} of {news.totalTrades} trades
           </span>
         )}
-      </button>
+      />
       {/* Two controls, one header, and they compose in one direction: costs re-price the trades,
           then the news filter removes some of them. The reverse would be wrong — a cost is a
           property of a trade, so it has to be charged before anything decides which trades count. */}
@@ -4294,8 +4340,7 @@ export function BacktestDetail() {
   const [showStressModal, setShowStressModal] = useState(false)
   const [showEvalPicker, setShowEvalPicker] = useState(false)
   const [showRerun, setShowRerun] = useState(false)
-  const [overlayOn, setOverlayOn] = useState(getOverlayPref)
-  const handleOverlayToggle = useCallback((v: boolean) => { setOverlayOn(v); setOverlayPref(v) }, [])
+  const [overlayOn, handleOverlayToggle] = useRegimeOverlay()
   // Equity-chart series toggles (TradingView-style panel): profit histogram, trade excursions,
   // run-up/drawdown period shading. Each persists across runs.
   // One bottom-bar toggle (like TradingView). On runs with per-trade excursion (Python runner) it
@@ -4391,14 +4436,7 @@ export function BacktestDetail() {
     ? latestStress.pct1_max_dd_pct
     : null
 
-  const [perfCollapsed, setPerfCollapsed] = useState(getPerfCollapsed)
-  const togglePerfCollapsed = useCallback(() => {
-    setPerfCollapsed(prev => {
-      const next = !prev
-      try { localStorage.setItem(_PERF_COLLAPSED_KEY, String(next)) } catch { /* quota */ }
-      return next
-    })
-  }, [])
+  const [perfCollapsed, togglePerfCollapsed] = usePerfCollapsed()
 
   // Calendar span of the run, for the ribbon's trades-per-month cadence.
   const runSpanDays = useMemo(() => {

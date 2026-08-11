@@ -21,22 +21,19 @@ export interface StackConfigInitial {
   entryFloorPct?: number
 }
 
-// The two things a stack can BE. They answer different questions, so the modal states the
-// difference in the reader's terms rather than assuming the word "shared" carries it.
-const MODES: { key: StackMode; label: string; blurb: string }[] = [
-  {
-    key: 'screen',
-    label: 'Screen',
-    blurb: 'Each strategy runs on its own full account and the results are added together. ' +
-      'Fast, reuses finished runs — and an UPPER BOUND, because no strategy can ever block another.',
-  },
-  {
-    key: 'shared',
-    label: 'Shared account',
-    blurb: 'One balance and one risk budget the strategies compete for, replayed together on one ' +
-      'clock. This is the demo-account question. Every leg is re-run — nothing is reused.',
-  },
-]
+// 🔴 THE MODE PICKER IS GONE AND EVERY NEW STACK IS A SHARED ACCOUNT (2026-08-10, Aaron's call):
+// *"I would never ever ever wanna do a screen. I would always wanna do a shared account, because
+// that's what a stack IS — we're sharing the same resource. I wanna know how two strategies affect
+// each other and where some trades are dropped because others have taken up all the capacity."*
+//
+// A `screen` runs each leg on its own full account and adds the results up, so nothing can ever
+// block anything — it answers a question he does not have. Offering it as an equal choice made the
+// one mode he wants a coin flip, and it is the mode a `?? 'screen'` default silently picked.
+//
+// ⚠ The BACKEND still understands both and this is deliberately not a removal: three stacks in the
+// lab are screens, `StackDetail` renders them with their `Screen · upper bound` chip, and a rerun
+// of one carries its own mode forward through `initial.mode`. What is gone is the way to make a
+// NEW one. Deleting screen support outright would rewrite what those stored rows mean.
 
 // Shared config surface for BOTH "New stack" (Backtests → Stacks) and "Rerun stack" (StackDetail).
 // One component so the two can never drift — a rerun exposes EXACTLY what creation does. Submitting
@@ -70,7 +67,9 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
   // applies real cost via the account profile (vantage_demo = 0), so these display values stay honest.
   const [commPerSide, setCommPerSide] = useState(initial?.commPerSide ?? 0)
   const [slippageTicks, setSlippageTicks] = useState(initial?.slippageTicks ?? 0)
-  const [mode, setMode] = useState<StackMode>(initial?.mode ?? 'screen')
+  // A NEW stack is always shared; a RERUN keeps whatever the stored stack was, so rerunning one of
+  // the three existing screens does not silently turn it into a different experiment.
+  const [mode] = useState<StackMode>(initial?.mode ?? 'shared')
   const [accountSize, setAccountSize] = useState(initial?.accountSize ?? 10_000)
   const [riskCapPct, setRiskCapPct] = useState(initial?.riskCapPct ?? 10)
   const [entryFloorPct, setEntryFloorPct] = useState(initial?.entryFloorPct ?? 0)
@@ -145,33 +144,11 @@ export function StackConfigModal({ title = 'New portfolio stack', submitLabel = 
         </div>
 
         <div className="px-5 py-4 overflow-y-auto space-y-5">
-          <p className="text-[12px] text-text-secondary">
-            Layer 2 or more Python strategies over one shared instrument and window to see combined
-            P&L.
+          <p className="text-[12px] text-text-secondary" data-testid="stack-mode-blurb">
+            {shared
+              ? 'Layer 2 or more Python strategies onto ONE balance with ONE risk budget they compete for, replayed together on one clock — so you can see where a strategy was shrunk or blocked because another was already holding the capacity. Every leg is re-run; nothing is reused.'
+              : 'This stack is a SCREEN: each strategy ran on its own full account and the results were added together, so no strategy could ever block another. Rerunning keeps it a screen. New stacks are shared accounts.'}
           </p>
-
-          <div>
-            <div className="text-[11px] font-semibold text-text-secondary uppercase tracking-[0.6px] mb-2">
-              What this stack measures
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {MODES.map(m => (
-                <button
-                  key={m.key}
-                  data-testid={`stack-mode-${m.key}`}
-                  onClick={() => setMode(m.key)}
-                  className={`px-3 py-2 rounded-lg text-[12px] font-medium border text-left transition-colors ${
-                    mode === m.key
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-border-subtle bg-bg-sunken text-text-secondary hover:border-border-default'
-                  }`}
-                >{m.label}</button>
-              ))}
-            </div>
-            <p className="text-[11px] text-text-tertiary mt-1.5">
-              {MODES.find(m => m.key === mode)!.blurb}
-            </p>
-          </div>
 
           {shared && (
             <div data-testid="stack-account-fields">

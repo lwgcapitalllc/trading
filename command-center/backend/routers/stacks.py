@@ -47,6 +47,25 @@ def _load_json(path: Optional[str]) -> list:
         return []
 
 
+def _solo_fields(stack_id: str, mode: Optional[str], strategy_id: str) -> dict:
+    """The leg's solo-control book, or nothing at all.
+
+    ⚠ A SCREEN gets `None` and that is not a gap: on a screen every leg ALREADY traded its own full
+    account, so the leg's own curve IS the solo answer and a second copy of it would be two fields
+    holding one fact. Only a SHARED stack has two different books for one leg.
+
+    ⚠ `None` rather than `[]` when a shared stack has no stored book (it ran before 2026-08-10). The
+    page refuses to answer there instead of drawing an empty curve — the same *no data is not the
+    same as cannot ask* rule `mt5_link` and `grid_sensitivity_score` follow.
+    """
+    if mode != "shared":
+        return {}
+    eq, dp = portfolio_runner.solo_book(stack_id, strategy_id)
+    if not eq:
+        return {}
+    return {"solo_equity_curve": eq, "solo_daily_pnl": dp}
+
+
 @router.get("/stacks", response_model=list[StackSummary])
 def list_stacks() -> list[StackSummary]:
     return [StackSummary(**r) for r in lab_db.list_stacks()]
@@ -465,6 +484,10 @@ async def get_stack(stack_id: str) -> StackDetail:
             error_message=r.get("error_message"),
             daily_pnl=_load_json(r.get("daily_pnl_path")),
             equity_curve=_load_json(r.get("equity_curve_path")),
+            # The mode comes off the SETTINGS row, the same source `StackDetail.mode` reads below —
+            # a leg row carries no mode, so `first` would answer None on a legacy stack and quietly
+            # withhold the solo book from a shared one.
+            **_solo_fields(stack_id, (settings or {}).get("mode"), r["strategy_id"]),
         )
         for r in rows
     ]
