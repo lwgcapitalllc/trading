@@ -36,9 +36,34 @@ function group(over: Record<string, unknown> = {}) {
   }
 }
 
-async function mock(page: Page, groups: unknown[]) {
+/**
+ * A registry row's defaults, so a check states only the field it is about.
+ *
+ * ⚠ `has_password: true` here is a fixture convenience — three checks below are specifically
+ * about the OTHER two states, and each overrides it.
+ */
+export function reg(over: Record<string, unknown> = {}) {
+  return {
+    account: ACCOUNT, label: 'PU Prime ECN demo', broker: 'PU Prime', tier: 'ECN',
+    kind: 'demo', server: 'PUPrime-Demo', mt5_path: 'C:\\MT5_FFT\\terminal64.exe',
+    symbol_suffix: '.p', account_profile: 'puprime_ecn', note: '',
+    assignable: true, unassignable_reason: '', has_password: true, bot_keys: [],
+    ...over,
+  }
+}
+
+/**
+ * ⚠ **`registry` defaults to EMPTY, which is what keeps every pre-registry check unchanged** —
+ * an account a bot names but nobody registered still renders, with its gap named. It must also be
+ * routed rather than left to `route.fallback()`: the registry endpoint asks the VPS whether a
+ * password is stored, so an unmocked one would reach the live box from a unit check.
+ */
+async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
   await page.route('**/*', async route => {
     const u = new URL(route.request().url())
+    if (u.pathname === '/api/bots/accounts/registry') {
+      return route.fulfill({ json: registry })
+    }
     if (u.pathname === '/api/bots/accounts') {
       return route.fulfill({ json: groups })
     }
@@ -365,4 +390,134 @@ test('the monitor page carries the same version pill', async ({ page }) => {
   await page.goto('/bots?tab=monitor')
   await expect(page.locator('th', { hasText: /^Version$/ })).toHaveCount(1)
   await expect(page.locator('[data-testid="version-pill"]')).toHaveCount(2)
+})
+
+// ── The account REGISTRY — added 2026-08-12 ───────────────────────────────────
+//
+// 🔴 These cover the gap that made moving the live bot to the ECN demo a manual afternoon: the
+// grouping is DERIVED from instance configs, which is right, and it could therefore only ever see
+// accounts a bot was already on — so the first bot onto a new account had nothing to be moved to.
+
+test('a registered account with NO bots is a card you can add one to', async ({ page }) => {
+  // MUTATION: drop `registered` from the card list in AccountsTab (render only `groups`) → red.
+  // This is the whole point of the registry; before it, this account did not exist on the page.
+  await mock(page, [], [reg()])
+  await page.goto('/bots?tab=accounts')
+
+  await expect(page.getByTestId('account-card')).toHaveCount(1)
+  await expect(page.getByTestId('no-bots')).toContainText('No bot trades this account yet')
+  await expect(page.getByTestId('add-bot')).toBeEnabled()
+})
+
+test('an account with no terminal cannot be added to, and says why', async ({ page }) => {
+  // MUTATION: make `assignable` always true in bot_account_registry → Add bot enables and this
+  // goes red. A bot assigned to an account no terminal is logged into would be written,
+  // committed, pushed and pulled, and THEN fail at connect() with a message about credentials —
+  // pointing the reader at the password rather than at the missing terminal.
+  await mock(page, [], [reg({
+    mt5_path: '', assignable: false,
+    unassignable_reason: 'account 700107749 has no terminal on the VPS logged into it',
+  })])
+  await page.goto('/bots?tab=accounts')
+
+  await expect(page.getByTestId('no-terminal')).toBeVisible()
+  await expect(page.getByTestId('add-bot')).toBeDisabled()
+  await expect(page.getByTestId('no-bots')).toContainText('Log a terminal into it')
+})
+
+test('a password the VPS could not be asked about reads UNKNOWN, never "no password"',
+  async ({ page }) => {
+    // MUTATION: in routers/bots._registration, return `entry.account in (with_password or set())`
+    // instead of the three-state → this reads "No password" and goes red.
+    //
+    // ⚠ Both halves are asserted, and the second is what makes it bite: a check for the presence
+    // of "Password unknown" alone would pass against a chip that ALSO said no password somewhere.
+    // Rendering an unanswered question as a missing credential sends the reader to re-enter one
+    // that is already there, and refuses a move that would have worked.
+    await mock(page, [], [reg({ has_password: null })])
+    await page.goto('/bots?tab=accounts')
+
+    const chip = page.getByTestId('password-chip')
+    await expect(chip).toContainText('Password unknown')
+    await expect(chip).not.toContainText('No password')
+  })
+
+test('an account with no stored password says so before you try to move a bot onto it',
+  async ({ page }) => {
+    // The backend refuses the move (409) on a DEFINITE no; this is the same fact stated before
+    // the click rather than after it.
+    await mock(page, [], [reg({ has_password: false })])
+    await page.goto('/bots?tab=accounts')
+    await expect(page.getByTestId('password-chip')).toContainText('No password')
+  })
+
+test('adding an account sends the SYMBOL SUFFIX, which is the field the ECN move forgot',
+  async ({ page }) => {
+    // MUTATION: drop `symbol_suffix` from the AccountForm submit body → red on the last assertion.
+    //
+    // This is the field that, left behind on 2026-08-12, would have pointed the bot at XAUUSD.s on
+    // an ECN book that does not quote it — connecting cleanly, warming up, and receiving no bars.
+    let body: Record<string, unknown> | null = null
+    await mock(page, [], [])
+    await page.route('**/api/bots/accounts/registry/**', async route => {
+      if (route.request().method() !== 'PUT') return route.fallback()
+      body = route.request().postDataJSON()
+      return route.fulfill({ json: reg({ account: 700152905 }) })
+    })
+
+    await page.goto('/bots?tab=accounts')
+    await page.getByTestId('add-account').click()
+    await page.getByTestId('f-account').fill('700152905')
+    await page.getByTestId('f-server').fill('PUPrime-Demo')
+    await page.getByTestId('f-suffix').fill('.p')
+    await page.getByTestId('f-profile').fill('puprime_ecn')
+    await page.getByTestId('save-account').click()
+
+    await expect.poll(() => body).not.toBeNull()
+    expect(body!.account).toBe(700152905)
+    expect(body!.server).toBe('PUPrime-Demo')
+    expect(body!.symbol_suffix).toBe('.p')
+  })
+
+test('an unticked suffix box sends NULL, not an empty string', async ({ page }) => {
+  // MUTATION: send `symbol_suffix: suffix` unconditionally → this sends "" and goes red.
+  //
+  // ⚠ They are different answers and collapsing them is destructive. `""` means this broker
+  // quotes BARE symbols, so a move would rewrite XAUUSD.s → XAUUSD; `null` means nobody recorded
+  // it, so the move leaves the symbol alone and says so. The empty string is the one that
+  // silently strips a suffix off a live instrument.
+  let body: Record<string, unknown> | null = null
+  await mock(page, [], [])
+  await page.route('**/api/bots/accounts/registry/**', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    body = route.request().postDataJSON()
+    return route.fulfill({ json: reg() })
+  })
+
+  await page.goto('/bots?tab=accounts')
+  await page.getByTestId('add-account').click()
+  await page.getByTestId('f-account').fill('700152905')
+  await page.getByTestId('f-server').fill('PUPrime-Demo')
+  await page.getByTestId('f-has-suffix').uncheck()
+  await page.getByTestId('save-account').click()
+
+  await expect.poll(() => body).not.toBeNull()
+  expect(body!.symbol_suffix).toBeNull()
+})
+
+test('an account a bot still trades cannot be unregistered', async ({ page }) => {
+  // MUTATION: drop the `group.bots.length > 0` guard → the button enables and this goes red.
+  // The bot would go on trading an account this page can no longer describe.
+  await mock(page, [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })], [reg()])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId(`unregister-${ACCOUNT}`)).toBeDisabled()
+})
+
+test('an account nobody registered still renders, with the gap named', async ({ page }) => {
+  // Backwards compatibility, and it is the half that keeps the registry from being a wall: the
+  // account still works, and the reader is told what this page cannot do with it.
+  await mock(page, [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })], [])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('unregistered')).toBeVisible()
+  await expect(page.getByTestId('password-chip')).toHaveCount(0)
 })

@@ -50,6 +50,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+# One pure function, and it belongs to the ACCOUNT rather than to the grouping: a suffix is a
+# fact the registry records. Imported rather than restated so the two cannot drift.
+from services.bot_account_registry import rebase_symbol
+
 __all__ = ["AccountBot", "AccountGroup", "AssignPlan",
            "group_by_account", "cap_change_plan", "assign_plan"]
 
@@ -236,70 +240,150 @@ def cap_change_plan(group: AccountGroup, new_cap: Optional[float]) -> list[str]:
 class AssignPlan:
     """What moving one bot writes.
 
-    `fields` are literal config keys and values, so a caller can `data.update(plan.fields)` and
-    be done. `adopt_terminal_from` is deliberately NOT in there — it is a bot KEY to read
-    `mt5_path` off, not a value to write, and a sentinel key mixed into a dict of real config
-    fields is one careless `update()` away from being written to disk as a setting.
+    `fields` are literal top-level config keys and values, so a caller can `data.update(...)` and
+    be done. `param_fields` go INSIDE `strategy_params` — the symbol and the cost profile live
+    there as well as at the top level, and a flat dict cannot express that.
+
+    `adopt_terminal_from` is deliberately NOT in `fields` — it is a bot KEY to read `mt5_path`
+    off, not a value to write, and a sentinel mixed into a dict of real config fields is one
+    careless `update()` away from being written to disk as a setting. It is now only used when
+    the target account is NOT in the registry.
+
+    `notes` is what could not be carried. It is a list rather than a bool because the caller has
+    to be able to SAY so: a move that silently leaves a symbol or a cost profile describing the
+    account the bot has left is exactly the 2026-08-12 defect, and it produces a bot that starts
+    cleanly, connects cleanly and sees no bars.
     """
     fields: dict[str, Any] = field(default_factory=dict)
+    param_fields: dict[str, Any] = field(default_factory=dict)
     adopt_terminal_from: str = ""
+    notes: list[str] = field(default_factory=list)
 
 
-def assign_plan(bot_key: str, target: Optional[AccountGroup]) -> AssignPlan:
-    """The fields to write on `bot_key`'s config to put it on `target` (or on the bench).
+def assign_plan(bot_key: str,
+                account: Optional[int],
+                *,
+                target: Optional[AccountGroup] = None,
+                registered: Any = None,
+                current_symbol: str = "") -> AssignPlan:
+    """The fields to write on `bot_key`'s config to put it on `account` (or on the bench).
 
-    **Moving a bot is FOUR fields, not one, and getting that wrong produces a bot that cannot
-    start.** An account number on its own is not enough to trade an account:
+    **Moving a bot is SIX fields, not one, and getting that wrong produces a bot that cannot
+    start — or, worse, one that starts and trades nothing.** An account number on its own is not
+    enough to trade an account:
 
       * `account` — the login itself. `None` benches the bot.
       * `server`  — an account number IS a login on a server; the pair is the identity, and the
         two halves disagreeing is a connection failure at startup with a confusing message.
-      * `mt5_path` — the terminal has to be LOGGED INTO the account the bot claims to trade, and
-        only the bots already there know which terminal that is.
+      * `mt5_path` — the terminal has to be LOGGED INTO the account the bot claims to trade.
+      * `symbol` — 🔴 **the one that was missing until 2026-08-12 and cost a manual afternoon.**
+        PU Prime quotes gold as `XAUUSD.s` on its Standard book and `XAUUSD.p` on Prime and ECN,
+        so an account move that writes the login and leaves the symbol produces a bot pointed at
+        a symbol its terminal does not quote. Nothing errors: it connects, warms up, and receives
+        no bars — which reads exactly like a quiet market.
+      * `strategy_params.account_profile` — which measured cost model prices this account. Inert
+        live (it only bills fills in tick mode, which the bridge refuses) and it must still be
+        right, or the file claims one broker's costs while trading another's.
       * `account_risk_cap_pct` — the cap is an account-level fact stored per instance, and
         `live_config._assert_account_cap_agrees` **refuses to start every bot on the account**
         when they disagree. So a bot that arrived keeping its own cap would not merely be
         misconfigured, it would take the bots that were already there off the box at their next
         restart. Adopting the account's value is the only write that leaves the account coherent.
 
-    ⚠ **The three adopted fields come from the TARGET, never from the bot's own file**, which is
-    why this needs the group rather than a number. The bot's existing values describe wherever it
-    used to be, and carrying them across is how you get a bot pointed at one account's login
-    through another account's terminal.
+    ⚠ **Everything except the cap comes from the REGISTRY, and the cap comes from the BOTS.**
+    That split is the whole design and it is not arbitrary: the registry states what the account
+    IS, and it deliberately holds no cap, because the bots are what actually read one — a stored
+    cap here would be a second answer that can disagree with them. Conversely the server, the
+    terminal, the suffix and the profile are facts about the broker that no bot is authoritative
+    about, and reading them off a PEER only works when a peer exists. Before the registry it had
+    to, which is why the first bot on a new account could not be moved from the page at all.
 
-    ⚠ **Benching writes ONLY `account: None`.** The server, the terminal and the cap are left
-    exactly as they were, because the bench is a resting state and those are the settings that
-    make re-assignment cheap — and because a cap of `None` on a benched bot is not a claim about
-    any account (the guard exempts the bench for precisely that reason).
+    ⚠ **The symbol is REBASED, never copied from a peer.** The instrument is the bot's and the
+    suffix is the account's — two bots on one account can legitimately trade gold and a currency
+    pair, and copying whichever symbol happened to be there would rewrite one onto the other's
+    market.
+
+    ⚠ **A fact the registry does not carry is NOT guessed — it is reported in `notes`.** An
+    account with no recorded suffix leaves the symbol alone and says so.
+
+    ⚠ **Benching writes ONLY `account: None`.** The server, the terminal, the symbol and the cap
+    are left exactly as they were, because the bench is a resting state and those are the settings
+    that make re-assignment cheap — and because a cap of `None` on a benched bot is not a claim
+    about any account (the guard exempts the bench for precisely that reason).
 
     ⚠ **An unreadable bot in the target group is refused**, for `cap_change_plan`'s reason
     sharpened: we would be adopting a cap agreed by only the bots we could read, which is the
     disagreement the guard exists to catch, created deliberately by the tool meant to prevent it.
     """
-    if target is None:
+    if account is None:
         return AssignPlan(fields={"account": None})
 
-    if target.kind != "account" or target.account is None:
-        raise ValueError("a bot can only be assigned to a real account; pass None to bench it")
+    if target is not None and (target.kind != "account" or target.account != account):
+        raise ValueError("the target group is not this account; pass None to bench a bot")
 
-    unreadable = [b.key for b in target.bots if b.unreadable]
-    if unreadable:
+    if registered is None and target is None:
         raise ValueError(
-            f"cannot add {bot_key} to account {target.account} while {', '.join(unreadable)} "
-            f"cannot be read: the new bot has to adopt the account's risk cap, and the cap those "
-            f"bots state is unknown. Fix the unreadable config first.")
-    if not target.cap_agrees:
-        raise ValueError(
-            f"cannot add {bot_key} to account {target.account} while the bots already on it "
-            f"state different risk caps: there is no account cap for it to adopt, and every bot "
-            f"here will refuse to start until they agree. Set the cap on this account first.")
+            f"account {account} is neither registered nor traded by any bot, so nothing here "
+            f"knows its server, its terminal or its symbol suffix. Register it first.")
 
-    peers = [b for b in target.bots if b.key != bot_key]
-    fields: dict[str, Any] = {
-        "account": target.account,
-        "account_risk_cap_pct": target.risk_cap_pct,
-    }
-    if target.server:
-        fields["server"] = target.server
-    return AssignPlan(fields=fields,
-                      adopt_terminal_from=peers[0].key if peers else "")
+    if registered is not None and not registered.assignable:
+        raise ValueError(registered.unassignable_reason)
+
+    notes: list[str] = []
+    fields: dict[str, Any] = {"account": account}
+    param_fields: dict[str, Any] = {}
+    adopt_from = ""
+
+    if target is not None:
+        unreadable = [b.key for b in target.bots if b.unreadable]
+        if unreadable:
+            raise ValueError(
+                f"cannot add {bot_key} to account {account} while {', '.join(unreadable)} "
+                f"cannot be read: the new bot has to adopt the account's risk cap, and the cap "
+                f"those bots state is unknown. Fix the unreadable config first.")
+        if not target.cap_agrees:
+            raise ValueError(
+                f"cannot add {bot_key} to account {account} while the bots already on it state "
+                f"different risk caps: there is no account cap for it to adopt, and every bot "
+                f"here will refuse to start until they agree. Set the cap on this account first.")
+        fields["account_risk_cap_pct"] = target.risk_cap_pct
+        peers = [b for b in target.bots if b.key != bot_key]
+        adopt_from = peers[0].key if peers else ""
+    else:
+        # First bot on this account. UNCAPPED is the honest state — nobody has chosen a ceiling
+        # here — and the bot's existing value describes the account it is leaving, so carrying it
+        # would state a ceiling for this account that nobody set.
+        fields["account_risk_cap_pct"] = None
+        notes.append(f"account {account} has no other bot on it, so it starts UNCAPPED — set the "
+                     f"account risk cap before a second bot joins.")
+
+    if registered is not None:
+        fields["server"] = registered.server
+        fields["mt5_path"] = registered.mt5_path
+        if registered.account_profile:
+            param_fields["account_profile"] = registered.account_profile
+        else:
+            notes.append(f"account {account} records no cost profile, so the bot keeps the one "
+                         f"it had — it describes the account it came from.")
+
+        moved = rebase_symbol(current_symbol, registered.symbol_suffix)
+        if moved:
+            if moved != current_symbol:
+                fields["symbol"] = moved
+                param_fields["symbol"] = moved
+        elif current_symbol:
+            notes.append(
+                f"account {account} records no symbol suffix, so {bot_key} keeps "
+                f"{current_symbol!r}. If this account quotes that instrument under another name, "
+                f"the bot will connect and receive no bars.")
+    else:
+        if target is not None and target.server:
+            fields["server"] = target.server
+        adopt_from = adopt_from or (target.bots[0].key if target and target.bots else "")
+        notes.append(
+            f"account {account} is not in the account registry, so its symbol suffix and cost "
+            f"profile could not be carried — the bot keeps the ones it had. Register the account "
+            f"to make a move complete.")
+
+    return AssignPlan(fields=fields, param_fields=param_fields,
+                      adopt_terminal_from=adopt_from, notes=notes)

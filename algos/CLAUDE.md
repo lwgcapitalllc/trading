@@ -37,6 +37,44 @@ Think like one at all times:
 
 ---
 
+## `markets/fx/accounts.json` — the broker accounts a bot can be put on
+
+**Added 2026-08-12, GIT-TRACKED, HOLDS NO SECRET.** One entry per broker account: its server, the
+terminal on the VPS logged into it, the suffix it puts on a symbol, which measured cost profile
+prices it, and demo-or-live.
+
+🔴 **It exists because until this date an account only existed once some bot already named it.**
+The command centre DERIVES which bots share an account from the instance configs — which is right,
+and which means the first bot onto a NEW account had nothing to be assigned to. That is precisely
+what made moving the live bot from the Standard demo to the ECN one a hand-edited config on this
+box: not a missing feature, a derivation being asked a question it had no input for.
+
+⚠ **The RISK CAP is deliberately not here.** It is an account-level number stored per instance
+because an instance config is the only file a bot reads, so the account's cap is whatever its bots
+state — and `live_config._assert_account_cap_agrees` refuses to start every bot on an account whose
+caps disagree. A copy in this file would be a second answer able to drift from the bots actually
+running.
+
+⚠ **THE PASSWORD IS NOT HERE EITHER AND MUST NEVER BE.** It lives in `algos/credentials.json` under
+`mt5_accounts`, keyed by the same account number, which is git-ignored and per machine —
+`live_config.account_credentials` already read it that way, so nothing on the bot side changed.
+
+⚠ **`symbol_suffix` is THREE states.** A string is the suffix, `""` means this broker quotes bare
+symbols, and **`null` means nobody recorded it** — a bot moved onto such an account keeps the symbol
+it had and the move SAYS so rather than guessing. That distinction is the whole reason the field
+exists: a bot pointed at a symbol its terminal does not quote connects, warms up and receives no
+bars, which reads exactly like a quiet market.
+
+⚠ **`mt5_path: ""` means no terminal serves the account, and a bot cannot be assigned to it.** Not a
+placeholder — the two tier-probe accounts (700119432 Standard, 700152904 Prime) were logged into
+**MT5_Lab** for minutes at a time to read spreads and commission, and MT5_Lab drives the backtest
+agent. A live bot must never be pointed at it.
+
+⚠ **Edit it from the command centre (Bots → Accounts), not by hand.** A write from there validates
+the cost profile against `backtest.fills.PROFILES`, refuses an account with no server, and commits,
+pushes and pulls it. A hand edit is still fine and its `_`-prefixed prose keys survive a write from
+the page.
+
 ## Fast Index
 
 ### The Bots

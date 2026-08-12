@@ -256,7 +256,7 @@ def test_joining_an_account_ADOPTS_its_cap_server_and_terminal_source():
     itself, it takes every bot ALREADY on the account off the box at their next restart, because
     `live_config._assert_account_cap_agrees` refuses the whole account."""
     target = ba.group_by_account({"a": _cfg("a", cap=10.0)})[0]
-    plan = ba.assign_plan("newbot", target)
+    plan = ba.assign_plan("newbot", 700107749, target=target)
     assert plan.fields["account"] == 700107749
     assert plan.fields["account_risk_cap_pct"] == 10.0
     assert plan.fields["server"] == "PUPrime-Demo"
@@ -267,7 +267,7 @@ def test_joining_an_UNCAPPED_account_adopts_the_absence_of_a_cap():
     """`None` is a value here, not a field to omit — one capped bot beside one uncapped one is
     the worst shape, and it is what omitting this would produce."""
     target = ba.group_by_account({"a": _cfg("a", cap=None)})[0]
-    plan = ba.assign_plan("newbot", target)
+    plan = ba.assign_plan("newbot", 700107749, target=target)
     assert "account_risk_cap_pct" in plan.fields
     assert plan.fields["account_risk_cap_pct"] is None
 
@@ -286,7 +286,7 @@ def test_joining_an_account_whose_bots_DISAGREE_about_the_cap_is_refused():
     target = ba.group_by_account({"a": _cfg("a", cap=10.0),
                                   "b": _cfg("b", magic=2, cap=20.0)})[0]
     with pytest.raises(ValueError, match="different risk caps"):
-        ba.assign_plan("newbot", target)
+        ba.assign_plan("newbot", 700107749, target=target)
 
 
 def test_joining_an_account_with_an_unreadable_bot_is_refused():
@@ -295,15 +295,15 @@ def test_joining_an_account_with_an_unreadable_bot_is_refused():
     target.bots.append(ba.AccountBot(key="broken", display="broken", symbol="", magic=0,
                                      strategy_package="", unreadable=True))
     with pytest.raises(ValueError, match="cannot be read"):
-        ba.assign_plan("newbot", target)
+        ba.assign_plan("newbot", 700107749, target=target)
 
 
 def test_a_bench_group_cannot_be_an_assignment_TARGET():
-    """`assign_plan(bot, bench_group)` would read as "move it to the bench", which is what
-    `None` already means — two spellings of one action is how they drift apart."""
+    """Passing a bench group as the target would read as "move it to the bench", which is what an
+    `account` of `None` already means — two spellings of one action is how they drift apart."""
     bench = ba.group_by_account({"a": _cfg("a", account=None)})[0]
-    with pytest.raises(ValueError, match="real account"):
-        ba.assign_plan("newbot", bench)
+    with pytest.raises(ValueError, match="not this account"):
+        ba.assign_plan("newbot", 700107749, target=bench)
 
 
 # ── the assign endpoint ───────────────────────────────────────────────────────

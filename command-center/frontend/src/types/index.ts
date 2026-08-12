@@ -415,6 +415,62 @@ export interface BotAccountGroup {
   magic_clash: string[]
 }
 
+/**
+ * A broker account a bot can be put ON — the registry row.
+ *
+ * 🔴 **This exists because grouping bots by account could only ever see accounts a bot was
+ * ALREADY on.** The grouping stays derived (two bots naming one account ARE sharing a balance),
+ * but that left the first bot on a new account unmovable from this page — which is why the
+ * 2026-08-12 move onto the ECN demo was a hand-edited config on the VPS.
+ *
+ * ⚠ **There is no risk cap here and there must never be one.** The cap is stored per instance
+ * because a bot reads only its own config, so `BotAccountGroup` reports what the bots say and
+ * refuses when they disagree. A copy on this row would be a second answer that can drift.
+ */
+export interface BotAccountRegistration {
+  account: number
+  label: string
+  broker: string
+  /** The broker's own word for the tier: "ECN", "Standard", … Display only. */
+  tier: string
+  /** `demo` | `live` — a live account is tinted and warned on, so an unknown value drops both. */
+  kind: string
+  server: string
+  /** The terminal on the VPS logged into this account. `""` = none ⇒ not assignable. */
+  mt5_path: string
+  /**
+   * THREE states. A string is the suffix (`".p"`), `""` means this broker quotes bare symbols,
+   * and **`null` means nobody recorded it** — a bot moved here keeps the symbol it had and the
+   * response says so. Collapsing null and empty silently strips a suffix off a live instrument.
+   */
+  symbol_suffix: string | null
+  account_profile: string
+  note: string
+  /** Derived. False ⇒ no terminal serves it, so a move would fail at connect time. */
+  assignable: boolean
+  unassignable_reason: string
+  /** `null` = the VPS could not be asked. NEVER render it as "no password". */
+  has_password: boolean | null
+  /** Bots currently naming this account, from the same derivation `BotAccountGroup` uses. */
+  bot_keys: string[]
+}
+
+export interface BotAccountRegistrationWrite {
+  account: number
+  label?: string
+  broker?: string
+  tier?: string
+  kind?: string
+  server?: string
+  mt5_path?: string
+  symbol_suffix?: string | null
+  account_profile?: string
+  note?: string
+  /** WRITE-ONLY. Never comes back out of any endpoint; stored in the VPS credentials file. */
+  password?: string
+  deploy?: boolean
+}
+
 export interface BotAccountCapResult {
   status: string
   changed: boolean
@@ -438,6 +494,13 @@ export interface BotAccountAssignResult {
   account: number | null
   restart_required: boolean
   detail?: string
+  /**
+   * What could NOT be carried by the move — an account with no recorded symbol suffix, or one
+   * that is not registered at all. It is served rather than swallowed because the failure it
+   * describes is SILENT on the box: a bot pointed at a symbol its terminal does not quote
+   * connects, warms up and receives no bars, which reads exactly like a quiet market.
+   */
+  notes?: string[]
 }
 
 // `BotConfigSections` / `BotConfigUpdate` deleted 2026-08-04 with the endpoints they typed —

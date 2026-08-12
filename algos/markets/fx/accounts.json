@@ -1,0 +1,56 @@
+{
+  "_README": "The broker accounts a bot can be assigned to. GIT-TRACKED AND HOLDS NO SECRETS - a password never appears here, it lives in algos/credentials.json under mt5_accounts, keyed by the same account number, and that file is git-ignored and per machine. This registry exists so that putting a bot on a NEW account is something Aaron can do from Bots -> Accounts rather than something that needs a hand-edited instance config: before 2026-08-12 an account only existed once some bot already named it, so the very first bot on an account had to be moved by editing a file on the VPS. That is exactly what the 2026-08-12 ECN move cost.",
+  "_WHAT_IS_HERE_AND_WHAT_IS_NOT": "Every field below is a fact about the BROKER ACCOUNT - which server it logs into, which terminal on the VPS is logged into it, what suffix it puts on a symbol, which measured cost profile prices it. What is deliberately NOT here is the account-level RISK CAP: that is DERIVED from the instance configs of the bots on the account, because the bots are what actually read it, and a second copy here would be a second answer that can disagree with them. Same rule as the grouping itself - see command-center/backend/services/bot_accounts.py.",
+  "_symbol_suffix": "The string this account appends to an instrument's base name: PU Prime Standard quotes gold as XAUUSD.s and its Prime/ECN books quote it as XAUUSD.p. Moving a bot between accounts REBASES its symbol onto the target's suffix and keeps the instrument, so a gold bot and an FX bot can share an account without either being rewritten to the other's instrument. THREE STATES, and they must not collapse into two: a string is the suffix, an EMPTY STRING means this broker quotes bare symbols (XAUUSD), and NULL means nobody has recorded it - a bot moved onto such an account keeps whatever symbol it had and the move SAYS SO rather than guessing.",
+  "_mt5_path": "The terminal on the VPS that is logged into this account. EMPTY means no terminal serves it, and assigning a bot to it is REFUSED rather than left to fail at connect time with a message about credentials. That is why the two tier-measurement accounts below carry no path: they were logged into MT5_Lab for minutes at a time to read spreads and commission, and MT5_Lab drives the backtest agent - a live bot must never be pointed at it.",
+  "accounts": [
+    {
+      "account": 700152905,
+      "label": "PU Prime ECN demo",
+      "broker": "PU Prime",
+      "tier": "ECN",
+      "kind": "demo",
+      "server": "PUPrime-Demo",
+      "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
+      "symbol_suffix": ".p",
+      "account_profile": "puprime_ecn",
+      "note": "The live bot's account since 2026-08-12. Chosen by measurement, not preference: Prime and ECN are the SAME book with two commission rates (same symbol, same $0.12 spread, same swap, same 20-point stops level), so the cheaper toll wins with no trade-off to weigh. Round trip per ounce - Standard $0.31, Prime $0.19, ECN $0.14. Commission is a REAL cost here ($1.00/side/lot) where Standard charged none and buried $0.19 of markup in the spread instead."
+    },
+    {
+      "account": 700107749,
+      "label": "PU Prime Standard demo (retired)",
+      "broker": "PU Prime",
+      "tier": "Standard",
+      "kind": "demo",
+      "server": "PUPrime-Demo",
+      "mt5_path": "C:\\MT5_FFT\\terminal64.exe",
+      "symbol_suffix": ".s",
+      "account_profile": "puprime_standard",
+      "note": "The account mpc_sos_fade_demo traded from 2026-08-05 to 2026-08-12, kept because it is real and reachable and its balance history stays on it. The terminal is NOT logged into it today - MT5_FFT is on the ECN account - so assigning a bot here means logging that terminal back in first."
+    },
+    {
+      "account": 700119432,
+      "label": "PU Prime Standard demo (tier probe)",
+      "broker": "PU Prime",
+      "tier": "Standard",
+      "kind": "demo",
+      "server": "PUPrime-Demo",
+      "mt5_path": "",
+      "symbol_suffix": ".s",
+      "account_profile": "puprime_standard",
+      "note": "Opened 2026-08-10 to read the Standard tier's spread and commission off our own terminal rather than off a marketing page. NO TERMINAL SERVES IT - it was logged into MT5_Lab for minutes and MT5_Lab drives the backtest agent, so a bot must not be pointed at it. It is here so the measurement has a home, not so anything can trade it."
+    },
+    {
+      "account": 700152904,
+      "label": "PU Prime Prime demo (tier probe)",
+      "broker": "PU Prime",
+      "tier": "Prime",
+      "kind": "demo",
+      "server": "PUPrime-Demo",
+      "mt5_path": "",
+      "symbol_suffix": ".p",
+      "account_profile": "puprime_prime",
+      "note": "The same probe on the Prime tier, and the one that settled the decision: byte for byte identical to ECN except commission ($3.50/side/lot against $1.00). NO TERMINAL SERVES IT, for the reason above."
+    }
+  ]
+}

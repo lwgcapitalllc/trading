@@ -534,6 +534,91 @@ class BotAccountAssign(BaseModel):
     deploy: bool = True            # commit + push + VPS pull; False writes locally only
 
 
+class BotAccountRegistration(BaseModel):
+    """A broker account a bot can be put on — the registry row, as the page reads and writes it.
+
+    ⚠ **There is no `risk_cap_pct` here and there must never be one.** The cap is an
+    account-level number stored per INSTANCE (a bot reads its own config and nothing else), so
+    the account's cap is whatever its bots say it is — `BotAccountGroup` reports it and refuses
+    when they disagree. A copy on this row would be a second answer that can drift from the bots
+    actually running.
+
+    ⚠ **`symbol_suffix` is three-state.** A string is the suffix (`".p"`), `""` means this broker
+    quotes bare symbols, and **`None` means nobody recorded it** — a bot moved onto such an
+    account keeps the symbol it had and the response SAYS so. Collapsing null and empty would
+    silently strip a suffix off a live instrument.
+
+    ⚠ **`has_password` is a BOOLEAN and the password is never served.** It says whether the VPS
+    credentials file holds a login for this account, which is the only thing a page needs in
+    order to tell you the move will fail before you make it.
+    """
+    account: int
+    label: str = ""
+    broker: str = ""
+    tier: str = ""                        # the broker's own word: "ECN", "Standard", …
+    kind: str = "demo"                    # "demo" | "live" — a live account is tinted and warned on
+    server: str = ""
+    mt5_path: str = ""                    # "" = no terminal serves it ⇒ not assignable
+    symbol_suffix: Optional[str] = None
+    account_profile: str = ""
+    note: str = ""
+    # Derived, read-only. Served so the page can disable an unassignable account with its reason
+    # rather than offering a move that is refused after the reader has committed to it.
+    assignable: bool = True
+    unassignable_reason: str = ""
+    has_password: Optional[bool] = None   # None = the VPS could not be asked, never "no password"
+    bot_keys: list[str] = []              # bots currently naming this account
+
+
+class BotAccountRegistrationWrite(BaseModel):
+    """Add or replace one registry row.
+
+    It REPLACES rather than merges, so a field cleared on the page is cleared on disk — a merge
+    would make removing a symbol suffix inexpressible, since the absent value and the unchanged
+    value would be the same request.
+    """
+    account: int
+    label: str = ""
+    broker: str = ""
+    tier: str = ""
+    kind: str = "demo"
+    server: str = ""
+    mt5_path: str = ""
+    symbol_suffix: Optional[str] = None
+    account_profile: str = ""
+    note: str = ""
+    # The MT5 password, if it is being set in the same action. **Write-only** — it never comes
+    # back out of any endpoint, and it is stored in the git-ignored `algos/credentials.json` on
+    # the VPS, never in the registry, never in git, never in a log line.
+    password: Optional[str] = None
+    deploy: bool = True                   # commit + push + VPS pull; False writes locally only
+
+    @field_validator("account")
+    @classmethod
+    def _positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("an account number is a positive integer")
+        return v
+
+
+class BotAccountPassword(BaseModel):
+    """Set the MT5 password for one account on the VPS.
+
+    Separate from the registry write because it goes somewhere else entirely: the registry is
+    git-tracked and this is not. There is no read counterpart and there will not be one.
+    """
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def _nonempty(cls, v: str) -> str:
+        if not v:
+            # An empty password is not "clear it" — a blank in the credentials file reads as a
+            # configured account whose login fails. Deleting is a different action.
+            raise ValueError("password must not be empty; use the delete action to remove one")
+        return v
+
+
 # The roles `algos/notifications/telegram_bot.py` keys `ROLE_COMMANDS` on. A value outside
 # this set is not a new role — it is a user with NO permissions, because `get_role` returns
 # the string and the command lookup then misses. `"Admin"` is the shape of that mistake.

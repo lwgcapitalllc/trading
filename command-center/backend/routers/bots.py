@@ -40,8 +40,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 import config as cfg
-from models import BotAccountAssign, BotAccountBot, BotAccountCapUpdate, BotAccountGroup, BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
-from services import bot_accounts, bot_params, bot_versions, lab_db
+from models import BotAccountAssign, BotAccountBot, BotAccountCapUpdate, BotAccountGroup, BotAccountPassword, BotAccountRegistration, BotAccountRegistrationWrite, BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
+from services import bot_accounts, bot_account_registry, bot_params, bot_versions, lab_db
 from services import notify
 from services.alert_format import alert
 from services.notify import send_telegram
@@ -838,6 +838,247 @@ def list_bot_accounts():
     ]
 
 
+def _registry_path():
+    return bot_account_registry.registry_path(cfg.MONOREPO_ROOT)
+
+
+# The VPS copy of the git-ignored credentials file. A password written from this page lands
+# HERE and nowhere else — never in `accounts.json`, never in git, never in a log line.
+_VPS_CREDENTIALS = r"C:\trading\algos\credentials.json"
+_CREDS_WRITTEN = "===CREDS_WRITTEN==="
+
+
+def _known_profiles() -> set[str] | None:
+    """The measured cost profiles an account may name.
+
+    `None` when the roster cannot be loaded, which makes `upsert_account` SKIP that check rather
+    than accept an unchecked name silently — the caller states the gap instead of the validator
+    guessing. In practice this always resolves; the lab runner imports the same module.
+    """
+    try:
+        from backtest.fills import PROFILES
+        return set(PROFILES)
+    except Exception:
+        return None
+
+
+def _accounts_with_a_password() -> set[int] | None:
+    """Which registered accounts the VPS credentials file holds a login for.
+
+    ⚠ **It returns the KEYS, never the values, and there is no endpoint that returns a password.**
+    The page needs one bit per account — will this move be able to connect — and that bit is
+    answerable without the secret leaving the box.
+
+    ⚠ **`None` means the VPS could not be asked, and it must not be rendered as "no password".**
+    A move refused because the page believed a real credential was missing sends the reader to
+    re-enter a password that was already there.
+    """
+    try:
+        out = _ssh(
+            f'python -c "import json,pathlib;'
+            f"d=json.loads(pathlib.Path(r'{_VPS_CREDENTIALS}').read_text());"
+            f"print(' '.join((d.get('mt5_accounts') or {{}}).keys()))\" 2>nul"
+        )
+    except Exception:
+        return None
+    nums = set()
+    for tok in out.split():
+        try:
+            nums.add(int(tok))
+        except ValueError:
+            continue
+    return nums
+
+
+def _write_account_password(account: int, password: str) -> None:
+    """Store one MT5 password in the VPS credentials file.
+
+    ⚠ **The secret goes over STDIN, never in argv.** An argument is visible in the process list
+    on the VPS and in this machine's own — base64 would not help, since it is an encoding rather
+    than a secret. `_write_users_vps` next door can use argv because a Telegram chat id is not a
+    credential; this cannot.
+
+    ⚠ **It read-modify-writes the whole file, so a failed READ must never become a write.** The
+    remote script refuses on a parse failure rather than starting from `{}` — that is the shape
+    that could delete every other credential on the box, and it is the `users.json` defect of
+    2026-08-04 with far worse consequences.
+
+    ⚠ **The write is CONFIRMED by a marker.** A remote Python traceback exits non-zero with empty
+    stdout, which `_ssh` correctly does not read as a connection failure — so without a marker a
+    failed write reports success, and the next start fails with "no credentials" for an account
+    the page says is configured.
+    """
+    script = (
+        "import json,pathlib,sys,shutil;"
+        f"p=pathlib.Path(r'{_VPS_CREDENTIALS}');"
+        "d=json.loads(p.read_text(encoding='utf-8')) if p.exists() else {};"
+        "a=d.setdefault('mt5_accounts',{});"
+        "pw=sys.stdin.read();"
+        f"a[{str(account)!r}]=dict(a.get({str(account)!r}) or {{}}, password=pw);"
+        "p.exists() and shutil.copy2(p,p.with_name(p.name+'.bak'));"
+        "p.write_text(json.dumps(d,indent=2),encoding='utf-8');"
+        f"print({_CREDS_WRITTEN!r})"
+    )
+    result = subprocess.run(["ssh", VPS_HOST, f'python -c "{script}"'],
+                            input=password.encode("utf-8"), capture_output=True, timeout=30)
+    out = result.stdout.decode("utf-8", errors="replace")
+    if _CREDS_WRITTEN not in out:
+        err = result.stderr.decode("utf-8", errors="replace").strip()
+        raise HTTPException(
+            status_code=502,
+            detail=f"the password write to {_VPS_CREDENTIALS} was not confirmed, so the account "
+                   f"may have no credentials — {err or 'the VPS said nothing'}")
+
+
+def _registration(entry, bot_keys: list[str], with_password: set[int] | None):
+    return BotAccountRegistration(
+        **{k: v for k, v in vars(entry).items()},
+        assignable=entry.assignable,
+        unassignable_reason=entry.unassignable_reason,
+        has_password=None if with_password is None else (entry.account in with_password),
+        bot_keys=bot_keys,
+    )
+
+
+@router.get("/accounts/registry", response_model=list[BotAccountRegistration])
+def list_registered_accounts():
+    """The accounts a bot can be put on.
+
+    🔴 **This is what an account move needed and did not have.** Grouping bots by account is
+    DERIVED and must stay derived — two bots naming one account are sharing a balance whether or
+    not anybody grouped them — but that derivation could only ever see accounts some bot was
+    already on. So the FIRST bot on a new account was unmovable from this page, and the 2026-08-12
+    ECN move was a hand-edited config on the VPS because of it.
+
+    ⚠ **The registry does not hold the risk cap and never will.** The cap is stored per instance
+    because a bot reads only its own config, so `GET /bots/accounts` reports what the bots say and
+    refuses when they disagree. A copy here would be a second answer.
+
+    ⚠ **`has_password` degrades to `None` rather than failing the request.** The registry is a
+    local file and is always readable; only the credential check needs the box. A 502 for the
+    whole list would hide four accounts because one bit could not be measured.
+    """
+    try:
+        entries = bot_account_registry.load_accounts(_registry_path())
+    except bot_account_registry.RegistryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    on_account: dict[int, list[str]] = {}
+    for g in _account_groups():
+        if g.kind == "account" and g.account is not None:
+            on_account[g.account] = [b.key for b in g.bots]
+
+    with_password = _accounts_with_a_password()
+    return [_registration(e, on_account.get(e.account, []), with_password) for e in entries]
+
+
+@router.put("/accounts/registry/{account}", response_model=BotAccountRegistration)
+def register_account(account: int, body: BotAccountRegistrationWrite):
+    """Add a broker account, or replace the registered facts about one.
+
+    ⚠ **It REPLACES the row rather than merging**, so a field cleared on the page is cleared on
+    disk — a merge makes removing a symbol suffix inexpressible, because the absent value and the
+    unchanged value become the same request.
+
+    ⚠ **The password, if one is sent, goes to a DIFFERENT FILE on a different machine** — the
+    git-ignored `algos/credentials.json` on the VPS — and it is written BEFORE the registry is
+    committed. That order is deliberate: a registered account with no credentials is a visible,
+    fixable state that the list reports, while a pushed registry row whose password write failed
+    afterwards would read as complete.
+    """
+    if account != body.account:
+        raise HTTPException(status_code=400,
+                            detail=f"path account {account} does not match body {body.account}")
+
+    entry = bot_account_registry.RegisteredAccount(
+        account=body.account, label=body.label, broker=body.broker, tier=body.tier,
+        kind=body.kind, server=body.server, mt5_path=body.mt5_path,
+        symbol_suffix=body.symbol_suffix, account_profile=body.account_profile, note=body.note)
+
+    if body.password:
+        _write_account_password(account, body.password)
+
+    try:
+        stored, created = bot_account_registry.upsert_account(
+            _registry_path(), entry, _known_profiles())
+    except bot_account_registry.RegistryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if body.deploy:
+        _deploy_registry(f"accounts: {'registered' if created else 'updated'} "
+                         f"{account} ({body.label or body.server}) [command center]")
+
+    with_password = _accounts_with_a_password()
+    bots_here = [b.key for g in _account_groups() if g.account == account for b in g.bots]
+    return _registration(stored, bots_here, with_password)
+
+
+@router.delete("/accounts/registry/{account}")
+def unregister_account(account: int, deploy: bool = True):
+    """Forget a broker account.
+
+    ⚠ **Refused while a bot still names it.** The bot would go on trading an account this page
+    could no longer describe — and the next reader would see it filed under an account with no
+    server, no terminal and no symbol suffix. Bench or move the bot first.
+
+    ⚠ **It does NOT touch the credentials file.** Deleting a password is a separate, irreversible
+    action against a file this endpoint has no business rewriting as a side effect.
+    """
+    bots_here = [b.key for g in _account_groups()
+                 if g.kind == "account" and g.account == account for b in g.bots]
+    if bots_here:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{', '.join(bots_here)} still trade account {account}. Move or bench them "
+                   f"first — unregistering it would leave them on an account this page cannot "
+                   f"describe.")
+    try:
+        removed = bot_account_registry.remove_account(_registry_path(), account)
+    except bot_account_registry.RegistryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"account {account} is not registered")
+
+    if deploy:
+        _deploy_registry(f"accounts: unregistered {account} [command center]")
+    return {"status": "ok", "account": account, "deployed": deploy}
+
+
+@router.put("/accounts/registry/{account}/password")
+def set_account_password(account: int, body: BotAccountPassword):
+    """Store this account's MT5 password on the VPS.
+
+    **Write-only, by design.** There is no read counterpart and there must not be one: the page
+    needs to know whether a password EXISTS, which `GET /accounts/registry` answers as a boolean,
+    and nothing beyond that. The secret travels over stdin (never argv, which is visible in a
+    process list) into the git-ignored `algos/credentials.json`, keyed by the account number — the
+    same place `live_config.account_credentials` reads it from, so the bot needs no change.
+    """
+    if bot_account_registry.account_by_number(_registry_path(), account) is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"account {account} is not registered. Register it first — a password for an "
+                   f"account nothing knows about cannot be checked or used.")
+    _write_account_password(account, body.password)
+    return {"status": "ok", "account": account, "has_password": True}
+
+
+def _deploy_registry(message: str) -> None:
+    """Commit, push and pull the registry onto the VPS. It is git-tracked and holds no secrets."""
+    try:
+        _git_commit_push(
+            _registry_path(), message,
+            "the broker-account registry was edited from the Bots page; it carries no code and "
+            "no secrets, and the change is named in the message")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(status_code=500,
+                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+    try:
+        _ssh("cd C:\\trading && git pull origin main")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
+
+
 @router.patch("/accounts/{account}/risk-cap")
 def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     """Set the account-level risk cap on EVERY bot trading this account.
@@ -952,32 +1193,62 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
                    f"over. Fix the file first.")
 
     target = None
+    registered = None
     if update.account is not None:
         target = next((g for g in groups
                        if g.kind == "account" and g.account == update.account), None)
-        if target is None:
+        try:
+            registered = bot_account_registry.account_by_number(
+                _registry_path(), update.account)
+        except bot_account_registry.RegistryError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        if target is None and registered is None:
             raise HTTPException(
                 status_code=404,
-                detail=f"No registered bot trades account {update.account}, so there is no "
-                       f"account here to join — its server, terminal and risk cap are read off "
-                       f"the bots already on it. Assign the first bot to an account by editing "
-                       f"its instance config.")
+                detail=f"Account {update.account} is not registered and no bot trades it, so "
+                       f"nothing here knows its server, its terminal or its symbol suffix. Add "
+                       f"it under Accounts first.")
+        if registered is not None and not registered.assignable:
+            raise HTTPException(status_code=409, detail=registered.unassignable_reason)
+
+        # ⚠ Refused on a DEFINITE no, never on an unanswered question. A bot on an account with
+        # no stored password cannot connect, and finding that out at the next start — after a
+        # commit, a push and a VPS pull — is exactly the discovery loop this page exists to
+        # remove. `None` means the VPS could not be asked, and refusing on it would send the
+        # reader to re-enter a password that is already there.
+        with_password = _accounts_with_a_password()
+        if with_password is not None and update.account not in with_password:
+            raise HTTPException(
+                status_code=409,
+                detail=f"No MT5 password is stored for account {update.account}, so {bot_key} "
+                       f"could not log in. Set it under Accounts, then move the bot.")
+
+    data = _read_instance_config(bot_key)
 
     try:
-        plan = bot_accounts.assign_plan(bot_key, target)
+        plan = bot_accounts.assign_plan(
+            bot_key, update.account, target=target, registered=registered,
+            current_symbol=str(data.get("symbol") or ""))
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    data = _read_instance_config(bot_key)
-    if plan.adopt_terminal_from:
-        # Read off a PEER's config rather than trusting this bot's own: its `mt5_path` describes
-        # wherever it used to be, and a terminal that is not logged into the account the bot now
-        # claims is a connection refusal at startup with a message about credentials.
+    if plan.adopt_terminal_from and not plan.fields.get("mt5_path"):
+        # The registry names the terminal directly; this is the fallback for an account that is
+        # traded by a bot and not registered. Read off a PEER rather than trusting this bot's own
+        # `mt5_path`, which describes wherever it used to be — a terminal not logged into the
+        # account the bot now claims is a connection refusal with a message about credentials.
         peer = _read_instance_config(plan.adopt_terminal_from)
         if peer.get("mt5_path"):
             data["mt5_path"] = peer["mt5_path"]
     was = data.get("account")
     data.update(plan.fields)
+    if plan.param_fields:
+        # `strategy_params` is where the symbol and the cost profile live for the STRATEGY, and
+        # both have to move with the account. Merged rather than replaced — every other key in
+        # there is the bot's tuning and has nothing to do with which account it is on.
+        params = dict(data.get("strategy_params") or {})
+        params.update(plan.param_fields)
+        data["strategy_params"] = params
     _write_instance_config(bot_key, data)
 
     where = "the bench" if update.account is None else f"account {update.account}"
@@ -985,7 +1256,8 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
 
     if not update.deploy:
         return {"status": "ok", "changed": True, "deployed": False, "bot": bot_key,
-                "account": update.account, "restart_required": True, "detail": changed}
+                "account": update.account, "restart_required": True, "detail": changed,
+                "notes": plan.notes}
 
     path = _BOT_INSTANCE_MAP[bot_key]["path"]
     try:
@@ -1008,9 +1280,13 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
            else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."),
         "It is not trading it yet — start the bot to apply."
         if update.account is not None else "It will not start until it is on an account again."))
+    # ⚠ `notes` is what could NOT be carried — an account with no recorded symbol suffix, or one
+    # that is not registered at all. It is served rather than swallowed because the failure it
+    # describes is silent on the box: a bot pointed at a symbol its terminal does not quote
+    # connects, warms up and receives no bars, which reads exactly like a quiet market.
     return {"status": "ok", "changed": True, "deployed": True, "bot": bot_key,
             "account": update.account, "restart_required": True, "detail": changed,
-            "output": out}
+            "notes": plan.notes, "output": out}
 
 
 @router.get("/{bot_name}/log", response_class=PlainTextResponse)

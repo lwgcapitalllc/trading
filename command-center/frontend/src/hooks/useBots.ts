@@ -2,7 +2,8 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { toast } from 'sonner'
 import { api } from '@/api/client'
 import type {
-  BotAccountAssignResult, BotAccountCapResult, BotAccountGroup, BotDeployedVersion,
+  BotAccountAssignResult, BotAccountCapResult, BotAccountGroup, BotAccountRegistration,
+  BotAccountRegistrationWrite, BotDeployedVersion,
   BotPromoteResult, BotSnapshot,
 } from '@/types'
 
@@ -210,6 +211,79 @@ export function useBotAccounts() {
 }
 
 /**
+ * The broker accounts a bot can be put ON.
+ *
+ * 🔴 **This is the half `useBotAccounts` structurally cannot answer.** That one derives the
+ * grouping from the instance configs, which is right and must stay right — but it can only see
+ * accounts some bot is ALREADY on, so the first bot on a new account was unmovable from this page
+ * and had to be moved by hand-editing a config on the VPS.
+ *
+ * ⚠ **It is a SEPARATE query from `useBotAccounts`, not a field on it.** The registry is a local
+ * file and always readable; the grouping needs no VPS either, but `has_password` does — so folding
+ * them together would make the account list depend on the box being reachable.
+ */
+export function useRegisteredAccounts() {
+  return useQuery({
+    queryKey: ['bots', 'accounts', 'registry'],
+    queryFn: () => api.get<BotAccountRegistration[]>('/bots/accounts/registry'),
+    staleTime: 60_000,
+  })
+}
+
+/**
+ * Add a broker account, or replace the registered facts about one.
+ *
+ * ⚠ **A password sent here goes to a DIFFERENT FILE on a different machine** — the git-ignored
+ * `algos/credentials.json` on the VPS — and is never returned by any endpoint. The registry itself
+ * is git-tracked and holds no secret.
+ */
+export function useRegisterAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: BotAccountRegistrationWrite) =>
+      api.put<BotAccountRegistration>(
+        `/bots/accounts/registry/${body.account}`, { deploy: true, ...body }),
+    onSuccess: (data) => {
+      toast.success(`Account ${data.account} saved`)
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
+    },
+  })
+}
+
+/**
+ * Forget a broker account. Refused (409) while a bot still names it — that bot would go on trading
+ * an account this page could no longer describe.
+ */
+export function useUnregisterAccount() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (account: number) => api.delete<{ status: string }>(`/bots/accounts/registry/${account}`),
+    onSuccess: () => {
+      toast.success('Account removed from the list')
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
+    },
+  })
+}
+
+/**
+ * Store one account's MT5 password on the VPS.
+ *
+ * **Write-only, by design — there is no read counterpart and there must not be one.** The page
+ * needs to know whether a password EXISTS, which `useRegisteredAccounts` answers as a boolean.
+ */
+export function useSetAccountPassword() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ account, password }: { account: number; password: string }) =>
+      api.put(`/bots/accounts/registry/${account}/password`, { password }),
+    onSuccess: () => {
+      toast.success('Password saved on the VPS')
+      qc.invalidateQueries({ queryKey: ['bots', 'accounts', 'registry'] })
+    },
+  })
+}
+
+/**
  * Set (or clear) the account-level risk cap across every bot on one account.
  *
  * `riskCapPct: null` means UNCAPPED, which is a value rather than "leave it alone" — there is
@@ -259,6 +333,11 @@ export function useAssignBotAccount() {
       toast.success(data.account === null
         ? `${data.bot} taken off the account — it will not start until it is on one again`
         : `${data.bot} added to account ${data.account} — start it to trade`)
+      // ⚠ A note is what the move could NOT carry — an unregistered account, or one with no
+      // recorded symbol suffix. It is raised as a WARNING rather than folded into the success
+      // line, because the failure it describes is silent on the box: a bot pointed at a symbol
+      // its terminal does not quote connects, warms up and receives no bars.
+      for (const note of data.notes ?? []) toast.warning(note)
       qc.invalidateQueries({ queryKey: ['bots', 'accounts'] })
       qc.invalidateQueries({ queryKey: ['bots', 'snapshot'] })
       qc.invalidateQueries({ queryKey: ['bots', 'params'] })

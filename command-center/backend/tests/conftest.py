@@ -156,6 +156,42 @@ def _no_live_vps(request):
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_live_bot_config(request):
+    """A test may not WRITE a live bot's instance config. This is `_no_live_vps`'s local twin.
+
+    🔴 **Found on 2026-08-12 by running a mutation, not by reading anything.** Neutering the
+    account-move endpoint's password pre-check let `test_moving_a_bot_to_an_account_with_no_stored_password_is_REFUSED`
+    fall through to the write, and it moved the REAL `mpc_bleg_demo` off the bench and onto the ECN
+    account — in the working tree, on the machine running the suite. Nothing errored; it was caught
+    only because `git status` was checked afterwards.
+
+    ⚠ **The point is not that one test. The point is which direction the exposure runs.** The VPS
+    interlock covers HTTP and SSH because those are how a test reaches the box — and an instance
+    config is a plain file in this repo, so a test reaches a live bot's settings with no network at
+    all. `deploy: False` skips the commit and the push, which is exactly the shape somebody writing
+    a refusal test reaches for, and it is the shape that leaves the change ON DISK and unnoticed
+    until it is committed with something else.
+
+    ⚠ **A test that genuinely exercises the write stubs `_write_instance_config` itself**, and its
+    patch wins because it is applied after this fixture. That is deliberate: the guard should cost
+    one line to opt out of, so nobody is tempted to delete it.
+    """
+    if request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    def refuse(bot_key, data):
+        raise LiveVpsCall(
+            f"A test tried to write the live instance config for {bot_key!r}. That file decides "
+            f"which account, symbol and strategy version a real bot trades. Stub "
+            f"`routers.bots._write_instance_config` in the test that needs the write."
+        )
+
+    with patch("routers.bots._write_instance_config", side_effect=refuse):
+        yield
+
+
 # ── API client ────────────────────────────────────────────────────────────────
 
 @pytest.fixture
