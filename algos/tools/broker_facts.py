@@ -114,14 +114,31 @@ def sample_spread(mt5, symbol: str, seconds: int, point: float) -> dict:
     Returns `None` for the stats when the market is shut — a stale tick repeated for five minutes
     would otherwise be reported as a rock-steady spread, which is the most confident-looking wrong
     answer this tool could give.
+
+    ⚠ **The symbol is SELECTED into Market Watch first, and that is not a nicety.** MT5 streams
+    ticks only for symbols the terminal is watching, and `symbol_info_tick` on an unwatched symbol
+    returns `None` — forever, in a perfectly healthy session. This tool read that as "market shut?"
+    on 2026-08-12, five minutes into a live London/NY overlap, because the account had just been
+    switched to a tier whose symbol (`XAUUSD.p`) was not in the new account's Market Watch.
+    `symbol_select` writes nothing and changes no order state; the read alone is what was missing.
+
+    ⚠ **A tick that never ARRIVED and a tick that never MOVED are counted separately**, because
+    they are different failures wearing one sentence: `none_reads` means the terminal would not
+    answer (unwatched symbol, dead link), `stale_reads` means it answered with the same tick
+    (genuinely shut market). Collapsing them is this repo's own no-vs-cannot-ask rule, and the
+    version that did sent the reader at the market instead of at the terminal.
     """
     seen: list[float] = []
     stale = 0
+    none_reads = 0
     last_ms = None
+    # Market Watch only — no order state, no chart, nothing persisted about trading.
+    selected = bool(mt5.symbol_select(symbol, True))
     end = time.time() + seconds
     while time.time() < end:
         t = mt5.symbol_info_tick(symbol)
         if t is None:
+            none_reads += 1
             time.sleep(1.0)
             continue
         if last_ms is not None and t.time_msc == last_ms:
@@ -132,7 +149,14 @@ def sample_spread(mt5, symbol: str, seconds: int, point: float) -> dict:
         time.sleep(1.0)
 
     if not seen:
-        return {"n": 0, "stale_reads": stale, "note": "no fresh ticks - market shut?"}
+        if none_reads and not stale:
+            note = ("the terminal returned NO tick at all - the symbol is not streaming. "
+                    f"symbol_select({symbol}) returned {selected}; check it is in Market Watch "
+                    "and that this account quotes it. This is NOT a shut market.")
+        else:
+            note = "no fresh ticks - market shut?"
+        return {"n": 0, "stale_reads": stale, "none_reads": none_reads,
+                "selected": selected, "note": note}
 
     seen.sort()
     def pct(p: float) -> float:
@@ -141,6 +165,8 @@ def sample_spread(mt5, symbol: str, seconds: int, point: float) -> dict:
     return {
         "n": len(seen),
         "stale_reads": stale,
+        "none_reads": none_reads,
+        "selected": selected,
         "min": seen[0],
         "median": statistics.median(seen),
         "p90": pct(90),
@@ -397,9 +423,12 @@ def main(argv=None) -> int:
             print(f"SAMPLING the spread for {args.sample}s ...", flush=True)
             d = sample_spread(mt5, symbol, args.sample, pt)
             if not d.get("n"):
-                print(f"  {d.get('note')} ({d['stale_reads']} repeated ticks)")
+                print(f"  {d.get('note')}")
+                print(f"  ({d['stale_reads']} repeated ticks, {d.get('none_reads', 0)} no-answer "
+                      f"reads, symbol_select -> {d.get('selected')})")
             else:
-                print(f"  {d['n']} fresh reads ({d['stale_reads']} repeats)")
+                print(f"  {d['n']} fresh reads ({d['stale_reads']} repeats, "
+                      f"{d.get('none_reads', 0)} no-answer)")
                 print(f"  min ${d['min']:.2f} | median ${d['median']:.2f} "
                       f"({d['median_points']:.0f} points) | p90 ${d['p90']:.2f} "
                       f"| p99 ${d['p99']:.2f} | max ${d['max']:.2f}")
