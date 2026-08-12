@@ -265,10 +265,47 @@ recorded against a real refusal; note our own `exec_min_stop_mode` floor of 0.08
 $4,000 gold) binds ~16x earlier, so the broker's limit should never be the one that bites.
 **Three days is three days** — it covers every hour but no weekend and no major news cycle.
 
-#### G5a — WHICH PU PRIME ACCOUNT TYPE — ✅ **ANSWERED 2026-08-10: ECN**
+#### G5a — WHICH PU PRIME ACCOUNT TYPE — ✅ **ANSWERED 2026-08-10: ECN · DEPLOYED 2026-08-12**
 
 🟢 **The tiers were MEASURED on an open market, and the answer is ECN.** Everything below this
 box was decided on figures off a marketing page; the table that decides it now is ours.
+
+🟢 **AND IT IS NOW WHAT THE BOT ACTUALLY TRADES.** On 2026-08-12 Aaron logged `MT5_FFT` into the
+ECN demo and `mpc_sos_fade_demo` moved with it: **700107749 / `XAUUSD.s` → 700152905 /
+`XAUUSD.p`**, `account_profile` `puprime_standard` → `puprime_ecn`. Verified live — connected
+`#700152905 / $9,996.99`, warmed 5,000 bars, 0 errors, 0 halts. The old account's $9,996.99 (grown
+from $2,000) does not travel; 700152905 opens at $10,000.
+
+⚠ **The question everybody asks, answered once here so it is not re-derived: how is ECN cheaper
+when it charges commission and Standard charges none?** Put both costs in ONE unit — gold is 100 oz
+per lot, so $1.00/lot/side is **$0.01 per ounce per side**. Round trip per ounce: **Standard $0.31 +
+$0.00 = $0.31 · Prime $0.12 + $0.07 = $0.19 · ECN $0.12 + $0.02 = $0.14.** Standard charges $0.19 of
+hidden spread markup to save $0.02 of visible commission. ⚠ **Swap is IDENTICAL on all three tiers,
+so swap cannot pick an account** — that is the natural guess and it is false.
+
+⚠ **`SPREAD_UNMEASURED` STILL STANDS on every raw tier**, and the ECN readings have not retired it:
+two sessions on two terminals now agree at $0.12 (Asian on `MT5_Lab` 2026-08-10, London/NY on
+`MT5_FFT` 2026-08-12 — 239 fresh reads, p99 $0.12, max $0.15), but both are minutes of one session
+and neither covers the 22:00 UTC reopen. Close it with `broker_facts.py --history-days 1` once a
+full day of ticks has built up on this terminal.
+
+🔴 **THE MOVE FOUND THREE DEFECTS AND NONE OF THEM RAISED ANYTHING** — full write-ups in
+`algos/CLAUDE.md`, named here because each is a hazard of *moving a live bot between accounts*
+rather than of this account:
+
+1. **The spread sampler called an unwatched symbol a shut market.** MT5 streams ticks only for
+   symbols in Market Watch, and the new account had never been asked to watch `XAUUSD.p`.
+2. **`starting_balance` followed the bot instead of staying with the account.** The $2,000 anchor
+   from the Standard demo would have reported **+399%** on a fresh $10,000 account, for ever.
+3. **Nothing re-checked WHICH account the terminal was on.** `connect()` asserts it once; for two
+   hours afterwards the bot read the new account's balance believing it was on the old one, and
+   **re-anchored its sizing from $1,992.21 to $9,996.99**. The runtime-reload guard fired and was
+   not enough — it watches the config FILE, and what moved was the TERMINAL.
+
+**Before moving any bot to a different account, read those three.** The sequence that works:
+stop the bot → edit the four fields together (`account`, `symbol`, `strategy_params.symbol`,
+`strategy_params.account_profile`) → add the login to `credentials.json` on the VPS → clear
+`starting_balance` → check the new account is clean → start.
 
 | tier | account | spread (median) | commission /side /lot | swap long / short | min stop |
 |---|---|---|---|---|---|
@@ -1385,6 +1422,14 @@ not by us — which is the only reason arming ahead of that export is defensible
 
 The first bot is configured and deployed: `mpc_sos_fade_demo`, on the **MT5_FFT** terminal
 (`C:\MT5_FFT\terminal64.exe`), PU Prime demo **700107749** / `PUPrime-Demo` / **XAUUSD.s**.
+
+> ⚠ **SUPERSEDED 2026-08-12 — this section describes the STANDARD demo, which this bot has left.**
+> It now trades **700152905** / `PUPrime-Demo` / **`XAUUSD.p`** (ECN); see G5a above. The section is
+> kept because everything it says about *how the facts were probed* still stands and is the method
+> to repeat, but do not read any account number or measurement below as current. The symbol spec
+> re-read on `XAUUSD.p` is identical (2 digits, 0.01 point, 100 oz, $1.00 tick value, 20-point stops
+> level); the **filling mode** has NOT been re-read there and is the one that bites — a wrong one is
+> retcode 10030 and the order simply does not go on.
 Instance config at `algos/markets/fx/instances/mpc_sos_fade_demo/config.json`; the MT5 password
 lives in the VPS-only `algos/credentials.json`, which git cannot see.
 
