@@ -136,6 +136,13 @@ def test_every_event_written_in_algos_live_is_classified():
         # on THAT setup" is the decision stream's question. Same side of the line as `halted`,
         # which it routes through.
         "fleet_halt",
+        # The terminal turned out to be logged into an account this bot was not pointed at.
+        # HEALTH, and the subject test is unambiguous: it is why the bot is not trading AT ALL,
+        # and it says nothing about any setup. It routes through `halted` like `fleet_halt` does,
+        # and it is recorded rather than merely logged because the balance, positions and orders
+        # every earlier record in the run was written against may have belonged to a different
+        # account — which is the sort of thing an audit has to be able to find afterwards.
+        "account_mismatch",
         # The bot has no account, so it declined to start. HEALTH by the subject test: it is why
         # this bot is not trading AT ALL — the same side of the line as `halted` — where the
         # decision stream answers "why no trade on THAT setup". It also has to be written rather

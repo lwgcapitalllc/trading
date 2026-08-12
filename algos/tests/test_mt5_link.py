@@ -154,6 +154,12 @@ def _runner(monkeypatch, *, account_info):
     # outer handler swallows it as a generic loop error, and the pass silently reads no bars
     # and stamps no heartbeat — which is how it was found.
     r._fleet_halted = False
+    # Identical reason to `_fleet_halted` above, and it bit in exactly the same way when the
+    # account-identity check landed on 2026-08-12: `_check_account_identity` raised
+    # AttributeError on its first line, the loop's outer handler swallowed it, and a "healthy
+    # loop" test failed reading ZERO bars. Two fields, one trap — see `test_account_identity.py`.
+    r._account_mismatch_halted = False
+    r._observed_account = None
     r.notes, r.warns, r.errors = [], [], []
     r.log = SimpleNamespace(info=lambda m, *a, **k: r.notes.append(m),
                             warning=lambda m, *a, **k: r.warns.append(m),
@@ -167,7 +173,10 @@ def _runner(monkeypatch, *, account_info):
 
 
 def _live():
-    return lambda: SimpleNamespace(balance=2000.0)
+    # `login` matches `cfg.account` above. Production's `account_info()` always carries it, and a
+    # fake without one exercises only the "could not establish the identity" branch — which would
+    # leave the loop's account-identity check untested here by accident rather than by choice.
+    return lambda: SimpleNamespace(balance=2000.0, login=1)
 
 
 def _dead():

@@ -171,6 +171,13 @@ class LiveRunner:
         # so a flapping or intermittently-unreadable filesystem cannot toggle a live book on and
         # off unattended. Clearing the flag and RESTARTING is the resume path.
         self._fleet_halted = False
+        # The account the TERMINAL last said it was on, taken off the same `account_info()` call
+        # the balance comes from. `None` = not asked yet, or asked and unreadable — never a claim
+        # that it matches. See `probe_link` and `_check_account_identity`.
+        self._observed_account: int | None = None
+        # Latches for the same reason `_fleet_halted` does: a terminal flipping between logins
+        # must not toggle a live book on and off unattended.
+        self._account_mismatch_halted = False
         # Stamped from the file `cfg` was just read from, so `_cfg_mtime` always describes
         # the config actually in memory and the first poll sees no phantom change.
         try:
@@ -314,6 +321,10 @@ class LiveRunner:
         The balance comes back from the same call because it is the same question. Reading it
         separately is what let the two answers disagree: the heartbeat wrote `balance: null` for
         50 minutes while the loop reported itself healthy.
+
+        **The ACCOUNT NUMBER is captured off that same call for the same reason**, and is checked
+        by `_check_account_identity` rather than here — a terminal logged into somebody else's
+        account is not a dead link, and answering "reconnect" to it would be wrong. See there.
         """
         import MetaTrader5 as mt5
         try:
@@ -322,9 +333,15 @@ class LiveRunner:
             # An exception here is a dead link too, not a different event. It is logged rather
             # than raised because the caller's answer is the same either way — reconnect.
             self.log.warning(f"Balance read failed: {e}")
+            self._observed_account = None
             return False, None
         if info is None:
+            self._observed_account = None
             return False, None
+        # `getattr` because a fake terminal in the tests may not carry it, and a MISSING login is
+        # "could not ask", which `_check_account_identity` refuses to read as agreement.
+        login = getattr(info, "login", None)
+        self._observed_account = int(login) if login is not None else None
         return True, float(info.balance)
 
     def _recover_link(self) -> None:
@@ -833,6 +850,9 @@ class LiveRunner:
                 if not link_up:
                     self._recover_link()
                 else:
+                    # A live link says nothing about WHOSE account is behind it. Checked here
+                    # rather than inside `probe_link` because the answer is halt, not reconnect.
+                    self._check_account_identity()
                     gap = self.feed.gap_bars()
                     if gap > 4 or stream_broken:
                         # See the module docstring: a hole in the stream is a different market
@@ -1014,6 +1034,62 @@ class LiveRunner:
             reading.reason,
             "It keeps running and keeps its open positions and their stops. Clear the flag and "
             "restart the bots to resume — clearing it alone will not."))
+
+    def _check_account_identity(self) -> None:
+        """Halt if the terminal is logged into an account this bot was not pointed at.
+
+        🔴 **Written after it happened. On 2026-08-12 `MT5_FFT` was logged from the PU Prime
+        Standard demo onto the ECN one under a running bot, and the bot went on working.** It
+        re-anchored its position sizing from **$1,992.21 to $9,996.99** — five times the money, off
+        an account it had never been told about — and logged that re-anchor as the ordinary event
+        it looks like. Nothing else in the system objected. It placed no order in that window, so
+        this cost nothing; the next setup would have been sized against a stranger's balance.
+
+        **`connect()` asserts the account, and asserting it ONCE is the whole defect.** That check
+        runs at startup and the terminal is a shared resource for the rest of the process — a human
+        can log it elsewhere, and MT5 remembers every login it has seen. Every read the bot makes
+        afterwards is answered, promptly and correctly, about the wrong account: the balance it
+        sizes from, the equity, the margin, and `positions_get()`, which returns the new account's
+        book filtered by a magic that means nothing there.
+
+        ⚠ **This is deliberately NOT reported as a lost link, and the distinction is the design.**
+        The link is perfectly healthy; it is the IDENTITY behind it that moved. Routing it through
+        `_recover_link` would call `connect()`, which calls `mt5.login()`, which would **drag the
+        terminal back off whatever a human is doing on it** — a bot fighting its operator for a
+        window, on a resource neither of them owns exclusively. Halting costs one human action.
+
+        ⚠ **It HALTS rather than closing or adopting anything**, for `adopt_broker_state`'s reason:
+        the bot cannot tell a deliberate move from an accident, and of the two it must not guess.
+        A halt keeps the process alive, keeps every broker-side stop where it is, and asks.
+
+        ⚠ **An UNREADABLE account number is not a match.** `probe_link` sets `_observed_account` to
+        `None` when it could not ask, and `None` returns early here — this bot's standing rule that
+        "no" and "cannot ask" must never be the same value. The absent case is already covered:
+        an unreadable `account_info()` is a dead link and `probe_link` reports it as one.
+
+        ⚠ **It latches**, like the fleet halt, so a terminal flipping between logins cannot toggle
+        a live book on and off unattended. Restart is the resume path.
+        """
+        if self._account_mismatch_halted:
+            return
+        seen = self._observed_account
+        if seen is None or seen == self.cfg.account:
+            return
+        self._account_mismatch_halted = True
+        why = (f"the terminal is logged into account {seen}, but this bot is configured for "
+               f"{self.cfg.account}")
+        self.log.error(f"ACCOUNT MISMATCH: {why}. Halting — every balance, position and order "
+                       f"this bot can read belongs to {seen}.")
+        self.ledger.event("account_mismatch", observed=seen, expected=self.cfg.account)
+        if self.bridge is not None:
+            # One place answers "may this bot place an order", for `_check_fleet_halt`'s reason.
+            self.bridge.halt(f"account mismatch — {why}")
+        # HEALTH: this is the machinery refusing to trade, not a setup being refused.
+        self._notify_health(alert(
+            "⛔", "ACCOUNT MISMATCH", self.cfg.display_name,
+            f"Terminal is on #{seen}; this bot trades #{self.cfg.account}.",
+            "It placed nothing and kept its open positions and their stops. Log the terminal "
+            "back, or move the bot properly in its instance config, then restart it."))
 
     def _maybe_pulse(self, *, link_up: bool | None, balance: float | None) -> None:
         """Write a `pulse` to the health stream on a fixed cadence.

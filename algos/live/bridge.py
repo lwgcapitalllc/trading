@@ -883,7 +883,11 @@ class OrderBridge:
         return action()
 
     def halt(self, reason: str) -> None:
-        """Halt this bridge on an OUTSIDE authority's instruction — today, the fleet switch.
+        """Halt this bridge on an OUTSIDE authority's instruction.
+
+        Two callers, both in `runner.py`: the fleet switch, and the account-identity check that
+        fires when the terminal turns out to be logged into an account this bot was not pointed
+        at (added 2026-08-12, after exactly that happened under a running bot).
 
         A public seam rather than letting a caller reach into `_halt`, because the two have
         genuinely different causes and only one of them is a defect: `_halt` means *this bot's
