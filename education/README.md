@@ -10,6 +10,11 @@ redistribution outside this repo.
 
 - [`smc/`](smc/) — SMC engine course (the source material behind the engines).
 
+## One-off videos
+
+- [`learned/`](learned/) — notes from single videos, written by Claude via `/learn <url>`.
+  Not a course library: no transcripts kept, one note per video. See that folder's README.
+
 ## Adding a course
 
 Rip its videos with [`tools/skool-transcript`](../tools/skool-transcript/) and a

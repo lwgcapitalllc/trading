@@ -10,6 +10,7 @@ the whole VPS.
 | `bootstrap_ninjatrader.ps1` | Futures side — NT8 + .NET check, user-folder restore, deploy `.cs`, nt8_agent deps + task, health | PowerShell as `trader` (elevated for task creation) |
 | `install_hooks.sh` | This clone's git hooks — points `core.hooksPath` at the tracked `.githooks/` | any shell, on a dev machine |
 | `install_ledger_sync.sh` | 12-hourly backup of the live bot's daily record (launchd, 00:05 + 12:05) | any shell, **on the Mac only** |
+| `setup_learning_mode.sh` | This clone's `/learn` skill — installs `ffmpeg`/`yt-dlp` and the third-party `watch` skill | any shell, on a dev machine |
 
 `install_ledger_sync.sh` is Mac-only by necessity, not by preference: the VPS holds the data but
 cannot push, because its tasks run as SYSTEM and SYSTEM's Git Credential Manager makes `git push`
@@ -23,7 +24,17 @@ does not carry, so a fresh clone commits with no checks and looks exactly like o
 them. `./go` runs it for you; run it by hand on a clone that never runs `./go`. What the hook
 enforces is in the root `CLAUDE.md` → `## Committing`.
 
-All three are **idempotent** — safe to re-run. Each runs in independent phases; a failed
+`setup_learning_mode.sh` is what makes `/learn <video-url>` work on a machine. The skill itself
+ships in this repo (`.claude/skills/learn/SKILL.md`) and is available on clone; what does NOT ship
+is the third-party `watch` skill it drives (MIT, `bradautomates/claude-video`) and the `ffmpeg` /
+`yt-dlp` binaries under it. ⚠ **The watch skill is deliberately NOT vendored into this repo** — it
+is cloned to `~/.claude/vendor/claude-video` and symlinked into `~/.claude/skills/watch`, so it
+updates on its own and 2,300 lines of somebody else's Python stay out of a trading repo. The
+honest cost is that a clone alone is not enough: run the script once per machine. Re-running it
+is also how the watch skill is UPDATED, which matters more than it sounds — `yt-dlp` breaks
+whenever a video site changes, so a stale copy fails on real URLs while looking installed.
+
+All four are **idempotent** — safe to re-run. Each runs in independent phases; a failed
 phase reports and the run continues, ending with a status summary.
 
 ---

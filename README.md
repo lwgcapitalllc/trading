@@ -39,7 +39,7 @@ trading/
 ├── indicators/          ← Pine Script market-structure indicator rebuild + parity-export harnesses
 ├── scripts/             ← Cross-subsystem VPS recovery and bootstrap scripts
 ├── tools/               ← Standalone utilities (e.g. skool-transcript — rips course video transcripts)
-├── education/           ← Course libraries: transcripts, summaries + visual playbooks (e.g. smc/ — the source material behind the engines)
+├── education/           ← Course libraries: transcripts, summaries + visual playbooks (e.g. smc/ — the source material behind the engines); learned/ holds one-off video notes from /learn
 │
 │  ── DOCS ─────────────────────────────────────────────────────────
 └── docs/                ← Cross-subsystem reference docs and audit tools
@@ -119,3 +119,4 @@ Cross-subsystem reference documents:
 - `docs/ENGINE_EXTRACTION_ROADMAP.md` — Which SMC-indicator blocks became their own Python engines (SMC extraction COMPLETE — the 8 core blocks plus the later fair-value-gap engine done and Pine-parity-validated; plus 1 off-roadmap news engine)
 - `docs/audit/TRADER_MIGRATION_AUDIT.md` — Findings report from the Administrator→trader VPS migration audit
 - `.claude/commands/` — Repo slash commands: `/audit-engines`, `/doc-audit`, `/dead-code-audit`, `/regenerate-snapshots`, `/prop-firm-rules-audit` (the former `docs/audit/` prompt templates)
+- `.claude/skills/` — Repo slash skills, available on clone: `/learn <video-url>` watches a video and files a note to `education/learned/` (one-time machine setup: `scripts/setup_learning_mode.sh`)
