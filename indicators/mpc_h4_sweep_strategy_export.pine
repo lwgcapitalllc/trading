@@ -163,7 +163,7 @@
 // between "the close" and "your fill a second later" is Properties → Slippage, not a
 // different fill model.
 // ============================================================================
-strategy("MPC H4 Sweep", overlay = true, initial_capital = 10000,
+strategy("MPC H4 Sweep Export", overlay = true, initial_capital = 10000,
   default_qty_type = strategy.fixed, default_qty_value = 1, pyramiding = 0,
   calc_on_every_tick = false, process_orders_on_close = true,
   max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
@@ -1970,3 +1970,204 @@ plotshape(tookLong,  title = "Long entry",  style = shape.triangleup,   location
 // The EMA, drawn only when it is actually filtering. A line on the chart that nothing
 // reads is the same class of lie as a label describing code that does not run.
 plot(useEma ? emaVal : na, title = "Trend EMA", color = POS_OPENL, linewidth = 2)
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PARITY / ANALYSIS EXPORT — per-bar DECISION STREAM
+// ════════════════════════════════════════════════════════════════════════════
+// This file is `mpc_h4_sweep_strategy.pine` + THIS appended block, and NOTHING else
+// changed. The body above is byte-identical to the parent apart from line 166's title.
+//
+// ⚠ REGENERATE WITH THIS EXACT RECIPE — and CHECK THE PLOT COUNT AFTERWARDS.
+//     B=$(grep -n 'PARITY / ANALYSIS EXPORT' <export> | head -1 | cut -d: -f1)
+//     sed -n "$((B-2)),\$p" <export> > /tmp/blk
+//     cp indicators/mpc_h4_sweep_strategy.pine <export>
+//     sed -i '' '166s/strategy("MPC H4 Sweep"/strategy("MPC H4 Sweep Export"/' <export>
+//     cat /tmp/blk >> <export>
+//     grep -c '^plot(' <export>      # MUST be 43  (42 here + the parent's Trend EMA)
+// The count check is not ceremony. On 2026-08-06 the equivalent grep in the D export was
+// anchored on the `//====` rule line, which does not contain the words it was matching, so
+// it produced an EMPTY block — and every downstream check still passed, because a bare copy
+// of the parent is byte-identical to the parent and compiles perfectly. It just silently
+// exported nothing. A regeneration that loses the whole point of the file must fail loudly.
+//
+// ⚠ THIS FILE IS NEWER THAN THE PARENT'S OWN "SCOPE" HEADER, WHICH SAYS THERE IS NO EXPORT
+// MIRROR. That paragraph was written 2026-08-05 when the strategy was a one-file question;
+// Aaron asked for the twin on 2026-08-12 so the H4 sweep gets the same treatment as every
+// other strategy here. There is still NO Python port and NO `compare_h4.py` — this export
+// is the PREREQUISITE for one, not a substitute.
+//
+// WHY IT EXISTS. The Strategy Tester's trade list records FILLS. It cannot say which setups
+// armed and never triggered, which triggers a filter REFUSED and why, how far a trade ran
+// before it handed the move back, or what a different stop mode would have priced. On a
+// strategy whose whole design question is "does the sequence produce anything worth having",
+// those are the only interesting questions, so they get columns.
+//
+// ⚠ GOTCHA, inherited from every other export in this repo: a plotted column MUST use a
+// transparent colour, never `display.none` — TradingView DROPS display.none series from the
+// CSV. Every plot here uses _INV.
+//
+// ⚠ SECOND GOTCHA, and this one cost a day on the BOS export (2026-08-07): "TradingView
+// exports volume" IS NOT TRUE. The CSV carries a Volume column only if the Volume STUDY is
+// on the reader's chart, so it is a fact about somebody's chart layout rather than about the
+// export format. `px_volume` is plotted here for that reason. Do not delete it as redundant.
+//
+// ⚠ THE TWO TIMEFRAMES AND THE EMA TIMEFRAME CANNOT BE EXPORTED. `tfLiq`, `tfConf` and
+// `emaTf` are `input.timeframe` strings and `plot()` takes only a number, so no `cfg_*`
+// column can carry them. A reader MUST record them alongside the CSV by hand. This is the
+// one part of the configuration the file cannot state about itself, and it is also the part
+// that changes what the strategy IS — an H4/15m run and an H1/5m run are different studies.
+//
+// ── READING THE STREAM ──────────────────────────────────────────────────────
+// Most columns are na except on the bars where they mean something, so the CSV filters down
+// to a few hundred rows out of a full export.
+//
+// px_seq is the bit field that tells you which kind of bar you are looking at:
+//     1  a new liquidity candle opened — the levels rolled and any untriggered setup died
+//     2  a level was swept this bar (the setup's direction was decided here)
+//     4  a confirmation pattern armed this bar (`armedNow`)
+//     8  a trigger fired this bar — TAKEN OR REFUSED, read px_blk to tell them apart
+//     16 an entry filled this bar
+//     32 the position closed this bar
+//
+// THE REFUSAL COLUMNS. px_blk is the parent's OWN `hTrigCode`, taken at decision time and
+// copied — not re-derived here. That is exact by construction rather than by argument: there
+// is no second implementation in this file that could disagree with the gate. 0 = the trigger
+// was taken · 1 = stop distance not positive · 2 = stop too tight (minStopPct) · 3 = trigger
+// candle too far past the line (maxTrigPct) · 4 = the EMA filter. px_cand_entry and
+// px_cand_stop are set for a REFUSED trigger exactly as for a taken one, which is what lets a
+// refusal be re-priced offline instead of merely counted.
+//
+// ⚠ A ZERO IN px_blk IS A REAL ANSWER AND AN EMPTY CELL IS NOT. The column is na on every bar
+// that had no trigger; 0 means a trigger fired and passed every gate. Filter on px_seq bit 8,
+// never on `px_blk > 0`, or every taken trade vanishes from the count.
+//
+// THE POINT OF px_cc_line / px_cc_stop / px_cand_entry. With those three on every trigger the
+// strategy ever saw, you can compute OFFLINE what the other stop mode would have priced and
+// what a different `maxTrigPct` cap would have refused, without re-running TradingView:
+//     stop distance, pattern mode = |px_cand_entry - px_cc_stop| (+ the tick buffer)
+//     how far past the line       = |px_cand_entry - px_cc_line|
+//     that as a % of the stop     = the above / the stop distance * 100   ← what maxTrigPct caps
+// That turns one export into a sweep of the entry filter instead of one configuration.
+//
+// px_mfe_r / px_mae_r are the running favourable and adverse excursion of the OPEN trade, in
+// R, per bar. They are what the trade list cannot give you, and on THIS strategy they are the
+// whole argument: the file ships a runner with no target, so the only way to judge the trail
+// is to see how much of the favourable excursion it handed back. Both EXCLUDE the fill bar,
+// for the same reason the parent's `tMaxFav` does — with `process_orders_on_close` the entry
+// fills at this bar's close, so everything the candle did before that happened while the trade
+// did not exist. (BUG_exit_fill_price_mismatch.)
+//
+// px_stage is read STRAIGHT off `tStage` rather than tracked separately here, and that is safe
+// in this file specifically: `tStage` is only ever reset at the next ENTRY, so it still holds
+// the final stage on the close bar. ⚠ `mpc_d_strategy_export.pine` tracks its own copy because
+// that parent zeroes its stage on the close bar — do not copy this shortcut across without
+// checking which shape the parent has.
+
+color _INV = color.new(color.gray, 100)   // transparent — in the CSV, invisible on the chart
+
+// ── Bar classification ──────────────────────────────────────────────────────
+// Built as a float local first. Pine does not reliably type an int-in-a-ternary against `na`,
+// and four columns of the D export had to be rewritten this way at paste time.
+float _xSeq = (newLiqBar ? 1 : 0) + (armedNow ? 4 : 0) + (hTrigBar == bar_index ? 8 : 0) +
+  ((tookShort or tookLong) ? 16 : 0) +
+  (strategy.position_size == 0 and strategy.position_size[1] != 0 ? 32 : 0) +
+  (setupDir != 0 and (na(setupDir[1]) or setupDir[1] == 0) ? 2 : 0)
+
+// ── The refusal record, on the trigger bar only ─────────────────────────────
+bool  _onTrig    = hTrigBar == bar_index
+float _xBlk      = _onTrig ? hTrigCode : na
+float _xCandPx   = _onTrig ? hTrigPx   : na
+float _xCandStop = _onTrig ? hTrigStop : na
+
+// ── The live setup, on any bar it exists ────────────────────────────────────
+float _xSetupDir = setupDir  == 0 ? na : setupDir
+float _xTradeDir = ccTradeDir == 0 ? na : ccTradeDir
+float _xCcCode   = ccCode    == 0 ? na : ccCode
+
+// ── Excursion, in R, excluding the fill bar ─────────────────────────────────
+var float _xMfe = na
+var float _xMae = na
+float _x1r = na(tEntry) or na(tStop) ? na : math.abs(tEntry - tStop)
+if tookShort or tookLong
+    _xMfe := 0.0
+    _xMae := 0.0
+if strategy.position_size != 0 and bar_index > tBar and not na(_x1r) and _x1r > 0
+    _xMfe := math.max(nz(_xMfe, 0.0), (tDir > 0 ? high - tEntry : tEntry - low) / _x1r)
+    _xMae := math.min(nz(_xMae, 0.0), (tDir > 0 ? low  - tEntry : tEntry - high) / _x1r)
+
+// ── Trade columns, on the bars they mean something ──────────────────────────
+bool  _onFill = tookShort or tookLong
+float _xFill  = _onFill ? tEntry : na
+float _xRisk  = _onFill ? _x1r   : na
+float _xStop  = _onFill ? tStop  : na
+float _xTp1   = _onFill ? tTp1   : na
+float _xLive  = strategy.position_size != 0 ? curStop : na
+float _xStage = strategy.position_size != 0 or not na(closedR) ? tStage : na
+float _xMfeC  = strategy.position_size != 0 or not na(closedR) ? _xMfe : na
+float _xMaeC  = strategy.position_size != 0 or not na(closedR) ? _xMae : na
+
+// ════════════════════════════════════════════════════════════════════════════
+//  DECISION COLUMNS
+// ════════════════════════════════════════════════════════════════════════════
+plot(_xSeq,        "px_seq",        _INV, editable = false)
+plot(lvlHi,        "px_lvl_hi",     _INV, editable = false)   // previous liquidity candle's high
+plot(lvlLo,        "px_lvl_lo",     _INV, editable = false)   // …and its low
+plot(_xSetupDir,   "px_setup_dir",  _INV, editable = false)   // -1 short (high taken) · +1 long
+plot(ccLine,       "px_cc_line",    _INV, editable = false)   // the trigger line — the pattern's close
+plot(ccStop,       "px_cc_stop",    _INV, editable = false)   // the pattern's extreme — the stop anchor
+plot(_xCcCode,     "px_cc_code",    _INV, editable = false)   // which pattern armed it (see f_patName)
+plot(_xTradeDir,   "px_trade_dir",  _INV, editable = false)   // the ORDER's side — flips with invertTrade
+plot(_xBlk,        "px_blk",        _INV, editable = false)   // 0 taken · 1-4 refused, see header
+plot(_xCandPx,     "px_cand_entry", _INV, editable = false)   // set for TAKEN and REFUSED alike
+plot(_xCandStop,   "px_cand_stop",  _INV, editable = false)   // …and the stop it would have carried
+
+plot(_xFill,       "px_fill",       _INV, editable = false)   // fill price, on the fill bar only
+plot(_xRisk,       "px_1r",         _INV, editable = false)   // 1R in PRICE, so R and dollars reconcile
+plot(_xStop,       "px_stop",       _INV, editable = false)   // the FROZEN opening stop
+plot(_xTp1,        "px_tp1",        _INV, editable = false)
+plot(_xLive,       "px_cur_stop",   _INV, editable = false)   // the LIVE stop — watch the ratchet climb
+plot(_xStage,      "px_stage",      _INV, editable = false)   // 0 opening stop · 1 TP1 touched
+plot(_xMfeC,       "px_mfe_r",      _INV, editable = false)   // running favourable excursion, in R
+plot(_xMaeC,       "px_mae_r",      _INV, editable = false)   // running adverse excursion, in R (negative)
+plot(closedR,      "px_closed_r",   _INV, editable = false)   // the trade's own R, on its close bar
+plot(strategy.equity, "px_equity",  _INV, editable = false)
+plot(cAtr,         "px_atr_conf",   _INV, editable = false)   // ATR on the CONFIRMATION timeframe
+plot(useEma ? emaVal : na, "px_ema", _INV, editable = false)
+plot(volume,       "px_volume",     _INV, editable = false)   // plotted HERE — see the header gotcha
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CONFIG COLUMNS — so a comparator configures the Python FROM the export
+// ════════════════════════════════════════════════════════════════════════════
+// ⚠ Codes are a WIRE FORMAT. An export already on disk carries the NUMBER, so renumbering one
+// is silent — the file still reads and now claims a configuration it never ran. Append, never
+// renumber, and never reuse a retired code.
+plot((reqSweep ? 1 : 0) + (entryAtConf ? 2 : 0) + (confLive ? 4 : 0) + (invertTrade ? 8 : 0) +
+  (useEma ? 16 : 0), "cfg_bits", _INV, editable = false)
+
+// The fifteen pattern toggles, packed in the order they are declared. Kept OUT of cfg_bits
+// deliberately: they are one family, they are the thing most likely to be swept, and a reader
+// decoding them should not have to mask around five unrelated sequence switches.
+plot((patBearSwpEng ? 1 : 0) + (patBearHarami ? 2 : 0) + (patBearEng ? 4 : 0) +
+  (patInvHammer ? 8 : 0) + (patBearDoji ? 16 : 0) + (patHangingMan ? 32 : 0) +
+  (patEveningStar ? 64 : 0) + (patShootStar ? 128 : 0) + (patBearKick ? 256 : 0) +
+  (patBullSwpEng ? 512 : 0) + (patBullHarami ? 1024 : 0) + (patBullEng ? 2048 : 0) +
+  (patHammer ? 4096 : 0) + (patBullDoji ? 8192 : 0) + (patMornStar ? 16384 : 0) +
+  (patPiercing ? 32768 : 0) + (patBullBelt ? 65536 : 0) + (patBullKick ? 131072 : 0),
+  "cfg_pat_bits", _INV, editable = false)
+
+plot(dojiSize,     "cfg_doji_size",   _INV, editable = false)
+plot(sizeMode == "Risk % of equity" ? 0 : 1, "cfg_size_mode", _INV, editable = false)
+plot(fixedQty,     "cfg_fixed_qty",   _INV, editable = false)
+plot(riskPct,      "cfg_risk_pct",    _INV, editable = false)
+plot(tp1R,         "cfg_tp1_r",       _INV, editable = false)
+plot(tp1Pct,       "cfg_tp1_pct",     _INV, editable = false)
+plot(beBufTk,      "cfg_be_buf",      _INV, editable = false)
+plot(trailPct,     "cfg_trail_pct",   _INV, editable = false)
+plot(slMode == "Pattern extreme" ? 0 : 1, "cfg_sl_mode", _INV, editable = false)
+plot(atrLen,       "cfg_atr_len",     _INV, editable = false)
+plot(slMult,       "cfg_sl_mult",     _INV, editable = false)
+plot(stopBufTk,    "cfg_stop_buf",    _INV, editable = false)
+plot(minStopPct,   "cfg_min_stop_pct", _INV, editable = false)
+plot(prevDir == "Any" ? 0 : prevDir == "Ran into the level" ? 1 : 2, "cfg_prev_dir", _INV, editable = false)
+plot(emaLen,       "cfg_ema_len",     _INV, editable = false)
+plot(maxTrigPct,   "cfg_max_trig_pct", _INV, editable = false)

@@ -464,7 +464,7 @@ class SosFadeConfig:
     aplus_window: int = 4320           # "Max time: sweep → SOS (minutes)" — staleness backstop
 
     # ── GRP_DIV — RSI divergence: feeds the veto + the live DIV confluence (169-180) ─
-    show_div: bool = True              # "Track RSI Divergence" (showDivInput; marketStructureOnly off)
+    show_div: bool = True              # "Track RSI Divergence" (Pine showDivInput)
     div_rsi_len: int = 14              # "RSI Length"
     div_pivot_len: int = 5             # "Pivot Width (bars)"
     div_valid_bars: int = 100          # "Divergence valid for (bars)"
