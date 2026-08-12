@@ -143,6 +143,17 @@ class Signals:
     bear_bos_high: Optional[float] = None
     bear_bos_low: Optional[float] = None
 
+    # The TIMES of those four endpoints (`st.bull_bos_h_loc` / `l_loc` + bear mirror), epoch ms.
+    # REPORTING ONLY, on the same footing as `fibo_ash_ms`/`fibo_asl_ms` below and for the same
+    # reason: the B-LEG bot prices its whole trade off a fib on this leg, and the lab's chart draws
+    # that fib from the bar the leg STARTED on — which two prices cannot say. No decision reads
+    # them on either bot, so they cannot move `compare_strategy.py` or `compare_bleg.py`.
+    # ⚠ Times, deliberately not bar INDICES — see the note on `fibo_ash_ms`.
+    bull_bos_high_ms: Optional[int] = None
+    bull_bos_low_ms: Optional[int] = None
+    bear_bos_high_ms: Optional[int] = None
+    bear_bos_low_ms: Optional[int] = None
+
     # The Sniper Zone — the 0.382-0.5 pocket of the break leg, re-anchored on every BOS
     # (Pine sniperZoneTop / sniperZoneBot / sz_bar / sz_bullish). The A+ path does not read
     # them (`exec_conf_sz` is unported there), so they cannot move compare_strategy.py; the
@@ -469,6 +480,10 @@ class SignalAdapter:
             poi_long_now=poi_long, poi_short_now=poi_short,
             bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
             bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,
+            bull_bos_high_ms=self._bar_time(ext.bull_bos_h_loc),
+            bull_bos_low_ms=self._bar_time(ext.bull_bos_l_loc),
+            bear_bos_high_ms=self._bar_time(ext.bear_bos_h_loc),
+            bear_bos_low_ms=self._bar_time(ext.bear_bos_l_loc),
             last_conf_high=ext.last_conf_high, last_conf_low=ext.last_conf_low,
             sniper_zone_top=sz.zone_top, sniper_zone_bot=sz.zone_bot,
             sz_bar=self._sz_bar, sz_bullish=(sz.direction != -1),

@@ -28,6 +28,16 @@ from dataclasses import dataclass
 from typing import Optional
 
 
+def _leg_start(*stamps: Optional[int]) -> Optional[int]:
+    """The earlier of a leg's two anchor times, ignoring ones this run's window cannot date.
+
+    Mirrors `mpc_sos_fade.execution._freeze_fib`'s `min(stamps)` so both bots anchor a drawn fib
+    the same way. None when neither anchor is datable — a leg whose swing predates the replay has
+    no honest start here, and inventing one puts the drawing on the wrong candle."""
+    known = [t for t in stamps if t is not None]
+    return min(known) if known else None
+
+
 @dataclass(frozen=True)
 class BLegState:
     """One bar's B-LEG watch, per side — what the execution layer rests a limit off.
@@ -37,7 +47,13 @@ class BLegState:
     origin (fib 1.0), the stop anchor and the invalidation level. `*_tgt` = the expansion
     extreme, the TP2 reference. `*_on` = the leg is live and watching; `*_tap` = price has
     tapped the band (a tapped leg no longer arms / can be replaced). `*_bar` = the bar the
-    leg armed on (the one-trade-per-leg key + the staleness clock)."""
+    leg armed on (the one-trade-per-leg key + the staleness clock).
+
+    `*_ext` and `*_leg_ms` are REPORTING ONLY — no rule reads them. They complete the fib this
+    bot prices off: `*_inv` is its 1.0 and `*_ext` its 0.0, so the two together are the whole
+    leg, and `*_leg_ms` is the bar it started on. Frozen and re-frozen with the band, never
+    afterwards — `*_tgt` is the one that keeps tracking, and it is a DIFFERENT number (the
+    expansion extreme price ran to, which is past the leg once a target is exceeded)."""
 
     l_top: Optional[float]
     l_bot: Optional[float]
@@ -53,6 +69,11 @@ class BLegState:
     s_on: bool
     s_tap: bool
     s_bar: Optional[int]
+    # Reporting only, appended so every field above keeps its required-ness.
+    l_ext: Optional[float] = None
+    l_leg_ms: Optional[int] = None
+    s_ext: Optional[float] = None
+    s_leg_ms: Optional[int] = None
 
 
 class BLegTracker:
@@ -78,6 +99,8 @@ class BLegTracker:
         self._l_on = False
         self._l_tap = False
         self._l_bar: Optional[int] = None
+        self._l_ext: Optional[float] = None      # fib 0.0 of the frozen leg (reporting only)
+        self._l_leg_ms: Optional[int] = None     # the bar the frozen leg started on
         # short leg (Pine bLegS_*)
         self._s_top: Optional[float] = None
         self._s_bot: Optional[float] = None
@@ -86,6 +109,8 @@ class BLegTracker:
         self._s_on = False
         self._s_tap = False
         self._s_bar: Optional[int] = None
+        self._s_ext: Optional[float] = None
+        self._s_leg_ms: Optional[int] = None
 
     @property
     def bleg_max(self) -> int:
@@ -109,6 +134,10 @@ class BLegTracker:
                 self._l_tap = False
                 self._l_on = was
                 self._l_bar = idx if was else None
+                # Reporting only — the leg this band was cut from, taken in the same breath as
+                # the band so a migration re-takes both and they can never describe two legs.
+                self._l_ext = sig.bull_bos_high
+                self._l_leg_ms = _leg_start(sig.bull_bos_low_ms, sig.bull_bos_high_ms)
         if sig.bear_sos and sig.bear_bos_high is not None and sig.bear_bos_low is not None \
                 and sig.bear_bos_high > sig.bear_bos_low:
             rng = sig.bear_bos_high - sig.bear_bos_low
@@ -123,6 +152,8 @@ class BLegTracker:
                 self._s_tap = False
                 self._s_on = was
                 self._s_bar = idx if was else None
+                self._s_ext = sig.bear_bos_low
+                self._s_leg_ms = _leg_start(sig.bear_bos_high_ms, sig.bear_bos_low_ms)
 
         # ── 2. Track the expansion extreme until the leg arms (Pine 3728-3731) ──
         if self._l_top is not None and not self._l_on:
@@ -155,4 +186,6 @@ class BLegTracker:
             l_on=self._l_on, l_tap=self._l_tap, l_bar=self._l_bar,
             s_top=self._s_top, s_bot=self._s_bot, s_inv=self._s_inv, s_tgt=self._s_tgt,
             s_on=self._s_on, s_tap=self._s_tap, s_bar=self._s_bar,
+            l_ext=self._l_ext, l_leg_ms=self._l_leg_ms,
+            s_ext=self._s_ext, s_leg_ms=self._s_leg_ms,
         )

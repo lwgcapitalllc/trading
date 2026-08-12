@@ -22,11 +22,18 @@ from mpc_bleg import BLegConfig, BLegTracker, MpcBLegStrategy  # noqa: E402
 
 
 def _sig(index, close, high, low, *, bull_sos=False, bear_sos=False,
-         bbh=None, bbl=None, sbh=None, sbl=None):
+         bbh=None, bbl=None, sbh=None, sbl=None,
+         bbh_ms=None, bbl_ms=None, sbh_ms=None, sbl_ms=None):
+    # ⚠ The four `*_ms` fields are carried even though most tests here ignore them. `Signals` is a
+    # dataclass that ALWAYS has them, so a fixture that omitted them would be a shape production
+    # never produces — and the tracker would have to reach for them with `getattr(..., None)`,
+    # which permanently erases the difference between "no anchor" and "wrong object passed".
     return SimpleNamespace(
         index=index, close=close, high=high, low=low,
         bull_sos=bull_sos, bear_sos=bear_sos,
-        bull_bos_high=bbh, bull_bos_low=bbl, bear_bos_high=sbh, bear_bos_low=sbl)
+        bull_bos_high=bbh, bull_bos_low=bbl, bear_bos_high=sbh, bear_bos_low=sbl,
+        bull_bos_high_ms=bbh_ms, bull_bos_low_ms=bbl_ms,
+        bear_bos_high_ms=sbh_ms, bear_bos_low_ms=sbl_ms)
 
 
 def _seq(bleg_arm_l=False, bleg_arm_s=False):

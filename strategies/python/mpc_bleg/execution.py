@@ -25,8 +25,46 @@ from typing import Optional
 _PYPKGS = Path(__file__).resolve().parents[1]
 if str(_PYPKGS) not in sys.path:
     sys.path.insert(0, str(_PYPKGS))
+# repo-root on path for `engines`, the same shim the parent carries. Stated here rather than
+# leaned on: importing the parent first happens to set it up, and an import reorder would turn
+# that accident into an ImportError.
+_ROOT = Path(__file__).resolve().parents[3]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
-from mpc_sos_fade.execution import Execution, _Pending  # noqa: E402
+from mpc_sos_fade.execution import Execution, TradeFib, _Pending  # noqa: E402
+
+# The canonical ratio->price helper, and the only one allowed here for the same reason the parent
+# gives: re-deriving `ext - range*ratio` inline would be a second implementation free to drift.
+from engines.fibonacci.geometry import fib_level  # noqa: E402
+
+# The ladder a recorded B-LEG fib carries, shallow -> deep. Byte-identical to the A+ bot's
+# `_FIB_RATIOS`, deliberately: both bots' fibs are drawn on ONE chart, so a ratio has to mean the
+# same thing on both or the reader is asked to hold two conventions at once.
+_FIB_RATIOS = (0.0, 0.382, 0.5, 0.618, 0.702, 0.786, 0.886, 1.0)
+
+
+def _band_fib(ext, inv, direction, leg_ms):
+    """The frozen leg's fib ladder -> a `TradeFib`, or None when the leg is not fully priced.
+
+    ⚠ THE CONVENTION IS THE WHOLE POINT OF THIS FUNCTION, because this bot's own vocabulary uses
+    the other one. `bleg.py` and the Pine call the entry band "the 0.382-0.5 pocket", measuring UP
+    from the leg ORIGIN (the Sniper Zone convention, `fib_from_origin`). A drawn fib measures DOWN
+    from the leg EXTREME (`fib_level`), which is what the A+ bot records and what `1.0 = the leg
+    origin` in `BLegState`'s own docstring already assumes.
+
+    Same two prices, two namings. This records the `fib_level` one, so on a chart carrying both
+    bots' fibs the entry reads 0.5, the stop 1.0 and TP1 0.0 on either. The one visible consequence
+    is that the band's far edge (`*_bot`) draws as **0.618**, not 0.382 — it is the same line the
+    code calls 0.382, named from the other end of the same leg.
+
+    All-or-nothing, like the A+ bot: a partial ladder reads as "this trade had no 0.786" rather
+    than "this record is incomplete"."""
+    if ext is None or inv is None or leg_ms is None or ext == inv:
+        return None
+    hi, lo = (ext, inv) if direction == 1 else (inv, ext)
+    return TradeFib(levels=[(r, float(fib_level(hi, lo, direction, r))) for r in _FIB_RATIOS],
+                    start_ms=leg_ms)
 
 
 class BLegExecution(Execution):
@@ -93,7 +131,8 @@ class BLegExecution(Execution):
             tp2 = bleg.l_tgt                      # expansion extreme
             if dist > 0 and tp1 > bleg.l_top and tp2 >= tp1:
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
-                self._pend_long = _Pending(1, bleg.l_top, qty, sl, tp1, tp2, bleg.l_bar)
+                fib = _band_fib(bleg.l_ext, bleg.l_inv, 1, bleg.l_leg_ms)
+                self._pend_long = _Pending(1, bleg.l_top, qty, sl, tp1, tp2, bleg.l_bar, fib)
 
         # ── Short B-LEG entry (Pine 4494-4504) ──
         if bleg_s_arm:
@@ -103,4 +142,5 @@ class BLegExecution(Execution):
             tp2 = bleg.s_tgt
             if dist > 0 and tp1 < bleg.s_bot and tp2 <= tp1:
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
-                self._pend_short = _Pending(-1, bleg.s_bot, qty, sl, tp1, tp2, bleg.s_bar)
+                fib = _band_fib(bleg.s_ext, bleg.s_inv, -1, bleg.s_leg_ms)
+                self._pend_short = _Pending(-1, bleg.s_bot, qty, sl, tp1, tp2, bleg.s_bar, fib)
