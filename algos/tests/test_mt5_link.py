@@ -112,7 +112,10 @@ class _StateModule:
     # the real module has fails loudly here (AttributeError) rather than quietly, which is
     # the behaviour to keep: `_heartbeat` deliberately does not hasattr-guard these, or a
     # renamed bot_state function would silently stop reporting P&L on the live box.
-    def ensure_starting_balance(self, bot_key, balance):
+    def ensure_starting_balance(self, bot_key, balance, account=None):
+        # `account` mirrors production, which passes it so the anchor can tell a bot that GREW a
+        # balance from a bot that was MOVED onto another account. A fake with the old two-argument
+        # signature would make the real call a TypeError only on the live box.
         self.written.setdefault(bot_key, {}).setdefault("starting_balance", balance)
 
     def read_bot(self, bot_key):

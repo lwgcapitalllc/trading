@@ -49,7 +49,8 @@ class _StateModule:
     # The two the heartbeat needs to derive total_pnl_pct. `_heartbeat` deliberately does
     # NOT hasattr-guard them: a renamed bot_state function must fail here rather than
     # silently stop reporting P&L on the live box.
-    def ensure_starting_balance(self, bot_key, balance):
+    def ensure_starting_balance(self, bot_key, balance, account=None):
+        # `account` mirrors production — see the same fake in test_mt5_link.py.
         self.written.setdefault(bot_key, {}).setdefault("starting_balance", balance)
 
     def read_bot(self, bot_key):

@@ -207,11 +207,48 @@ def get_uptime_str(bot_key: str) -> str:
         return f"{minutes}m"
 
 
-def ensure_starting_balance(bot_key: str, balance: float) -> None:
-    """Write starting_balance once on first run — never overwritten after that.
-    Call this at bot startup after MT5 connects and balance is confirmed."""
-    if not read_bot(bot_key).get("starting_balance"):
-        write_bot(bot_key, {"starting_balance": round(balance, 2)})
+def ensure_starting_balance(bot_key: str, balance: float, account=None) -> None:
+    """Write starting_balance once per ACCOUNT — never overwritten while the account is the same.
+
+    Call this at bot startup after MT5 connects and balance is confirmed.
+
+    🔴 **The anchor belongs to the ACCOUNT, not to the bot, and until 2026-08-12 it was stored as
+    though it belonged to the bot.** `total_pnl_pct` is the only thing that reads it, and it is
+    rendered on the Bots page and answered by Telegram's `/balance`. When `mpc_sos_fade_demo` was
+    moved from the PU Prime Standard demo (anchored at $2,000, grown to ~$10,000) onto the ECN demo
+    (opening balance $10,000), the old anchor stayed put — so the new account would have reported
+    **+399% on its first poll, for ever**, off a starting balance belonging to an account this bot
+    no longer trades. Nothing would have errored, and the number is plausible enough to be read.
+
+    ⚠ **`account=None` keeps the OLD behaviour — anchor once and never re-anchor.** A caller that
+    cannot say which account it is on must not be able to reset the anchor, because *"I don't know"*
+    and *"this is a different account"* are not the same statement and only one of them justifies
+    throwing away a measurement. Every live caller passes it.
+
+    ⚠ **Re-anchoring is keyed on the account CHANGING, never on the balance moving.** A bot that
+    reconnects to a bigger balance has made money; that is the thing the percentage is for.
+
+    ⚠ **An anchor written before this field existed is ADOPTED, not reset.** It carries no account,
+    so *"it belongs to this account"* and *"it belongs to one this bot has left"* are indistinguish-
+    able — and of the two possible mistakes, silently discarding a real measurement is the worse
+    one. The migration therefore stamps the current account onto the existing number and changes
+    nothing else. **That means this guard could not have caught the move that motivated it**; the
+    stale anchor was cleared by hand on 2026-08-12 and this exists so the next one is automatic.
+    """
+    state = read_bot(bot_key)
+    have = state.get("starting_balance")
+    if not have:
+        write_bot(bot_key, {"starting_balance": round(balance, 2),
+                            "starting_balance_account": account})
+        return
+    if account is None:
+        return
+    if "starting_balance_account" not in state:
+        write_bot(bot_key, {"starting_balance_account": account})   # adopt, do not reset
+        return
+    if state.get("starting_balance_account") != account:
+        write_bot(bot_key, {"starting_balance": round(balance, 2),
+                            "starting_balance_account": account})
 
 
 def _default_state(bot_key: str) -> dict:

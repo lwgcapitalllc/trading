@@ -1243,7 +1243,9 @@ class LiveRunner:
         # fabricated-vs-measured collapse `mt5_link` exists to prevent, one field over.
         total_pct = None
         if balance is not None:
-            bot_state.ensure_starting_balance(self.cfg.bot_key, balance)
+            # The account is passed so the anchor can tell "this bot grew this balance" from
+            # "this bot was moved onto a different account". See `ensure_starting_balance`.
+            bot_state.ensure_starting_balance(self.cfg.bot_key, balance, self.cfg.account)
             start = bot_state.read_bot(self.cfg.bot_key).get("starting_balance")
             if start:
                 total_pct = round((balance - float(start)) / float(start) * 100, 2)
