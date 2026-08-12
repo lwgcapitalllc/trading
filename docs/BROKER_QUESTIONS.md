@@ -135,6 +135,37 @@ builds its own tick store without borrowing `MT5_Lab` back from the Vantage back
 `broker_facts.py --path C:\MT5_Scalper\terminal64.exe --account 700152905 --symbol XAUUSD.p
 --history-days 1` for the by-hour distribution.
 
+### 2026-08-12 — the bot moved onto ECN, and the sentinel STAYS
+
+Aaron put `MT5_FFT` itself on the ECN demo, so `MT5_Scalper` is no longer needed for this and the
+tick store builds under the terminal the bot trades on. Read off it the same day:
+
+| | 2026-08-10 (MT5_Lab, Asian session) | 2026-08-12 (MT5_FFT, London/NY overlap) |
+|---|---|---|
+| spread median | $0.12 | **$0.12** (239 fresh reads over 240s, p90 $0.12, p99 $0.12, max $0.15) |
+| swap long / short | −79.60 / +30.25 | **−81.18 / +31.29** |
+| stops level | 20 pts | 20 pts |
+| digits / point / contract / tick value | — | 2 / 0.01 / 100 / $1.00 — identical to `XAUUSD.s` |
+
+✅ **Two independent sessions on two terminals now agree on $0.12**, which is worth more than either
+reading alone. ⚠ **It is still not a measurement and the sentinel stays**, for the reason above and
+unchanged by the second sample: both are minutes of ONE session and neither covers the 22:00 UTC
+reopen, the only wide hour this broker has. Close it with `--history-days 1` once a full day of
+ticks has accumulated on this terminal.
+
+🔴 **The swap MOVED 2% in two days** (−79.60 → −81.18, +30.25 → +31.29), in the same direction on
+both sides. `backtest/fills.py` already carried the standing warning that swap is a rate rather than
+a constant — it was 1.7%/2.6% adrift after three weeks in July — and this is the third reading to
+confirm it. **Do not re-hardcode a swap without a date beside it.**
+
+🔴 **Taking this reading found a defect in the tool.** The first run reported *"no fresh ticks -
+market shut?"* after five minutes in the middle of the London/NY overlap: MT5 streams ticks only for
+symbols in **Market Watch**, and the newly-switched account had never been asked to watch
+`XAUUSD.p`. `symbol_info` needs no such thing, so the whole specification block above it read
+correctly and only the measurement the tool exists for came back empty — wearing a sentence that
+points at the exchange. Fixed in `algos/tools/broker_facts.py`: the sampler selects the symbol
+first, and a tick that never ARRIVED is counted apart from a tick that never MOVED.
+
 🔴 **Two live-path defects were found by taking these measurements, both now fixed** — see
 `algos/CLAUDE.md`. A refused order logged `(1, 'Success')` because it reported the API call's health
 instead of the order's, and `get_deal_breakdown` / `get_deal_result` bounded their history window
