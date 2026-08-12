@@ -249,10 +249,16 @@ test('a benched bot gets its own card, not the unreadable one', async ({ page })
     BENCHED,
   ])
   await page.goto('/bots?tab=accounts')
-  await expect(page.locator('[data-testid="account-card"][data-kind="bench"]')).toHaveCount(1)
-  await expect(page.locator('[data-kind="bench"]')).toContainText('Not on an account')
+  // ⚠ Scoped to the RAIL and then to the DETAIL, because since the tab became master–detail
+  // (2026-08-12) `data-kind` is on both — a bare `[data-kind="bench"]` matches two elements and
+  // the strict-mode violation reads as a missing card rather than a duplicated one.
+  const railBench = page.locator('[data-testid="account-rail-item"][data-kind="bench"]')
+  await expect(railBench).toHaveCount(1)
+  await railBench.click()
+  const card = page.locator('[data-testid="account-card"][data-kind="bench"]')
+  await expect(card).toContainText('Not on an account')
   // No cap editor on the bench: there is no account for a ceiling to describe.
-  await expect(page.locator('[data-kind="bench"] [data-testid="cap-save"]')).toHaveCount(0)
+  await expect(card.getByTestId('cap-save')).toHaveCount(0)
 })
 
 test('a benched bot is offered as something to add, and says where it comes from',
@@ -523,24 +529,34 @@ test('an account nobody registered still renders, with the gap named', async ({ 
 })
 
 /**
- * Drag a bot's row onto another account's card.
+ * Drag a bot's row out of the detail pane onto another account in the RAIL.
  *
- * ⚠ **It fires the SAME mutation Add bot fires**, so what is checked here is the GESTURE reaching
- * that mutation with the right account — not a second write path, which is exactly what this must
- * never grow into.
+ * ⚠ **The rail is the drop target since the tab became master–detail (2026-08-12), and it had to
+ * be**: only one account's card is on screen at a time, so a card-to-card drag can no longer
+ * reach a destination. The rail is the one surface that always shows every account.
+ *
+ * ⚠ **It fires the SAME mutation Add bot and the Move menu fire**, so what is checked here is the
+ * GESTURE reaching that mutation with the right account — not a second write path, which is
+ * exactly what this must never grow into.
  */
-async function dragBotOnto(page: Page, botKey: string, cardIndex: number) {
+async function dragBotOnto(page: Page, botKey: string, railIndex: number) {
+  // ⚠ **Wait for BOTH ends before dispatching.** `page.evaluate` runs the moment the document
+  // exists, so a `querySelector(...)!` on a row React has not rendered yet throws — and that
+  // failure is a null-reference inside the harness, which reads exactly like the drop handler
+  // being missing. It passed alone and failed in a full run, i.e. purely on how loaded the box was.
+  await page.getByTestId(`bot-row-${botKey}`).waitFor()
+  await page.getByTestId('account-rail-item').nth(railIndex).waitFor()
   // HTML5 drag-and-drop is dispatched by hand rather than with `dragTo`: Playwright's helper is
   // unreliable across the mouse-move heuristics, and what this check is about is the DATA the drop
   // carries, which the manual events model exactly.
-  await page.evaluate(({ botKey, cardIndex }) => {
+  await page.evaluate(({ botKey, railIndex }) => {
     const row = document.querySelector(`[data-testid="bot-row-${botKey}"]`)!
-    const card = document.querySelectorAll('[data-testid="account-card"]')[cardIndex]!
+    const target = document.querySelectorAll('[data-testid="account-rail-item"]')[railIndex]!
     const dt = new DataTransfer()
     row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
-    card.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
-    card.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }))
-  }, { botKey, cardIndex })
+    target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
+    target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }))
+  }, { botKey, railIndex })
 }
 
 test('dragging a bot onto another account moves it there', async ({ page }) => {
@@ -560,7 +576,7 @@ test('dragging a bot onto another account moves it there', async ({ page }) => {
   })
 
   await page.goto('/bots?tab=accounts')
-  await expect(page.getByTestId('account-card')).toHaveCount(2)
+  await expect(page.getByTestId('account-rail-item')).toHaveCount(2)
   await dragBotOnto(page, 'mpc_bleg', 1)
 
   await expect.poll(() => moved).not.toBeNull()
@@ -596,14 +612,110 @@ test('an account with no terminal refuses the drop rather than reporting it afte
              unassignable_reason: 'no terminal on the VPS logged into it' })])
 
     await page.goto('/bots?tab=accounts')
+    // Same race as `dragBotOnto` — see the note there.
+    await page.getByTestId('bot-row-mpc_bleg').waitFor()
+    await page.getByTestId('account-rail-item').nth(1).waitFor()
     await page.evaluate(() => {
       const row = document.querySelector('[data-testid="bot-row-mpc_bleg"]')!
-      const card = document.querySelectorAll('[data-testid="account-card"]')[1]!
+      const target = document.querySelectorAll('[data-testid="account-rail-item"]')[1]!
       const dt = new DataTransfer()
       row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
-      card.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
+      target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
     })
 
-    const cards = page.getByTestId('account-card')
-    await expect(cards.nth(1)).not.toHaveAttribute('data-dropping', 'true')
+    const rail = page.getByTestId('account-rail-item')
+    await expect(rail.nth(1)).not.toHaveAttribute('data-dropping', 'true')
   })
+
+// ── The rail, and the Move menu that makes a move discoverable ─────────────────
+//
+// 🔴 Added 2026-08-12 with the master–detail rebuild. Aaron, off the screen: *"the more accounts I
+// add, it's just gonna keep scrolling up and down… I can't tell easily what bot is trading on what
+// account… I don't see an easy way to add bots or remove bots from accounts."*
+
+test('the rail lists every account and only ONE detail pane is on screen', async ({ page }) => {
+  // MUTATION: render the entries as a stack of cards again (drop the rail/detail split) → the
+  // detail-pane count goes to 3 and this goes red. One pane is the property that keeps the page a
+  // fixed height however many accounts are registered.
+  await mock(page, [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, 10)] })], [
+    reg({ account: ACCOUNT, broker: 'PU Prime', tier: 'Standard' }),
+    reg({ account: 700152905, broker: 'PU Prime', tier: 'ECN' }),
+    reg({ account: 700119432, broker: 'PU Prime', tier: 'Prime' }),
+  ])
+  await page.goto('/bots?tab=accounts')
+
+  await expect(page.getByTestId('account-rail-item')).toHaveCount(3)
+  await expect(page.getByTestId('account-card')).toHaveCount(1)
+
+  // ⚠ Identity is asserted on the RAIL, because that is what the rebuild was for: broker, then
+  // number, then tier, in that order, so an account can be picked out of a list of them.
+  const first = page.getByTestId('account-rail-item').first()
+  await expect(first).toContainText('PU Prime')
+  await expect(first).toContainText(`#${ACCOUNT}`)
+  await expect(first).toContainText('Standard')
+})
+
+test('picking an account in the rail swaps the detail pane and survives a reload',
+  async ({ page }) => {
+    // MUTATION: hold the selection in `useState` instead of `?account=` → the reload lands back on
+    // the first account and this goes red. A selection that dies on refresh is one the reader has
+    // to re-make every time they come back to the tab.
+    await mock(page, [], [
+      reg({ account: ACCOUNT, broker: 'PU Prime', tier: 'Standard' }),
+      reg({ account: 700152905, broker: 'Vantage', tier: 'ECN' }),
+    ])
+    await page.goto('/bots?tab=accounts')
+
+    await expect(page.getByTestId('account-card')).toContainText(`#${ACCOUNT}`)
+    await page.getByTestId('account-rail-item').nth(1).click()
+    await expect(page.getByTestId('account-card')).toContainText('#700152905')
+    await expect(page.getByTestId('account-card')).toContainText('Vantage')
+
+    await page.reload()
+    await expect(page.getByTestId('account-card')).toContainText('#700152905')
+  })
+
+test('the Move menu moves a bot, and lists an unassignable account DISABLED', async ({ page }) => {
+  // MUTATION: drop the `<select>` and leave drag as the only route → red. Dragging is the fast
+  // path and nothing on screen advertises it; a move has to be reachable with a trackpad.
+  //
+  // ⚠ The disabled option is the second half and is not decoration: hiding an account with no
+  // terminal makes one that exists look like one that does not, which is the same rule the Add bot
+  // list follows for a running bot.
+  const OTHER = 700152905
+  const NO_TERM = 700119432
+  let moved: Record<string, unknown> | null = null
+
+  await mock(page,
+    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)] })],
+    [reg({ account: ACCOUNT }),
+     reg({ account: OTHER, broker: 'PU Prime', tier: 'ECN' }),
+     reg({ account: NO_TERM, mt5_path: '', assignable: false,
+           unassignable_reason: 'no terminal on the VPS logged into it' })])
+  await page.route('**/api/bots/*/account', async route => {
+    moved = route.request().postDataJSON()
+    return route.fulfill({
+      json: { status: 'ok', changed: true, bot: 'mpc_bleg', account: OTHER,
+              restart_required: true, notes: [] },
+    })
+  })
+
+  await page.goto('/bots?tab=accounts')
+  const menu = page.getByTestId('move-mpc_bleg')
+  await expect(menu.locator(`option[value="${NO_TERM}"]`)).toBeDisabled()
+  await expect(menu.locator(`option[value="${ACCOUNT}"]`)).toHaveCount(0)  // it is already here
+
+  await menu.selectOption(String(OTHER))
+  await expect.poll(() => moved).toEqual({ account: OTHER, deploy: true })
+})
+
+test('a RUNNING bot cannot be moved from the menu either', async ({ page }) => {
+  // MUTATION: drop `running` from the select's `disabled` → it enables and this goes red.
+  // The Remove button beside it has always been guarded; a second control that is not is a way
+  // round the guard rather than a convenience.
+  await mock(page,
+    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [reg({ account: ACCOUNT }), reg({ account: 700152905 })])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('move-mpc_sos_fade')).toBeDisabled()
+})

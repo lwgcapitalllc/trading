@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, KeyRound, Layers, Play, Plus, ShieldCheck, ShieldOff, Trash2, X,
+  AlertTriangle, KeyRound, Layers, MonitorSmartphone, Play, Plus, ShieldCheck, ShieldOff,
+  Trash2, X,
 } from 'lucide-react'
 import {
   useBotAccounts, useBotSnapshot, useBotVersions, useSetAccountRiskCap, useAssignBotAccount,
@@ -15,6 +17,14 @@ import type { UseQueryResult } from '@tanstack/react-query'
 
 /**
  * The shared-account view: which bots trade one balance, and the one ceiling over it.
+ *
+ * ⚠ **It is a RAIL + DETAIL, not a stack of cards (rebuilt 2026-08-12).** The card list grew
+ * downward for ever, so with more than three accounts the answer to *what is trading where* was
+ * a scroll and a memory test; and every fact on a card — broker, number, tier — was set in the
+ * same small grey text, so the three things that IDENTIFY an account did not stand out from the
+ * three that describe it. The rail is the selector and the only thing that grows; the detail pane
+ * is fixed. Same shape as `ConfigureTab`, deliberately — two tabs that both pick one thing out of
+ * a list and configure it should not be two different interactions.
  *
  * ⚠ **Grouping is READ, not configured.** Two bots naming the same `account` in their instance
  * configs are trading one balance whether or not anybody grouped them, so there is no stored
@@ -37,7 +47,8 @@ export function AccountsTab() {
   const { data: groups, isLoading } = useBotAccounts()
   const { data: registry } = useRegisteredAccounts()
   const { data: snapshot } = useBotSnapshot()
-  const [addingAccount, setAddingAccount] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const [form, setForm] = useState<'add' | 'edit' | null>(null)
 
   const allKeys = useMemo(
     () => (groups ?? []).flatMap(g => g.bots.map(b => b.key)),
@@ -65,11 +76,11 @@ export function AccountsTab() {
 
   const regByAccount = new Map((registry ?? []).map(a => [a.account, a]))
 
-  // A card per REGISTERED account, whether or not a bot is on it yet — that is the whole point of
-  // the registry. An account with no bots renders as an empty card you can add one to; before it
-  // existed, the first bot on a new account could not be moved from this page at all.
+  // An entry per REGISTERED account, whether or not a bot is on it yet — that is the whole point
+  // of the registry. Before it existed, the first bot on a new account could not be moved from
+  // this page at all, which is why the 2026-08-12 ECN migration was a hand-edited VPS config.
   const registered = (registry ?? []).map(a => ({
-    reg: a,
+    reg: a as BotAccountRegistration | undefined,
     group: (groups ?? []).find(g => g.kind === 'account' && g.account === a.account)
       ?? emptyGroup(a),
   }))
@@ -81,56 +92,143 @@ export function AccountsTab() {
     .filter(g => g.kind === 'account' && g.account !== null && !regByAccount.has(g.account))
     .map(g => ({ reg: undefined, group: g }))
 
-  const others = (groups ?? []).filter(g => g.kind !== 'account')
-  const cards = [...registered, ...unregistered]
+  const others = (groups ?? [])
+    .filter(g => g.kind !== 'account')
+    .map(g => ({ reg: undefined as BotAccountRegistration | undefined, group: g }))
+
+  const entries = [...registered, ...unregistered, ...others]
+
   // Only an ASSIGNABLE account can be a move target. An account with no terminal on the box would
   // be written, committed, pushed and pulled and then fail at connect() with a message about
   // credentials — pointing the reader at the password rather than at the missing terminal.
-  const targets = cards.filter(c => !c.reg || c.reg.assignable).map(c => c.group)
+  const targets = entries
+    .filter(e => e.group.kind === 'account' && e.group.account !== null)
+    .map(e => ({
+      account: e.group.account as number,
+      label: nameOf(e.reg, e.group),
+      sub: [e.reg?.tier, e.reg?.kind].filter(Boolean).join(' · '),
+      assignable: e.reg ? e.reg.assignable : true,
+      reason: e.reg?.unassignable_reason ?? '',
+    }))
+
+  // ⚠ **The default lands on an account that is TRADING, not on the first one registered.** The
+  // registry is ordered by account number, so the first row is whichever login is numerically
+  // lowest — on this box a retired Standard demo — and opening on it makes the page's first
+  // answer to *what is running* an account with nothing on it.
+  const busiest = [...entries]
+    .filter(e => e.group.kind === 'account')
+    .sort((a, b) => b.group.bots.length - a.group.bots.length)[0]
+  const fallback = busiest?.group.bots.length ? busiest : entries[0]
+  const selectedId = params.get('account') ?? idOf(fallback?.group)
+  const selected = entries.find(e => idOf(e.group) === selectedId) ?? fallback
+
+  const select = (id: string) => {
+    const next = new URLSearchParams(params)
+    next.set('account', id)
+    setParams(next, { replace: true })
+    setForm(null)
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-3">
+        <div className="text-small text-text-tertiary">
+          No broker accounts yet — add one, then move a bot onto it.
+        </div>
+        <AddAccountButton onClick={() => setForm('add')} />
+        {form === 'add' && <AccountForm onClose={() => setForm(null)} />}
+      </div>
+    )
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <div className="text-micro text-text-tertiary">
-          {cards.length === 0
-            ? 'No broker accounts yet — add one, then move a bot onto it.'
-            : `${cards.length} account${cards.length === 1 ? '' : 's'}`}
+    <div className="flex items-start gap-4">
+      {/* ── Rail: the only thing that grows ──────────────────────────────────── */}
+      <div className="w-[238px] shrink-0 sticky top-0">
+        <div className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]
+                        flex flex-col max-h-[calc(100vh-150px)]">
+          {/* ⚠ **Add account is ABOVE the list and the list scrolls under it, not the page.**
+              Below the list it was already 10px off the bottom of a 940px viewport with five
+              accounts registered — so the one control that makes this tab work would have been
+              the first thing to disappear as the fleet grew, which is the exact failure the
+              rebuild was for. */}
+          <div className="flex items-center gap-2 px-[10px] pt-[6px] pb-[8px] shrink-0">
+            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
+              Accounts
+            </p>
+            <span className="ml-auto text-[10px] text-text-tertiary">{targets.length}</span>
+          </div>
+          <div className="px-[4px] pb-[8px] shrink-0">
+            <AddAccountButton onClick={() => setForm('add')} full />
+          </div>
+          <div className="flex flex-col gap-[2px] overflow-y-auto">
+            {entries.map(({ reg, group }) => (
+              <RailRow
+                key={idOf(group)}
+                group={group}
+                registration={reg}
+                selected={idOf(group) === idOf(selected.group)}
+                onSelect={() => select(idOf(group))}
+                statusByKey={statusByKey}
+              />
+            ))}
+          </div>
         </div>
-        <button
-          data-testid="add-account"
-          onClick={() => setAddingAccount(v => !v)}
-          className="ml-auto inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
-                     border border-border-default bg-bg-surface text-text-secondary
-                     hover:bg-bg-hover hover:text-text-primary transition-colors"
-        >
-          <Plus size={12} /> Add account
-        </button>
+        <p className="text-[10px] text-text-tertiary leading-[1.5] mt-[8px] px-[4px]">
+          Drag a bot from the panel onto an account here to move it, or use its Move menu.
+        </p>
       </div>
 
-      {addingAccount && <AccountForm onClose={() => setAddingAccount(false)} />}
-
-      {cards.map(({ reg, group }) => (
-        <AccountCard
-          key={`account:${group.account}`}
-          group={group}
-          registration={reg}
-          accounts={targets}
-          statusByKey={statusByKey}
-          versionByKey={versionByKey}
-        />
-      ))}
-
-      {others.map(g => (
-        <AccountCard
-          key={`${g.kind}:none`}
-          group={g}
-          accounts={targets}
-          statusByKey={statusByKey}
-          versionByKey={versionByKey}
-        />
-      ))}
+      {/* ── Detail: one account, fixed height ────────────────────────────────── */}
+      <div className="flex-1 min-w-0">
+        {form === 'add' ? (
+          <AccountForm onClose={() => setForm(null)} />
+        ) : form === 'edit' && selected.reg ? (
+          <AccountForm existing={selected.reg} onClose={() => setForm(null)} />
+        ) : (
+          <AccountDetail
+            key={idOf(selected.group)}
+            group={selected.group}
+            registration={selected.reg}
+            targets={targets}
+            statusByKey={statusByKey}
+            versionByKey={versionByKey}
+            onEdit={() => setForm('edit')}
+          />
+        )}
+      </div>
     </div>
   )
+}
+
+function AddAccountButton({ onClick, full }: { onClick: () => void; full?: boolean }) {
+  return (
+    <button
+      data-testid="add-account"
+      onClick={onClick}
+      className={`${full ? 'w-full justify-center' : ''} inline-flex items-center gap-[6px] px-3 py-[6px]
+                 rounded-md text-small border border-border-default bg-bg-surface text-text-secondary
+                 hover:bg-bg-hover hover:text-text-primary transition-colors`}
+    >
+      <Plus size={12} /> Add account
+    </button>
+  )
+}
+
+/** The rail's identity for a group. `bench` and `unknown` have no account number and are NOT the
+ *  same thing — one is a state somebody chose, the other is a fault. */
+function idOf(g?: BotAccountGroup): string {
+  if (!g) return ''
+  if (g.kind !== 'account' || g.account === null) return g.kind
+  return String(g.account)
+}
+
+/** The name a human recognises. The registry's label wins, then the broker, then the number —
+ *  a card headed `Account 700152905` says nothing the row under it does not already say. */
+function nameOf(reg: BotAccountRegistration | undefined, g: BotAccountGroup): string {
+  if (g.kind === 'bench') return 'Not on an account'
+  if (g.kind === 'unknown') return 'Unreadable configs'
+  return reg?.broker || reg?.label || `Account ${g.account}`
 }
 
 /**
@@ -155,18 +253,143 @@ function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
   }
 }
 
-function AccountCard({ group, registration, accounts, statusByKey, versionByKey }: {
+// ── the rail ────────────────────────────────────────────────────────────────────
+
+/**
+ * One account, compressed to the three facts that IDENTIFY it plus a warning marker.
+ *
+ * ⚠ **Broker → number → type, in that order and in that visual weight.** They were three
+ * interchangeable pieces of grey `text-micro` on the old card, which is what made an account hard
+ * to pick out of a list of them. The number is `font-mono tabular-nums` because it is read
+ * digit-by-digit against a broker statement, not as a word.
+ *
+ * ⚠ **It is a DROP TARGET.** A bot dragged out of the detail pane lands here, which is the one
+ * gesture that works when the source and the destination cannot both be on screen as cards.
+ */
+function RailRow({ group, registration, selected, onSelect, statusByKey }: {
+  group: BotAccountGroup
+  registration?: BotAccountRegistration
+  selected: boolean
+  onSelect: () => void
+  statusByKey: Map<string, string>
+}) {
+  const assign = useAssignBotAccount()
+  const [dropping, setDropping] = useState(false)
+
+  const isAccount = group.kind === 'account' && group.account !== null
+  const assignable = registration ? registration.assignable : isAccount
+  const n = group.bots.length
+
+  // 🔴 **A drop fires the SAME mutation the Move menu and the Add bot list fire, deliberately.**
+  // It is a second GESTURE for one action, never a second path: a private write here would be a
+  // second place for the six-field move to drift out of step with `assign_plan`.
+  //
+  // ⚠ **There is no staged "pending moves, then hit Deploy" state and there must not be one.**
+  // That would be a stored intention able to disagree with what the bots are actually configured
+  // to do — the exact shape this tab exists to avoid, and the reason the grouping is derived
+  // rather than stored. A drop writes, commits, pushes and pulls, and the toast still says a
+  // restart is needed.
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDropping(false)
+    const key = e.dataTransfer.getData('text/bot-key')
+    if (!key) return
+    if (group.bots.some(b => b.key === key)) return          // already here — a no-op deploy
+    if (statusByKey.get(key) === 'RUNNING') return           // refused server-side too
+    if (group.kind === 'unknown') return
+    assign.mutate({ botKey: key, account: isAccount ? (group.account as number) : null })
+  }
+
+  const warn = registration
+    ? (!registration.assignable || registration.has_password === false)
+    : (isAccount || group.kind === 'unknown')
+
+  return (
+    <button
+      data-testid="account-rail-item"
+      data-kind={group.kind}
+      data-account={isAccount ? group.account : undefined}
+      data-dropping={dropping ? 'true' : undefined}
+      onClick={onSelect}
+      aria-current={selected ? 'true' : undefined}
+      onDragOver={e => {
+        if (!e.dataTransfer.types.includes('text/bot-key')) return
+        // ⚠ Only `preventDefault` makes an element a valid drop target, so NOT calling it is what
+        // refuses a drop onto an account with no terminal — the cursor says no while the reader
+        // is still holding the row, rather than a toast saying so after they let go.
+        if (group.kind === 'unknown' || !assignable) return
+        e.preventDefault()
+        setDropping(true)
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={onDrop}
+      className={`w-full text-left px-[10px] py-[9px] rounded-md border transition-colors duration-[100ms] cursor-pointer ${
+        dropping ? 'bg-accent-muted border-accent'
+          : selected ? 'bg-accent-muted border-accent/30'
+          : 'bg-transparent border-transparent hover:bg-bg-hover'}`}
+    >
+      <div className="flex items-center gap-[6px]">
+        <span className={`text-[12px] truncate ${
+          selected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
+          {nameOf(registration, group)}
+        </span>
+        {warn && (
+          <AlertTriangle size={10} className="ml-auto shrink-0 text-warn-text"
+                         aria-label="needs attention" />
+        )}
+      </div>
+
+      {isAccount && (
+        <div className="text-[11px] font-mono tabular-nums text-text-tertiary mt-[3px]">
+          #{group.account}
+        </div>
+      )}
+
+      <div className="flex items-center gap-[5px] mt-[5px] flex-wrap">
+        {registration?.tier && (
+          <span className="inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill
+                           uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
+            {registration.tier}
+          </span>
+        )}
+        {registration && (
+          <span className={`inline-flex text-[9px] font-semibold px-[5px] py-[2px] rounded-pill
+                            uppercase tracking-[0.4px] ${
+            registration.kind === 'live'
+              ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'}`}>
+            {registration.kind}
+          </span>
+        )}
+        <span className="text-[10px] text-text-tertiary">
+          {n === 0 ? 'no bots' : `${n} bot${n === 1 ? '' : 's'}`}
+        </span>
+      </div>
+    </button>
+  )
+}
+
+// ── the detail pane ─────────────────────────────────────────────────────────────
+
+type MoveTarget = {
+  account: number
+  label: string
+  sub: string
+  assignable: boolean
+  reason: string
+}
+
+function AccountDetail({ group, registration, targets, statusByKey, versionByKey, onEdit }: {
   group: BotAccountGroup
   /** The registry row, when this account has one. Absent = a legacy account a bot names. */
   registration?: BotAccountRegistration
-  accounts: BotAccountGroup[]
+  targets: MoveTarget[]
   statusByKey: Map<string, string>
   versionByKey: Map<string, UseQueryResult<BotDeployedVersion> | undefined>
+  onEdit: () => void
 }) {
   const setCap = useSetAccountRiskCap()
   const assign = useAssignBotAccount()
   const unregister = useUnregisterAccount()
-  const [editing, setEditing] = useState(false)
   const { data: strategies } = useStrategies()
   const [showStack, setShowStack] = useState(false)
   const [adding, setAdding] = useState(false)
@@ -176,7 +399,7 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
   const [capped, setCapped] = useState(group.risk_cap_pct !== null)
   const [capValue, setCapValue] = useState(group.risk_cap_pct ?? 10)
 
-  const isAccount = group.kind === 'account'
+  const isAccount = group.kind === 'account' && group.account !== null
   const isBench   = group.kind === 'bench'
   const totalRisk = group.bots.reduce((s, b) => s + (b.risk_pct ?? 0), 0)
 
@@ -200,228 +423,320 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
     setCap.mutate({ account: group.account, riskCapPct: value })
   }
 
-  const heading = isAccount
-    ? (registration?.label || `Account ${group.account}`)
-    : isBench ? 'Not on an account'
-    : 'Unreadable configs'
-  const subheading = isAccount
-    ? [registration && `#${group.account}`, group.server || registration?.server,
-       registration?.symbol_suffix ? `symbol${registration.symbol_suffix}` : null]
-        .filter(Boolean).join(' · ')
-    : isBench ? 'Registered and deliberately not trading — drag one onto an account, or use Add bot, to arm it'
-    : 'These configs could not be read, so which account they trade is unknown'
-
-  // ── Drag and drop ─────────────────────────────────────────────────────────
-  //
-  // 🔴 **A drop fires the SAME mutation the Add bot list fires, deliberately.** It is a second
-  // GESTURE for one action, never a second path: a private write here would be a second place for
-  // the four-field move to drift out of step with `assign_plan`.
-  //
-  // ⚠ **There is no staged "pending moves, then hit Deploy" state and there must not be one.**
-  // That would be a stored intention able to disagree with what the bots are actually configured
-  // to do — the exact shape this tab exists to avoid, and the reason the grouping is derived
-  // rather than stored. A drop writes, commits, pushes and pulls, and the toast still says a
-  // restart is needed.
-  const [dropping, setDropping] = useState(false)
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDropping(false)
-    const key = e.dataTransfer.getData('text/bot-key')
-    if (!key || group.account === null) return
-    if (group.bots.some(b => b.key === key)) return          // already here — a no-op deploy
-    if (statusByKey.get(key) === 'RUNNING') return           // refused server-side too
-    assign.mutate({ botKey: key, account: group.account })
-  }
-
   return (
-    <div className={`bg-bg-surface border rounded-lg overflow-hidden transition-colors ${
-           dropping ? 'border-accent' : 'border-border-subtle'}`}
-         data-testid="account-card" data-kind={group.kind}
-         data-dropping={dropping ? 'true' : undefined}
-         onDragOver={e => {
-           if (!e.dataTransfer.types.includes('text/bot-key')) return
-           // ⚠ Only `preventDefault` makes an element a valid drop target, so NOT calling it is
-           // what refuses a drop onto an account with no terminal — the cursor says no while the
-           // reader is still holding the row, rather than a toast saying so after they let go.
-           if (!isAccount || registration?.assignable === false) return
-           e.preventDefault()
-           setDropping(true)
-         }}
-         onDragLeave={() => setDropping(false)}
-         onDrop={onDrop}>
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle flex-wrap">
-        <div>
-          <div className="text-small text-text-primary font-medium">{heading}</div>
-          <div className="text-micro text-text-tertiary">{subheading}</div>
+    <div data-testid="account-card" data-kind={group.kind}
+         className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+
+      {/* ── Identity ────────────────────────────────────────────────────────── */}
+      <div className="px-4 py-3 border-b border-border-subtle">
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[16px] font-semibold text-text-primary">
+                {nameOf(registration, group)}
+              </span>
+              {registration?.tier && (
+                <span className="inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill
+                                 uppercase tracking-[0.4px] bg-bg-surface-2 text-text-secondary">
+                  {registration.tier}
+                </span>
+              )}
+              {registration && (
+                <span data-testid={registration.kind === 'live' ? 'live-chip' : 'demo-chip'}
+                      title={registration.kind === 'live'
+                        ? 'A LIVE account. Every action here moves real money.' : undefined}
+                      className={`inline-flex text-[10px] font-semibold px-2 py-[3px] rounded-pill
+                                  uppercase tracking-[0.4px] ${
+                        registration.kind === 'live'
+                          ? 'bg-warn-muted text-warn-text' : 'bg-bg-surface-2 text-text-tertiary'}`}>
+                  {registration.kind}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 mt-[6px] text-micro text-text-tertiary flex-wrap">
+              {isAccount && (
+                <span className="font-mono tabular-nums text-text-secondary text-small">
+                  #{group.account}
+                </span>
+              )}
+              {(group.server || registration?.server) && (
+                <span>{group.server || registration?.server}</span>
+              )}
+              {registration?.symbol_suffix
+                ? <span>symbols <span className="font-mono">{registration.symbol_suffix}</span></span>
+                : null}
+              {isBench && <span>Registered and deliberately not trading</span>}
+              {group.kind === 'unknown' && (
+                <span>These configs could not be read, so which account they trade is unknown</span>
+              )}
+            </div>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            {registration && (
+              <button
+                data-testid={`edit-account-${registration.account}`}
+                onClick={onEdit}
+                className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
+                           border border-border-default bg-bg-surface text-text-secondary
+                           hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                Edit
+              </button>
+            )}
+            {/* Refused server-side while a bot names the account; disabled here so the reason is
+                readable before the click rather than as a 409 afterwards. */}
+            {registration && (
+              <button
+                data-testid={`unregister-${registration.account}`}
+                disabled={group.bots.length > 0 || unregister.isPending}
+                title={group.bots.length > 0
+                  ? 'Move or bench the bots on this account first — removing it would leave them on '
+                    + 'an account this page can no longer describe.'
+                  : 'Forget this account. It does not touch the stored password.'}
+                onClick={() => unregister.mutate(registration.account)}
+                className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
+                           border border-border-default bg-bg-surface text-text-tertiary
+                           hover:text-neg-text hover:bg-neg-muted transition-colors
+                           disabled:opacity-30 disabled:cursor-not-allowed
+                           disabled:hover:bg-bg-surface disabled:hover:text-text-tertiary"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+            {group.stacked && stackStrategyIds.length > 1 && (
+              <button
+                data-testid="backtest-stack"
+                onClick={() => setShowStack(true)}
+                className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
+                           border border-border-default bg-bg-surface text-text-secondary
+                           hover:bg-bg-hover hover:text-text-primary transition-colors"
+              >
+                <Play size={12} /> Backtest this stack
+              </button>
+            )}
+          </div>
         </div>
 
-        {group.stacked && (
-          <span
-            data-testid="stacked-chip"
-            title="More than one bot trades this balance"
-            className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                       rounded-pill uppercase tracking-[0.4px] bg-accent-muted text-text-primary
-                       cursor-default"
-          >
-            <Layers size={9} /> Stacked · {group.bots.length}
-          </span>
-        )}
-
-        {registration?.kind === 'live' && (
-          <span data-testid="live-chip"
-                title="A LIVE account. Every action on this card moves real money."
-                className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                           rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text
-                           cursor-default">
-            Live
-          </span>
-        )}
-
-        {registration?.tier && (
-          <span className="text-micro text-text-tertiary">{registration.tier}</span>
-        )}
-
-        {/* ⚠ THREE states, and the third is the one that matters: `null` means the VPS could not
-            be asked, which is not the same as "no password". Rendering it as missing sends the
-            reader to re-enter a credential that is already there. */}
-        {registration && (
-          <span
-            data-testid="password-chip"
-            title={registration.has_password === null
-              ? 'The VPS could not be asked, so whether a password is stored here is unknown.'
-              : registration.has_password
-                ? 'An MT5 password is stored for this account on the VPS.'
-                : 'No MT5 password is stored, so a bot moved here could not log in.'}
-            className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                        rounded-pill uppercase tracking-[0.4px] cursor-default ${
-              registration.has_password === null ? 'bg-bg-surface-2 text-text-tertiary'
-                : registration.has_password ? 'bg-pos-muted text-pos-text'
-                : 'bg-warn-muted text-warn-text'}`}
-          >
-            <KeyRound size={9} />
-            {registration.has_password === null ? 'Password unknown'
-              : registration.has_password ? 'Password set' : 'No password'}
-          </span>
-        )}
-
-        {registration && !registration.assignable && (
-          <span data-testid="no-terminal"
-                title={registration.unassignable_reason}
-                className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                           rounded-pill uppercase tracking-[0.4px] bg-warn-muted text-warn-text
-                           cursor-default">
-            <AlertTriangle size={9} /> No terminal
-          </span>
-        )}
-
-        {isAccount && !registration && (
-          <span data-testid="unregistered"
-                title="No bot can be moved onto this account from here until it is registered — its
-                       server, terminal, symbol suffix and cost profile are only known to the bots
-                       already on it."
-                className="inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                           rounded-pill uppercase tracking-[0.4px] bg-bg-surface-2 text-text-tertiary
-                           cursor-default">
-            Not registered
-          </span>
-        )}
-
-        {isAccount && (
-          <span
-            data-testid="cap-chip"
-            className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
-                        rounded-pill uppercase tracking-[0.4px] cursor-default ${
-              !group.cap_agrees ? 'bg-neg-muted text-neg-text'
-                : group.risk_cap_pct === null ? 'bg-bg-surface-2 text-text-tertiary'
-                : 'bg-pos-muted text-pos-text'}`}
-          >
-            {group.risk_cap_pct === null && group.cap_agrees
-              ? <><ShieldOff size={9} /> Uncapped</>
-              : group.cap_agrees
-                ? <><ShieldCheck size={9} /> Cap {group.risk_cap_pct}%</>
-                : <><AlertTriangle size={9} /> Cap disagreement</>}
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          {registration && (
-            <button
-              data-testid={`edit-account-${registration.account}`}
-              onClick={() => setEditing(v => !v)}
-              className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
-                         border border-border-default bg-bg-surface text-text-secondary
-                         hover:bg-bg-hover hover:text-text-primary transition-colors"
-            >
-              Edit
-            </button>
+        {/* ── Readiness chips ───────────────────────────────────────────────── */}
+        <div className="flex items-center gap-2 mt-[10px] flex-wrap">
+          {group.stacked && (
+            <Chip testid="stacked-chip" tone="accent" icon={<Layers size={9} />}
+                  title="More than one bot trades this balance">
+              Stacked · {group.bots.length}
+            </Chip>
           )}
-          {/* Refused server-side while a bot names the account; disabled here so the reason is
-              readable before the click rather than as a 409 afterwards. */}
+
+          {/* ⚠ THREE states, and the third is the one that matters: `null` means the VPS could not
+              be asked, which is not the same as "no password". Rendering it as missing sends the
+              reader to re-enter a credential that is already there. */}
           {registration && (
-            <button
-              data-testid={`unregister-${registration.account}`}
-              disabled={group.bots.length > 0 || unregister.isPending}
-              title={group.bots.length > 0
-                ? 'Move or bench the bots on this account first — removing it would leave them on '
-                  + 'an account this page can no longer describe.'
-                : 'Forget this account. It does not touch the stored password.'}
-              onClick={() => unregister.mutate(registration.account)}
-              className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
-                         border border-border-default bg-bg-surface text-text-tertiary
-                         hover:text-neg-text hover:bg-neg-muted transition-colors
-                         disabled:opacity-30 disabled:cursor-not-allowed
-                         disabled:hover:bg-bg-surface disabled:hover:text-text-tertiary"
+            <Chip
+              testid="password-chip"
+              tone={registration.has_password === null ? 'muted'
+                : registration.has_password ? 'pos' : 'warn'}
+              icon={<KeyRound size={9} />}
+              title={registration.has_password === null
+                ? 'The VPS could not be asked, so whether a password is stored here is unknown.'
+                : registration.has_password
+                  ? 'An MT5 password is stored for this account on the VPS.'
+                  : 'No MT5 password is stored, so a bot moved here could not log in.'}
             >
-              <Trash2 size={12} />
-            </button>
+              {registration.has_password === null ? 'Password unknown'
+                : registration.has_password ? 'Password set' : 'No password'}
+            </Chip>
           )}
+
+          {registration && (
+            registration.assignable ? (
+              <Chip testid="terminal-chip" tone="pos" icon={<MonitorSmartphone size={9} />}
+                    title={`This account is served by ${registration.mt5_path} on the VPS.`}>
+                Terminal
+              </Chip>
+            ) : (
+              <Chip testid="no-terminal" tone="warn" icon={<AlertTriangle size={9} />}
+                    title={registration.unassignable_reason}>
+                No terminal
+              </Chip>
+            )
+          )}
+
+          {isAccount && !registration && (
+            <Chip testid="unregistered" tone="muted"
+                  title="No bot can be moved onto this account from here until it is registered — its
+                         server, terminal, symbol suffix and cost profile are only known to the bots
+                         already on it.">
+              Not registered
+            </Chip>
+          )}
+
           {isAccount && (
-            <button
-              data-testid="add-bot"
-              disabled={registration ? !registration.assignable : false}
-              title={registration && !registration.assignable
-                ? registration.unassignable_reason : undefined}
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
-                         border border-border-default bg-bg-surface text-text-secondary
-                         hover:bg-bg-hover hover:text-text-primary transition-colors
-                         disabled:opacity-30 disabled:cursor-not-allowed
-                         disabled:hover:bg-bg-surface disabled:hover:text-text-secondary"
+            <Chip
+              testid="cap-chip"
+              tone={!group.cap_agrees ? 'neg' : group.risk_cap_pct === null ? 'muted' : 'pos'}
+              icon={group.risk_cap_pct === null && group.cap_agrees ? <ShieldOff size={9} />
+                : group.cap_agrees ? <ShieldCheck size={9} /> : <AlertTriangle size={9} />}
             >
-              <Plus size={12} /> Add bot
-            </button>
-          )}
-          {group.stacked && stackStrategyIds.length > 1 && (
-            <button
-              data-testid="backtest-stack"
-              onClick={() => setShowStack(true)}
-              className="inline-flex items-center gap-[6px] px-3 py-[6px] rounded-md text-small
-                         border border-border-default bg-bg-surface text-text-secondary
-                         hover:bg-bg-hover hover:text-text-primary transition-colors"
-            >
-              <Play size={12} /> Backtest this stack
-            </button>
+              {group.risk_cap_pct === null && group.cap_agrees ? 'Uncapped'
+                : group.cap_agrees ? `Cap ${group.risk_cap_pct}%` : 'Cap disagreement'}
+            </Chip>
           )}
         </div>
       </div>
 
-      {/* ── The one thing that is genuinely configuration ───────────────────── */}
-      {isAccount && (
-        <div className="px-4 py-3 border-b border-border-subtle flex flex-col gap-2">
-          {group.magic_clash.length > 0 && (
-            /* The fact the old raw `magic` column was trying to convey, shown only when it is
-               true. Two bots on one account sharing an order tag each read the OTHER's orders as
-               their own — cancelling them, moving their stops, booking their fills. */
-            <div data-testid="magic-clash"
-                 className="text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
-              <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
-              read the other's orders as its own — cancelling them, moving their stops and booking
-              their fills. They will refuse to start until one is given a different one.
-            </div>
-          )}
+      {/* ── What is trading here ────────────────────────────────────────────── */}
+      <div className="px-4 py-[10px] border-b border-border-subtle flex items-center gap-2">
+        <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
+          {isAccount ? 'Bots on this balance' : 'Bots'}
+        </span>
+        {isAccount && (
+          <button
+            data-testid="add-bot"
+            disabled={registration ? !registration.assignable : false}
+            title={registration && !registration.assignable
+              ? registration.unassignable_reason : undefined}
+            onClick={() => setAdding(true)}
+            className="ml-auto inline-flex items-center gap-[6px] px-3 py-[5px] rounded-md text-small
+                       border border-border-default bg-bg-surface text-text-secondary
+                       hover:bg-bg-hover hover:text-text-primary transition-colors
+                       disabled:opacity-30 disabled:cursor-not-allowed
+                       disabled:hover:bg-bg-surface disabled:hover:text-text-secondary"
+          >
+            <Plus size={12} /> Add bot
+          </button>
+        )}
+      </div>
 
+      {group.magic_clash.length > 0 && (
+        /* The fact the old raw `magic` column was trying to convey, shown only when it is
+           true. Two bots on one account sharing an order tag each read the OTHER's orders as
+           their own — cancelling them, moving their stops, booking their fills. */
+        <div data-testid="magic-clash"
+             className="mx-4 my-3 text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
+          <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
+          read the other's orders as its own — cancelling them, moving their stops and booking
+          their fills. They will refuse to start until one is given a different one.
+        </div>
+      )}
+
+      {isAccount && group.bots.length === 0 ? (
+        <div data-testid="no-bots" className="px-4 py-3 text-micro text-text-tertiary">
+          No bot trades this account yet.{' '}
+          {registration?.assignable === false
+            ? 'Log a terminal into it and record that terminal on the account first.'
+            : 'Use Add bot above, or drag one here from another account.'}
+        </div>
+      ) : group.bots.length === 0 ? (
+        <div className="px-4 py-3 text-micro text-text-tertiary">Nothing here.</div>
+      ) : (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="text-micro text-text-tertiary">
+              {['Bot', 'Strategy', 'Symbol', 'Version', 'Risk / trade', 'Its cap', 'State', '']
+                .map(h => (
+                  <th key={h} className="text-left font-normal px-4 py-[6px]">{h}</th>
+                ))}
+            </tr>
+          </thead>
+          <tbody>
+            {group.bots.map(b => {
+              const status = statusByKey.get(b.key)
+              const q = versionByKey.get(b.key)
+              const running = status === 'RUNNING'
+              return (
+                <tr key={b.key}
+                    /* ⚠ A RUNNING bot is not draggable at all, matching the Move menu and the
+                       Remove button beside it: it read its config at startup, so a write cannot
+                       reach the live process and the page would show it under one account while
+                       it traded another. */
+                    draggable={!running && !b.unreadable}
+                    data-testid={`bot-row-${b.key}`}
+                    onDragStart={e => {
+                      e.dataTransfer.setData('text/bot-key', b.key)
+                      e.dataTransfer.effectAllowed = 'move'
+                    }}
+                    className={`border-t border-border-subtle text-small ${
+                      running || b.unreadable ? '' : 'cursor-grab active:cursor-grabbing'}`}>
+                  <td className="px-4 py-[7px] text-text-primary">{b.display}</td>
+                  <td className="px-4 py-[7px] text-micro font-mono text-text-tertiary">
+                    {b.strategy_package || '—'}
+                  </td>
+                  <td className="px-4 py-[7px] text-text-secondary">{b.symbol || '—'}</td>
+                  <td className="px-4 py-[7px]">
+                    <VersionPill version={q?.data} loading={q?.isPending} />
+                  </td>
+                  <td className="px-4 py-[7px] text-text-secondary">
+                    {b.risk_pct === null ? '—' : `${b.risk_pct}%`}
+                  </td>
+                  <td className="px-4 py-[7px] text-text-secondary">
+                    {b.unreadable ? 'unknown' : b.cap_pct === null ? 'uncapped' : `${b.cap_pct}%`}
+                  </td>
+                  <td className="px-4 py-[7px] text-text-secondary">
+                    {/* `undefined` is NOT stopped — the snapshot may not have answered. */}
+                    {status === undefined
+                      ? <span className="text-text-tertiary">—</span>
+                      : <BotStatusPill status={status} />}
+                  </td>
+                  <td className="px-4 py-[7px] text-right whitespace-nowrap">
+                    {!b.unreadable && (
+                      <div className="inline-flex items-center gap-2">
+                        <MoveMenu
+                          botKey={b.key}
+                          display={b.display}
+                          from={isAccount ? (group.account as number) : null}
+                          targets={targets}
+                          running={running}
+                          busy={assign.isPending}
+                          onMove={account => assign.mutate({ botKey: b.key, account })}
+                        />
+                        {isAccount && (
+                          <button
+                            data-testid={`remove-${b.key}`}
+                            disabled={assign.isPending || running}
+                            title={running
+                              ? 'Stop this bot first — it read its account at startup, so moving it '
+                                + 'now would leave the page showing one account while it traded another.'
+                              : `Take ${b.display} off account ${group.account}. It will not start `
+                                + 'again until it is on an account.'}
+                            onClick={() => assign.mutate({ botKey: b.key, account: null })}
+                            className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
+                                       text-text-tertiary hover:text-neg-text hover:bg-neg-muted
+                                       transition-colors disabled:opacity-30
+                                       disabled:cursor-not-allowed disabled:hover:bg-transparent
+                                       disabled:hover:text-text-tertiary"
+                          >
+                            <X size={10} /> Remove
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {adding && group.account !== null && (
+        <AddBotRow
+          account={group.account}
+          here={new Set(group.bots.map(b => b.key))}
+          busy={assign.isPending}
+          onPick={key => {
+            assign.mutate({ botKey: key, account: group.account }, {
+              onSuccess: () => setAdding(false),
+            })
+          }}
+          onClose={() => setAdding(false)}
+          statusByKey={statusByKey}
+        />
+      )}
+
+      {/* ── The one thing that is genuinely configuration ────────────────────── */}
+      {isAccount && (
+        <div className="px-4 py-3 border-t border-border-subtle flex flex-col gap-2">
           {!group.cap_agrees && (
             <div data-testid="cap-disagreement"
                  className="text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
@@ -494,105 +809,6 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
         </div>
       )}
 
-      {editing && registration && (
-        <AccountForm existing={registration} onClose={() => setEditing(false)} />
-      )}
-
-      {/* ── The bots on this balance ────────────────────────────────────────── */}
-      {isAccount && group.bots.length === 0 ? (
-        <div data-testid="no-bots" className="px-4 py-3 text-micro text-text-tertiary">
-          No bot trades this account yet.{' '}
-          {registration?.assignable === false
-            ? 'Log a terminal into it and record that terminal on the account first.'
-            : 'Use Add bot above to put one on it.'}
-        </div>
-      ) : (
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="text-micro text-text-tertiary">
-            {['Bot', 'Symbol', 'Version', 'Risk / trade', 'Its cap', 'State', ''].map(h => (
-              <th key={h} className="text-left font-normal px-4 py-[6px]">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {group.bots.map(b => {
-            const status = statusByKey.get(b.key)
-            const q = versionByKey.get(b.key)
-            const running = status === 'RUNNING'
-            return (
-              <tr key={b.key}
-                  /* ⚠ A RUNNING bot is not draggable at all, matching the Remove button beside
-                     it: it read its config at startup, so a write cannot reach the live process
-                     and the page would show it under one account while it traded another. */
-                  draggable={!running && !b.unreadable}
-                  data-testid={`bot-row-${b.key}`}
-                  onDragStart={e => {
-                    e.dataTransfer.setData('text/bot-key', b.key)
-                    e.dataTransfer.effectAllowed = 'move'
-                  }}
-                  className={`border-t border-border-subtle text-small ${
-                    running || b.unreadable ? '' : 'cursor-grab active:cursor-grabbing'}`}>
-                <td className="px-4 py-[7px] text-text-primary">{b.display}</td>
-                <td className="px-4 py-[7px] text-text-secondary">{b.symbol || '—'}</td>
-                <td className="px-4 py-[7px]">
-                  <VersionPill version={q?.data} loading={q?.isPending} />
-                </td>
-                <td className="px-4 py-[7px] text-text-secondary">
-                  {b.risk_pct === null ? '—' : `${b.risk_pct}%`}
-                </td>
-                <td className="px-4 py-[7px] text-text-secondary">
-                  {b.unreadable ? 'unknown' : b.cap_pct === null ? 'uncapped' : `${b.cap_pct}%`}
-                </td>
-                <td className="px-4 py-[7px] text-text-secondary">
-                  {/* `undefined` is NOT stopped — the snapshot may not have answered. */}
-                  {status === undefined
-                    ? <span className="text-text-tertiary">—</span>
-                    : <BotStatusPill status={status} />}
-                </td>
-                <td className="px-4 py-[7px] text-right">
-                  {isAccount && !b.unreadable && (
-                    <button
-                      data-testid={`remove-${b.key}`}
-                      disabled={assign.isPending || running}
-                      title={running
-                        ? 'Stop this bot first — it read its account at startup, so moving it '
-                          + 'now would leave the page showing one account while it traded another.'
-                        : `Take ${b.display} off account ${group.account}. It will not start `
-                          + 'again until it is on an account.'}
-                      onClick={() => assign.mutate({ botKey: b.key, account: null })}
-                      className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
-                                 text-text-tertiary hover:text-neg-text hover:bg-neg-muted
-                                 transition-colors disabled:opacity-30
-                                 disabled:cursor-not-allowed disabled:hover:bg-transparent
-                                 disabled:hover:text-text-tertiary"
-                    >
-                      <X size={10} /> Remove
-                    </button>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      )}
-
-      {adding && group.account !== null && (
-        <AddBotRow
-          account={group.account}
-          accounts={accounts}
-          busy={assign.isPending}
-          onPick={key => {
-            assign.mutate({ botKey: key, account: group.account }, {
-              onSuccess: () => setAdding(false),
-            })
-          }}
-          onClose={() => setAdding(false)}
-          statusByKey={statusByKey}
-        />
-      )}
-
       {showStack && (
         <StackConfigModal
           title={`Backtest account ${group.account} as a shared stack`}
@@ -610,6 +826,63 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
 }
 
 /**
+ * Move this bot somewhere else, without dragging.
+ *
+ * ⚠ **It fires the same mutation the drop and the Add bot list fire.** Drag is the fast path and
+ * this is the discoverable one — a gesture nothing on screen advertises is a feature only the
+ * person who built it knows about, and it is awkward on a trackpad.
+ *
+ * ⚠ **An unassignable account is LISTED and DISABLED, with the reason in the option itself.**
+ * Hiding it makes an account that exists look like one that does not, which is the same rule the
+ * Add bot list follows for a running bot.
+ */
+function MoveMenu({ botKey, display, from, targets, running, busy, onMove }: {
+  botKey: string
+  display: string
+  from: number | null
+  targets: MoveTarget[]
+  running: boolean
+  busy: boolean
+  onMove: (account: number | null) => void
+}) {
+  const elsewhere = targets.filter(t => t.account !== from)
+  if (elsewhere.length === 0 && from === null) return null
+
+  return (
+    <select
+      data-testid={`move-${botKey}`}
+      disabled={running || busy}
+      value=""
+      title={running
+        ? `Stop ${display} first — it read its account at startup, so a move could not reach the `
+          + 'live process.'
+        : `Move ${display} to another account.`}
+      onChange={e => {
+        const v = e.target.value
+        e.currentTarget.value = ''
+        if (!v) return
+        onMove(v === 'none' ? null : Number(v))
+      }}
+      /* ⚠ An explicit width, because a native `<select>` sizes itself to its WIDEST OPTION —
+         and an option here is a whole account identity, so the closed control rendered ~320px
+         wide to hold a string that is only ever shown in the open popup. */
+      className="w-[104px] bg-bg-base border border-border-default rounded px-2 py-[3px] text-micro
+                 text-text-secondary hover:text-text-primary transition-colors
+                 disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      <option value="">Move to…</option>
+      {elsewhere.map(t => (
+        <option key={t.account} value={t.account} disabled={!t.assignable}>
+          {t.label} #{t.account}{t.sub ? ` · ${t.sub}` : ''}
+          {t.assignable ? '' : ' — no terminal'}
+        </option>
+      ))}
+      {from !== null && <option value="none">Take off any account</option>}
+    </select>
+  )
+}
+
+/**
  * Pick a bot to put on this account.
  *
  * ⚠ **The candidates are every registered bot NOT already here**, benched or on another account,
@@ -621,17 +894,15 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
  * this list is empty, and an empty dropdown with no explanation reads as a broken control — the
  * shape this repo keeps recording as a feature nobody has driven end to end.
  */
-function AddBotRow({ account, accounts, busy, onPick, onClose, statusByKey }: {
+function AddBotRow({ account, here, busy, onPick, onClose, statusByKey }: {
   account: number
-  accounts: BotAccountGroup[]
+  here: Set<string>
   busy: boolean
   onPick: (key: string) => void
   onClose: () => void
   statusByKey: Map<string, string>
 }) {
   const { data: groups } = useBotAccounts()
-  const here = new Set(
-    accounts.find(g => g.account === account)?.bots.map(b => b.key) ?? [])
 
   const candidates = (groups ?? [])
     .flatMap(g => g.bots.map(b => ({ ...b, from: g })))
@@ -689,8 +960,8 @@ function AddBotRow({ account, accounts, busy, onPick, onClose, statusByKey }: {
       )}
 
       <div className="text-micro text-text-tertiary">
-        Adding a bot writes this account's login, server, terminal and risk cap into its config,
-        so the account stays coherent. It applies at that bot's next start.
+        Adding a bot writes this account's login, server, terminal, symbol and risk cap into its
+        config, so the account stays coherent. It applies at that bot's next start.
       </div>
     </div>
   )
@@ -705,8 +976,8 @@ function AddBotRow({ account, accounts, busy, onPick, onClose, statusByKey }: {
  * it is on here with its own explanation rather than buried in an advanced section.
  *
  * ⚠ **There is no risk cap here and there must not be one.** The cap is stored per instance
- * because a bot reads only its own config, so it is set on the card above (one write, N files) and
- * reported from what the bots actually say. A field here would be a second answer that can drift.
+ * because a bot reads only its own config, so it is set on the detail pane (one write, N files)
+ * and reported from what the bots actually say. A field here would be a second answer that drifts.
  *
  * ⚠ **The password is WRITE-ONLY.** It is never returned by any endpoint, so an existing account
  * shows whether one is stored and not what it is — the field is blank on an edit and leaving it
@@ -773,13 +1044,13 @@ function AccountForm({ existing, onClose }: {
           <input data-testid="f-server" value={server} placeholder="PUPrime-Demo"
                  onChange={e => setServer(e.target.value)} className={inputCls} />
         </Field>
-        <Field label="Name" hint="What this card is called. Display only.">
+        <Field label="Broker" hint="The name this account is listed under in the rail.">
+          <input data-testid="f-broker" value={broker} placeholder="PU Prime"
+                 onChange={e => setBroker(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Name" hint="Optional. Used instead of the broker when it is set.">
           <input data-testid="f-label" value={label} placeholder="PU Prime ECN demo"
                  onChange={e => setLabel(e.target.value)} className={inputCls} />
-        </Field>
-        <Field label="Broker" hint="Display only.">
-          <input value={broker} placeholder="PU Prime"
-                 onChange={e => setBroker(e.target.value)} className={inputCls} />
         </Field>
         <Field label="Tier" hint="The broker's own word for it. Display only.">
           <input value={tier} placeholder="ECN"
@@ -858,6 +1129,11 @@ function AccountForm({ existing, onClose }: {
         >
           {save.isPending ? 'Saving…' : existing ? 'Save account' : 'Add account'}
         </button>
+        <button onClick={onClose}
+                className="px-3 py-[5px] rounded-md text-small border border-border-default
+                           bg-bg-surface text-text-secondary hover:bg-bg-hover transition-colors">
+          Cancel
+        </button>
         <span className="text-micro text-text-tertiary">
           Committed, pushed and pulled onto the VPS. No secret goes into the repo.
         </span>
@@ -868,6 +1144,29 @@ function AccountForm({ existing, onClose }: {
 
 const inputCls = 'w-full bg-bg-base border border-border-default rounded px-2 py-[5px] '
   + 'text-small text-text-primary'
+
+/** One readiness fact. Every chip on this tab is this shape, so a new one cannot drift from the
+ *  Monitor row's pill sizing the way three hand-written ones did. */
+function Chip({ testid, tone, icon, title, children }: {
+  testid?: string
+  tone: 'pos' | 'neg' | 'warn' | 'accent' | 'muted'
+  icon?: React.ReactNode
+  title?: string
+  children: React.ReactNode
+}) {
+  const cls = tone === 'pos' ? 'bg-pos-muted text-pos-text'
+    : tone === 'neg' ? 'bg-neg-muted text-neg-text'
+    : tone === 'warn' ? 'bg-warn-muted text-warn-text'
+    : tone === 'accent' ? 'bg-accent-muted text-text-primary'
+    : 'bg-bg-surface-2 text-text-tertiary'
+  return (
+    <span data-testid={testid} title={title}
+          className={`inline-flex items-center gap-[3px] text-[10px] font-semibold px-2 py-[3px]
+                      rounded-pill uppercase tracking-[0.4px] cursor-default ${cls}`}>
+      {icon}{children}
+    </span>
+  )
+}
 
 function Field({ label, hint, children }: {
   label: string; hint: string; children: React.ReactNode
