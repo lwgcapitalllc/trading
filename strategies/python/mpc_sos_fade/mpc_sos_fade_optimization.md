@@ -2545,3 +2545,158 @@ whenever the bar size can differ.**
   overlap result makes this moot for stacking, so it is recorded rather than recommended.
 - **Costs.** Both runs are free-book, matching every baseline here. A higher timeframe holds longer
   and pays more swap, so charge before quoting a 30m figure anywhere else.
+
+---
+
+# Run 17 — 2026-08-11 — **THE BREAKEVEN EXIT IS NOT BREAKEVEN. Widening it costs 5R for every 1R it rescues.**
+
+Aaron's theory, from memory of an earlier session and worth quoting because both halves turned out
+to be half right: *"my drawdown is as big as it is because I'm compounding losses more than ten
+percent, and I attribute that to swaps I'm paying on long-hanging losing trades. Also a thirty gap
+is not enough to break even on trades for a standard account… make sure we are truly breaking even
+and not just running negative thinking we're breaking even."*
+
+`exec_be_buf_tk` is **30 ticks = $0.30**. The measured PU Prime Standard spread is **$0.32**. So the
+buffer the strategy calls breakeven is smaller than the spread on the account the live bot is
+currently on, and **~26% of all trades exit on exactly that stop.** The question is a good one.
+
+Tools: `backtest/tools/scratch_audit.py` and `backtest/tools/swap_audit.py`, both new.
+
+## The scratch cohort really does go negative
+
+155,531 M15 bars (2020-01-01 → 2026-08-03), one real replay per row, `bid_ask_fills` + swap +
+commission. A **scratch** is classified on the PRICE MOVE — an exit between 0 and 1.5× the buffer in
+the favourable direction — never on the money, because sorting by profit would put the negative ones
+in the loss bucket and return "all scratches are positive" by construction.
+
+| account | scratches | mean R | total R | net negative |
+|---|---|---|---|---|
+| free (no costs) | 42 | **+0.034** | +1.44 | 0 of 42 |
+| Standard | 41 | **−0.014** | −0.56 | **12 of 41 (29%)** |
+| Prime | 41 | −0.023 | −0.94 | 12 of 41 |
+| ECN | 41 | −0.017 | −0.71 | 12 of 41 |
+
+**Confirmed: on every account that can actually be opened, this cohort is a net loss.** Free-book
+runs report it as a small gain, which is where the false sense of "flat" came from.
+
+## 🔴 But it is the SWAP, and it is the LONGS — the spread never touches these trades
+
+The gross move per unit on a scratch is **+$0.298 to +$0.300 on every tier including the free
+control** — identical. The spread does not appear at all, and the reason is the same limit-order
+asymmetry recorded in `CLAUDE.md` → *Layered costs*: **the entry limit fills at the price it names
+and the stop fills at the price it names.** A spread changes WHICH trades happen, not what a scratch
+nets. The premise ("a 30-tick gap can't cover a 32-cent spread") is arithmetically true and
+describes a cost this strategy does not pay.
+
+What it does pay is swap, and the direction split is the finding. On Standard, where commission is
+$0.00 and bar-mode slippage is 0, `Trade.costs_usd` is **pure swap** with nothing to disentangle:
+
+| Standard scratches | n | mean R | net negative |
+|---|---|---|---|
+| **long** | 23 | **−0.052** | **12 of 23** |
+| **short** | 18 | **+0.036** | 0 of 18 |
+
+Gold charges longs (−79.60/lot/night) and PAYS shorts (+30.25). A scratch by definition **hung
+around** — it ran to TP1 and came back — so longs pay for that time and shorts are paid for it.
+**Aaron had the cause right and the cost wrong.**
+
+Scale, which is what kills the fixed-buffer idea: **one night of long swap is $0.796 per ounce,
+2.7× the entire $0.30 buffer**; a Wednesday rollover books three nights, $2.39, **eight times** the
+buffer. Across the 35 longs that paid any swap the stop would have had to move a median **$1.59** —
+**5.3× the buffer** — with a p90 of $3.98 and a worst case of $7.96.
+
+## 🔴 Widening the buffer fixes the cohort and costs five times what it rescues
+
+`exec_be_buf_tk` swept on a charged Standard book, one full replay per row:
+
+| buffer | trades | total R | scratch n | scratch R | maxDD R |
+|---|---|---|---|---|---|
+| **30 ($0.30, shipped)** | 156 | **+141.87** | 41 | −0.56 | 8.36 |
+| 60 ($0.60) | 156 | +135.70 | 44 | +0.58 | 8.29 |
+| 100 ($1.00) | 156 | +134.44 | 46 | +3.29 | 8.54 |
+| 160 ($1.60) | 156 | +114.81 | 52 | +8.56 | 7.80 |
+| 240 ($2.40) | 156 | +117.00 | 58 | +15.27 | 8.61 |
+| 400 ($4.00) | 156 | +105.97 | 67 | +30.80 | 8.48 |
+
+**The scratch problem is completely solvable — −0.56R → +30.80R — and total R falls 141.87 → 105.97
+doing it.** The exchange rate is roughly **5R lost per 1R of scratch rescued**, and it is monotonic.
+A stop further into profit protects the trades that were coming back AND stops out the trades that
+were running, and the runner is where this strategy's money is (Run 8: >100% of net in every window).
+**30 ticks is already the best value in the table.**
+
+## Why the DYNAMIC version is worse than the fixed one, not better
+
+Aaron's actual proposal was smarter than a fixed widening: move the stop at each rollover by the
+swap just charged, so a breakeven exit is truly zero. **It aims at exactly the wrong trades.** Only
+positions held OVERNIGHT pay swap, and the positions held overnight are the runners — so a
+swap-driven ratchet tightens the stop precisely on the trades the sweep above says to leave alone,
+while doing nothing at all to the half of the book that closes same-day (median nights held: **0**,
+p90 3, max 11).
+
+**Ceiling on what it could recover: +2.11R** over 6.5 years (the swap paid by the scratch cohort —
+the only trades a stage-1 ratchet can move without touching something still at risk). Against a
+run-to-run spread of **sd 15.06R**, and against an exchange rate that has cost 5R per 1R everywhere
+it has been measured. ⚠ **That +2.11R is an UPPER BOUND, not a forecast** — the same shape of cheap
+estimate got its SIGN wrong on the minimum-stop guard (+1.84R estimated, −1.84R replayed).
+**NOT BUILT. Do not build it without re-reading this row.**
+
+## The other half — "losses compounding more than 10%" is real and tiny
+
+At `exec_risk_pct = 10` a full loss should be exactly −1.000R.
+
+| account | full losses worse than −1.000R | worst | total excess |
+|---|---|---|---|
+| free | **1 of 49** | −1.98R | +0.98R |
+| Standard | 4 of 48 | −1.98R | +1.13R |
+| Prime | **44 of 44** | −2.02R | +1.71R |
+| ECN | **44 of 44** | −1.99R | +1.30R |
+
+**The −1.98R trade is a GAP through the stop** — it costs $0.00 in fees and is present on the free
+book too, so no cost model and no stop rule can recover it. That single trade is a ~20% equity hit
+and is almost certainly what Aaron noticed.
+
+🔴 **Standard's losers carry a swap CREDIT (+$71.92 mean), not a charge** — losers here die fast
+(median 2.0h, Run/time-stop section) and are short-heavy, so they never accrue swap. **The
+swap-on-losers half of the theory does not hold.** Prime and ECN put every loser past −1R purely on
+COMMISSION, which is charged whatever the stop is and which no stop move can recover.
+
+**Total excess across the whole history is 1.0–1.7R.** That is not what builds a −54.9% drawdown.
+Run 6's verdict stands: the drawdown is a losing STREAK at 10% risk, and risk % is the only lever
+that moves it.
+
+## 🔴 And the longs EARN their swap, so do not cut them
+
+The obvious reading of an 8.93R long swap bill is that longs are the problem:
+
+| side | n | gross R | swap R | net R | net R/trade |
+|---|---|---|---|---|---|
+| **long** | 70 | +73.11 | **−8.93** | +64.18 | **+0.917** |
+| **short** | 89 | +69.07 | **+2.33** | +71.40 | +0.802 |
+
+**Longs out-earn shorts per trade after paying all of it.** Any rule that shortens long holds — a
+direction-split time stop, a flat-by-close on longs only — is cutting the better side. This is the
+same result `## Deliberate deviations` records for `flat_by_close`, which inverts the long side
+entirely (+70.96R → −12.10R) to save 6.4R of swap.
+
+## Verdict
+
+**No change to the strategy.** The bleed is real, it is ~1R over 6.5 years, and every fix measured
+costs more than the bleed.
+
+✅ **The thing that actually helps is the ACCOUNT, and it needs no strategy change: switch to PU
+Prime ECN.** Worth **+9.5R** against Standard over the same window (Run: `cost_tiers.py`;
+`docs/BROKER_QUESTIONS.md`), which is five times the entire scratch problem.
+
+## What was NOT measured
+
+- **A stage-1-only swap ratchet, replayed.** Only its ceiling was computed. If it is ever built, it
+  must be a replay — the ceiling is arithmetic over a finished trade list and this file records two
+  occasions where that got the sign wrong.
+- **A direction-split buffer** (wider on longs, unchanged on shorts). The sweep moved both sides
+  together. ⚠ The prior is poor: the long scratches are the ones being rescued and the long runners
+  are the ones being cut, so both effects land on the same side.
+- **The buffer on an ECN book.** Swept on Standard, which is what the live bot trades today.
+- **Buffer values between 30 and 60.** The sweep starts at the shipped value and the first step
+  already costs 6.17R, so a finer grid would only locate a peak that is already known to be at 30.
+- **Anything below 30 ticks.** A narrower buffer moves the stop toward the entry, which is the
+  direction the wrong-side-stop-fill limitation lives in.

@@ -178,6 +178,25 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/scratch_audit.py`** + **`tools/swap_audit.py`** (new 2026-08-11) — is a "breakeven" exit
+  actually breakeven on a real account, and what does overnight swap cost. Written for Aaron's
+  theory that `exec_be_buf_tk` (30 ticks = $0.30) cannot cover a $0.32 spread; full record in
+  `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` → **Run 17**.
+  ⚠ **A scratch is classified on the PRICE MOVE, never on the money, and that is the whole design.**
+  Sorting the cohort by profit would put every negative scratch in the loss bucket and return "all
+  scratches are positive" by construction. The cohort has to be defined by what the strategy DID and
+  then measured on what it got.
+  🔴 **`Trade.costs_usd` does NOT contain the spread under `bid_ask_fills`** — that model moves the
+  FILL PRICES rather than charging a fee, so its effect is already inside `entry_price` /
+  `exit_price` and appears in no cost field. Reading `costs_usd` alone would report a scratch as
+  free. The two are printed separately for that reason.
+  ⚠ **`swap_audit.py` runs on `puprime_standard` deliberately**: $0.00 commission and 0 bar-mode
+  slippage make `costs_usd` **pure swap** with nothing to disentangle, and the swap is identical on
+  all three PU Prime tiers (measured 2026-08-08), so nothing is lost by reading it off that one.
+  ⚠ **Its "ceiling on a stop ratchet" figure is an UPPER BOUND and says so in its own output** —
+  moving a stop changes when it triggers, and this repo has two records of that arithmetic getting
+  the SIGN wrong (`bos_sweep.py`, the minimum-stop guard). If the number is small, do not build the
+  thing; if it is large, replay it.
 - **`tools/cost_tiers.py`** (new 2026-08-10) — replays one strategy under several BROKER ACCOUNT
   TIERS and prints trades / total R / delta-vs-free, one real replay per row. It exists because
   `docs/LIVE_TRADING_PIPELINE.md` → G5a answers *which PU Prime account type* with exactly that
