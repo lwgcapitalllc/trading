@@ -1101,13 +1101,32 @@ class LiveRunner:
         leave behind. It carries the same values the heartbeat writes to `bot_state.json`,
         because that file is overwritten in place: it can say the bot is blind NOW and can never
         say for how long, or that it happened at all once it recovers.
+
+        ⚠ **`account` is the account the TERMINAL just reported, not the one this bot is
+        configured for**, and it is here because of what the ledger could not say on 2026-08-12.
+        The stream is one file per bot per DAY — nothing about it is keyed by account — and only
+        `startup` named one, 2 rows out of 77. So when the terminal was logged onto a different
+        account under a running bot, every pulse for the next two hours reported the NEW account's
+        balance while the newest `startup` above them still said the old number: **reading back to
+        the last startup, which is the only way to attribute a row, labels that whole window
+        wrongly.** The single clue was the balance jumping 1,992.21 → 9,996.99 mid-file, which is
+        an inference from a number rather than a record.
+
+        `_check_account_identity` now HALTS on that disagreement, so it can last at most one poll —
+        but a halt stops it happening and does not make the file able to DESCRIBE it, and the rows
+        written before the halt would still be silently mislabelled. **A record that cannot say
+        which account it is about is not made correct by a guard that makes it rare.**
+
+        ⚠ It is the OBSERVED account deliberately, because it is the one every other field in this
+        row belongs to — the balance, the position, the bridge state. `None` = the link could not
+        be asked, never a claim that it matched.
         """
         now = time.time()
         if now - self._last_pulse_at < _PULSE_SECONDS:
             return
         self._last_pulse_at = now
         self.ledger.pulse(
-            link=bool(link_up), balance=balance,
+            link=bool(link_up), balance=balance, account=self._observed_account,
             bridge_state=self.bridge.state.value if self.bridge else None,
             position=bool(getattr(self.bridge, "_pos_ticket", 0)) if self.bridge else None,
             last_bar=str(self.feed.last_bar_time) if self.feed and self.feed.last_bar_time

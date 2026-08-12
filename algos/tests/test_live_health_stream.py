@@ -243,6 +243,45 @@ def test_a_blind_bot_still_pulses_and_says_it_is_blind(tmp_path, monkeypatch):
     assert beat["balance"] is None
 
 
+def test_every_pulse_names_the_account_its_other_fields_belong_to(tmp_path, monkeypatch):
+    """🔴 The gap the 2026-08-12 account move left in the record.
+
+    The health stream is one file per bot per DAY — nothing about it is keyed by account — and
+    only `startup` named one, 2 rows out of 77 that day. When the terminal was logged onto a
+    different account under a running bot, every pulse for the next two hours reported the NEW
+    account's balance while the newest `startup` above them still said the OLD number. Reading
+    back to the last startup is the only way to attribute a row, and for that whole window it
+    gives the wrong answer; the single clue was the balance jumping five-fold mid-file, which is
+    an inference rather than a record.
+
+    `_check_account_identity` halts on that disagreement now, so it can last at most one poll —
+    but a guard that makes a thing RARE does not make an unlabelled record CORRECT, and the rows
+    written before the halt would still be mislabelled.
+    """
+    cfg, r = _pulse_ready(tmp_path, monkeypatch)
+    r._observed_account = 700152905                 # what the terminal just said
+
+    r._maybe_pulse(link_up=True, balance=9996.99)
+
+    beat = [x for x in _health(cfg) if x["kind"] == "pulse"][0]
+    assert beat["account"] == 700152905
+    assert beat["balance"] == 9996.99, "the account named is the one this balance belongs to"
+
+
+def test_a_pulse_that_could_not_ask_reports_no_account_rather_than_the_configured_one(
+        tmp_path, monkeypatch):
+    """The blind case. Falling back to `cfg.account` here would write the bot's BELIEF into a
+    record whose whole job is saying what was OBSERVED — and it would do it at exactly the moment
+    the belief is least likely to be checkable."""
+    cfg, r = _pulse_ready(tmp_path, monkeypatch)
+    r._observed_account = None
+
+    r._maybe_pulse(link_up=False, balance=None)
+
+    beat = [x for x in _health(cfg) if x["kind"] == "pulse"][0]
+    assert beat["account"] is None
+
+
 # ── the text log rolls by day ────────────────────────────────────────────────
 def test_the_text_log_rolls_onto_a_new_file_at_midnight(tmp_path):
     """A bot runs for months without restarting, so the roll has to happen under it. It works by
