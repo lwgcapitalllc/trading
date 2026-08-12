@@ -1,0 +1,30 @@
+2026-08-12 14:10:47,005 [WARNING] Could not read the account balance to re-anchor equity flat between trades; the strategy keeps its own (1992.21). Sizing may be refused until this clears.
+2026-08-12 14:10:57,159 [INFO] Equity re-anchored to the account flat between trades: 1,992.21 → 9,996.99
+2026-08-12 14:14:58,151 [ERROR] Config changed in ways that CANNOT be applied to a running bot: account_profile: 'puprime_standard' → 'puprime_ecn', symbol: 'XAUUSD.s' → 'XAUUSD.p', account: 700107749 → 700152905, symbol: 'XAUUSD.s' → 'XAUUSD.p'. Still running the settings loaded at startup. Restart the bot to take them (the version pin and the engine warmup are re-checked on restart).
+2026-08-12 16:12:37,486 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash e2eaa05de60f | commit 12821b7 | frozen | LIVE
+2026-08-12 16:12:37,506 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-10T15:04:07+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-12 16:12:38,085 [INFO] Connected | #700152905 | $9,996.99 | PUPrime-Demo
+2026-08-12 16:12:38,093 [INFO] MT5 connection lock released
+2026-08-12 16:12:38,661 [INFO] Sizing against account balance $9,996.99
+2026-08-12 16:12:38,694 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-12 16:12:46,922 [INFO] Warmed 5000 bars (2026-05-28 00:00:00+00:00 → 2026-08-12 15:45:00+00:00) in 6.4s
+2026-08-12 16:12:46,924 [INFO] Equity re-anchored to the account after warm-up: 19,900.22 → 9,996.99
+2026-08-12 16:12:47,580 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-12 16:29:02,674 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash e2eaa05de60f | commit b653fbf | frozen | LIVE
+2026-08-12 16:29:02,677 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-12T16:12:37+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-12 16:29:03,303 [INFO] Connected | #700152905 | $9,996.99 | PUPrime-Demo
+2026-08-12 16:29:03,305 [INFO] MT5 connection lock released
+2026-08-12 16:29:03,683 [INFO] Sizing against account balance $9,996.99
+2026-08-12 16:29:03,684 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-12 16:29:10,244 [INFO] Warmed 5000 bars (2026-05-28 00:15:00+00:00 → 2026-08-12 16:00:00+00:00) in 6.3s
+2026-08-12 16:29:10,247 [INFO] Equity re-anchored to the account after warm-up: 19,900.22 → 9,996.99
+2026-08-12 16:29:11,280 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
+2026-08-12 16:40:52,825 [INFO] MPC SOS Fade | MpcSosFadeStrategy v0 | hash e2eaa05de60f | commit 4365da8 | frozen | LIVE
+2026-08-12 16:40:52,855 [WARNING] The previous run of this bot ended WITHOUT a shutdown record — its last lifecycle line was 'startup' at 2026-08-12T16:29:02+00:00. It was killed, it crashed, or the box went down. Nothing else records that.
+2026-08-12 16:40:53,432 [INFO] Connected | #700152905 | $9,996.99 | PUPrime-Demo
+2026-08-12 16:40:53,450 [INFO] MT5 connection lock released
+2026-08-12 16:40:53,778 [INFO] Sizing against account balance $9,996.99
+2026-08-12 16:40:53,778 [INFO] Account risk cap: 10.0% of the live balance, across every bot on this account (this bot risks 10.0% per trade).
+2026-08-12 16:41:00,952 [INFO] Warmed 5000 bars (2026-05-28 00:30:00+00:00 → 2026-08-12 16:15:00+00:00) in 7.0s
+2026-08-12 16:41:00,959 [INFO] Equity re-anchored to the account after warm-up: 19,900.22 → 9,996.99
+2026-08-12 16:41:01,947 [INFO] Watching for closed M15 bars (poll 10s). Ctrl-C to stop.
