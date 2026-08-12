@@ -521,3 +521,89 @@ test('an account nobody registered still renders, with the gap named', async ({ 
   await expect(page.getByTestId('unregistered')).toBeVisible()
   await expect(page.getByTestId('password-chip')).toHaveCount(0)
 })
+
+/**
+ * Drag a bot's row onto another account's card.
+ *
+ * ⚠ **It fires the SAME mutation Add bot fires**, so what is checked here is the GESTURE reaching
+ * that mutation with the right account — not a second write path, which is exactly what this must
+ * never grow into.
+ */
+async function dragBotOnto(page: Page, botKey: string, cardIndex: number) {
+  // HTML5 drag-and-drop is dispatched by hand rather than with `dragTo`: Playwright's helper is
+  // unreliable across the mouse-move heuristics, and what this check is about is the DATA the drop
+  // carries, which the manual events model exactly.
+  await page.evaluate(({ botKey, cardIndex }) => {
+    const row = document.querySelector(`[data-testid="bot-row-${botKey}"]`)!
+    const card = document.querySelectorAll('[data-testid="account-card"]')[cardIndex]!
+    const dt = new DataTransfer()
+    row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
+    card.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
+    card.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true }))
+  }, { botKey, cardIndex })
+}
+
+test('dragging a bot onto another account moves it there', async ({ page }) => {
+  // MUTATION: drop the `onDrop` handler from the card → no request is made and this goes red.
+  const OTHER = 700152905
+  let moved: { url: string; body: Record<string, unknown> } | null = null
+
+  await mock(page,
+    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)] })],
+    [reg({ account: ACCOUNT }), reg({ account: OTHER, label: 'ECN' })])
+  await page.route('**/api/bots/*/account', async route => {
+    moved = { url: route.request().url(), body: route.request().postDataJSON() }
+    return route.fulfill({
+      json: { status: 'ok', changed: true, bot: 'mpc_bleg', account: OTHER,
+              restart_required: true, notes: [] },
+    })
+  })
+
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('account-card')).toHaveCount(2)
+  await dragBotOnto(page, 'mpc_bleg', 1)
+
+  await expect.poll(() => moved).not.toBeNull()
+  expect(moved!.url).toContain('/bots/mpc_bleg/account')
+  expect(moved!.body.account).toBe(OTHER)
+})
+
+test('a RUNNING bot cannot be dragged at all', async ({ page }) => {
+  // MUTATION: make `draggable` unconditional → the attribute reads "true" and this goes red.
+  //
+  // It read its config at startup, so a write cannot reach the live process — the page would show
+  // it under one account while it went on trading another. Same guard as the Remove button, and
+  // the backend refuses it with a 409 regardless; this is it stated before the gesture.
+  await mock(page,
+    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })], [reg()])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('bot-row-mpc_sos_fade')).toHaveAttribute('draggable', 'false')
+})
+
+test('an account with no terminal refuses the drop rather than reporting it afterwards',
+  async ({ page }) => {
+    // MUTATION: drop the `registration?.assignable === false` early return in onDragOver → the
+    // card highlights and this goes red.
+    //
+    // ⚠ Only `preventDefault` on dragover makes an element a valid drop target, so declining to
+    // call it IS the refusal — the cursor says no while the row is still being held. Asserting the
+    // highlight is what makes that observable: `data-dropping` is set in the same handler.
+    const OTHER = 700152905
+    await mock(page,
+      [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, null)] })],
+      [reg({ account: ACCOUNT }),
+       reg({ account: OTHER, mt5_path: '', assignable: false,
+             unassignable_reason: 'no terminal on the VPS logged into it' })])
+
+    await page.goto('/bots?tab=accounts')
+    await page.evaluate(() => {
+      const row = document.querySelector('[data-testid="bot-row-mpc_bleg"]')!
+      const card = document.querySelectorAll('[data-testid="account-card"]')[1]!
+      const dt = new DataTransfer()
+      row.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }))
+      card.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true }))
+    })
+
+    const cards = page.getByTestId('account-card')
+    await expect(cards.nth(1)).not.toHaveAttribute('data-dropping', 'true')
+  })

@@ -208,12 +208,48 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
     ? [registration && `#${group.account}`, group.server || registration?.server,
        registration?.symbol_suffix ? `symbol${registration.symbol_suffix}` : null]
         .filter(Boolean).join(' · ')
-    : isBench ? 'Registered and deliberately not trading — add one to an account to arm it'
+    : isBench ? 'Registered and deliberately not trading — drag one onto an account, or use Add bot, to arm it'
     : 'These configs could not be read, so which account they trade is unknown'
 
+  // ── Drag and drop ─────────────────────────────────────────────────────────
+  //
+  // 🔴 **A drop fires the SAME mutation the Add bot list fires, deliberately.** It is a second
+  // GESTURE for one action, never a second path: a private write here would be a second place for
+  // the four-field move to drift out of step with `assign_plan`.
+  //
+  // ⚠ **There is no staged "pending moves, then hit Deploy" state and there must not be one.**
+  // That would be a stored intention able to disagree with what the bots are actually configured
+  // to do — the exact shape this tab exists to avoid, and the reason the grouping is derived
+  // rather than stored. A drop writes, commits, pushes and pulls, and the toast still says a
+  // restart is needed.
+  const [dropping, setDropping] = useState(false)
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setDropping(false)
+    const key = e.dataTransfer.getData('text/bot-key')
+    if (!key || group.account === null) return
+    if (group.bots.some(b => b.key === key)) return          // already here — a no-op deploy
+    if (statusByKey.get(key) === 'RUNNING') return           // refused server-side too
+    assign.mutate({ botKey: key, account: group.account })
+  }
+
   return (
-    <div className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden"
-         data-testid="account-card" data-kind={group.kind}>
+    <div className={`bg-bg-surface border rounded-lg overflow-hidden transition-colors ${
+           dropping ? 'border-accent' : 'border-border-subtle'}`}
+         data-testid="account-card" data-kind={group.kind}
+         data-dropping={dropping ? 'true' : undefined}
+         onDragOver={e => {
+           if (!e.dataTransfer.types.includes('text/bot-key')) return
+           // ⚠ Only `preventDefault` makes an element a valid drop target, so NOT calling it is
+           // what refuses a drop onto an account with no terminal — the cursor says no while the
+           // reader is still holding the row, rather than a toast saying so after they let go.
+           if (!isAccount || registration?.assignable === false) return
+           e.preventDefault()
+           setDropping(true)
+         }}
+         onDragLeave={() => setDropping(false)}
+         onDrop={onDrop}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle flex-wrap">
         <div>
@@ -485,7 +521,18 @@ function AccountCard({ group, registration, accounts, statusByKey, versionByKey 
             const q = versionByKey.get(b.key)
             const running = status === 'RUNNING'
             return (
-              <tr key={b.key} className="border-t border-border-subtle text-small">
+              <tr key={b.key}
+                  /* ⚠ A RUNNING bot is not draggable at all, matching the Remove button beside
+                     it: it read its config at startup, so a write cannot reach the live process
+                     and the page would show it under one account while it traded another. */
+                  draggable={!running && !b.unreadable}
+                  data-testid={`bot-row-${b.key}`}
+                  onDragStart={e => {
+                    e.dataTransfer.setData('text/bot-key', b.key)
+                    e.dataTransfer.effectAllowed = 'move'
+                  }}
+                  className={`border-t border-border-subtle text-small ${
+                    running || b.unreadable ? '' : 'cursor-grab active:cursor-grabbing'}`}>
                 <td className="px-4 py-[7px] text-text-primary">{b.display}</td>
                 <td className="px-4 py-[7px] text-text-secondary">{b.symbol || '—'}</td>
                 <td className="px-4 py-[7px]">
