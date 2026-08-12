@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, KeyRound, Layers, MonitorSmartphone, Play, Plus, ShieldCheck, ShieldOff,
-  Trash2, X,
+  AlertTriangle, GripVertical, KeyRound, Layers, MonitorSmartphone, Play, Plus, ShieldCheck,
+  ShieldOff, SlidersHorizontal, Trash2, X,
 } from 'lucide-react'
 import {
   useBotAccounts, useBotSnapshot, useBotVersions, useSetAccountRiskCap, useAssignBotAccount,
@@ -14,6 +14,57 @@ import { VersionPill } from '@/components/VersionPill'
 import { BotStatusPill } from './BotStatusPill'
 import type { BotAccountGroup, BotAccountRegistration, BotDeployedVersion } from '@/types'
 import type { UseQueryResult } from '@tanstack/react-query'
+
+/**
+ * The height that reaches the bottom of the page from wherever this pane starts.
+ *
+ * ⚠ **MEASURED, never a `calc()` off assumed chrome.** `100vh - 148px` is right for the top bar,
+ * the page padding and the tab row — and wrong the moment anything else is above it, which really
+ * happens: the VPS-failure banner appears on a poll, and while it is up a hardcoded height runs the
+ * pane's bottom edge off the screen. The measurement costs one `getBoundingClientRect` per render
+ * and cannot be wrong about what is actually above it.
+ */
+function usePaneHeight() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [h, setH] = useState<number | null>(null)
+
+  // No dependency array on purpose: a banner appearing above this pane moves its top without any
+  // state here changing, so the measurement has to run on every render. The setState is guarded on
+  // a real difference, so it converges after one pass rather than looping.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      const next = Math.max(420, window.innerHeight - el.getBoundingClientRect().top - 22)
+      setH(prev => (prev === null || Math.abs(prev - next) > 1 ? next : prev))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  })
+
+  return [ref, h] as const
+}
+
+/**
+ * How many broker accounts this tab lists — the number on the tab chip.
+ *
+ * ⚠ **ONE definition, exported, so the chip and the rail cannot disagree.** It counts registered
+ * accounts plus any account a bot names that nobody registered, which is exactly the set the rail
+ * draws as accounts; the bench and the unreadable-configs rows are states, not accounts, and are
+ * deliberately not in it.
+ *
+ * `undefined` while either query is unanswered — a chip reading `0` on a page that has not loaded
+ * says the fleet has no accounts, which is the one answer that is never true here.
+ */
+export function useAccountCount(): number | undefined {
+  const { data: groups } = useBotAccounts()
+  const { data: registry } = useRegisteredAccounts()
+  if (!registry || !groups) return undefined
+  const known = new Set(registry.map(a => a.account))
+  return registry.length + groups.filter(
+    g => g.kind === 'account' && g.account !== null && !known.has(g.account)).length
+}
 
 /**
  * The shared-account view: which bots trade one balance, and the one ceiling over it.
@@ -49,6 +100,7 @@ export function AccountsTab() {
   const { data: snapshot } = useBotSnapshot()
   const [params, setParams] = useSearchParams()
   const [form, setForm] = useState<'add' | 'edit' | null>(null)
+  const [shellRef, paneH] = usePaneHeight()
 
   const allKeys = useMemo(
     () => (groups ?? []).flatMap(g => g.bots.map(b => b.key)),
@@ -129,6 +181,17 @@ export function AccountsTab() {
     setForm(null)
   }
 
+  // ⚠ **This tab answers WHICH ACCOUNT a bot trades; Configure answers HOW it trades.** They are
+  // two different writes — one rewrites the login, server, terminal, symbol and cap together, the
+  // other edits a runtime parameter — so they are two tabs, and this link is what makes that read
+  // as one journey rather than as two places you have to know about.
+  const configure = (botKey: string) => {
+    const next = new URLSearchParams(params)
+    next.set('tab', 'configure')
+    next.set('bot', botKey)
+    setParams(next, { replace: true })
+  }
+
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-start gap-3">
@@ -142,26 +205,35 @@ export function AccountsTab() {
   }
 
   return (
-    <div className="flex items-start gap-4">
+    // ⚠ **Both panes are the HEIGHT OF THE PAGE and each scrolls inside itself.** Taking exactly
+    // the space left below this pane's own top is what makes the two start and end on the same
+    // line however long either list gets — a pane sized to its own content leaves the rail
+    // floating above a tall detail, or the reverse, which is what "kind of not aligned" looked
+    // like from the screen. The height is MEASURED; see `usePaneHeight` for why it is not a
+    // `calc()`.
+    <div ref={shellRef}
+         style={paneH ? { height: paneH } : undefined}
+         className="flex items-stretch gap-4 min-h-[420px]">
       {/* ── Rail: the only thing that grows ──────────────────────────────────── */}
-      <div className="w-[238px] shrink-0 sticky top-0">
+      <div className="w-[248px] shrink-0 h-full">
         <div className="bg-bg-surface border border-border-subtle rounded-lg p-[6px]
-                        flex flex-col max-h-[calc(100vh-150px)]">
+                        flex flex-col h-full">
           {/* ⚠ **Add account is ABOVE the list and the list scrolls under it, not the page.**
               Below the list it was already 10px off the bottom of a 940px viewport with five
               accounts registered — so the one control that makes this tab work would have been
               the first thing to disappear as the fleet grew, which is the exact failure the
               rebuild was for. */}
-          <div className="flex items-center gap-2 px-[10px] pt-[6px] pb-[8px] shrink-0">
-            <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
-              Accounts
-            </p>
-            <span className="ml-auto text-[10px] text-text-tertiary">{targets.length}</span>
-          </div>
+          {/* The count lives on the TAB CHIP, not here — see `useAccountCount`. A number in both
+              places is two claims about one set, and the tab is where it is readable without
+              opening the tab. */}
+          <p className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text
+                        px-[10px] pt-[6px] pb-[8px] shrink-0">
+            Accounts
+          </p>
           <div className="px-[4px] pb-[8px] shrink-0">
             <AddAccountButton onClick={() => setForm('add')} full />
           </div>
-          <div className="flex flex-col gap-[2px] overflow-y-auto">
+          <div className="flex flex-col gap-[2px] overflow-y-auto flex-1">
             {entries.map(({ reg, group }) => (
               <RailRow
                 key={idOf(group)}
@@ -174,13 +246,10 @@ export function AccountsTab() {
             ))}
           </div>
         </div>
-        <p className="text-[10px] text-text-tertiary leading-[1.5] mt-[8px] px-[4px]">
-          Drag a bot from the panel onto an account here to move it, or use its Move menu.
-        </p>
       </div>
 
-      {/* ── Detail: one account, fixed height ────────────────────────────────── */}
-      <div className="flex-1 min-w-0">
+      {/* ── Detail: one account, the same height as the rail ─────────────────── */}
+      <div className="flex-1 min-w-0 h-full">
         {form === 'add' ? (
           <AccountForm onClose={() => setForm(null)} />
         ) : form === 'edit' && selected.reg ? (
@@ -194,6 +263,7 @@ export function AccountsTab() {
             statusByKey={statusByKey}
             versionByKey={versionByKey}
             onEdit={() => setForm('edit')}
+            onConfigure={configure}
           />
         )}
       </div>
@@ -378,7 +448,9 @@ type MoveTarget = {
   reason: string
 }
 
-function AccountDetail({ group, registration, targets, statusByKey, versionByKey, onEdit }: {
+function AccountDetail({
+  group, registration, targets, statusByKey, versionByKey, onEdit, onConfigure,
+}: {
   group: BotAccountGroup
   /** The registry row, when this account has one. Absent = a legacy account a bot names. */
   registration?: BotAccountRegistration
@@ -386,6 +458,8 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
   statusByKey: Map<string, string>
   versionByKey: Map<string, UseQueryResult<BotDeployedVersion> | undefined>
   onEdit: () => void
+  /** Jump to the Configure tab for one bot — this tab decides WHICH account, that one decides HOW. */
+  onConfigure: (botKey: string) => void
 }) {
   const setCap = useSetAccountRiskCap()
   const assign = useAssignBotAccount()
@@ -424,15 +498,19 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
   }
 
   return (
+    // ⚠ **`h-full` + one scrolling body, not a card that grows.** The header stays put while the
+    // bot list scrolls under it, so the account you are looking at is never scrolled off the thing
+    // you are reading about — and the card's bottom edge lines up with the rail's.
     <div data-testid="account-card" data-kind={group.kind}
-         className="bg-bg-surface border border-border-subtle rounded-lg overflow-hidden">
+         className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col
+                    overflow-hidden">
 
       {/* ── Identity ────────────────────────────────────────────────────────── */}
-      <div className="px-4 py-3 border-b border-border-subtle">
+      <div className="px-5 pt-4 pb-[14px] border-b border-border-subtle shrink-0">
         <div className="flex items-start gap-3 flex-wrap">
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[16px] font-semibold text-text-primary">
+            <div className="flex items-center gap-[10px] flex-wrap">
+              <span className="text-[19px] font-semibold text-text-primary leading-none tracking-[-0.2px]">
                 {nameOf(registration, group)}
               </span>
               {registration?.tier && (
@@ -454,9 +532,14 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
               )}
             </div>
 
-            <div className="flex items-center gap-2 mt-[6px] text-micro text-text-tertiary flex-wrap">
+            {/* The identity line, in the order it is read: number, then where it lives, then how
+                it quotes. Separated by hairlines rather than by spacing, so the three facts do not
+                run into one string. */}
+            <div className="flex items-center gap-[10px] mt-[9px] text-micro text-text-tertiary flex-wrap
+                            [&>span+span]:before:content-['·'] [&>span+span]:before:mr-[10px]
+                            [&>span+span]:before:text-border-default">
               {isAccount && (
-                <span className="font-mono tabular-nums text-text-secondary text-small">
+                <span className="font-mono tabular-nums text-[13px] text-text-secondary tracking-[0.3px]">
                   #{group.account}
                 </span>
               )}
@@ -464,7 +547,7 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
                 <span>{group.server || registration?.server}</span>
               )}
               {registration?.symbol_suffix
-                ? <span>symbols <span className="font-mono">{registration.symbol_suffix}</span></span>
+                ? <span>symbols <span className="font-mono text-text-secondary">{registration.symbol_suffix}</span></span>
                 : null}
               {isBench && <span>Registered and deliberately not trading</span>}
               {group.kind === 'unknown' && (
@@ -585,11 +668,19 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
         </div>
       </div>
 
+      {/* ── Body: everything under the header scrolls, so the identity stays put ── */}
+      <div className="flex-1 overflow-y-auto">
+
       {/* ── What is trading here ────────────────────────────────────────────── */}
-      <div className="px-4 py-[10px] border-b border-border-subtle flex items-center gap-2">
+      <div className="px-5 py-[11px] border-b border-border-subtle flex items-center gap-[10px]">
         <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
           {isAccount ? 'Bots on this balance' : 'Bots'}
         </span>
+        {group.bots.length > 0 && (
+          <span className="text-[10px] font-mono tabular-nums text-text-tertiary">
+            {group.bots.length}
+          </span>
+        )}
         {isAccount && (
           <button
             data-testid="add-bot"
@@ -613,7 +704,7 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
            true. Two bots on one account sharing an order tag each read the OTHER's orders as
            their own — cancelling them, moving their stops, booking their fills. */
         <div data-testid="magic-clash"
-             className="mx-4 my-3 text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
+             className="mx-5 my-3 text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
           <strong>{group.magic_clash.join(' and ')}</strong> share an order tag, so each would
           read the other's orders as its own — cancelling them, moving their stops and booking
           their fills. They will refuse to start until one is given a different one.
@@ -621,21 +712,26 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
       )}
 
       {isAccount && group.bots.length === 0 ? (
-        <div data-testid="no-bots" className="px-4 py-3 text-micro text-text-tertiary">
+        <div data-testid="no-bots" className="px-5 py-4 text-micro text-text-tertiary">
           No bot trades this account yet.{' '}
           {registration?.assignable === false
             ? 'Log a terminal into it and record that terminal on the account first.'
             : 'Use Add bot above, or drag one here from another account.'}
         </div>
       ) : group.bots.length === 0 ? (
-        <div className="px-4 py-3 text-micro text-text-tertiary">Nothing here.</div>
+        <div className="px-5 py-4 text-micro text-text-tertiary">Nothing here.</div>
       ) : (
         <table className="w-full border-collapse">
           <thead>
-            <tr className="text-micro text-text-tertiary">
-              {['Bot', 'Strategy', 'Symbol', 'Version', 'Risk / trade', 'Its cap', 'State', '']
-                .map(h => (
-                  <th key={h} className="text-left font-normal px-4 py-[6px]">{h}</th>
+            <tr>
+              {['', 'Bot', 'Strategy', 'Symbol', 'Version', 'Risk / trade', 'Its cap', 'State', '']
+                .map((h, i) => (
+                  <th key={h || `c${i}`}
+                      className="text-left text-[10px] font-semibold uppercase tracking-[0.7px]
+                                 text-text-tertiary px-3 py-[8px] bg-bg-surface-2/50
+                                 border-b border-border-subtle whitespace-nowrap first:pl-5 last:pr-5">
+                    {h}
+                  </th>
                 ))}
             </tr>
           </thead>
@@ -644,43 +740,82 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
               const status = statusByKey.get(b.key)
               const q = versionByKey.get(b.key)
               const running = status === 'RUNNING'
+              const movable = !running && !b.unreadable
               return (
                 <tr key={b.key}
                     /* ⚠ A RUNNING bot is not draggable at all, matching the Move menu and the
                        Remove button beside it: it read its config at startup, so a write cannot
                        reach the live process and the page would show it under one account while
                        it traded another. */
-                    draggable={!running && !b.unreadable}
+                    draggable={movable}
                     data-testid={`bot-row-${b.key}`}
                     onDragStart={e => {
                       e.dataTransfer.setData('text/bot-key', b.key)
                       e.dataTransfer.effectAllowed = 'move'
                     }}
-                    className={`border-t border-border-subtle text-small ${
-                      running || b.unreadable ? '' : 'cursor-grab active:cursor-grabbing'}`}>
-                  <td className="px-4 py-[7px] text-text-primary">{b.display}</td>
-                  <td className="px-4 py-[7px] text-micro font-mono text-text-tertiary">
+                    className={`border-b border-border-subtle last:border-0 text-small
+                                hover:bg-bg-hover/40 transition-colors duration-[80ms] ${
+                      movable ? 'cursor-grab active:cursor-grabbing' : ''}`}>
+                  {/* ⚠ **The grip is the only thing on screen that SAYS the row can be dragged.**
+                      A `draggable` attribute is invisible — the gesture existed for a day with
+                      nothing advertising it but a sentence under the rail, which read as an
+                      instruction for a feature nobody could find. It is a marker, not a handle:
+                      the whole row is the drag source, so grabbing anywhere still works. */}
+                  <td className="pl-5 pr-1 py-[9px] w-[22px]"
+                      title={movable
+                        ? `Drag ${b.display} onto an account in the list on the left to move it. `
+                          + 'Or use the Move menu on this row.'
+                        : running
+                          ? `Stop ${b.display} first — a running bot cannot be moved.`
+                          : undefined}>
+                    <GripVertical
+                      size={13}
+                      aria-hidden
+                      data-testid={movable ? `grip-${b.key}` : undefined}
+                      className={movable ? 'text-text-tertiary/60' : 'text-text-tertiary/20'}
+                    />
+                  </td>
+                  <td className="px-3 py-[9px] text-text-primary font-medium">
+                    {b.display}
+                    {movable && (
+                      <span className="sr-only"> — drag onto an account in the list to move it</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-[9px] text-micro font-mono text-text-tertiary">
                     {b.strategy_package || '—'}
                   </td>
-                  <td className="px-4 py-[7px] text-text-secondary">{b.symbol || '—'}</td>
-                  <td className="px-4 py-[7px]">
+                  <td className="px-3 py-[9px] text-text-secondary whitespace-nowrap">{b.symbol || '—'}</td>
+                  <td className="px-3 py-[9px]">
                     <VersionPill version={q?.data} loading={q?.isPending} />
                   </td>
-                  <td className="px-4 py-[7px] text-text-secondary">
+                  <td className="px-3 py-[9px] text-text-secondary font-mono tabular-nums">
                     {b.risk_pct === null ? '—' : `${b.risk_pct}%`}
                   </td>
-                  <td className="px-4 py-[7px] text-text-secondary">
+                  <td className="px-3 py-[9px] text-text-secondary font-mono tabular-nums">
                     {b.unreadable ? 'unknown' : b.cap_pct === null ? 'uncapped' : `${b.cap_pct}%`}
                   </td>
-                  <td className="px-4 py-[7px] text-text-secondary">
+                  <td className="px-3 py-[9px] text-text-secondary">
                     {/* `undefined` is NOT stopped — the snapshot may not have answered. */}
                     {status === undefined
                       ? <span className="text-text-tertiary">—</span>
                       : <BotStatusPill status={status} />}
                   </td>
-                  <td className="px-4 py-[7px] text-right whitespace-nowrap">
+                  <td className="pl-3 pr-5 py-[9px] text-right whitespace-nowrap">
                     {!b.unreadable && (
-                      <div className="inline-flex items-center gap-2">
+                      <div className="inline-flex items-center gap-[6px]">
+                        {/* Answers "what is Configure for" from the row it applies to: this tab
+                            decides WHICH account, that one decides how the bot trades on it. */}
+                        <button
+                          data-testid={`configure-${b.key}`}
+                          onClick={() => onConfigure(b.key)}
+                          title={`Open ${b.display} on the Configure tab — its risk, its parameters `
+                            + 'and the version it runs. This tab only decides which account it is on.'}
+                          className="inline-flex items-center gap-[4px] px-2 py-[3px] rounded text-micro
+                                     text-text-tertiary hover:text-text-primary hover:bg-bg-hover
+                                     transition-colors"
+                        >
+                          <SlidersHorizontal size={10} /> Configure
+                        </button>
                         <MoveMenu
                           botKey={b.key}
                           display={b.display}
@@ -734,9 +869,20 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
         />
       )}
 
+      </div>{/* ── end of the scrolling body ─────────────────────────────────── */}
+
       {/* ── The one thing that is genuinely configuration ────────────────────── */}
       {isAccount && (
-        <div className="px-4 py-3 border-t border-border-subtle flex flex-col gap-2">
+        <div className="px-5 py-4 border-t border-border-subtle flex flex-col gap-[10px]">
+          <div className="flex items-center gap-[10px]">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.8px] text-gold-text">
+              Account risk cap
+            </span>
+            <span className="text-micro text-text-tertiary">
+              the ceiling every bot on this balance sizes under
+            </span>
+          </div>
+
           {!group.cap_agrees && (
             <div data-testid="cap-disagreement"
                  className="text-micro text-neg-text bg-neg-muted rounded px-2 py-[6px]">
@@ -754,9 +900,8 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
             </div>
           )}
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-micro text-text-secondary">Account risk cap</span>
-
+          <div className="flex items-center gap-3 flex-wrap bg-bg-sunken border border-border-subtle
+                          rounded-md px-3 py-[10px]">
             <label className="flex items-center gap-[6px] text-micro text-text-secondary cursor-pointer">
               <input
                 type="checkbox"
@@ -808,6 +953,7 @@ function AccountDetail({ group, registration, targets, statusByKey, versionByKey
           )}
         </div>
       )}
+
 
       {showStack && (
         <StackConfigModal
@@ -1024,10 +1170,13 @@ function AccountForm({ existing, onClose }: {
   }
 
   return (
+    // Same shape as the detail pane it replaces — full height, one scrolling body — so switching
+    // between reading an account and editing one does not resize the page under the reader.
     <div data-testid="account-form"
-         className="bg-bg-surface border border-border-subtle rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center gap-2">
-        <div className="text-small text-text-primary font-medium">
+         className="bg-bg-surface border border-border-subtle rounded-lg h-full flex flex-col
+                    overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-[14px] border-b border-border-subtle shrink-0">
+        <div className="text-[15px] text-text-primary font-semibold">
           {existing ? `Edit account ${existing.account}` : 'Add a broker account'}
         </div>
         <button onClick={onClose} className="ml-auto text-text-tertiary hover:text-text-primary">
@@ -1035,6 +1184,7 @@ function AccountForm({ existing, onClose }: {
         </button>
       </div>
 
+      <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 max-w-[720px]">
         <Field label="Account number" hint="The MT5 login.">
           <input type="number" data-testid="f-account" value={account} disabled={!!existing}
@@ -1118,8 +1268,11 @@ function AccountForm({ existing, onClose }: {
           </button>
         )}
       </div>
+      </div>{/* ── end of the scrolling body ─────────────────────────────────── */}
 
-      <div className="flex items-center gap-2">
+      {/* Pinned, so the one control that commits the form cannot scroll off the way
+          Add account did. */}
+      <div className="flex items-center gap-2 px-5 py-[12px] border-t border-border-subtle shrink-0">
         <button
           data-testid="save-account"
           disabled={!valid || save.isPending}

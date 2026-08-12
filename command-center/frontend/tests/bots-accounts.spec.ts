@@ -86,6 +86,16 @@ async function mock(page: Page, groups: unknown[], registry: unknown[] = []) {
         },
       })
     }
+    // The page reads this for the Users tab's count chip, on every tab. Routed so the count is a
+    // fixture rather than whoever happens to be in `users.json` on this machine.
+    if (u.pathname === '/api/bots/users') {
+      return route.fulfill({
+        json: [
+          { name: 'Aaron', chat_id: '1', role: 'admin', added: '2026-01-01' },
+          { name: 'Brother', chat_id: '2', role: 'readonly', added: '2026-01-01' },
+        ],
+      })
+    }
     if (u.pathname === '/api/bots/snapshot') {
       return route.fulfill({
         json: {
@@ -718,4 +728,90 @@ test('a RUNNING bot cannot be moved from the menu either', async ({ page }) => {
     [reg({ account: ACCOUNT }), reg({ account: 700152905 })])
   await page.goto('/bots?tab=accounts')
   await expect(page.getByTestId('move-mpc_sos_fade')).toBeDisabled()
+})
+
+test('the tab chips carry the counts, so "how many accounts" is answered without opening the tab', async ({ page }) => {
+  // MUTATION: return `registry.length` alone from `useAccountCount` → the chip reads 2 and this
+  // goes red on the unregistered account nobody counted.
+  // The fixture has to carry an UNREGISTERED account or the mutation cannot bite — two registered
+  // rows count 2 whichever way the hook is written.
+  await mock(page,
+    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] }),
+     group({ account: 700152905, bots: [] })],           // a bot names it, nobody registered it
+    [reg({ account: ACCOUNT }), reg({ account: 700119432 })])
+
+  await page.goto('/bots?tab=monitor')
+  // Read from the MONITOR tab on purpose: the whole point of a count on the chip is that it is
+  // readable from somewhere else.
+  await expect(page.getByTestId('tab-count-accounts')).toHaveText('3')
+  await expect(page.getByTestId('tab-count-users')).toHaveText('2')
+})
+
+test('a bot row opens that bot on Configure — the tab that answers a different question', async ({ page }) => {
+  // MUTATION: drop the Configure button from the row → this goes red on the locator.
+  // The two tabs are one journey: this one decides WHICH account, that one decides how the bot
+  // trades on it, and nothing on the page said so before.
+  await mock(page,
+    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [reg({ account: ACCOUNT })])
+  await page.goto('/bots?tab=accounts')
+
+  await page.getByTestId('configure-mpc_sos_fade').click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('configure')
+  expect(new URL(page.url()).searchParams.get('bot')).toBe('mpc_sos_fade')
+})
+
+test('the rail and the detail pane are the same height and both reach the bottom of the page', async ({ page }) => {
+  // MUTATION: drop the measured height (`style={undefined}` on the shell) → the panes fall back
+  // to their own content and the two differ by 216px, red on the first assertion.
+  // ⚠ `items-stretch` alone is NOT what makes this pass and the comment must not claim it is —
+  // swapping it for `items-start` leaves the check green, because the shell has an explicit height
+  // and each pane carries `h-full`. Measured, not reasoned about.
+  // Aaron: "make the site navigation where all the accounts are the height of the page. Also make
+  // the details on the right the same height of the page."
+  await mock(page,
+    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [reg({ account: ACCOUNT })])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('account-card')).toBeVisible()
+
+  const rail = (await page.getByTestId('account-rail-item').first()
+    .locator('xpath=ancestor::div[contains(@class,"rounded-lg")][1]').boundingBox())!
+  const card = (await page.getByTestId('account-card').boundingBox())!
+  const view = page.viewportSize()!
+
+  expect(Math.abs(rail.height - card.height)).toBeLessThan(2)
+  expect(Math.abs(rail.y - card.y)).toBeLessThan(2)
+  // …and the bottom edge is the bottom of the page, not wherever the content ended.
+  expect(view.height - (card.y + card.height)).toBeLessThan(40)
+})
+
+test('the Accounts tab renders while the VPS snapshot is still loading', async ({ page }) => {
+  // 🔴 WATCHED RED against HEAD: the Monitor tab's loading skeleton was ungated, so opening
+  // Accounts drew ~400px of fake Monitor cards above it until the VPS answered — and the accounts
+  // list needs no VPS at all. The observable is where the card SITS, because the skeleton has no
+  // testid and pushing the pane down is the whole damage.
+  let release: () => void = () => {}
+  const held = new Promise<void>(r => { release = r })
+  await mock(page,
+    [group({ bots: [bot('mpc_sos_fade', 'MPC SOS Fade', 770115, null)] })],
+    [reg({ account: ACCOUNT })])
+  await page.route('**/api/bots/snapshot', async route => {
+    await held
+    await route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [], scheduled_jobs: [], telegram: { name: 'Telegram', status: 'RUNNING' },
+      },
+    })
+  })
+
+  await page.goto('/bots?tab=accounts')
+  const card = page.getByTestId('account-card')
+  await expect(card).toBeVisible()
+  expect((await card.boundingBox())!.y).toBeLessThan(200)
+  // The State column says `—` while the snapshot is unanswered, which is the honest reading —
+  // never "Stopped".
+  await expect(page.getByTestId('bot-row-mpc_sos_fade')).toContainText('—')
+  release()
 })

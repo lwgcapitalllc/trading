@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { FileText, Play, RotateCcw, Square, RefreshCw, ChevronRight, Copy, Check, Unplug, AlertTriangle, Layers } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
-  useBotSnapshot, useBotAccounts, useBotLog, useBotVersions,
+  useBotSnapshot, useBotAccounts, useBotLog, useBotVersions, useUsers,
   useBotStart, useBotStop, useBotRestart,
   useBotStartOne, useBotStopOne, useBotRestartOne,
 } from '@/hooks/useBots'
@@ -11,7 +11,7 @@ import { StatCard } from '@/components/StatCard'
 import { VersionPill } from '@/components/VersionPill'
 import { BotStatusPill } from './BotStatusPill'
 import type { BotStatus, BotReview, JobStatus } from '@/types'
-import { AccountsTab } from './AccountsTab'
+import { AccountsTab, useAccountCount } from './AccountsTab'
 import { ConfigureTab } from './ConfigureTab'
 import { UsersTab } from './UsersTab'
 
@@ -292,6 +292,16 @@ export function Bots() {
   }
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = (searchParams.get('tab') ?? 'monitor') as PageTab
+  // The numbers on the tab chips. Both are cheap cached reads the tabs themselves already make,
+  // so showing them costs no extra request once either tab has been opened.
+  const accountCount = useAccountCount()
+  const { data: users } = useUsers()
+  const tabCount: Record<PageTab, number | undefined> = {
+    monitor: undefined,          // the fleet size is a stat card on that tab, not a chip
+    accounts: accountCount,
+    configure: undefined,        // Configure lists the same bots Monitor does
+    users: users?.length,
+  }
   // Merge rather than replace — Configure keeps its selected bot in `?bot=`, and rebuilding
   // the whole query string would drop it, so leaving the tab and coming back would land you
   // on a different bot's promote button than the one you left.
@@ -382,15 +392,32 @@ export function Bots() {
       <div className="flex items-center gap-3 mb-[18px]">
         <h1 className="text-h1 font-semibold">Bots</h1>
 
-        {/* Tab switcher */}
+        {/* Tab switcher.
+            ⚠ **The count belongs on the TAB, not inside the tab it describes.** Aaron: "accounts
+            on the left navigation as account four — just put that count inside the accounts tab
+            where I could see it." A number on the chip answers *how many are there* without
+            opening anything; the same number inside the panel only answers it once you are
+            already looking. Each count has ONE definition and it is not here — see
+            `useAccountCount`, and `useUsers` for the other. */}
         <div className="flex bg-bg-surface border border-border-subtle rounded-md overflow-hidden">
           {(['monitor', 'accounts', 'configure', 'users'] as PageTab[]).map(t => (
             <span
               key={t}
               onClick={() => setTab(t)}
-              className={`text-micro px-3 py-[6px] cursor-pointer select-none capitalize transition-colors duration-[100ms] ${tab === t ? 'bg-accent-muted text-text-primary' : 'text-text-secondary hover:bg-bg-hover'}`}
+              className={`text-micro px-3 py-[6px] cursor-pointer select-none capitalize transition-colors duration-[100ms] flex items-center gap-[6px] ${tab === t ? 'bg-accent-muted text-text-primary' : 'text-text-secondary hover:bg-bg-hover'}`}
             >
               {t}
+              {/* An unanswered query renders NO chip rather than a `0` — "none registered" is a
+                  claim, and it is never the true one here. */}
+              {tabCount[t] !== undefined && (
+                <span data-testid={`tab-count-${t}`}
+                      className={`inline-flex items-center justify-center min-w-[16px] h-[16px] px-[4px]
+                                  rounded-pill text-[10px] font-mono tabular-nums ${
+                        tab === t ? 'bg-bg-base/60 text-text-secondary'
+                          : 'bg-bg-surface-2 text-text-tertiary'}`}>
+                  {tabCount[t]}
+                </span>
+              )}
             </span>
           ))}
         </div>
@@ -416,8 +443,14 @@ export function Bots() {
           </button>
       </div>
 
-      {/* ── Loading ───────────────────────────────────────────────────────────── */}
-      {isLoading && (
+      {/* ── Loading ───────────────────────────────────────────────────────────────
+          🔴 **Gated on the MONITOR tab (2026-08-12).** This skeleton is a picture of Monitor's
+          stat cards and bot table, and it rendered on every tab — so opening Accounts drew ~400px
+          of fake Monitor rows above it for the four seconds the VPS snapshot takes, then snapped
+          away and moved everything up. The Accounts and Users tabs do not read the snapshot to
+          render at all (Accounts joins it only for the State column, which honestly says `—`), so
+          they were being blocked by a fetch neither of them needs. */}
+      {isLoading && tab === 'monitor' && (
         <div className="animate-pulse">
           <div className="grid grid-cols-4 gap-[10px] mb-4">
             {[...Array(4)].map((_, i) => (
