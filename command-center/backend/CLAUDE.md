@@ -1012,6 +1012,52 @@ whose child data is gone is left alone rather than being given a number nothing 
 
 ---
 
+## Every Deploy button in this app was dead for eight days (2026-08-12)
+
+🔴 **`_git_commit_push` could not commit at all between 2026-08-04 and 2026-08-12, and every
+endpoint that uses it reported the wrong failure.** The repo's `.githooks/commit-msg` refuses any
+commit whose changed files' owning CLAUDE.md is not staged in the same commit, and an instance
+config under `algos/markets/fx/instances/` is owned by `algos/CLAUDE.md`. Nothing here stages that
+file — **nor could it, since the hook exists to demand a paragraph a human wrote** — so the commit
+died, `subprocess.run(..., check=True)` raised, and the browser got **500 "git push failed"**.
+
+**Three endpoints, all of them the ones Aaron is asking to use more of:** `PATCH
+/bots/accounts/{account}/risk-cap`, `PATCH /bots/{bot}/account` (move a bot between accounts), and
+`PATCH /bots/{bot}/runtime`.
+
+✅ **MEASURED, not reasoned about, and both directions were run against the REAL hook:** a staged
+instance config with an ordinary message is refused with exit 1 and the *"COMMIT REFUSED — code
+changed, its CLAUDE.md did not"* banner; the same staged file with a `DOCS: none - …` line is
+accepted with exit 0. The corroborating evidence is in the log — **the last commit this app ever
+made is dated 2026-07-30**, five days before the hook landed.
+
+⚠ **The fix is the hook's own in-band escape, and the two easier fixes are both worse.**
+`--no-verify` is forbidden repo-wide precisely because it leaves NO TRACE, so the next person cannot
+tell a deliberate skip from a forgotten one. An exemption for `*/instances/*.json` would also wave
+through a **human** hand-editing one — which is the case the hook is right about, and is exactly
+what the 2026-08-12 account move needed. A `DOCS: none - <reason>` line asks the caller to say why,
+in the log, where the next person reads it.
+
+⚠ **`docs_reason` is a REQUIRED third parameter with no default.** A default is boilerplate the
+moment a second caller copies it, and the whole value of the line is that it is specific to what
+was written. It is validated HERE rather than left to the hook, because the hook's refusal arrives
+as a `CalledProcessError` two lines later and is reported as *"git push failed"* — which names the
+wrong step and sends the reader at git.
+
+**This is the THIRD time a rule fired on a robot's commit and silently stopped the job** —
+`algos/tools/ledger_sync.py` twice on 2026-08-05, recorded in the root `CLAUDE.md`. **A hook has no
+human to read its message when the committer is a program: it does not nag, it stops the work and
+reports something else.** When you add a check, ask what it does to the things that commit
+unattended.
+
+✅ 5 tests (`tests/test_deploy_commit_gate.py`). One drives the app's real message shape through the
+**real hook binary** and fails if it is refused; one proves that hook is still capable of saying no,
+so the first is not vacuous; one pins the ValueError; and one walks the AST of `routers/bots.py` to
+fail if a NEW call site forgets a reason — a behavioural test only covers the routes somebody
+remembered to write one for, which is `test_bot_kill_scope.py`'s reasoning. ⚠ **The `--no-verify`
+guard walks the AST rather than grepping**, because the prose explaining why the flag is banned is
+in the same file; the first version failed on its own docstring.
+
 ## A bot's VERSION — the number the page showed was never written (2026-08-07)
 
 🔴 **The Configure tab's version row read `v0`, and it always would have.**

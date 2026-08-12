@@ -211,8 +211,39 @@ def _write_instance_config(bot_key: str, data: dict) -> None:
                             encoding="utf-8")
 
 
-def _git_commit_push(file_paths: list[Path] | Path, message: str) -> str:
-    """Stage files, commit if dirty, push. Returns output summary."""
+def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: str) -> str:
+    """Stage files, commit if dirty, push. Returns output summary.
+
+    🔴 **`docs_reason` is REQUIRED, and without it this function could not commit at all between
+    2026-08-04 and 2026-08-12.** The repo's `commit-msg` hook refuses any commit whose changed
+    files' owning CLAUDE.md is not in the same commit, and an instance config under
+    `algos/markets/fx/instances/` is owned by `algos/CLAUDE.md`. Nothing here stages that file —
+    nor could it, since the hook exists to demand a PARAGRAPH a human wrote — so every deploy this
+    router performs died at `git commit` and surfaced as **500 "git push failed"**. Measured, not
+    reasoned about: the hook was run against a staged instance config and refused with exit 1, and
+    the last commit this app ever made is dated 2026-07-30, five days before the hook landed.
+
+    ⚠ **The fix is the hook's own in-band escape, deliberately NOT `--no-verify` and NOT a new
+    exemption.** `--no-verify` is forbidden here precisely because it leaves no trace, and an
+    exemption for `*/instances/*.json` would also wave through a HUMAN hand-editing one — which is
+    the case the hook is right about, and is exactly what today's account move needed. A
+    `DOCS: none - <reason>` line asks the caller to say why in the log, where the next person
+    reads it.
+
+    ⚠ **It has no default.** A default reason is boilerplate the moment a second caller copies it,
+    and the whole value of this line is that it is specific to what was written.
+
+    **This is the third time a rule fired on a robot's commit and silently stopped the job** —
+    `algos/tools/ledger_sync.py` twice on 2026-08-05. A hook has no human to read its message when
+    the committer is a program: it does not nag, it stops the work and reports something else.
+    """
+    if not docs_reason or len(docs_reason.strip()) < 10:
+        # Guarded here rather than left to the hook: the hook's refusal arrives as a
+        # CalledProcessError two lines later and is reported to the browser as "git push failed",
+        # which names the wrong step. This says what is actually wrong, to the developer.
+        raise ValueError("docs_reason must say something — the commit-msg hook requires at least "
+                         "ten characters after 'DOCS: none -'")
+    message = f"{message}\n\nDOCS: none - {docs_reason.strip()}"
     root = str(cfg.MONOREPO_ROOT)
     paths = [file_paths] if isinstance(file_paths, Path) else file_paths
     rels  = [str(p.relative_to(cfg.MONOREPO_ROOT)) for p in paths]
@@ -859,7 +890,10 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
                 "restart_required": True, "bots": bot_keys, "detail": changed}
 
     try:
-        _git_commit_push(paths, f"risk cap: {changed} [command center]")
+        _git_commit_push(
+            paths, f"risk cap: {changed} [command center]",
+            "account-level risk cap written to every instance config on the account by the "
+            "Bots page; an operational deployment, and the numbers are in the message")
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500,
                             detail=f"git push failed: {e.stderr.decode(errors='replace')}")
@@ -955,7 +989,10 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
 
     path = _BOT_INSTANCE_MAP[bot_key]["path"]
     try:
-        _git_commit_push(path, f"bots: {changed} [command center]")
+        _git_commit_push(
+            path, f"bots: {changed} [command center]",
+            "a bot moved between accounts from the Bots page; an operational deployment, "
+            "and the move is named in the message")
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500,
                             detail=f"git push failed: {e.stderr.decode(errors='replace')}")
@@ -1551,7 +1588,10 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
         return {"status": "ok", "changed": True, "deployed": False, "detail": changed}
 
     try:
-        _git_commit_push(info["path"], f"runtime: {bot_name} — {changed} [command center]")
+        _git_commit_push(
+            info["path"], f"runtime: {bot_name} — {changed} [command center]",
+            "runtime strategy params written from the Bots page; an operational "
+            "deployment, and the fields are named in the message")
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500,
                             detail=f"git push failed: {e.stderr.decode(errors='replace')}")
