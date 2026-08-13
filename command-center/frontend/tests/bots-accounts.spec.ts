@@ -815,3 +815,59 @@ test('the Accounts tab renders while the VPS snapshot is still loading', async (
   await expect(page.getByTestId('bot-row-mpc_sos_fade')).toContainText('—')
   release()
 })
+
+test('an account with a bot running says so in the rail and in the header', async ({ page }) => {
+  // Aaron: "make more obvious that the account has a bot running against it or not."
+  // The rail used to read `2 bots`, which is a fact about the CONFIG — two stopped bots and two
+  // trading ones rendered identically, so the list could not answer which account was live.
+  // MUTATION: have `RailLive` fall back to the old `${n} bots` line → red on the rail assertion;
+  // drop the `running-chip` block → red on the header one.
+  await mock(page, STACKED, [reg({ account: ACCOUNT })])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('account-card')).toBeVisible()
+
+  // One of the two fixture bots is RUNNING, so the count is a measurement rather than a state word.
+  await expect(page.getByTestId('account-rail-item').first()).toContainText('1 of 2 trading')
+  await expect(page.getByTestId('running-chip')).toContainText('Trading · 1 of 2')
+})
+
+test('an account whose bots are all stopped says nothing is running', async ({ page }) => {
+  // The other half, and it has to be stated rather than left as an absent green marker — a row
+  // with no live marker is indistinguishable from one whose account nobody could ask about.
+  // MUTATION: render the chip only when `live.state === true` → red, because the idle account
+  // then says nothing at all.
+  await mock(page,
+    [group({ bots: [bot('mpc_bleg', 'MPC B-LEG', 770116, 10)] })],
+    [reg({ account: ACCOUNT })])
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('running-chip')).toContainText('Nothing running')
+  await expect(page.getByTestId('account-rail-item').first()).toContainText('1 bot · idle')
+  // …and it must not claim the opposite anywhere on the pane.
+  await expect(page.getByTestId('account-card')).not.toContainText('Trading ·')
+})
+
+test('an unanswered VPS snapshot reads as unknown, never as idle', async ({ page }) => {
+  // The three-state rule, on the one reading this tab cannot take itself: `/bots/accounts` never
+  // touches the VPS, so the page renders in full while the box is unreachable — and calling that
+  // silence `idle` would report the fleet as stopped at exactly the moment nothing can be checked.
+  // MUTATION: collapse `state` to `running > 0` in `liveOf` → the chip reads "Nothing running"
+  // and the rail reads "idle", red on both.
+  let release: () => void = () => {}
+  const held = new Promise<void>(r => { release = r })
+  await mock(page, STACKED, [reg({ account: ACCOUNT })])
+  await page.route('**/api/bots/snapshot', async route => {
+    await held
+    await route.fulfill({
+      json: {
+        fetched_at: new Date().toISOString(),
+        bots: [], scheduled_jobs: [], telegram: { name: 'Telegram', status: 'RUNNING' },
+      },
+    })
+  })
+
+  await page.goto('/bots?tab=accounts')
+  await expect(page.getByTestId('running-chip')).toContainText('Running state unknown')
+  await expect(page.getByTestId('account-rail-item').first()).toContainText('2 bots · unknown')
+  await expect(page.getByTestId('account-rail-item').first()).not.toContainText('idle')
+  release()
+})

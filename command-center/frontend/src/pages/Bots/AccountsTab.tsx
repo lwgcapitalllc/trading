@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, GripVertical, KeyRound, Layers, MonitorSmartphone, Play, Plus, ShieldCheck,
-  ShieldOff, SlidersHorizontal, Trash2, X,
+  Activity, AlertTriangle, GripVertical, KeyRound, Layers, MonitorSmartphone, Play, Plus,
+  ShieldCheck, ShieldOff, SlidersHorizontal, Trash2, X,
 } from 'lucide-react'
 import {
   useBotAccounts, useBotSnapshot, useBotVersions, useSetAccountRiskCap, useAssignBotAccount,
@@ -302,6 +302,40 @@ function nameOf(reg: BotAccountRegistration | undefined, g: BotAccountGroup): st
 }
 
 /**
+ * How many of an account's bots are actually RUNNING — the one question this tab could not answer.
+ *
+ * ⚠ **THREE answers, and the third is the whole reason this is a function.** `known` counts the
+ * bots the VPS snapshot came back for, so `running: 0` with `known: 0` means NOBODY ASKED, not
+ * *nothing is trading*. The accounts endpoint deliberately never touches the VPS, so this page
+ * renders in full while the box is unreachable — and reading that silence as *stopped* would tell
+ * the reader the fleet is idle at exactly the moment nothing can be checked. Same rule as
+ * `has_password`'s `null` one section down, and as `mt5_link` before it.
+ *
+ * ⚠ **`running > 0` wins even when some bots are unanswered**, because a bot seen RUNNING is a
+ * measurement — the unknowns can only add to it.
+ *
+ * ⚠ **ONE definition, read by the rail row and by the detail chip.** Two hand-written readings is
+ * how a green dot in the list ends up beside *nothing running* on the pane it opens.
+ */
+function liveOf(group: BotAccountGroup, statusByKey: Map<string, string>) {
+  let running = 0
+  let known = 0
+  for (const b of group.bots) {
+    const s = statusByKey.get(b.key)
+    if (s === undefined) continue
+    known++
+    if (s === 'RUNNING') running++
+  }
+  const total = group.bots.length
+  return {
+    total,
+    running,
+    /** `true` = trading · `false` = genuinely nothing running · `null` = the VPS was not asked. */
+    state: running > 0 ? true : known === total ? false : null,
+  }
+}
+
+/**
  * A registered account nobody is trading yet.
  *
  * ⚠ **`cap_agrees: true` with `risk_cap_pct: null` is the honest reading of an empty account** —
@@ -326,7 +360,8 @@ function emptyGroup(a: BotAccountRegistration): BotAccountGroup {
 // ── the rail ────────────────────────────────────────────────────────────────────
 
 /**
- * One account, compressed to the three facts that IDENTIFY it plus a warning marker.
+ * One account, compressed to the three facts that IDENTIFY it, whether anything is TRADING it,
+ * and a warning marker.
  *
  * ⚠ **Broker → number → type, in that order and in that visual weight.** They were three
  * interchangeable pieces of grey `text-micro` on the old card, which is what made an account hard
@@ -348,7 +383,7 @@ function RailRow({ group, registration, selected, onSelect, statusByKey }: {
 
   const isAccount = group.kind === 'account' && group.account !== null
   const assignable = registration ? registration.assignable : isAccount
-  const n = group.bots.length
+  const live = liveOf(group, statusByKey)
 
   // 🔴 **A drop fires the SAME mutation the Move menu and the Add bot list fire, deliberately.**
   // It is a second GESTURE for one action, never a second path: a private write here would be a
@@ -430,11 +465,46 @@ function RailRow({ group, registration, selected, onSelect, statusByKey }: {
             {registration.kind}
           </span>
         )}
-        <span className="text-[10px] text-text-tertiary">
-          {n === 0 ? 'no bots' : `${n} bot${n === 1 ? '' : 's'}`}
-        </span>
+        <RailLive live={live} />
       </div>
     </button>
+  )
+}
+
+/**
+ * Whether anything is TRADING this account, at a glance, in the list.
+ *
+ * 🔴 **The row used to say `2 bots`, which is a fact about the CONFIG and reads as a fact about
+ * the account being live.** Two bots assigned and stopped rendered identically to two bots
+ * trading, so the rail — the one place every account is on screen together — could not answer
+ * *which of these is running right now*, and the answer was a click plus a read of the State
+ * column.
+ *
+ * ⚠ **The dot is STEADY, never `animate-pulse`.** A bot runs for weeks; permanent motion in a
+ * list is read as an alert on day one and as background by day two, and this row sits beside the
+ * warning triangle that genuinely wants the eye.
+ *
+ * ⚠ **`state: null` says `unknown` in words rather than drawing nothing.** A row with no live
+ * marker would be indistinguishable from an idle account, which is the same collapse the count
+ * itself was guilty of.
+ */
+function RailLive({ live }: { live: ReturnType<typeof liveOf> }) {
+  const { total, running, state } = live
+  if (total === 0) return <span className="text-[10px] text-text-tertiary">no bots</span>
+
+  const bots = `${total} bot${total === 1 ? '' : 's'}`
+  if (state === true) {
+    return (
+      <span className="inline-flex items-center gap-[5px] text-[10px] text-pos-text font-medium">
+        <span className="w-[6px] h-[6px] rounded-full bg-pos-text shrink-0" aria-hidden />
+        {total === 1 ? 'trading' : `${running} of ${total} trading`}
+      </span>
+    )
+  }
+  return (
+    <span className="text-[10px] text-text-tertiary">
+      {bots} · {state === false ? 'idle' : 'unknown'}
+    </span>
   )
 }
 
@@ -476,6 +546,7 @@ function AccountDetail({
   const isAccount = group.kind === 'account' && group.account !== null
   const isBench   = group.kind === 'bench'
   const totalRisk = group.bots.reduce((s, b) => s + (b.risk_pct ?? 0), 0)
+  const live      = liveOf(group, statusByKey)
 
   // Map each bot's strategy PACKAGE to the lab's own strategy id, so "Backtest this stack"
   // opens preselected. A package with no scanned strategy is simply not preselected — the
@@ -604,6 +675,29 @@ function AccountDetail({
 
         {/* ── Readiness chips ───────────────────────────────────────────────── */}
         <div className="flex items-center gap-2 mt-[10px] flex-wrap">
+          {/* ⚠ **FIRST, because it is the question the page is opened with.** Everything else on
+              this row is about whether the account COULD trade — a password, a terminal, a cap —
+              and this one says whether anything IS. It reads the same `liveOf` the rail row does. */}
+          {live.total > 0 && (
+            <Chip
+              testid="running-chip"
+              tone={live.state === true ? 'pos' : live.state === false ? 'muted' : 'warn'}
+              icon={live.state === true ? <Activity size={9} />
+                : live.state === null ? <AlertTriangle size={9} /> : undefined}
+              title={live.state === true
+                ? `${live.running} of ${live.total} bot${live.total === 1 ? '' : 's'} on this `
+                  + 'account is running right now, so this balance is being traded.'
+                : live.state === false
+                  ? 'Every bot on this account is stopped, so nothing is trading this balance. '
+                    + 'The bots are still assigned — start one from the Monitor tab.'
+                  : 'The VPS could not be asked, so whether these bots are running is unknown. '
+                    + 'It is not the same as nothing running.'}
+            >
+              {live.state === true ? `Trading · ${live.running} of ${live.total}`
+                : live.state === false ? 'Nothing running' : 'Running state unknown'}
+            </Chip>
+          )}
+
           {group.stacked && (
             <Chip testid="stacked-chip" tone="accent" icon={<Layers size={9} />}
                   title="More than one bot trades this balance">
