@@ -281,15 +281,18 @@ _MISS_LABEL = {
     6: "HTF filter",
     7: "Never filled",
 }
+#: ⚠ **These are read in TWO places and shortening them moved both**: the Telegram `NO TRADE`
+#: reply, and the lab's miss report. They are always rendered UNDER their `_MISS_LABEL`
+#: ("No retrace", "No FVG in zone", …), so a sentence restating the label is saying it twice —
+#: which is what the long forms did. Trimmed 2026-08-13 on Aaron's *"less verbose"*; the FACTS are
+#: unchanged and no code branches on this text.
 _MISS_REASON = {
-    2: "Price never retraced into the 0.5-0.886 band, so the entry zone was never reached. This "
-       "is the ordinary way a setup dies.",
-    3: "Price DID reach the 0.5-0.886 band, but no fair-value gap overlapped it while price was "
-       "there — there was nothing to rest a limit on.",
-    4: "All three confluences met. The divergence / extreme-RSI veto refused the entry.",
-    5: "All three confluences met. The final-hour rule (16:00-18:00 New York) refused the entry.",
-    6: "All three confluences met. The HTF breakout / bias filter refused the entry.",
-    7: "All three confluences met and the limit rested — price never came back to touch it.",
+    2: "Price never retraced into the 0.5-0.886 band.",
+    3: "Price reached the band, but no fair-value gap overlapped it — nothing to rest a limit on.",
+    4: "All three met. The divergence / extreme-RSI veto refused the entry.",
+    5: "All three met. The final-hour rule (16:00-18:00 New York) refused the entry.",
+    6: "All three met. The HTF breakout / bias filter refused the entry.",
+    7: "All three met and the limit rested — price never came back to touch it.",
 }
 
 
@@ -1245,7 +1248,11 @@ class Execution:
             "side": 1 if is_long else -1,
             "confluences": (
                 Confluence("Arm", arm_met, arm_text),
-                Confluence("Shift of structure", True, "confirmed"),
+                # ⚠ "SOS confirmed", not "confirmed". The alert layer prints the DETAIL and drops
+                # the name, so a detail that only makes sense under its own label reads as a bare
+                # "confirmed" in the message. A strategy owns what its confluences are CALLED —
+                # `alerts.py` must never learn what an SOS is.
+                Confluence("Shift of structure", True, "SOS confirmed"),
                 Confluence("Retrace zone", zone_met, zone_text),
             ),
             "zone": zone,

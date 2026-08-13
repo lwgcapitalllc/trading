@@ -297,6 +297,23 @@ alert as it does in a decision.
 `_place_entries`, which runs after `_record_misses`, so reading `_pend_*` any earlier reports the
 PREVIOUS bar's price beside this bar's confluences.
 
+🔴 **A `Confluence.detail` has to stand ALONE, because the alert prints the detail and drops the
+name.** `Confluence("Shift of structure", True, "confirmed")` rendered in Telegram as a bare
+`confirmed` next to `Swept Day Low`; it says `SOS confirmed` now. **The strategy owns what its own
+confluences are called** — `algos/live/alerts.py` must never learn what an SOS is, which is the
+whole reason the contract carries text rather than codes.
+
+⚠ **`_MISS_REASON` is read in TWO places** — the Telegram `NO TRADE` reply and the lab's miss
+report — and both render it UNDER its `_MISS_LABEL`, so a sentence that restates the label says it
+twice. Trimmed 2026-08-13 on Aaron's *"less verbose"*; the facts are unchanged and no code branches
+on the text. ⚠ **Both of these are in the version-pinned tree, so a wording change here needs a
+`promote.py`** where the same change in `algos/live/alerts.py` needs only a restart.
+✅ **Reporting-only re-proven after both edits**: the same replay script over 155,807 M15 bars at
+HEAD and on the working tree gives an identical 159-trade list, SHA-256
+`30dc1c5b25f39ef795077ac990e9622e846a66e2a038c42ef816224082d31fe6`. ⚠ **That digest is NOT
+comparable to the `b52816e7…` in `backtest/docs/BACKTEST_BUILD_NOTES.md`** — it is a different
+serialisation of the same trades. The proof is the before/after pair, not the constant.
+
 ⚠ **`entry` is read from the ORDER, never recomputed from `sig`** — the identical trap already
 recorded for `Trade.fib`: a fib keeps extending while a limit rests.
 
