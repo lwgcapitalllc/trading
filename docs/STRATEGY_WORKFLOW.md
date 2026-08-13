@@ -1,5 +1,7 @@
 # Strategy Workflow — from an idea to "run a sweep and tell me the best combination"
 
+**Status:** 📘 **STANDING PROCESS — the Pine→Python PORTING pipeline.** ⚠ **This repo has TWO process docs and until 2026-08-12 neither mentioned the other.** This one is the porting pipeline (spec → Pine → export twin → CSV → port → parity gate). **`docs/BOT_DEVELOPMENT_METHOD.md` is the LIFECYCLE** of a bot from idea to live (the six S.Y.S.T.E.M. steps). Complementary, not rivals — but both open by calling themselves *the* process, so whichever you landed on first looked like the whole answer.
+
 **Who this is for:** either of us, and Claude. It is the checklist Claude should run through
 before answering "optimize this strategy" — if a stage below is missing, say which one and
 stop, rather than producing numbers that cannot be trusted.
@@ -103,7 +105,7 @@ commit. A lab row saying something different from the chart is how a rule gets r
 | **B-LEG** (`mpc_bleg`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green | **Yes** |
 | **BOS** (`mpc_bos`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ green (narrow) | **Yes — at the shipped defaults** |
 | **D** (`mpc_d`) | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | No — and its one measurement was indistinguishable from zero |
-| **OB Fade** (`mpc_ob_fade`) | ✅ draft | ❌ | ❌ | ❌ | ❌ | ❌ | No — stage 1 only, `docs/MPC_OB_FADE_SPEC.md` |
+| **OB Fade** (`mpc_ob_fade`) | ❌ withdrawn | ❌ | ❌ | ❌ | ❌ | ❌ | **No, and do not restart it.** Its spec was DELETED once the measurement closed the question — the record of what was tried is `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md` |
 | **H4 sweep** | study only | ✅ | ❌ | ❌ | ❌ | ❌ | No |
 
 ### BOS — green as of 2026-08-07, and what that is worth

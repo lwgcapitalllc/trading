@@ -1,5 +1,7 @@
 # Bot Development Method — The S.Y.S.T.E.M. Approach
 
+**Status:** 📘 **STANDING PROCESS — the LIFECYCLE of a bot, idea → live (the six S.Y.S.T.E.M. steps).** ⚠ **This repo has TWO process docs and until 2026-08-12 neither mentioned the other.** This one is the lifecycle; **`docs/STRATEGY_WORKFLOW.md` is the Pine→Python PORTING pipeline** (spec → Pine → export twin → CSV → port → parity gate). They are complementary, not rivals — but both open by calling themselves the process, so a reader landing on one had no way to learn the other existed.
+
 > **For Claude Code:** This file defines the standard, non-negotiable process for
 > creating, validating, and deploying any trading bot in this repository.
 > Every bot must move through these six steps **in order**. Do not skip steps,

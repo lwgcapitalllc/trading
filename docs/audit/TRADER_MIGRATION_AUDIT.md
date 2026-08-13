@@ -1,5 +1,7 @@
 # Trader Migration Audit — Administrator → trader
 
+**Status:** 🔨 **OPEN — NOT DONE. Confirmed by Aaron 2026-08-12.** The VPS still runs as `Administrator`; the migration to a `trader` account has not happened. Scope below was last cleaned 2026-07-04 and remains live: the Python path, `backtest_config.json`, `setup_agent_task.py`, `bots.py`, `test_integration.py`, the five surviving scheduler XMLs, and the bootstrap scripts. ⚠ **This is the only OPEN item in `docs/audit/`, and it had no status line at all until 2026-08-12** — so for five weeks it was indistinguishable from the finished audits sitting beside it. **An unfinished job with no status reads as a finished one**, which is the whole reason these lines now exist.
+
 > **Cleaned 2026-07-04.** Rows and steps that targeted files deleted in the 2026-06-22 suite
 > cutdown (the four bot scheduler XMLs, `backup_task.xml`, the backup scripts, and
 > `algos/docs/SETUP.md`) have been removed. What remains below is the still-live migration

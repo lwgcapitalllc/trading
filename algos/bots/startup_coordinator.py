@@ -149,10 +149,6 @@ def log_baseline(log_path: str) -> Tuple[Path, int]:
     return p, (p.stat().st_size if p.exists() else 0)
 
 
-def get_log_size(log_path: str) -> int:
-    return log_baseline(log_path)[1]
-
-
 def wait_for_connection(log_path: str, ready_string: str,
                         size_before: int, timeout: int, name: str,
                         baseline_path: Optional[Path] = None) -> bool:

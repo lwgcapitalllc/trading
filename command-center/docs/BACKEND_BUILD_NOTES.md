@@ -1,5 +1,7 @@
 # Backend Build Notes
 
+**Status:** 📦 **ARCHIVE — relocated history, deliberately.** This is implementation detail moved OUT of `command-center/backend/CLAUDE.md` so that file could stay standing-rules-only. It is the pattern the rest of the repo still needs: **the rule lives in the CLAUDE.md, the war story lives here.** Nothing here is current status; it grows and is never pruned.
+
 Implementation-level history and war-story detail relocated out of `command-center/backend/CLAUDE.md` to keep that file to standing rules and current status. Nothing here is deleted from the record — treat this as the detailed appendix.
 
 ---

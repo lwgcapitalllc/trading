@@ -20,13 +20,51 @@ Fails OPEN: any error here allows the edit. A broken guard must not stop the wor
 """
 
 import json
+import os
 import sys
+
+# A CLAUDE.md over this many bytes gets a "drain it into HISTORY.md" reminder.
+#
+# MEASURED, not guessed (2026-08-12, `wc -c` over all 28 CLAUDE.md files). The sizes fall
+# into two clumps with a wide empty gap between them: every engine and small subsystem file
+# lands at 27 KB or below, and the next file up is 63 KB. Nothing sits between. 40 KB is the
+# middle of that gap, so a file has to be genuinely in the bloated clump to trip it — no file
+# is near enough the line for a paragraph or two to flip it either way.
+CLAUDE_MD_CEILING_BYTES = 40_000
 
 
 def relative(path: str) -> str:
     marker = "/trading/"
     i = path.find(marker)
     return path[i + len(marker):] if i != -1 else path
+
+
+def oversized_claude_md(path: str) -> str:
+    """The reminder for an already-bloated CLAUDE.md, or "" if it is fine.
+
+    Fires at the moment of the EDIT, deliberately. A commit-time warning arrives when the
+    work is finished and nobody stops to refactor a doc; this one arrives while the file is
+    open and the context is already loaded.
+    """
+    if os.path.basename(path) != "CLAUDE.md":
+        return ""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return ""  # a new file, or unreadable — nothing to complain about
+    if size <= CLAUDE_MD_CEILING_BYTES:
+        return ""
+    return (
+        f"This CLAUDE.md is {size // 1000} KB, over the {CLAUDE_MD_CEILING_BYTES // 1000} KB "
+        "ceiling — it is mostly CHANGELOG, and every byte loads into context whenever anyone "
+        "works in this subsystem. `HISTORY.md` exists to be that diary and is not being used. "
+        "Before you add more: move the dated incident narrative out to HISTORY.md and leave "
+        "the RULE plus a one-line pointer behind. Two hard rules while you do it — (1) a fact "
+        "lives in exactly ONE CLAUDE.md, the one next to the code it describes, because a "
+        "parent keeping its own copy is how three files came to disagree about whether a bot "
+        "was live; (2) the rule and the reason it exists stay together, since a rule with no "
+        "incident behind it reads as arbitrary and gets 'tidied up' by the next reader."
+    )
 
 
 # path fragment -> the reminder that belongs with it
@@ -103,6 +141,11 @@ def main() -> None:
         return
 
     notes = [note for fragment, note in REMINDERS if fragment in path]
+
+    bloat = oversized_claude_md(path)
+    if bloat:
+        notes.append(bloat)
+
     if not notes:
         return
 

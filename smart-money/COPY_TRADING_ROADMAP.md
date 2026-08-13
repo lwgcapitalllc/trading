@@ -1,5 +1,7 @@
 # Copy Trading Roadmap
 
+**Status:** ⏸️ **PARKED, and blocked on two separate things.** Stages 1–2 and 5 are live; **stages 3–4 need API keys that do not exist yet**, and the Smart Money UI has been flagged OFF in `command-center/frontend/src/lib/features.ts` since 2026-08-04 — nothing was deleted, one boolean restores it. Read this as a plan awaiting a decision, not as work in flight.
+
 From a periodic batch scanner to a live, automated copy-trading system.
 
 ---

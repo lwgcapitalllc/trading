@@ -1,5 +1,7 @@
 # Intraday edge study — what stacks with the A+ SOS fade
 
+**Status:** ✅ **CLOSED 2026-08-07 — measured, with a recommendation in the last section.** Two results, and they point opposite ways: **no intraday edge on GOLD** (structural, not a tuning problem) while **the same trigger clears cost on NAS100**. Kept as the record of why. Read the Recommendation before proposing any intraday leg.
+
 **Date:** 2026-08-07
 **Tool:** `backtest/tools/intraday_edge.py` (stdlib only, runs off `backtest/cache/`)
 **Question:** Aaron has one profitable 15m swing strategy (`mpc_sos_fade`) and wants a SECOND,

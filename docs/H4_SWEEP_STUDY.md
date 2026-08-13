@@ -1,5 +1,7 @@
 # H4 Sweep Study — is there a continuation edge after an H4 high/low is taken?
 
+**Status:** ✅ **CLOSED 2026-07-31 — the question was ASKED and ANSWERED, and the answer was NO.** Do not build the H4 sweep continuation bot. Kept as the record of why, so the idea is not re-proposed and re-measured. **A closed study is not an open task.**
+
 **Asked:** 2026-07-31, Aaron. Build an H4 strategy off a sweep of an H4 high or low plus
 continuation, using the H4 liquidity tracking already in `mpc_assistant.pine`.
 

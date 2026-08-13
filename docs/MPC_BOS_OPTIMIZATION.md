@@ -1,5 +1,7 @@
 # MPC BOS — optimization log
 
+**Status:** ⚠️ **LIVING LOG, but every entry currently in it is MEASURED ON CODE THAT NO LONGER EXISTS.** The BOS port CHANGED to reach parity green on 2026-08-07, so everything logged before that date describes a different strategy. `docs/STRATEGY_WORKFLOW.md` has carried this warning since; it was never written into the log it warns about — which is exactly backwards, because the log is what somebody reads when deciding whether a question is already answered. **Do not treat a pre-2026-08-07 row as an answered question.**
+
 One entry per sweep, so a question already answered is not re-measured. Same convention as
 `strategies/python/mpc_sos_fade/mpc_sos_fade_optimization.md`.
 

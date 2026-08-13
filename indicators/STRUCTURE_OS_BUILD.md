@@ -1,5 +1,7 @@
 # Structure OS / SMC Engine — Rebuild Snapshot
 
+**Status:** 🔨 **IN PROGRESS — Stage 2b ~95% validated, Stages 3–4 NOT STARTED** (blocked on chart-by-chart validation, which only a human at TradingView can do). ⚠ **A separate track from the `mpc_assistant.pine` line the `engines/` Python engines were ported from** — nothing here feeds a live bot.
+
 **Purpose.** Cross-session handoff for the from-scratch, pullback-only rewrite of the
 "Structure OS" / "SMC Engine (OrthosLabs)" indicator. Read this first when resuming.
 Keep it accurate — update status as each stage is validated on a real chart.

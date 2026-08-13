@@ -1,5 +1,7 @@
 # Frontend Build Notes
 
+**Status:** 📦 **ARCHIVE — relocated history, deliberately.** Same pattern as `BACKEND_BUILD_NOTES.md`: per-page detail moved OUT of `command-center/frontend/CLAUDE.md` so that file could stay conventions-only. Nothing here is current status.
+
 Implementation-level detail for specific pages/components, relocated out of `command-center/frontend/CLAUDE.md` to keep that file to standing conventions and current status. Nothing here is deleted from the record — treat this as the detailed appendix. `CLAUDE.md` keeps a short current-state summary and a pointer here.
 
 ---

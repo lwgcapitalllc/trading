@@ -1351,14 +1351,6 @@ def upsert_strategy(data: dict) -> None:
         ))
 
 
-def mark_strategy_needs_compile(class_name: str) -> None:
-    """Called after a source file is uploaded — marks that strategy as needing compile."""
-    with _connect() as conn:
-        conn.execute(
-            "UPDATE strategies SET is_compiled = 0 WHERE class_name = ?", (class_name,)
-        )
-
-
 def mark_runner_compiled(runner: str) -> None:
     """Called after a successful compile — marks all strategies for that runner as compiled
     and stamps the compiled content hash to whatever is currently deployed (a compile builds

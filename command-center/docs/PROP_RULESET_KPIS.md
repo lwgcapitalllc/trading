@@ -1,5 +1,7 @@
 # Prop Ruleset KPIs — Seeded Challenges Reference
 
+**Status:** 📘 **LIVING REFERENCE — the source of truth for what is seeded in `lab.db` → `rulesets`.** It goes stale the moment a firm changes its rules, and **nothing detects that automatically** — `/prop-firm-rules-audit` re-checks these rows against each firm's published docs, and is the only thing that will.
+
 **What this is:** the single source of truth for the prop-firm challenges seeded in our ruleset engine
 (`command-center/backend/data/lab.db`, table `rulesets`). It captures the core KPIs we trade against —
 account size, profit target, drawdown type + amount, consistency, minimum trading days, and contract

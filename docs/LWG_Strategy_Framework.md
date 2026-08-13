@@ -1,5 +1,7 @@
 # LWG Capital — Strategy Framework
 
+**Status:** 📘 **STANDING REFERENCE — not a build plan, nothing here "completes".** The *what and why* of strategy design. The *how* for a Pine→Python port is `docs/STRATEGY_WORKFLOW.md`; the lifecycle from idea to live is `docs/BOT_DEVELOPMENT_METHOD.md`. (Status line added 2026-08-12; the doc had none, so its state was unreadable without reading all 24 KB.)
+
 **Purpose:** the standing reference for how strategies are designed, layered, built, and graded.
 This is the "what and why" of strategy design. For the "how" at the code level —
 file naming, the MQL5 `f_` prefix and NT8 `[Category("Foundational")]` conventions,

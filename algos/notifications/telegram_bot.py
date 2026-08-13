@@ -139,12 +139,6 @@ def load_users() -> dict:
     return {ADMIN_CHAT: {"name": "Admin", "role": "admin"}}
 
 
-def save_users(users: dict):
-    data = {"users": users}
-    with open(USERS_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
 def get_role(user_id: str) -> str | None:
     """Return role for user_id or None if not authorized."""
     users = load_users()
