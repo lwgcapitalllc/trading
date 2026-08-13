@@ -41,6 +41,8 @@ if str(_ROOT) not in sys.path:
 
 from backtest import fills as _fills
 from backtest.portfolio.account import SoloAccount
+from backtest.setups import (Confluence, DEAD, FILLED, RESTING, SetupSnapshot,
+                             WATCHING)
 # The canonical ratio→price helper, and the only one allowed: `_sl_anchor`'s Custom branch has to
 # land on the exact float the fib engine would have produced for that ratio, and re-deriving
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
@@ -634,6 +636,18 @@ class Execution:
         self.misses: List[MissedSetup] = []
         self._mw: List[_MissWatch] = [_MissWatch(), _MissWatch()]
         self._prev_stage: List[int] = [0, 0]
+        # Pre-trade alerts (reporting only — `backtest/setups.py`). `_setup_ctx` is what each
+        # side's watch looked like on THIS bar, captured inside `_record_misses` because that is
+        # the one place the per-side gates are already resolved; `_setup_done` holds setups that
+        # reached a terminal state this bar. `live_setups()` assembles both. Nothing reads either
+        # back, so no decision can move — proven by replay, not by this comment.
+        self._setup_ctx: List[Optional[dict]] = [None, None]
+        self._setup_done: List[SetupSnapshot] = []
+        # What an alert calls this bot. Overwritten by the STRATEGY that owns this object,
+        # because three strategies share this execution layer and its own class name would
+        # label all of them "Execution". The default is honest rather than blank: an unnamed
+        # setup in a Telegram group with two bots in it names neither.
+        self.strategy_name: str = type(self).__name__
         # ATR(14) for the "x ATR(14)" minimum-stop mode. Pine hoists `ta.atr(14)` to the main
         # body so it runs on EVERY bar — a `ta.*` call inside a conditionally-taken branch
         # silently skips bars and returns a different number. Same discipline here: updated at
@@ -1028,6 +1042,7 @@ class Execution:
             self._prev_stage[slot] = stage
 
             if not m.watch:
+                self._setup_ctx[slot] = None
                 continue
             traded = traded_sos is not None and m.sos_bar is not None and traded_sos == m.sos_bar
             if sos_bar is not None and not traded:
@@ -1042,20 +1057,42 @@ class Execution:
                     m.blk_v = m.blk_v or veto
                     m.blk_l = m.blk_l or late
                     m.blk_h = m.blk_h or htf_any
+                # Reporting only, and captured AFTER the accumulate above — the block that sets
+                # `m.zone` on the bar price first tags the band. Capturing before it reported a
+                # setup as still waiting on a retrace on the very bar it got one, so the alert
+                # said "2 of 3" beside a resting order that needed 3. It also has to be here
+                # rather than in `live_setups()`, because this is the one place the per-side
+                # gates are already resolved through the enable-toggles exactly as `_armed`
+                # reads them — so "armed" means the same thing in an alert as in a decision.
+                self._setup_ctx[slot] = self._setup_context(
+                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any)
                 continue
 
             # it died (or traded) — book the miss, then close the watch either way
             m.watch = False
-            if traded or not flat:
+            # Reporting only. Every exit below books a terminal snapshot BEFORE its `continue`,
+            # because a setup the alert layer announced and never hears about again leaks a
+            # Telegram thread and, worse, reads to a human as still live.
+            ctx, self._setup_ctx[slot] = self._setup_ctx[slot], None
+            if traded:
+                self._book_setup_end(ctx, FILLED, "Entered.")
+                continue
+            if not flat:
+                self._book_setup_end(ctx, DEAD,
+                                     "The setup ended while another position was open.")
                 continue
             arm_met = arm_swp or arm_div
             zone_met = m.zone and (m.fvg or not cfg.exec_req_fvg)
             met_n = (1 if arm_met else 0) + 1 + (1 if zone_met else 0)
             if met_n < 2:
+                self._book_setup_end(ctx, DEAD,
+                                     "The setup died before reaching two confluences.")
                 continue
             price = m.edge if m.edge is not None else m.fib
             if price is None:
-                continue    # nothing to anchor a marker to — a record with no price can't be drawn
+                # nothing to anchor a marker to — a record with no price can't be drawn
+                self._book_setup_end(ctx, DEAD, "The setup died with no price to report.")
+                continue
             if not arm_met:
                 code = 1
             elif not m.zone:
@@ -1071,13 +1108,212 @@ class Execution:
                     arm_text += f" · {m.swp_nm}"
             else:
                 arm_text = "RSI divergence" if m.arm_src == "DIV" else "a liquidity sweep"
-            self.misses.append(MissedSetup(
+            miss = MissedSetup(
                 dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
                 met=met_n, code=code, arm_text=arm_text, arm_met=arm_met,
                 zone=m.zone, zone_time_ms=m.zone_ms, zone_turn_ms=m.zone_turn_ms,
                 fvg=m.fvg, edge=float(price),
                 near=met_n == 3 or (m.zone and not zone_met),
+            )
+            self.misses.append(miss)
+            # The alert reuses the miss's OWN sentence rather than composing a second one. Two
+            # explanations for one death can disagree, and the reader has no way to tell which
+            # is the strategy's.
+            self._book_setup_end(ctx, DEAD, miss.reasons[0] or miss.labels[0],
+                                 label=miss.labels[0])
+
+    # ── pre-trade setup snapshots (backtest/setups.py) — reporting only ──────────
+    #
+    # The contract the Telegram signals channel reads. NOTHING here may reach a decision: no
+    # method below is called from `step`, `step_secondary` or `_manage_open`, and every value is
+    # COPIED from state the strategy already holds rather than recomputed. An alert naming a
+    # level the bot never traded is worse than no alert, because you would act on it.
+    #
+    # ⚠ Proven reporting-only by REPLAY (a byte-identical trade list over the full history), not
+    # by this comment. See `docs/LIVE_SETUP_ALERTS.md` §4.
+
+    @property
+    def reports_setups(self) -> bool:
+        """Whether this class can actually answer `live_setups()` — read by `implements_contract`.
+
+        🔴 **Tied to `_records_misses`, because that flag gates the ONE method that populates the
+        setup context.** `mpc_bleg` and `mpc_bos` subclass this and both set it False, so they
+        inherit a `live_setups()` that returns `[]` on every bar forever — a method-presence check
+        would call them supported and the runner would announce "Setup alerts: ON" for a channel
+        that can never send anything. **An empty registry answering confidently, arriving by
+        inheritance rather than by a literal `{}`.**
+
+        ⚠ **It is derived rather than a flag each fork must remember to set**, so a new subclass
+        cannot acquire a silent, empty signals channel by forgetting one line.
+
+        ⚠ **True here is NOT a claim that a fork's confluences are right.** A fork that turns the
+        watch back on would report A+'s three confluences, which describe a setup it does not
+        trade. It needs its own `_setup_context` before its alerts go on.
+        """
+        return bool(self._records_misses)
+
+    def _setup_key(self, is_long: bool, sos_bar: Optional[int]) -> str:
+        """The thread id, stable for this setup's whole life.
+
+        Keyed on the SOS bar rather than on anything that moves: the arm, the zone state and the
+        entry price all change while a setup is alive, and a key built from any of them would
+        start a new Telegram thread on the bar it changed. `_MissWatch` already treats
+        `(side, sos_bar)` as this setup's identity — reusing it is what keeps the alert's notion
+        of "the same setup" identical to the strategy's.
+        """
+        return f"{self.strategy_name}:{'L' if is_long else 'S'}:{sos_bar}"
+
+    def _setup_context(self, sig, m: _MissWatch, is_long: bool, arm_swp: bool, arm_div: bool,
+                       veto: bool, late: bool, htf_any: bool) -> dict:
+        """Freeze what this side's live setup looks like on this bar.
+
+        ⚠ **`arm_swp` / `arm_div` are the ENABLE-FILTERED flags** — the same ones `_armed` reads.
+        A setup armed by a source the config has switched off can never trade, and announcing it
+        as a forming setup would be a label with no code behind it. It is reported with its arm
+        confluence UNMET, which is exactly how `MissedSetup` books it (code 1).
+        """
+        cfg = self._cfg
+        arm_met = arm_swp or arm_div
+        if arm_met:
+            arm_text = ("Sweep + RSI div" if (arm_swp and arm_div)
+                        else "Sweep" if arm_swp else "RSI divergence")
+            if arm_swp and m.swp_nm:
+                arm_text += f" · {m.swp_nm}"
+        else:
+            # Name the source that DID arm it and say it is off — "your arm source is off" is
+            # meaningless without saying which one. Same sentence `MissedSetup.reasons` uses.
+            src = "RSI divergence" if m.arm_src == "DIV" else "a liquidity sweep"
+            arm_text = f"armed by {src}, but that source is switched OFF"
+
+        if not m.zone:
+            zone_text = "not tagged yet"
+        elif m.fvg:
+            zone_text = "0.5-0.886 tagged, FVG live"
+        elif cfg.exec_req_fvg:
+            zone_text = "0.5-0.886 tagged, but no FVG in it"
+        else:
+            zone_text = "0.5-0.886 tagged"
+        zone_met = bool(m.zone) and (m.fvg or not cfg.exec_req_fvg)
+
+        # The whole tradeable range, which is knowable as soon as the fib is live and is the
+        # thing worth saying BEFORE an order exists. `entry` (the one resting price) is read
+        # separately in `live_setups()`, from the order itself.
+        shallow, deep = sig.fibo_p2, sig.fibo_p6
+        zone = (float(shallow), float(deep)) if (shallow is not None and deep is not None
+                                                 and sig.fibo_dir != 0) else None
+        # Where the stop WOULD sit for a fill at the deep edge. Routed through `_sl_anchor` so
+        # `exec_sl_level` / `exec_sl_custom` / `exec_sl_deep` resolve exactly as they would for a
+        # real order — a stop the alert computed its own way is a second claim about one setup.
+        anchor = self._sl_anchor(sig, deep, is_long) if zone is not None else None
+        proj_stop = None
+        if anchor is not None:
+            buf = cfg.exec_sl_buf_tk * cfg.mintick
+            proj_stop = float(anchor - buf if is_long else anchor + buf)
+
+        # 🔴 **Only a READY setup can be blocked, and getting this wrong made the message lie.**
+        # A veto, the final hour or an HTF filter can be live at any moment while a setup is
+        # merely forming — reporting that as BLOCKED announced setups that then went on to rest
+        # and fill, under a sentence reading "the setup was ready and this rule stopped it".
+        # `BlockedSetup` has always required full readiness; this now asks the same question, and
+        # asks it of the CURRENT bar rather than of `m.blk_*`, which latch true for the rest of
+        # the setup's life and would keep reporting a rule that has since stopped applying.
+        blocked = []
+        if arm_met and zone_met:
+            if veto:
+                blocked.append("Divergence / extreme-RSI veto")
+            if late:
+                blocked.append("Final hour (16:00-18:00 New York)")
+            if htf_any:
+                blocked.append("HTF breakout / bias filter")
+
+        return {
+            "key": self._setup_key(is_long, m.sos_bar),
+            # Can this setup still reach a fill under the config this bot is running? `_armed`
+            # requires `arm_ok_*`, which is these same enable-filtered flags — and the arm source
+            # is SNAPSHOTTED at the SOS bar (`seq.sos_l_swp` / `.sos_l_div`), so a setup armed by
+            # a source you have switched off can never acquire a different one. It dies as miss
+            # code 1.
+            # ⚠ **MEASURED: it fires on ONE setup in 6.5 years, not the 220 first estimated.**
+            # `arm_src` names which source reached stage 1 first and is NOT the same question:
+            # `sos_l_swp` asks whether a sweep was live at the SOS, and nearly every
+            # divergence-armed setup has one, so it is tradeable. `miss_audit.py` reports **zero**
+            # code-1 misses over the same window, which is the independent confirmation.
+            # ⚠ This is the ONLY untradeable condition here, deliberately. A veto or the final
+            # hour can lift while a setup is still alive, so those stay reportable and are
+            # carried as `blocked_by` instead.
+            "tradeable": arm_met,
+            "side": 1 if is_long else -1,
+            "confluences": (
+                Confluence("Arm", arm_met, arm_text),
+                Confluence("Shift of structure", True, "confirmed"),
+                Confluence("Retrace zone", zone_met, zone_text),
+            ),
+            "zone": zone,
+            "stop": proj_stop,
+            "blocked_by": tuple(blocked),
+        }
+
+    def _book_setup_end(self, ctx: Optional[dict], state: str, reason: str,
+                        label: str = "") -> None:
+        """Record a setup reaching a terminal state, so the alert layer can close its thread.
+
+        A missing `ctx` is dropped in silence and that is deliberate: it means the watch was
+        opened before this bar's context was captured (a warm-up boundary, or a restart), so
+        there is no setup the reader was ever told about to close.
+        """
+        if ctx is None:
+            return
+        self._setup_done.append(SetupSnapshot(
+            key=ctx["key"], strategy=self.strategy_name, symbol=self._cfg.symbol or "",
+            side=ctx["side"], state=state, confluences=ctx["confluences"],
+            zone=ctx["zone"], entry=None, stop=ctx["stop"], targets=(),
+            blocked_by=ctx["blocked_by"], reason=(f"{label} — {reason}" if label else reason),
+            tradeable=ctx["tradeable"],
+        ))
+
+    def live_setups(self) -> List[SetupSnapshot]:
+        """Every setup this strategy is watching right now, plus any that resolved this bar.
+
+        ⚠ **Call it AFTER `step()` has returned.** The resting order is rebuilt during
+        `_place_entries`, which runs after `_record_misses` — so reading `_pend_*` any earlier
+        reports the PREVIOUS bar's price beside this bar's confluences, which is the "two claims
+        about one setup" failure with a one-bar delay hiding it.
+
+        ⚠ **`entry` is read from the ORDER, never recomputed from `sig`.** A fib keeps extending
+        while a limit rests; re-deriving the price here would describe a leg the order was never
+        placed against, exactly as recorded for `Trade.fib`.
+        """
+        out = list(self._setup_done)
+        for slot, pend in ((0, self._pend_long), (1, self._pend_short)):
+            ctx = self._setup_ctx[slot]
+            if ctx is None:
+                continue
+            resting = pend is not None and pend.sos_bar is not None
+            out.append(SetupSnapshot(
+                key=ctx["key"], strategy=self.strategy_name, symbol=self._cfg.symbol or "",
+                side=ctx["side"],
+                state=RESTING if resting else WATCHING,
+                confluences=ctx["confluences"],
+                zone=ctx["zone"],
+                entry=float(pend.edge) if resting else None,
+                stop=float(pend.sl) if resting else ctx["stop"],
+                targets=(float(pend.tp1), float(pend.tp2)) if resting else (),
+                blocked_by=ctx["blocked_by"],
+                tradeable=ctx["tradeable"],
             ))
+        return out
+
+    def drain_setups(self) -> List[SetupSnapshot]:
+        """`live_setups()`, then forget the resolved ones.
+
+        The live runner calls this once per bar. Terminal snapshots MUST be cleared or they are
+        re-sent every bar for the life of the process; the live watches are rebuilt from
+        `_setup_ctx` each bar and so are not accumulated state. Same contract as `blocks` /
+        `misses` and `runner._drain_records`.
+        """
+        out = self.live_setups()
+        self._setup_done.clear()
+        return out
 
     # ── blocked-setup marker (Pine 4065-4086) — reporting only ───────────────────
     def _record_blocks(self, sig, seq, dec, long_edge, short_edge) -> None:

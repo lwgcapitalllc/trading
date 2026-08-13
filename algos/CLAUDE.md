@@ -747,6 +747,7 @@ So a message now states what it IS and the kind picks the room:
 |---|---|---|
 | `TRADE` | `telegram_chat_id` | `live/bridge.py` only — the entry alert and the exit that replies to it |
 | `HEALTH` | `telegram_health_chat` → falls back to `telegram_chat_id` | everything else in the repo |
+| `SIGNAL` | `telegram_signal_chat` → falls back to `telegram_chat_id` | `live/setup_alerts.py` only — a setup forming, its entry zone going live, a rule blocking it, and what became of it. See *A THIRD room* below |
 
 ⚠ **`kind` is a REQUIRED argument, not a defaulted one.** A default routes silently, and "the wrong
 room, quietly" is the exact failure this ends — the same reasoning behind the ledger's stream routing
@@ -777,6 +778,66 @@ That app also refuses to use `TRADE` at all, by test: it has no way to know a tr
 ⚠ **`log_review.py` read `credentials.json` directly until this pass**, which silently ignored
 `LWG_TELEGRAM_HEALTH_CHAT` — an env override this repo's own template documented and nothing honoured.
 It goes through `notify.chat_for` now. **A second reader of one credential is a second answer.**
+
+### A THIRD room — `SIGNAL`, the pre-trade setup channel (2026-08-13)
+
+Aaron's ask: know a setup is coming *before* it trades — the confluences so far, the entry ZONE
+(shallow to deep), the projected stop — then have the outcome reply to that same message, whether
+it filled, was blocked by one of his own rules, or died. New Telegram group, **LWG Capital
+Signals**.
+
+`SIGNAL` → `telegram_signal_chat`, per-bot overridable exactly like the other two. **A third room
+because it is a third reflex** — read when you have time, not the moment it arrives — and because
+it is MEASURED at ~10x the volume of fills (**20.2 messages/month against 2 fills**, one every 1.5
+days, on `mpc_sos_fade` over 6.5 years). Putting that in the trades chat would bury the fills under
+setups that mostly do not become trades, which is the failure the split already exists to prevent,
+arriving from a new direction. Fallback stays asymmetric: SIGNAL borrows the trades chat and warns
+once; **TRADE never borrows another kind's room.**
+
+**`live/setup_alerts.py`** is the transition layer and knows NOTHING about any strategy — it reads
+`backtest.setups.SetupSnapshot`, so a new bot gets alerts by implementing `live_setups()` and
+nothing here changes. Formatting is in `live/alerts.py` (pure, no network, so wording is
+unit-testable and can never move a trade). Sending goes through `runner._notify`, so per-bot chat
+and token routing come free.
+
+⚠ **Per SETUP, not per transition, and that is a MEASURED failure rather than a preference.** A
+resting limit is rebuilt every bar and cleared when not armed — 665 raw transitions across 332
+setups over 6.5 years. Edge-triggering alone still announces one setup two or three times.
+
+⚠ **NEVER RAISES, and it binds harder here than anywhere else in the package**: `on_bar` runs
+inside `_on_bar`, between the strategy stepping and the broker being reconciled.
+
+🔴 **A strategy without the contract gets no alerts and the runner SAYS SO by name at startup** —
+never a silent skip. Same rule as `_log_risk_cap` beside it: an absent reporter and a quiet market
+look identical from outside. The `setup_alerts` ledger event records ON or OFF, and OFF carries
+why.
+
+🔴 **Warm-up snapshots are DISCARDED in `warm()`, and this is louder than the stale-record rule it
+sits beside.** `drain_setups()` returns everything resolved since the last drain, so without the
+discard the FIRST live bar would post years of history into Telegram in one burst — and again on
+every restart.
+
+⚠ **`setup_alert_categories` distinguishes ABSENT from EMPTY.** Absent = all four; `[]` = the
+reader switched them all off. Collapsing them would make a config typo look deliberate.
+
+⚠ **A setup the strategy has already refused is never announced** (`SetupSnapshot.tradeable`) —
+Aaron's rule: *"I should only be getting signals for the trades originating from my default
+settings."* The guard is checked BEFORE any bookkeeping, so a suppressed setup leaves no thread
+entry behind and can still be announced later if it becomes tradeable.
+
+✅ **The paired invariant — every trade in the TRADES room originated from a thread in the SIGNALS
+room — is CHECKED, by `backtest/tools/alert_rate.py`, not asserted.** 159 trades closed, 158
+announced as ENTERED over 6.5 years; the one gap is the warm-up boundary. **Re-run it after any
+entry-logic change**, because that check is how the `tradeable` filter fails: suppress one setup
+too many and a real trade arrives in the trades group having never been signalled, with nothing
+anywhere reporting a skipped message.
+
+**The credential is `telegram_signal_chat`** (`algos/credentials.json`, git-ignored, per machine;
+env `LWG_TELEGRAM_SIGNAL_CHAT`). ⚠ **Aaron's group is a BASIC group, not a supergroup** — id
+`-5572666026`, no `-100` prefix. **Telegram silently CHANGES that id if the group is ever upgraded
+to a supergroup** (which happens on its own when enough members join, or it is made public), and
+the sends then fail into the log rather than erroring anywhere visible. A signals channel that has
+gone quiet for days is that, until proven otherwise.
 
 ### One shape for every message — `shared/alert_format.py`
 

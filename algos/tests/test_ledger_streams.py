@@ -156,6 +156,11 @@ def test_every_event_written_in_algos_live_is_classified():
         # managing it. Same family as `went_live`. Its opposite number, a restart that could NOT
         # prove the position was its own, is `halted`, which is health for the same reason.
         "position_restored",
+        # Whether the pre-trade signals channel is on, written once per start — ON or OFF, and
+        # OFF carries WHY. HEALTH by the subject test: it describes what the machinery will
+        # report, not a setup. Note it is the reporting layer's state and never a setup's — an
+        # actual setup never reaches the ledger through this event, it reaches Telegram.
+        "setup_alerts",
     }
     unclassified = written - _DECISION_EVENTS - known_health
     assert not unclassified, (

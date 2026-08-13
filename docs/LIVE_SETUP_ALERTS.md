@@ -1,282 +1,394 @@
-# Live Setup Alerts — Telegram messages that say WHY, before the outcome is known
+# Live Setup Alerts — a signals channel that says WHY, before the outcome is known
 
 **Purpose:** The build plan for Telegram alerts that announce a setup while it is still forming —
-the confluences the bot has, the entry it is resting a limit at, and the stop — and then report what
-became of it, including the setups that never became trades.
-**Scope:** The alert layer only: what is sent, when, and where the text comes from. It does NOT
-change strategy logic, engines, the order bridge, or the backtest lab. Nothing here may move a trade
-decision.
-**Status:** NOT STARTED — specced only. Deferred by Aaron 2026-08-03 ("I won't build it now").
-**Created:** 2026-08-03.
-**Parent:** `docs/LIVE_TRADING_PIPELINE.md` — this extends its step 7 (Telegram alerts), which today
-specifies entry and exit only.
-
-**Aaron's requirement (2026-08-03):** *"a template of saying potential trade — here are the
-confluences, here is possible entry with SL, that way when we enter a trade we know why. Also it will
-say if a trade was spiked after a while… if a trade left us and we did not get in for some reason."*
+the confluences a strategy has so far, where it would enter, where the stop would sit — and then
+report what became of it, including the setups that never became trades.
+**Scope:** The alert layer only: a contract strategies fill in, and the routing/formatting that
+reads it. It does NOT change strategy logic, engines, the order bridge, or the backtest lab.
+**Nothing here may move a trade decision.**
+**Status:** SPEC — rewritten 2026-08-13 around a STRATEGY-AGNOSTIC contract at Aaron's request.
+The 2026-08-03 version specced this for the A+ bot alone and is superseded; what it measured is
+kept below, corrected.
+**Created:** 2026-08-03. **Rewritten:** 2026-08-13.
+**Parent:** `docs/LIVE_TRADING_PIPELINE.md` — this extends its step 7 (Telegram alerts), which
+today specifies entry and exit only.
 
 ---
 
-## 1. The one-paragraph answer
+## 1. What Aaron asked for
 
-**Roughly 80% of this already exists and is already running.** The live bot steps the full strategy
-on every closed 15m bar, and it already records — every bar, to disk — the setups its own rules
-refused (`BlockedSetup`) and the setups that reached 2-of-3 or better and died (`MissedSetup`). Both
-carry the confluence breakdown **already written out in English**, because the backtest chart needed
-it. "Price left without us" is not a new question: it is miss reason **code 7, "Never filled"**, with
-a sentence already attached. What is missing is small: those records go to a log file and nothing
-sends them anywhere; there is no alert at the moment a limit is *placed* (only after the fact); and
-the entry alert does not carry the reason it fired. **This is a routing and formatting job, not a
-detection job.**
+**2026-08-03:** *"a template of saying potential trade — here are the confluences, here is possible
+entry with SL, that way when we enter a trade we know why. Also it will say if a trade was spiked
+after a while… if a trade left us and we did not get in for some reason."*
+
+**2026-08-13, and this is the part that changed the design:** *"this should work generically for
+any strategy; so it should know how to identify the confluences needed to signal a strategy and
+tell me when one is upcoming"* and *"any bot I create … this should be scalable"*.
+
+Plus the earlier framing: alert at **2 of 3** — a sweep and a shift of structure are in, and the
+setup is now waiting on a retracement — not at the moment an order is placed. The channel is a new
+Telegram group, **LWG Capital Signals**.
+
+**Decisions taken 2026-08-13:**
+
+| Question | Answer |
+|---|---|
+| Re-announce when the planned entry price moves mid-setup | **No.** One message per setup; the fill message carries the real price |
+| Send setups one of your own rules refused | **Yes** |
+| Which bots | Any bot, present or future — hence the contract |
 
 ---
 
-## 2. What already exists
+## 2. What "generic" can and cannot mean
 
-| Piece | Where | State |
+**The alert layer cannot work out a strategy's confluences by itself.** That knowledge lives inside
+each strategy; a layer that inferred it would be inventing setups. What it CAN do is define one
+contract that every strategy fills in, and never know which strategy it is talking to.
+
+So each strategy answers one question — *what am I watching right now?* — and the answer is a list
+of `SetupSnapshot`s (§4). "2 of 3" stops being hardcoded and becomes `len(met) of len(confluences)`,
+so a four-confluence strategy reports 3 of 4 with no change to the alert layer.
+
+🔴 **A strategy that has not implemented the contract gets NO alerts and must SAY SO, loudly, at
+startup.** It must never go quiet instead. This repo has been bitten three times by a feature
+resolving through an empty registry and answering confidently — root `CLAUDE.md` rule 8. An absent
+implementation is a fact worth reporting, not a default worth guessing.
+
+⚠ **The implementation is per strategy and is written by whoever knows that strategy.** `mpc_bleg`
+and `mpc_bos` get theirs when they are actually run. Do not stub them: a stub is exactly the empty
+registry above.
+
+---
+
+## 3. How noisy — MEASURED, and the old estimate was wrong
+
+**The 2026-08-03 version of this document INFERRED ~3/month for the "limit is resting" message and
+flagged the guess as the thing most likely to make the channel unreadable. It was measured
+2026-08-13 and the guess was low by 2-4x, in the noisy direction.**
+
+One replay, `mpc_sos_fade` at shipped defaults, **155,807 M15 bars, 2020-01-01 → 2026-08-06**
+(79.1 months), `exec_secondary=False`, warm-up records dropped:
+
+| message | count | per month |
 |---|---|---|
-| The live bar loop | `algos/live/runner.py::_on_bar` | Steps signals → sequence → execution every closed bar |
-| Block/miss recording, live | `algos/live/runner.py::_drain_records` | Drains `execution.blocks` / `.misses` to the ledger each bar, then clears them |
-| The confluence text | `strategies/python/mpc_sos_fade/execution.py::MissedSetup.met_lines` | Already produces `Arm — Sweep · Day Low` / `SOS — confirmed` / `Zone — 0.5-0.886 tagged, FVG live` |
-| The seven miss reasons | same file, `_MISS_LABEL` / `_MISS_REASON` | Label + full sentence per code, incl. **7 "Never filled"** |
-| The seven block reasons | same file, `_BLOCK_LABEL` / `_BLOCK_REASON`, `_block_codes` | Every rule refusing a setup, in the Pine's precedence |
-| The resting order | same file, `_Pending` | `dir`, `edge` (entry), `sl`, `tp1`, `tp2`, `qty`, `sos_bar`, `fib` |
-| The fib ladder, frozen | same file, `_freeze_fib` → `TradeFib` | Eight `(ratio, price)` pairs snapshotted at placement |
-| Which source armed it | `sequence.py::SeqState.l_arm_src` / `.s_arm_src` | `"SWP"` / `"DIV"` / `""` |
-| The swept pool's name | `signals.py::Signals.recent_bsl` / `.recent_ssl` | `"Day Low"`, `"Asia High"`, … |
-| Telegram send | `algos/shared/notify.py` | `send_telegram_id` returns the message id, and takes `reply_to` — threading is already built |
-| Per-bot routing | `algos/live/runner.py::_notify` | Each bot can post to its own chat as its own bot |
-| Message formatting | `algos/live/alerts.py` | Pure functions, no network, no state — `format_entry` / `format_exit` today |
+| **WATCHING** — armed + SOS in, awaiting the retrace | 609 | **7.7** |
+| **RESTING** — raw `None → _Pending` transitions | 665 | 8.4 |
+| **RESTING** — deduped per setup `(side, sos_bar)` | 332 | **4.2** |
+| **ENTERED** | 159 | 2.0 |
+| **NEVER FILLED** (miss code 7) | 10 | 0.1 |
+| **BLOCKED** | 321 | 4.1 |
 
-**The point of the table:** every fact the messages need is already computed on the live box. The
-build adds no new market analysis.
+Three findings, all load-bearing on the design:
+
+🔴 **The resting-limit message must be deduped per SETUP, not per transition.** `_pend_long` /
+`_pend_short` are rebuilt every bar and set to `None` when not armed, so one setup flickers in and
+out of `_Pending` repeatedly — 665 transitions across 332 setups. An edge-triggered alert on the
+raw transition announces the same setup two or three times. This is §7.1 of the old spec being
+correct about the mechanism and still not going far enough: edge-triggering is necessary and not
+sufficient.
+
+⚠ **Roughly 3 of every 4 "upcoming trade" messages will not become a trade** — 609 setups reach
+2-of-3, 159 fill. That is the strategy behaving as designed (a selective entry refuses most of what
+it looks at), and it means the WORDING must say *setup forming*, never *trade incoming*. A channel
+whose headline is wrong 74% of the time reads as broken.
+
+🔴 **A third "finding" stood here and it was WRONG. It is recorded as wrong rather than deleted,
+because it was quoted to Aaron before it was checked.** The claim was: *"220 of the 609 are
+divergence-armed and this bot trades sweep-only, so they can never fill — filter them and the rate
+drops to 4.9/month."*
+
+**False, by two orders of magnitude.** `arm_src` records which source reached stage 1 **first**.
+Tradeability is a different question — `sos_l_swp`, *was a sweep live at the SOS* — and nearly
+every divergence-armed setup carries one too, so it is tradeable and most of them trade.
+**Measured two independent ways after the filter was built: it suppresses ONE setup in 6.5 years,
+and `miss_audit.py` reports ZERO misses with code 1 ("arm source off") over the same window.**
+
+⚠ **The lesson is one this repo keeps meeting from new directions: a count that is easy to obtain
+is not the count you asked for.** The 220 was real, measured, and about something else. **Ask what
+a field MEANS before reading a rate off it** — and the tell was available immediately, because
+code 1 exists precisely to count this and answered zero.
+
+**MEASURED END-TO-END once the thing was built** — `backtest/tools/alert_rate.py`, same window,
+driving the real contract, the real transition layer and the real formatters with the sender
+replaced by a collector:
+
+| message | count | per month |
+|---|---|---|
+| 👀 SETUP FORMING | 608 | 7.7 |
+| 👋 NO TRADE | 449 | 5.7 |
+| 🎯 ENTRY ZONE LIVE | 332 | 4.2 |
+| ✅ ENTERED | 158 | 2.0 |
+| 🚫 BLOCKED | 55 | 0.7 |
+| **total** | **1,602** | **20.2** |
+
+**608 threads, one per setup. Roughly one message every 1.5 days. 26% of announced setups became
+trades.**
+
+✅ **THE INVARIANT HOLDS, and it is checked by the tool rather than asserted here.** Aaron's
+requirement, 2026-08-13: *"the same trade signals that are going to the LWG Capital Algo trades
+group will originate from the signals that are going to this new group."* **159 trades closed, 158
+announced as ENTERED.** The one is the warm-up boundary — a setup that opened before the window
+began is discarded rather than posted, which is also what stops the first live bar dumping years of
+history into Telegram. `alert_rate.py` prints this check every run and says 🔴 BROKEN if more than
+one trade arrives unannounced, because that is the failure mode of the `tradeable` filter:
+suppress one setup too many and a real trade reaches the broker having never been signalled, with
+nothing anywhere reporting a skipped message.
+
+⚠ **BLOCKED came in at 0.7/month, not the 4.1 the transition counts above predicted, and the gap
+is a FIX rather than a discrepancy.** `BlockedSetup` counts a refusal each time a *ready* setup is
+turned down; the first version of this alert reported any veto, final-hour or HTF rule that was
+live while a setup was merely FORMING. That announced setups as blocked which then went on to rest
+and fill — under a sentence reading "the setup was ready and this rule stopped it". It now asks the
+same readiness question `BlockedSetup` does. **Found by rendering the messages against real bars,
+not by reading the code.**
+
+⚠ **158 ENTERED against 159 trades is correct.** One trade's setup opened during warm-up, and
+warm-up snapshots are discarded rather than announced — otherwise the first live bar would post
+years of history in one burst.
+
+⚠ **`SetupSnapshot.tradeable` IS implemented and it changes almost nothing** — see the correction
+in §3. It exists to enforce Aaron's rule (*"I should only be getting signals for the trades
+originating from my default settings"*) whatever the strategy or the config, not because it trims
+volume on this one. **Set it False only for a decision the strategy has ALREADY made and cannot
+revisit.** A merely-unmet confluence is not untradeable — it is the normal state of every setup
+before it fills — and getting that wrong hides real signals silently. A veto or the final hour can
+lift while a setup is alive, so those stay reportable and travel as `blocked_by` instead.
+
+⚠ **All of the above is `mpc_sos_fade` on XAUUSD M15 over one 6.5-year window.** It is not a
+prediction for any other strategy, and a new bot's rate must be measured the same way before its
+alerts are switched on.
+
+**The measuring script is `backtest/tools/alert_rate.py`.** Re-run it after any entry-logic change,
+and for every new strategy that implements the contract — same standing as `overlap_audit.py`.
 
 ---
 
-## 3. What is missing
+## 4. The contract — `backtest/setups.py`
 
-1. **No alert when a limit is placed.** Blocks and misses are recorded when a setup is *refused* or
-   *dies*. There is nothing at the forward-looking moment — "we are resting an order here, this is
-   why, this is the stop."
-2. **The entry alert does not say why.** `format_entry` sends direction, entry, stop, stop distance
-   and lot size. No confluences.
-3. **Nothing reaches Telegram.** `_drain_records` writes blocks and misses to the ledger file and
-   forgets them.
-4. **`_Pending` does not carry its own reason.** It has the prices and the fib ladder, not the arm
-   source or the zone state. That is the one real code addition (§6).
+Two frozen dataclasses and one method. Reporting only.
+
+```python
+@dataclass(frozen=True)
+class Confluence:
+    name: str            # "Sweep", "Shift of structure", "Retrace zone"
+    met: bool
+    detail: str = ""     # "Day High" / "confirmed" / "0.5-0.886 tagged, no FVG yet"
+
+@dataclass(frozen=True)
+class SetupSnapshot:
+    key: str                            # stable for this setup's whole life — the thread id
+    strategy: str
+    symbol: str
+    side: int                           # +1 long, -1 short
+    state: str                          # WATCHING / RESTING / FILLED / DEAD
+    confluences: tuple[Confluence, ...]
+    zone: tuple[float, float] | None    # (shallow, deep) — the whole valid entry range
+    entry: float | None                 # the ONE resting price; None until there is one
+    stop: float | None                  # projected from the deep edge before an order exists
+    targets: tuple[float, ...]
+    blocked_by: tuple[str, ...]         # rules currently refusing it
+    reason: str = ""                    # why it ended — FILLED / DEAD only
+```
+
+**`zone` and `entry` are different questions and both are wanted** (Aaron, 2026-08-13: *"you have a
+valid entry zone anywhere between the most shallow area to the deepest area and the potential stop
+loss is this"*). `zone` is the range price must reach for this setup to be tradeable at all — known
+the moment the setup arms, which is what makes the WATCHING message useful. `entry` is the single
+price an order is actually resting at, and does not exist until one is. For `mpc_sos_fade` the zone
+is the 0.5 → 0.886 fib band (`fibo_p2` → `fibo_p6`) and the stop projects off the deep edge, so
+both are answerable a long time before a limit is placed.
+
+⚠ **A strategy with no meaningful pre-entry range reports `zone=None`** rather than collapsing it
+onto `entry`. Two facts, two fields; a range and a price are not the same claim.
+
+Strategies implement `live_setups() -> list[SetupSnapshot]`.
+
+**Why the state machine lives in the SNAPSHOT rather than in the alert layer.** The alternative was
+for the alert layer to notice a setup disappear and then cross-reference the strategy's `misses` /
+`blocks` records to find out why. That needs a shared join key those records do not carry, and a
+join that matches too little invents drift while one that matches too much invents parity — the
+trap already recorded for `shadow_diff.py`. A strategy reports its own setup one last time carrying
+its own resolution, and the alert layer never has to correlate anything.
+
+**Rules, all load-bearing:**
+
+⚠ **`key` must be stable for the setup's whole life and unique across sides and strategies.** It is
+the Telegram thread id and the dedupe key. For `mpc_sos_fade` that is strategy + side + the SOS bar
+— the same identity `_MissWatch` already keys on.
+
+⚠ **Prices are COPIED from what the strategy is holding, never recomputed.** §9.
+
+⚠ **REPORTING ONLY.** Nothing may read a `SetupSnapshot` back into a decision. That is what keeps
+`compare_strategy.py` a valid parity gate — it diffs the `px_*` decision stream and this touches
+none of it. Same standing as `mfe_usd`, `tp1`/`tp2`, `Trade.fib` and `MissedSetup`.
+
+⚠ **Prove reporting-only by REPLAY, not by argument.** Replay the full history at HEAD and at the
+working tree and require a byte-identical trade list, the way the `zone_time_ms` work did. A green
+parity gate says the two implementations agree, never that either is right (rule 14).
 
 ---
 
-## 4. The four messages
+## 5. The five messages
 
-One Telegram **thread per setup**. Message 1 is the root; every outcome replies to it, so a setup and
-what became of it are never read apart. `send_telegram_id` + `reply_to` already does this — it is the
-same mechanism that makes a trade exit reply to its entry.
+One Telegram **thread per setup**, keyed on `SetupSnapshot.key`. Every outcome replies to the root,
+so a setup and what became of it are never read apart. `send_telegram_id` + `reply_to` already does
+this — the same mechanism that makes a trade exit reply to its entry.
 
-### 4.1 Potential trade (the root)
+### 5.1 Watching (the root) — Aaron's 2-of-3
 
-Fires when the bot places a resting limit — i.e. all three confluences are in and no rule refused it.
-
-```
-🔍 POTENTIAL · SHORT
-mpc_sos_fade — XAUUSD
-
-Arm — Sweep · Day High
-SOS — confirmed
-Zone — 0.5-0.886 tagged, FVG live
-
-Entry: 3,412.55   (limit resting)
-Stop: 3,428.90
-Stop distance: 1,635 pips
-TP1: 3,389.20   TP2: 3,371.05
-
-Sat 03 Aug 2026, 14:15 UTC
-```
-
-### 4.2 Entered — replies to 4.1
-
-The existing entry alert, plus the confluence block, so the message says why it fired. Where there
-was no root message (a fill on a setup the bot never announced), it carries the header itself.
-
-### 4.3 Never filled — replies to 4.1
-
-Miss code 7. This is Aaron's "a trade left us and we did not get in".
+Fires when a setup first appears. **7.7/month on A+** — not the 4.9 an earlier draft claimed; see the correction in §3.
 
 ```
-👋 NEVER FILLED
+👀 SETUP FORMING · SHORT
+mpc_sos_fade — XAUUSD.p   (2 of 3)
+
+Sweep — Day High
+Shift of structure — confirmed
+Retrace zone — not tagged yet
+
+Entry zone 3,405.10 – 3,418.60
+Stop if it fills 3,428.90
+
+Waiting on a retrace into that zone.
+```
+
+⚠ **"SETUP FORMING", never "POTENTIAL TRADE".** Three of four of these do not trade.
+
+⚠ **"Stop IF IT FILLS", never "Stop".** The stop is projected off the deep edge of the zone and no
+order exists yet. Stating it flat would be a price the bot is not holding — §9.
+
+### 5.2 Entry zone live — replies to 5.1
+
+An order is resting at a price. ~4.2/month. **Deduped per setup** (§3) — one of these per setup,
+ever, whatever the order does afterwards.
+
+```
+🎯 ENTRY ZONE LIVE · SHORT
+(2 of 3)
+
+Sweep — Day High
+Shift of structure — confirmed
+Retrace zone — not tagged yet
+
+Entry 3,412.55   (limit resting)
+Stop 3,428.90
+TP1 3,389.20 · TP2 3,371.05
+```
+
+🔴 **An order can rest at 2 of 3, and the message must not imply otherwise — found by rendering
+this against real bars rather than by reading the code.** The entry edge comes from a gap
+overlapping the 0.5-0.886 band, and the gap can be there before PRICE is, so the limit is placed
+in advance while the retrace confluence is still outstanding. The first version listed only the
+MET confluences and so hid the one fact a reader needs: the order is real, and price has not come
+to it yet.
+
+The FVG line is what carries Aaron's *"stop loss could be there because I see a fair value gap in
+this zone"* — and its absence carries the other half, *"no fair value gap in this zone, but this is
+a valid entry zone"*. Both sentences come from the strategy's own zone state; neither is composed
+by the alert layer.
+
+⚠ **The entry price can move while the limit rests and this message is NOT re-sent** (Aaron's call,
+2026-08-13). `_entry_edges` is recomputed every bar and a new gap can shift the resting price. The
+"Entered" message carries the real fill.
+
+### 5.3 Entered — replies to 5.1
+
+The short version. The trades chat still gets its own full entry alert from the bridge — different
+room, different job (`algos/CLAUDE.md` → *Two rooms*). This is not a duplicate of it.
+
+### 5.4 Didn't fill / setup died — replies to 5.1
+
+Aaron's *"a trade left us and we did not get in"*. Carries the strategy's own reason string.
+
+```
+👋 NO TRADE
 
 All three confluences met and the limit rested —
 price never came back to touch it.
-
-Setup died: Sat 03 Aug 2026, 19:45 UTC
 ```
 
-### 4.4 Blocked — replies to 4.1 if one exists, else standalone
+### 5.5 Blocked by a rule — replies to 5.1
 
-A setup that was fully ready and one of *your own rules* refused. This is the message that tells you
-whether a rule is protecting the account or costing it. Carries every refusing rule, not just the
-first — `BlockedSetup.reasons` already returns the full list in precedence order.
-
-**Also worth carrying, and cheap:** the *near* misses that never got as far as an order — a setup
-that reached the zone and found no gap to enter from (code 3). `MissedSetup.near` is the strategy's
-own built-in filter for "worth looking at", ported from the Pine's default view. Use it. Do not
-invent a second definition.
+A setup that was fully ready and one of your own rules refused. ~4.1/month. This is the message
+that tells you whether a rule is protecting the account or costing it. Carries **every** refusing
+rule, not just the first — `BlockedSetup.reasons` already returns the full list in precedence
+order.
 
 ---
 
-## 5. How noisy — measured
+## 6. Where it lives
 
-From `strategies/python/mpc_sos_fade/CLAUDE.md`, on XAUUSD M15, 2025-03-04 → 2026-07-27 (33,041
-bars, shipped defaults):
-
-| | count over ~17 months | ≈ per month |
+| Piece | Where | Why there |
 |---|---|---|
-| Trades | 46 | 2.7 |
-| Blocked setups | 80 | 4.7 |
-| Missed setups | 93 | 5.5 |
-| — of which "No retrace" (routine, none near) | 50 | 2.9 |
-| — of which "No FVG in zone" (all near) | 35 | 2.1 |
-| — of which **"Never filled"** | **4** | 0.2 |
-| — of which "Final hour" | 4 | 0.2 |
+| The contract | `backtest/setups.py` | The one layer both `algos/live/` and `strategies/python/` already import. Strategies must never import `algos/` |
+| Per-strategy implementation | `Execution.live_setups()` in each strategy | Only the strategy knows its own confluences |
+| Transition detection + threads | `algos/live/setup_alerts.py` | New module beside the bot |
+| Formatting | `algos/live/alerts.py` | Pure, beside `format_entry` / `format_exit` — no network, no state, so wording is unit-testable and changing it can never change a trade |
+| Sending | `runner._notify` | Per-bot chat and token routing come for free |
+| The room | a third `kind`, `SIGNAL` → `telegram_signal_chat` | See below |
 
-⚠ **The "Potential trade" count is INFERRED, not measured.** A setup that places an order becomes
-either a trade (46) or a never-fill (4), so ≈50 over the window ≈ **3/month**. Measure it properly
-before shipping — replay the window and count `_Pending` transitions — because that is the message
-that fires most often and the one that would make the group unreadable if the estimate is wrong.
+**A third room, not a third use of an existing one.** `algos/CLAUDE.md` → *Two rooms* is explicit
+that the chat carrying fills carries nothing else, and that a `kind` is REQUIRED so nothing routes
+silently. Signals are a third reflex: read when you have time, not the moment they arrive, and far
+more frequent than fills. It follows the same fallback rule as HEALTH — unset falls back to the
+trades chat and says so once, because an alert in the wrong room beats no alert.
 
-Recommendation: send **potential / entered / never-filled / blocked** by default and leave the
-routine "No retrace" misses OFF. That is roughly one message every two or three days.
+**Never raise.** `notify.py`'s standing rule: a notifier that can take down a trading loop is worse
+than a missed message. Every failure path prints and returns.
 
----
-
-## 6. The one real code change — `_Pending` must carry its own reason
-
-`_Pending` holds the prices and the frozen fib. It does not hold the arm source, the swept pool name,
-or the zone/FVG state. Add them the same way the fib was added: an all-or-nothing snapshot taken in
-`_place_entries`, on the bar the order is placed.
-
-```python
-@dataclass
-class ArmContext:
-    """Why this order exists, frozen on the bar it was placed. REPORTING ONLY."""
-    arm_src: str      # "SWP" / "DIV" / "SWP+DIV"
-    swept: str        # "Day High" — empty when divergence-armed
-    zone: bool
-    fvg: bool
-    sos_bar: Optional[int]
-```
-
-**Three rules, all of them load-bearing:**
-
-⚠ **Snapshot at PLACEMENT and read it back from the ORDER — never re-read `sig` at the fill.** A fib
-keeps extending and a sweep keeps being superseded while a limit rests. Re-reading at the fill would
-describe a setup the order was never priced against, while the stop and targets beside it in the same
-message are frozen at placement. This is the identical trap already recorded for `TradeFib`
-(`mpc_sos_fade/CLAUDE.md` → the ⚠ on `Trade.fib`), and it has a test there worth copying.
-
-⚠ **REPORTING ONLY.** Nothing may read an `ArmContext` back into a decision. That is what keeps
-`compare_strategy.py` a valid parity gate — it diffs the `px_*` decision stream, and this touches
-none of it. Same standing as `mfe_usd`, `tp1`/`tp2` and `Trade.fib`.
-
-⚠ **Compose the arm text with the EXISTING helper, do not write a second one.** `_record_misses`
-already builds `"Sweep + RSI div · Day High"` (execution.py ~866-871). Extract that into a function
-and call it from both places. Two functions producing the confluence sentence is two claims about one
-setup, which is this repo's most-repeated failure.
+**Thread ids are held in memory** on the runner, keyed by `SetupSnapshot.key`, dropped when the
+setup resolves. A lost id is cosmetic — `send_telegram_id` already retries as a standalone message
+when a reply target is gone.
 
 ---
 
-## 7. Where the alerting lives
+## 7. Build order
 
-A new module beside the bot: **`algos/live/setup_alerts.py`**.
-
-- **Formatting is pure**, in `algos/live/alerts.py` beside `format_entry` / `format_exit` — no
-  network, no state, so the exact wording is unit-testable and changing it can never change a trade.
-- **Sending** goes through `runner._notify`, so per-bot chat and token routing come for free.
-- **Never raise.** `notify.py`'s standing rule: a notifier that can take down a trading loop is worse
-  than a missed message. Every failure path prints and returns.
-- **Thread ids are held in memory** on the runner, keyed by side + `sos_bar`, and dropped when the
-  setup resolves. A lost id is cosmetic — `send_telegram_id` already retries as a standalone message
-  when a reply target is gone.
-
----
-
-## 8. Two implementation traps
-
-**8.1 `_pend_long` / `_pend_short` are rebuilt EVERY bar.** `_place_entries` recomputes both from
-scratch and sets them to `None` when not armed. So the alert must be **edge-triggered** on the
-`None → _Pending` transition. A level-triggered alert fires every 15 minutes for as long as the setup
-is live.
-
-**8.2 The entry price can MOVE while the setup is live.** `_entry_edges` is recomputed each bar, so a
-new gap or an extended fib can shift the resting price. Decision needed (§10) — the default
-recommendation is not to re-alert, and to let the "Entered" message carry the real fill price.
+1. `backtest/setups.py` — the contract, with tests.
+2. `Execution.live_setups()` for `mpc_sos_fade`, snapshotting from `_MissWatch` and `_pend_*`.
+   Prove reporting-only by full-history replay (byte-identical trade list).
+3. Re-run `compare_strategy.py` to exit 0. It must be unmoved.
+4. `format_watching` / `format_entry_zone` / `format_entered` / `format_no_trade` /
+   `format_blocked` in `alerts.py`. Unit-test the strings.
+5. `algos/live/setup_alerts.py` — transitions, per-setup dedupe, thread bookkeeping, which
+   categories are enabled.
+6. `SIGNAL` kind in `notify.py` + `telegram_signal_chat` + the per-instance override.
+7. Wire into `runner._on_bar`. Keep writing the ledger; the alert is additive.
+8. Startup: say which strategies implement the contract and which do not. Never silent.
+9. Dry-run for a week and read the volume before trusting it.
 
 ---
 
-## 9. Build order
+## 8. Rejected: sending a chart IMAGE
 
-1. Extract the arm-text helper in `execution.py`; add `ArmContext` and snapshot it in
-   `_place_entries`. Test that it is the context the ORDER rested on, not the one at the fill (copy
-   `test_the_recorded_fib_is_the_one_the_ORDER_rested_on_not_the_one_at_the_fill`).
-2. Re-run `compare_strategy.py` to exit 0. It must be unmoved — this is reporting-only.
-3. Add `sendPhoto`-free message builders to `alerts.py`: `format_potential`, `format_never_filled`,
-   `format_blocked`, and the confluence block appended to `format_entry`. Unit-test the strings.
-4. Add `algos/live/setup_alerts.py` — transition detection, thread-id bookkeeping, which categories
-   are enabled.
-5. Wire it into `runner._on_bar` / `_drain_records`. Keep writing the ledger; the alert is additive.
-6. Config per bot: which categories to send, in the bot's own instance config (so two bots can be
-   noisy and quiet independently, like `telegram_chat_id` already is).
-7. Measure the real "Potential trade" rate over the historical window before turning it on live.
-8. Run it in dry-run for a week and read the volume before trusting it.
-
----
-
-## 10. Open questions for Aaron
-
-1. **Blocked setups — in or out?** ~5/month. They are the most *useful* messages (is a rule earning
-   its keep?) and the least *actionable* in the moment.
-2. **The routine "No retrace" misses — in or out?** ~3/month, and they are the ordinary way a setup
-   dies. Recommendation: out.
-3. **Re-alert if the resting entry price moves?** Recommendation: no (§8.2).
-4. **One thread per setup, or flat messages?** Recommendation: threads.
-5. **Same Telegram group as the trade alerts, or its own?** A separate group keeps the trade record
-   clean; one group keeps the story together.
-
----
-
-## 11. Rejected: sending a chart IMAGE
-
-Considered first and dropped on 2026-08-03, on a measurement rather than an argument. Recording it so
-it is not re-proposed blind.
+Considered first and dropped 2026-08-03, on a measurement rather than an argument. Recorded so it
+is not re-proposed blind.
 
 The idea was to send the chart drawn up — fibs, entry zone, stop — as a picture. Two of the three
-pieces already exist: the backtest chart already renders itself to a PNG
-(`ChartPanel/index.tsx::copyChartImage`, klinecharts `getConvertPictureUrl`), and Telegram's
-`sendPhoto` is a small addition to `notify.py`. **The missing piece is that nothing anywhere draws a
-LIVE chart** — every chart in the command center is built from a finished run directory
-(`chart_spec.build_chart_spec(run_id)`).
+pieces already exist: the backtest chart renders itself to a PNG
+(`ChartPanel/index.tsx::copyChartImage`), and Telegram's `sendPhoto` is a small addition to
+`notify.py`. **The missing piece is that nothing anywhere draws a LIVE chart** — every chart in the
+command center is built from a finished run directory.
 
-Aaron's constraint is that it cannot depend on his laptop, which means it runs on the VPS. **Measured
-on the VPS, 2026-08-03: 2 logical processors, 4 GB RAM, ~920 MB free** (NinjaTrader alone is holding
-630 MB, beside two MT5 terminals, five Python processes and Defender). A headless Chromium with a
-30k-candle chart loaded is 300 MB–1 GB, and the command center's backtest runner and optimizer are
-built to spread across cores — on two cores, next to a live trading bot, that is a hazard, not a
-feature. So the browser-screenshot route is out on that box, and drawing the chart in Python is a
-few hundred lines of new drawing code plus a second thing in this repo that draws charts.
+Aaron's constraint is that it cannot depend on his laptop, which means it runs on the VPS.
+**Measured on the VPS, 2026-08-03: 2 logical processors, 4 GB RAM, ~920 MB free.** A headless
+Chromium with a 30k-candle chart loaded is 300 MB–1 GB, next to a live trading bot on two cores.
+Drawing it in Python instead is a few hundred lines plus a second thing in this repo that draws
+charts.
 
-**The text version delivers the actual requirement — knowing why, before the outcome — at a fraction
-of the cost, and it fits on the VPS with room to spare.** Revisit the image only if the lab ever
-moves to its own hardware.
+**The text version delivers the actual requirement — knowing why, before the outcome — at a
+fraction of the cost.** Revisit only if the lab moves to its own hardware.
 
 ---
 
-## 12. The standing rule for this feature
+## 9. The standing rule for this feature
 
-**Every number and every sentence in these messages must be the one the bot used — copied, never
-re-derived.** The entry price, the stop, the targets, the fib ladder, the arm source, the swept
-pool's name: all of them already exist in the running strategy. A message that recomputes any of them
-is a second claim about one setup, and two claims can disagree — which is exactly how this repo has
-already been bitten five times (the Run modal's costs, the Optimize modal's params, the SSH health
-dot, the lab-vs-Pine parameter names, the fib the chart nearly rebuilt itself).
+**Every number and every sentence in these messages must be the one the strategy used — copied,
+never re-derived.** The entry price, the stop, the targets, the arm source, the swept pool's name,
+whether a gap is live in the zone: all of them already exist in the running strategy. A message that
+recomputes any of them is a second claim about one setup, and two claims can disagree — which is how
+this repo has already been bitten five times (the Run modal's costs, the Optimize modal's params,
+the SSH health dot, the lab-vs-Pine parameter names, the fib the chart nearly rebuilt itself).
 
-An alert that names a level the bot never traded is worse than no alert, because you would act on it.
+**An alert that names a level the bot never traded is worse than no alert, because you would act on
+it.**

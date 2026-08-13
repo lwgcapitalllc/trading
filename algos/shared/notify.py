@@ -2,8 +2,8 @@
 notify.py — Telegram notification helper for VPS-side components.
 
 Single source of truth for sending Telegram messages from bots, the live runner, monitor,
-and any other VPS process. Every message declares its KIND (`TRADE` or `HEALTH`) and the kind
-picks the room — see the routing block below.
+and any other VPS process. Every message declares its KIND (`TRADE`, `HEALTH` or `SIGNAL`) and
+the kind picks the room — see the routing block below.
 
 Credentials come from `credentials.py` (env var, else the git-ignored `algos/credentials.json`)
 — never from a literal in this file. The previous token was committed here and in five other
@@ -39,14 +39,23 @@ from credentials import get as _cred, telegram_credentials  # noqa: E402
 # same reasoning that makes the ledger's stream routing a table rather than a guess. A new call
 # site that states nothing fails at the call, and `test_notification_routing.py` greps every
 # call site in the repo so it fails in the SUITE first.
+#
+# SIGNAL is the third room, added 2026-08-13. A pre-trade setup alert is a third reflex again:
+# read when you have time rather than the moment it arrives, and MEASURED at roughly five times
+# the volume of fills (11/month against 2/month on `mpc_sos_fade` over 6.5 years — see
+# `docs/LIVE_SETUP_ALERTS.md` §3). Putting that in the trades chat would bury the fills under
+# setups that mostly do not become trades, which is the exact failure the split already exists to
+# prevent, arriving from a new direction.
 TRADE = "trade"
 HEALTH = "health"
+SIGNAL = "signal"
 
-#: kind -> the credential key naming its chat. HEALTH falls back to the TRADE chat (see
+#: kind -> the credential key naming its chat. HEALTH and SIGNAL fall back to the TRADE chat (see
 #: `chat_for`); a message in the wrong room beats a message nobody sends.
 CHAT_KEYS = {
     TRADE:  "telegram_chat_id",
     HEALTH: "telegram_health_chat",
+    SIGNAL: "telegram_signal_chat",
 }
 
 _warned = False
@@ -60,10 +69,14 @@ def chat_for(kind: str, override: str = ""):
     `override` is the bot's own instance-config value and wins outright — that is what lets two
     bots on two accounts report into two different rooms.
 
-    HEALTH falls back to the TRADE chat when `telegram_health_chat` is unset, and SAYS SO once.
+    HEALTH and SIGNAL fall back to the TRADE chat when their own key is unset, and SAY SO once.
     That is the opposite call from `deadman_url`, where unset means the check cannot work at
     all: here the message is still worth delivering, just not where you wanted it. The fallback
     is a nuisance you can see, never a silent drop.
+
+    ⚠ **The fallback stays asymmetric: TRADE never borrows another kind's room.** Health or
+    signals landing among the fills is a nuisance you can see and fix; a fill buried in setup
+    chatter is the thing being prevented.
     """
     if kind not in CHAT_KEYS:
         raise ValueError(f"unknown notification kind {kind!r} - expected one of "

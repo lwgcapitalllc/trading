@@ -270,6 +270,66 @@ silently, as a missing trade rather than an error — and the **no-minimum-stop-
 below scales linearly with the risk %, so a degenerate stop that realised ~180% of equity at
 `exec_risk_pct = 10` realises the same multiple of whatever is typed here.
 
+## `live_setups()` — what this bot is WATCHING, for the pre-trade signals channel (2026-08-13)
+
+The `backtest/setups.py` contract, implemented here. `Execution._setup_context` freezes each
+side's live watch every bar; `live_setups()` assembles it with the CURRENT resting order;
+`drain_setups()` is what the live runner calls. Messages and volume:
+`docs/LIVE_SETUP_ALERTS.md`.
+
+**Three confluences, reported with the strategy's own words**: Arm (`Sweep · Day High`), Shift of
+structure, Retrace zone (`0.5-0.886 tagged, FVG live`). Plus the tradeable ZONE (`fibo_p2` →
+`fibo_p6`) and the stop projected off the deep edge through `_sl_anchor`, so `exec_sl_level` /
+`exec_sl_custom` / `exec_sl_deep` resolve exactly as they would for a real order.
+
+⚠ **REPORTING ONLY, PROVEN BY REPLAY.** HEAD vs the working tree over 155,807 M15 bars →
+byte-identical 159-trade list, SHA-256 `b52816e7…`, sum R **+142.177389**. **No figure in this
+file moves.** 244 strategy tests green.
+
+⚠ **The context is captured AFTER the accumulate block in `_record_misses`, not before.** Before
+it, `m.zone` had not yet been set on the bar price first tags the band, so the alert reported a
+setup as still waiting on a retrace on the very bar it got one. It also has to live there rather
+than in `live_setups()` because that is the one place the per-side gates are already resolved
+through the enable-toggles exactly as `_armed` reads them — so "armed" means the same thing in an
+alert as it does in a decision.
+
+⚠ **`live_setups()` must be called AFTER `step()` returns.** The resting order is rebuilt in
+`_place_entries`, which runs after `_record_misses`, so reading `_pend_*` any earlier reports the
+PREVIOUS bar's price beside this bar's confluences.
+
+⚠ **`entry` is read from the ORDER, never recomputed from `sig`** — the identical trap already
+recorded for `Trade.fib`: a fib keeps extending while a limit rests.
+
+🔴 **Only a READY setup can be reported as BLOCKED, and getting this wrong made the message lie.**
+A veto, the final hour or an HTF filter can be live while a setup is merely forming; reporting
+that announced setups as blocked which then rested and filled, under a sentence reading "the setup
+was ready and this rule stopped it". It now asks the same readiness question `BlockedSetup` does,
+and of the CURRENT bar rather than of `m.blk_*`, which latch true for the setup's remaining life.
+**Found by rendering the messages against real bars — no test saw it.**
+
+⚠ **`strategy_name` is set by the STRATEGY, not by `Execution`.** `mpc_bleg` and `mpc_bos` share
+this execution layer, so its own class name labelled all three "Execution" in Telegram.
+
+🔴 **`mpc_bleg` and `mpc_bos` INHERIT `live_setups()` and would have claimed a channel they can
+never fill.** Both set `_records_misses = False`, which gates the only method populating the setup
+context — so they inherited a `live_setups()` returning `[]` on every bar forever, a
+method-presence check called them supported, and the runner would have logged "Setup alerts: ON"
+for a channel that can send nothing. **The empty-registry failure arriving through a base class
+rather than a literal `{}`.** `reports_setups` is therefore DERIVED from `_records_misses`, so a
+new fork cannot acquire a silent, empty channel by forgetting a line — and `True` is still not a
+claim that a fork's confluences are right: turning the watch back on would report A+'s three
+confluences for a setup it does not trade. Each fork needs its own `_setup_context` first.
+
+⚠ **`tradeable` is `arm_met` and NOTHING ELSE, deliberately.** The arm source is snapshotted at
+the SOS, so a setup armed by a disabled source can never acquire a different one — that is a
+decision the strategy has already made. A veto or the final hour can LIFT while a setup is alive,
+so those stay reportable and travel as `blocked_by`. 🔴 **The estimate that justified this filter
+was wrong by two orders of magnitude**: "220 of 609 are divergence-armed and cannot trade" read
+`arm_src` (which source reached stage 1 FIRST), not `sos_l_swp` (was a sweep live at the SOS).
+**It fires on ONE setup in 6.5 years, and `miss_audit.py` reports ZERO code-1 misses over the same
+window** — the counter that settles it existed the whole time. **A count that is easy to obtain is
+not the count you asked for.**
+
 ## The restart seam — `snapshot_position()` / `restore_position()` (2026-08-10)
 
 `Execution` can write its whole open-trade state down and put it back. **It exists for

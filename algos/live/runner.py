@@ -153,6 +153,10 @@ class LiveRunner:
         self.stack = None
         self.feed = None
         self.bridge = None
+        # Built after the strategy, because whether it can do anything depends on whether that
+        # strategy implements the setup contract. None until then — never an object that quietly
+        # sends nothing.
+        self.setup_alerts = None
         self.source_hash = ""
         # Set before anything can fail, because `run()`'s exit record reads it on EVERY path —
         # including the ones that never reach the loop.
@@ -240,20 +244,26 @@ class LiveRunner:
         per instance, not global, so two bots on two accounts never share one feed unless their
         configs say to. Empty values fall back to the shared default.
 
-        `kind` is `notify.TRADE` or `notify.HEALTH` and decides WHICH of this bot's two rooms it
-        lands in. Almost everything this class sends is HEALTH; the two TRADE messages are the
-        entry and the exit, and they are both sent by the bridge.
+        `kind` is `notify.TRADE`, `notify.HEALTH` or `notify.SIGNAL` and decides WHICH of this
+        bot's three rooms it lands in. Almost everything this class sends is HEALTH; the two
+        TRADE messages are the entry and the exit, both sent by the bridge; SIGNAL is the
+        pre-trade setup channel (`setup_alerts.py`).
+
+        ⚠ **An unknown kind falls back to the HEALTH room rather than raising**, because this
+        method is on the path of the alert reporting a problem. `notify.chat_for` still refuses
+        the kind itself, so the message fails loudly there — one layer further from the loop.
 
         Returns Telegram's message id so a later message can reply to this one — that is how a
         trade's exit lands under its own entry instead of loose in the feed. None on any failure,
         which the bridge treats as "no thread to reply to" rather than an error.
         """
         try:
-            from notify import send_telegram_id, TRADE
+            from notify import send_telegram_id, SIGNAL, TRADE
+            per_bot = {TRADE: self.cfg.telegram_chat_id,
+                       SIGNAL: self.cfg.telegram_signal_chat}
             return send_telegram_id(
                 text, kind,
-                chat_id=(self.cfg.telegram_chat_id if kind == TRADE
-                         else self.cfg.telegram_health_chat),
+                chat_id=per_bot.get(kind, self.cfg.telegram_health_chat),
                 token_key=self.cfg.telegram_token_key,
                 reply_to=reply_to)
         except Exception as e:
@@ -437,6 +447,46 @@ class LiveRunner:
                           f"this account (this bot risks {per_trade}% per trade).")
         self.ledger.event("risk_cap", account_cap_pct=cap, per_trade_pct=per_trade)
 
+    def _start_setup_alerts(self) -> None:
+        """Wire up the pre-trade signals channel, and SAY which state it is in.
+
+        🔴 **Both states are reported, by name, every start.** A strategy that has not implemented
+        `live_setups()` sends nothing — and a channel that sends nothing looks exactly like a
+        channel with nothing to say. Three separate jobs in this repo ran for weeks against an
+        empty registry and reported success; the fix each time was to make the absence audible.
+        Same reasoning as `_log_risk_cap` directly above.
+
+        ⚠ **Constructing it is never allowed to stop a start.** The signals channel is reporting;
+        a bot that will not trade because its notifier could not be built has the priority exactly
+        backwards.
+        """
+        from setup_alerts import DEFAULT_CATEGORIES, SetupAlerts
+        try:
+            # ABSENT means all four; an empty list means the reader switched them all off. Those
+            # are different statements and `live_config` keeps them apart deliberately.
+            cats = self.cfg.setup_alert_categories
+            cats = DEFAULT_CATEGORIES if cats is None else tuple(cats)
+            alerts_obj = SetupAlerts(send=self._notify, log=self.log, categories=cats,
+                                     digits=getattr(self.cfg, "digits", 2))
+            if not alerts_obj.supported(self.strategy):
+                self.log.warning(
+                    f"Setup alerts: OFF — {self.cfg.strategy_class} does not implement "
+                    f"live_setups(). It is not that there are no setups; it cannot report any. "
+                    f"See docs/LIVE_SETUP_ALERTS.md.")
+                self.ledger.event("setup_alerts", enabled=False, reason="contract not implemented")
+                return
+            if not cats:
+                self.log.warning("Setup alerts: every category is switched off in this bot's "
+                                 "config — the signals channel will stay silent.")
+            self.setup_alerts = alerts_obj
+            room = self.cfg.telegram_signal_chat or "the shared telegram_signal_chat"
+            self.log.info(f"Setup alerts: ON — {', '.join(cats) or 'nothing'} → {room}")
+            self.ledger.event("setup_alerts", enabled=True, categories=list(cats))
+        except Exception as e:
+            self.log.warning(f"Setup alerts could not be started ({e}) — the bot trades on "
+                             f"regardless; only the signals channel is affected.")
+            self.ledger.event("setup_alerts", enabled=False, reason=str(e))
+
     def warm(self):
         """Replay history through the strategy WITHOUT acting on any of it."""
         from backtest.replay import EngineStack, iter_bars
@@ -489,13 +539,23 @@ class LiveRunner:
             ex.blocks.clear()
         if hasattr(ex, "misses"):
             ex.misses.clear()
+        # 🔴 The SAME rule for the pre-trade setup snapshots, and here it is louder than a stale
+        # ledger row: `drain_setups()` hands back every setup that resolved since the last drain,
+        # so without this the FIRST live bar would post years of history into the signals channel
+        # in one burst — and again on every restart. A warm-up setup is not a setup this bot is
+        # watching; it is history it replayed to build state.
+        replayed = 0
+        drain = getattr(ex, "drain_setups", None)
+        if callable(drain):
+            replayed = len(drain())
 
         self.log.info(
             f"Warmed {len(df)} bars ({df.index[0]} → {df.index[-1]}) in {time.time()-t0:.1f}s")
         # `replayed_setups` is COUNTED rather than silently dropped: a number that falls to
         # zero is how anyone notices the strategy stopped recording refusals at all.
         self.ledger.event("warmed", bars=len(df), first=str(df.index[0]),
-                          last=str(df.index[-1]), replayed_setups=dropped)
+                          last=str(df.index[-1]), replayed_setups=dropped,
+                          replayed_snapshots=replayed)
         self.reanchor_equity("after warm-up")
         return df
 
@@ -763,6 +823,7 @@ class LiveRunner:
             # identical from outside — the same reason `deadman.py --status` reports an unset
             # URL rather than exiting quietly. It is a HEALTH record, not a decision.
             self._log_risk_cap()
+            self._start_setup_alerts()
             self.bridge.adopt_broker_state()
             if self.bridge.state is BridgeState.HALTED:
                 return 4, "bridge halted while adopting the broker's state"
@@ -1160,6 +1221,13 @@ class LiveRunner:
 
         self.ledger.bar(dec, sig, seq)
         self._drain_records()
+        # AFTER the strategy has stepped — the resting order is rebuilt inside `execution.step`,
+        # so reading it any earlier reports last bar's price beside this bar's confluences. It
+        # sits BEFORE the bridge deliberately: this is a read of what the strategy decided, and
+        # ordering it after a broker call would make an alert depend on a network round trip.
+        # It never raises; see `setup_alerts.SetupAlerts`.
+        if self.setup_alerts is not None:
+            self.setup_alerts.on_bar(self.strategy)
         self.bridge.sync(dec, sig)
 
         if self.bridge.state is BridgeState.HALTED:

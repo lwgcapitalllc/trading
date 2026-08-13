@@ -49,6 +49,11 @@ class MpcSosFadeStrategy:
         self.execution = Execution(self.config, initial_capital=initial_capital,
                                    resolver=resolver, profile=profile,
                                    account=account, leg=leg)
+        # What a pre-trade setup alert calls this bot. REPORTING ONLY — it names the STRATEGY,
+        # which `Execution` cannot know: `mpc_bleg` and `mpc_bos` share this execution layer, so
+        # its own class name would label all three "Execution" in Telegram. Set here because the
+        # strategy is the only object that knows which of them it is.
+        self.execution.strategy_name = type(self).__name__
         self.decisions: List[Decision] = []
 
     def _fill_model(self, tick_source, cost_profile=None):

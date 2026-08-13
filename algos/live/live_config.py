@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _INSTANCES = _REPO_ROOT / "algos" / "markets" / "fx" / "instances"
@@ -98,9 +98,21 @@ class LiveConfig:
     #   telegram_token_key— NAMES a key in algos/credentials.json ("telegram_token_bleg"),
     #                       never the token itself. Set it only to give this bot its own
     #                       Telegram identity; leave empty to send as the default bot.
+    #   telegram_signal_chat— where its PRE-TRADE SETUP alerts go: a setup forming, its entry
+    #                       zone going live, a rule blocking it, and what became of it. A third
+    #                       room because it is a third reflex — read when you have time, not the
+    #                       moment it arrives — and MEASURED at ~5x the volume of fills (11/month
+    #                       against 2/month over 6.5 years). Empty = the shared
+    #                       `telegram_signal_chat`. See `docs/LIVE_SETUP_ALERTS.md`.
+    #   setup_alert_categories— which of those four to send. Empty list = none; ABSENT = all four
+    #                       (`setup_alerts.DEFAULT_CATEGORIES`). The two are deliberately
+    #                       different: "I switched them all off" is a choice, "I said nothing" is
+    #                       not, and collapsing them would make a config typo look deliberate.
     telegram_chat_id: str = ""
     telegram_health_chat: str = ""
+    telegram_signal_chat: str = ""
     telegram_token_key: str = ""
+    setup_alert_categories: Optional[List[str]] = None
 
     # ── runtime ─────────────────────────────────────────────────────────────
     warmup_bars: int = 5000           # history replayed to warm the engines before acting
