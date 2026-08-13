@@ -35,21 +35,6 @@ if grep -qE '^(Merge |Revert |fixup!|squash!)' "$MSG_FILE"; then
   exit 0
 fi
 
-# ── The honest override ───────────────────────────────────────────────────────
-# `DOCS: none - <reason>`. The reason is required and has to say something, so the
-# line cannot decay into a rubber stamp.
-if grep -qiE '^[[:space:]]*DOCS:[[:space:]]*none' "$MSG_FILE"; then
-  if grep -qiE '^[[:space:]]*DOCS:[[:space:]]*none[[:space:]]*[-—:,][[:space:]]*[^[:space:]].{9,}' "$MSG_FILE"; then
-    exit 0
-  fi
-  echo ""
-  echo "  The DOCS: none line needs a reason of its own - at least ten characters."
-  echo ""
-  echo "      DOCS: none - <why this change needs no CLAUDE.md update>"
-  echo ""
-  exit 1
-fi
-
 # ── What changed ──────────────────────────────────────────────────────────────
 STAGED="$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMRD)"
 [ -z "$STAGED" ] && exit 0
@@ -85,6 +70,89 @@ is_exempt() {
   esac
   return 1
 }
+
+# ── Proof: a change to the money paths has to name its evidence ───────────────
+#
+# Why this exists: the doc check above proves somebody WROTE something down. It does not
+# prove anybody CHECKED anything. The repo's expensive mistakes all shipped with docs and
+# green tests - a 54.82-lot order on a $2,000 account, a bot re-anchoring its sizing to a
+# stranger's balance, an 82-combination sweep from a port whose parity gate had never run.
+#
+# So for the paths where a wrong number costs money rather than time, the commit message has
+# to name the evidence. One line. It is not graded - the point is that you had to type what
+# you actually ran, which is the moment you notice you ran nothing.
+#
+#     MEASURED: cost_tiers.py, 155,531 M15 bars - ECN 157 trades / +151.39R
+#     TESTED:   9 new tests in test_account_identity.py, 5 watched red against HEAD
+#     PROOF: none - renamed a local variable, no behaviour change
+#
+# Deliberately NARROW. A hook that nags on every UI tweak is a hook people learn to bypass,
+# and `--no-verify` leaves no trace at all. If you widen it, widen it for a reason you can
+# name, and expect the nag to cost you more than the paths you added are worth.
+needs_proof() {
+  case "$1" in
+    engines/*)                 return 0 ;;  # canonical shared libraries - a change moves every consumer
+    strategies/*)              return 0 ;;  # what a bot actually trades
+    algos/live/*)              return 0 ;;  # the live loop and the order bridge
+    algos/shared/*)            return 0 ;;  # order sizing, mt5_ops, account risk
+    backtest/*)                return 0 ;;  # fills, costs, replay - decides what every number MEANS
+    indicators/*.pine)         return 0 ;;  # the other half of every parity gate
+  esac
+  return 1
+}
+
+PROOF_FILES=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  is_exempt "$f" && continue
+  needs_proof "$f" && PROOF_FILES="$PROOF_FILES$f
+"
+done <<EOF
+$STAGED
+EOF
+
+if [ -n "$PROOF_FILES" ]; then
+  # A reason of at least ten characters, so the line cannot decay into a rubber stamp -
+  # the same shape as the DOCS: none override below.
+  if ! grep -qiE '^[[:space:]]*(MEASURED|TESTED|PROOF:[[:space:]]*none)[[:space:]]*[-—:,][[:space:]]*[^[:space:]].{9,}' "$MSG_FILE"; then
+    echo ""
+    echo "  COMMIT REFUSED - this touches a path where a wrong number costs money,"
+    echo "  and the message does not say what you checked."
+    echo ""
+    printf '%s\n' "$PROOF_FILES" | grep -v '^$' | head -6 | sed 's/^/      /'
+    n="$(printf '%s\n' "$PROOF_FILES" | grep -cv '^$')"
+    [ "$n" -gt 6 ] && echo "      ... and $((n - 6)) more"
+    echo ""
+    echo "  Add ONE line to the commit message naming your evidence:"
+    echo ""
+    echo "      MEASURED: <command, sample size, result>"
+    echo "      TESTED:   <how many tests, how many watched RED against HEAD>"
+    echo ""
+    echo "  A test you have not watched fail proves nothing - run /prove."
+    echo "  A number you have not replayed is a guess - run /measure."
+    echo ""
+    echo "  If this genuinely needs no evidence, say why:"
+    echo ""
+    echo "      PROOF: none - <reason>"
+    echo ""
+    exit 1
+  fi
+fi
+
+# ── The honest override ───────────────────────────────────────────────────────
+# `DOCS: none - <reason>`. The reason is required and has to say something, so the
+# line cannot decay into a rubber stamp.
+if grep -qiE '^[[:space:]]*DOCS:[[:space:]]*none' "$MSG_FILE"; then
+  if grep -qiE '^[[:space:]]*DOCS:[[:space:]]*none[[:space:]]*[-—:,][[:space:]]*[^[:space:]].{9,}' "$MSG_FILE"; then
+    exit 0
+  fi
+  echo ""
+  echo "  The DOCS: none line needs a reason of its own - at least ten characters."
+  echo ""
+  echo "      DOCS: none - <why this change needs no CLAUDE.md update>"
+  echo ""
+  exit 1
+fi
 
 # The CLAUDE.md that owns a path: the nearest one walking up to the repo root.
 owner_of() {
