@@ -817,6 +817,23 @@ sits beside.** `drain_setups()` returns everything resolved since the last drain
 discard the FIRST live bar would post years of history into Telegram in one burst — and again on
 every restart.
 
+🔴 **NOTHING IN `algos/live/` MAY IMPORT `backtest`, `engines` OR THE STRATEGY PACKAGE AT MODULE
+SCOPE, AND THIS TOOK THE LIVE BOT DOWN ON 2026-08-13.** `alerts.py` grew a module-level
+`from backtest.setups import FILLED`; `bridge.py` imports `alerts` and `runner.py` imports
+`bridge`, all before `_bind_code()` binds the frozen snapshot. Every start died with
+`Cannot freeze this deployment: … was already imported from the repo before the snapshot was
+bound`, exit 2, uptime 1 second, on a ~60s watchdog loop until the import moved into its function.
+
+✅ **The guard worked exactly as designed** — it named the module, named the cause and said what
+to do, and it refused to run rather than silently half-applying the freeze. ⚠ **What it could not
+do is fire before the code reached a live bot**: `is_frozen` is false in every test and every dry
+run, so the ONLY configuration that trips it is the one with real money behind it.
+`_bind_code`'s docstring said *"Nothing in `algos/live/` imports these at module scope
+(checked)"* — checked by a human, once, and no longer true by the time it mattered.
+**`tests/test_no_frozen_imports_at_module_scope.py` now imports each entry module in a SUBPROCESS
+and fails by name**, so this fails in the suite instead of on the box. **The fix is always to move
+the import inside the function, never to add an allow-list.**
+
 ⚠ **`setup_alert_categories` distinguishes ABSENT from EMPTY.** Absent = all four; `[]` = the
 reader switched them all off. Collapsing them would make a config typo look deliberate.
 

@@ -32,15 +32,23 @@ _SHARED = Path(__file__).resolve().parent.parent / "shared"
 if str(_SHARED) not in sys.path:
     sys.path.insert(0, str(_SHARED))
 
-# repo-root on path so `backtest.setups` imports standalone, matching the strategy packages'
-# shim. This file stays PURE — the import is one module of frozen dataclasses and constants, no
-# engines and no replay, so `alerts.py` still has no state and no network.
-_ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
 from alert_format import alert  # noqa: E402
-from backtest.setups import FILLED  # noqa: E402
+
+# 🔴 **NOTHING FROM `backtest` OR `strategies` MAY BE IMPORTED AT THIS MODULE'S TOP LEVEL, and
+# this is enforced by the version pin rather than by discipline.** `bridge.py` imports this file,
+# `runner.py` imports `bridge`, and all of that happens BEFORE `runner._bind_code()` puts the
+# frozen `deployed/` snapshot on `sys.path`. An import here therefore resolves against the REPO,
+# and the bot would then run a mix of deployed and repo code while reporting the deployed
+# version — the exact thing the pin exists to prevent.
+#
+# It is not theoretical: a module-level `from backtest.setups import FILLED` here took the live
+# bot down on 2026-08-13 and it crash-looped until the import moved. `version.py` refused every
+# start with `Cannot freeze this deployment: backtest.setups was already imported from the repo
+# before the snapshot was bound`, which is the guard working exactly as designed — it named the
+# module, named the cause and told us to move the import later.
+#
+# The same rule binds any future need for a strategy-side constant in this file: import it INSIDE
+# the function that uses it.
 
 # Aaron's words, kept verbatim so the message says what he asked to see.
 WIN, LOSE, BREAKEVEN = "WIN", "LOSE", "BREAKEVEN"
@@ -179,6 +187,11 @@ def format_resolved(snap, digits: int = 2) -> str:
     `reason` is the STRATEGY's own sentence, never one composed here. Two explanations for one
     death can disagree, and a reader has no way to tell which one is the bot's.
     """
+    # Imported HERE, not at module level — see the block at the top of this file. By the time any
+    # message is formatted the deployed snapshot is bound, so this resolves against the code the
+    # bot was promoted with rather than against the working tree.
+    from backtest.setups import FILLED
+
     if snap.state == FILLED:
         return alert("✅", "ENTERED", snap.direction,
                      "", "Filled. The trade alert has the size and the risk.")

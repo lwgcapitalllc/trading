@@ -38,10 +38,15 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, Optional, Sequence, Set
 
-_ROOT = Path(__file__).resolve().parents[2]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
+# ⚠ **This module inserts NOTHING onto `sys.path`, deliberately.** It is imported from
+# `runner._start_setup_alerts`, which runs AFTER `_bind_code()` has put the frozen `deployed/`
+# snapshot at position 0 — so `backtest.setups` below resolves against the code the bot was
+# PROMOTED with, which is what the version pin promises. Re-inserting the repo root here would
+# jump it back in front of the snapshot and silently undo that for every later import.
+#
+# The sibling rule, and the one that actually bit: `alerts.py` may not import this package at
+# module level at all, because `bridge.py` pulls it in before the snapshot is bound. See the
+# block at the top of that file — it took the live bot down on 2026-08-13.
 from backtest.setups import RESTING, SetupSnapshot, implements_contract  # noqa: E402
 
 import alerts  # noqa: E402  (same package; `runner` puts this dir on the path)
