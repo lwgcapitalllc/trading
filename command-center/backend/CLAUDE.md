@@ -2250,12 +2250,22 @@ summing the subset that happens to carry the field. Per-trade `r` has only been 
 change of position size cannot move; the shared-stack audit measured 99 identical trades at
 +17.8674R reading $21,064 solo and $47,758,999 stacked.
 
-⚠ **NON-VACUITY IS PARTIAL AND THAT IS WHY IT IS WRITTEN DOWN.** Collapsing NULL into `[]` makes
-the field vanish from the differing list, and **no stored pair isolates it to a VERDICT flip** —
-`cost_layers` and `broker_profile` landed in the same change and always move together, so
-something else always differs too. The guard was proven at the function instead (three inputs,
-three distinct strings, one under mutation). A synthetic-row test would close it; do that before
-trusting the exit code as a gate.
+✅ **NON-VACUITY IS NOW COMPLETE, AND IT NEEDED A SYNTHETIC ROW BECAUSE HISTORY CANNOT EXPRESS THE
+CASE.** `tests/test_run_diff.py` (11) builds two runs differing in `cost_layers` ALONE, against the
+real schema via `lab_db.init_db`. **No pair of stored runs can do that** — `cost_layers` and
+`broker_profile` landed in the same change and have moved together on every row, so on live data
+something else always differs and the verdict reads "not comparable" even with the guard disarmed.
+**Six mutations were RUN, each turning its named test red**, and each is recorded in its own test's
+docstring: collapsing NULL into `[]`, returning `0.0` for an unrecorded R, dropping the partial-R
+refusal, dropping the dollar warning, typo-ing a basis field, and forcing `diff_basis` to always
+report a difference. ⚠ **The first of those is the one with no real-data counterexample**, which is
+the whole argument for the file.
+
+⚠ **A typo in `BASIS_FIELDS` does NOT fail silently, and the test that guards it was first written
+on the opposite assumption.** `sqlite3.Row["nope"]` raises IndexError — checked, not assumed — so
+the script crashes on every comparison rather than quietly calling two different runs comparable.
+The guard is kept because it NAMES the bad field, where the raw IndexError says only that a key was
+missing.
 
 ## ChartSpec candles — cap the WINDOW, never the timeframe
 
