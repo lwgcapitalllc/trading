@@ -385,6 +385,45 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   VWAP stretch and fading the opening-range break both lose to random in 9 years out of 9. Gold does
   not mean-revert intraday. Do not build either. Stdlib only, runs off `backtest/cache/`.
 
+- **`tools/killzone_profile.py`** + **`tools/killzone_sweep.py`** — **is the New York kill zone
+  special, or does it just look special because we watch it?** Added 2026-08-04, stdlib only, runs
+  off `backtest/cache/`. The profile tool measures what price DOES in a window and reports the same
+  statistics for every other NY hour, so nothing can look remarkable until you have seen the base
+  rate. The sweep tool then replaces its crude "took out the last seven hours" proxy with the real
+  `engines/liquidity/` levels — PDH/PDL, PWH/PWL, H4 sweep targets, each finished session's high and
+  low — and asks which level, when taken, actually precedes a reversal.
+  🔴 **The answer is a REFUSAL and it is unambiguous. There is no clock edge and no level edge in
+  KZ1** (2,031 days, 2018-09-21 → 2026-08-11, re-run 2026-08-13). At +2h the 10:00–11:00 window
+  reverses the leg into it **49.0% of the time — a coin flip, and the LOWEST rate of the twelve
+  hours measured**, i.e. the hour everyone watches is the least reversal-prone one on the board.
+  The naive fade is **−0.087R over 2,026 trades** and loses in eight of nine years.
+  ⚠ **The interesting half is that REAL levels did not rescue it, and that is the whole point of
+  the second tool.** A real level is swept in this window on 63.2% of days, and **every single level
+  is negative** when you trade the sweep's own direction — H4 highs −0.083R, H4 lows −0.071R, and
+  the "classic" ones are the worst of the lot (PDH **−0.264R**, Asia H −0.238R, London H −0.191R).
+  The crude proxy's apparent lift (a losing fade −0.117R → −0.011R on swept days) does **not**
+  survive being given actual liquidity levels. ⚠ **One cut is positive — "sweep OPPOSES the fade",
+  +0.076R on 189 trades — and it is the only positive number in three tables of dozens. Treat it as
+  what a search over many cuts produces by construction, not as a finding.** ⚠ These are two
+  STUDIES, not strategies: no costs, no ladder, no confluence, stop wins any ambiguous bar. They say
+  the trigger carries no information; they do not price a finished system.
+
+- 🔴 **All three study tools above were BRICKED from the day `FEED_VERSION` went to 3 until
+  2026-08-13, and the fix is a standing lesson about version pins.** `killzone_profile.py`,
+  `killzone_sweep.py` and `h4_sweep_profile.py` each guard their clock arithmetic with a cache
+  version check, because v1 bars are stamped in broker-local time and every session boundary would
+  be silently wrong. Correct instinct. But all three wrote it as `if version != 2` — an EQUALITY —
+  when what they meant was a FLOOR. **v2 → v3 added the VOLUME column and did not touch a single
+  timestamp** (`backtest/data/cache.py`), and these three tools read price and the clock only, so v3
+  is strictly better input than the v2 they demanded. They refused it. ⚠ **The refusal MESSAGE was
+  worse than the refusal**: it said "version 1 bars are stamped in broker-local time", sending the
+  reader off to re-pull 186k bars to fix a bug in one line — a diagnostic reporting on a hypothesis
+  rather than on what it actually found. ✅ **The fix is proved, not assumed: `h4_sweep_profile.py`
+  re-run on the v3 cache reproduces `docs/H4_SWEEP_STUDY.md` EXACTLY** — pivot reversal @2R, n=145,
+  +0.210R gross, $5.75 median stop, **+0.151R net**, every figure identical to the v2-era run the
+  doc records. That is the evidence the bump was orthogonal to the clock. **Pin a floor when you
+  mean a floor, and ask what a version bump actually CHANGED before refusing on it.**
+
 - **`tools/bos_sweep.py`** — 🔴 **DO NOT QUOTE ITS NUMBERS. FALSIFIED 2026-08-07, the day it was
   written.** On the same symbol, timeframe and window, with the config confirmed identical by the
   Pine's own `[CFG]` echo, this tool reports **20 trades / 80% win / PF 2.97 / +102.5%** where the

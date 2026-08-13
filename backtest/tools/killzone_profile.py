@@ -57,6 +57,10 @@ NY = ZoneInfo("America/New_York")
 UTC = dt.timezone.utc
 CACHE = _ROOT / "backtest" / "cache"
 
+# The oldest cache feed_version whose TIMESTAMPS this study can trust. A FLOOR, never an
+# equality — a newer cache is newer for reasons that have nothing to do with the clock.
+MIN_FEED_VERSION = 2
+
 # The pre-leg starts here (NY time). 03:00 is inside the London session and well before
 # the NY cash open, so the leg into the kill zone is a real move, not overnight drift.
 PRE_LEG_START = dt.time(3, 0)
@@ -88,21 +92,31 @@ class Bar(NamedTuple):
 def load_days(symbol: str, tf: str, start: dt.date | None, end: dt.date | None):
     """Read the cached bars once and bucket them by NY calendar date.
 
-    The cache stamps bars in true UTC (feed_version 2). Anything older is the
+    The cache stamps bars in true UTC from feed_version 2 onward. Anything older is the
     broker-local-timestamp era, where every session boundary in this study would be
     silently wrong — so refuse it rather than report a plausible-looking lie.
+
+    ⚠ The floor is a MINIMUM, not an equality, and it was written as `!= 2` until
+    2026-08-13 — which bricked this study the day `FEED_VERSION` went to 3 for a reason
+    that has nothing to do with time (v3 added the VOLUME column; the timestamps did not
+    move). This tool is a pure clock-and-price measurement, so v3 is strictly better
+    input than the v2 it demanded. Worse than the refusal was its MESSAGE: it blamed
+    broker-local timestamps, sending the reader off to re-pull 186k bars to fix a bug in
+    this line. Pin a floor when you mean a floor.
     """
     path = CACHE / f"{symbol}__{tf}.csv"
     meta = CACHE / f"{symbol}__{tf}.meta.json"
     if not path.exists():
         raise SystemExit(f"no cached bars at {path} — pull them with the MT5 agent first")
     if meta.exists():
-        version = json.loads(meta.read_text()).get("feed_version")
-        if version != 2:
+        # Missing key == pre-sidecar == the version-1 era, same default backtest/data/cache.py uses.
+        version = json.loads(meta.read_text()).get("feed_version", 1)
+        if version < MIN_FEED_VERSION:
             raise SystemExit(
-                f"{path.name} is feed_version {version}; this study needs 2 (true UTC). "
-                "Re-pull the bars — version 1 bars are stamped in broker-local time and "
-                "every NY hour in this report would be off by the broker's offset."
+                f"{path.name} is feed_version {version}; this study needs at least "
+                f"{MIN_FEED_VERSION} (true UTC). Re-pull the bars — version 1 bars are "
+                "stamped in broker-local time and every NY hour in this report would be "
+                "off by the broker's offset."
             )
 
     days: dict[dt.date, list[Bar]] = defaultdict(list)
