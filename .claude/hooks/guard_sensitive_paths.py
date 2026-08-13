@@ -39,12 +39,48 @@ def relative(path: str) -> str:
     return path[i + len(marker):] if i != -1 else path
 
 
-def oversized_claude_md(path: str) -> str:
-    """The reminder for an already-bloated CLAUDE.md, or "" if it is fine.
+def edit_delta(tool_input: dict) -> int:
+    """How many bytes this edit ADDS to the file. Negative means it shrinks.
+
+    Returns 0 when the shape is unknown, which reads as "not growing" and stays quiet —
+    the guard's job is to catch growth, and guessing on an unfamiliar tool shape would
+    reintroduce exactly the nagging this replaced.
+    """
+    if "content" in tool_input:                      # Write — full replacement
+        try:
+            old = os.path.getsize(tool_input.get("file_path", ""))
+        except OSError:
+            old = 0
+        return len(str(tool_input["content"]).encode("utf-8")) - old
+    if "new_string" in tool_input:                   # Edit
+        new = len(str(tool_input.get("new_string", "")).encode("utf-8"))
+        old = len(str(tool_input.get("old_string", "")).encode("utf-8"))
+        n = 1
+        if tool_input.get("replace_all"):
+            try:
+                with open(tool_input.get("file_path", ""), encoding="utf-8") as fh:
+                    n = max(1, fh.read().count(str(tool_input.get("old_string", ""))))
+            except (OSError, ValueError):
+                n = 1
+        return (new - old) * n
+    return 0
+
+
+def oversized_claude_md(path: str, tool_input: dict) -> str:
+    """The reminder for an oversized CLAUDE.md that this edit is about to make BIGGER.
 
     Fires at the moment of the EDIT, deliberately. A commit-time warning arrives when the
     work is finished and nobody stops to refactor a doc; this one arrives while the file is
     open and the context is already loaded.
+
+    🔴 It fires on GROWTH, not on size, and that changed on 2026-08-13 after the ceiling's
+    first real cleanup. Warning on size alone meant ten files tripped it on every single
+    edit, including the ones that are legitimately large: ChartPanel/CLAUDE.md is 122 KB and
+    only ~3% of it is movable narrative — the rest is dense engineering reference with
+    measured reasons attached. A guard that fires on work it should not be criticising is a
+    guard people learn to dismiss, and a dismissed guard is worth less than none, because
+    the next reader assumes silence means checked. So a trim now passes in silence and only
+    an edit that ADDS bytes to an already-oversized file has to justify itself.
     """
     if os.path.basename(path) != "CLAUDE.md":
         return ""
@@ -54,16 +90,21 @@ def oversized_claude_md(path: str) -> str:
         return ""  # a new file, or unreadable — nothing to complain about
     if size <= CLAUDE_MD_CEILING_BYTES:
         return ""
+    delta = edit_delta(tool_input)
+    if delta <= 0:
+        return ""  # shrinking or neutral — this is the direction we want, say nothing
     return (
-        f"This CLAUDE.md is {size // 1000} KB, over the {CLAUDE_MD_CEILING_BYTES // 1000} KB "
-        "ceiling — it is mostly CHANGELOG, and every byte loads into context whenever anyone "
-        "works in this subsystem. `HISTORY.md` exists to be that diary and is not being used. "
-        "Before you add more: move the dated incident narrative out to HISTORY.md and leave "
-        "the RULE plus a one-line pointer behind. Two hard rules while you do it — (1) a fact "
-        "lives in exactly ONE CLAUDE.md, the one next to the code it describes, because a "
-        "parent keeping its own copy is how three files came to disagree about whether a bot "
-        "was live; (2) the rule and the reason it exists stay together, since a rule with no "
-        "incident behind it reads as arbitrary and gets 'tidied up' by the next reader."
+        f"This CLAUDE.md is already {size // 1000} KB, over the "
+        f"{CLAUDE_MD_CEILING_BYTES // 1000} KB ceiling, and this edit adds roughly "
+        f"{delta} more bytes. Every one of them loads into context whenever anyone works in "
+        "this subsystem. Before adding: is what you are writing a RULE, or is it the story "
+        "of what happened today? The story belongs in the sibling BUILD_NOTES/HISTORY file "
+        "with a pointer left behind. Two hard rules if you drain some while you are here — "
+        "(1) a fact lives in exactly ONE CLAUDE.md, the one next to the code it describes, "
+        "because a parent keeping its own copy is how three files came to disagree about "
+        "whether a bot was live; (2) the rule and the reason it exists stay together, since "
+        "a rule with no incident behind it reads as arbitrary and gets 'tidied up' by the "
+        "next reader."
     )
 
 
@@ -117,7 +158,8 @@ def main() -> None:
     except (ValueError, TypeError):
         return
 
-    path = (event.get("tool_input") or {}).get("file_path") or ""
+    tool_input = event.get("tool_input") or {}
+    path = tool_input.get("file_path") or ""
     if not path:
         return
 
@@ -142,7 +184,7 @@ def main() -> None:
 
     notes = [note for fragment, note in REMINDERS if fragment in path]
 
-    bloat = oversized_claude_md(path)
+    bloat = oversized_claude_md(path, tool_input)
     if bloat:
         notes.append(bloat)
 
