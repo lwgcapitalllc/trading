@@ -132,21 +132,38 @@ def render(s: SetupSnapshot, is_root: bool) -> str:
 
 HEADER = ("🧪 EXAMPLES — none of these are live setups.\n"
           "Eight sample threads follow, one per shape a real setup can take. Every message is "
-          "rendered by the same code the bot sends with. Delete this block when you are done.")
+          "rendered by the same code the bot sends with. Delete this block when you are done.\n"
+          "Anything above this line was an incomplete earlier run — delete that too.")
 FOOTER = "🧪 End of examples. Everything after this line is real."
+
+
+#: 🔴 MEASURED, not guessed: at 1.2s this ran into `429 Too Many Requests, retry after 26` and
+#: FOUR of twenty-four messages never landed — leaving replies whose root was missing, which is
+#: the one outcome that makes the samples unreadable. Telegram's group ceiling is ~20 messages a
+#: minute, so 3.5s (≈17/min) sits under it with room. The live bot cannot hit this — it sends at
+#: most a handful an hour — so the limit belongs to this tool, not to `notify.py`.
+_GAP_SECONDS = 3.5
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="print, send nothing")
     args = ap.parse_args()
+    tally = {"ok": 0, "failed": 0}
 
     def post(text, reply_to=None):
         if args.dry_run:
             print(("  └ " if reply_to else "") + text.replace("\n", "\n     ") + "\n")
+            tally["ok"] += 1
             return 1
         mid = send_telegram_id(text, SIGNAL, reply_to=reply_to)
-        time.sleep(1.2)                      # Telegram rate limit; keeps the thread order intact
+        if mid is None:
+            # One retry, after long enough for any rate-limit window to clear. A root that fails
+            # orphans every reply under it, so this is worth the wait.
+            time.sleep(30)
+            mid = send_telegram_id(text, SIGNAL, reply_to=reply_to)
+        tally["ok" if mid is not None else "failed"] += 1
+        time.sleep(_GAP_SECONDS)
         return mid
 
     post(HEADER)
@@ -157,9 +174,15 @@ def main() -> int:
         for r in replies:
             post(render(r, False), reply_to=rid)
     post(FOOTER)
-    print(f"{'would send' if args.dry_run else 'sent'}: "
-          f"{sum(1 + len(r) for _, _, r in THREADS) + 2} messages")
-    return 0
+
+    # ⚠ Reports what LANDED, never what was attempted. The first run of this printed
+    # "sent: 24 messages" while four had been refused — the repo's own rule about never recording
+    # a request as a receipt, in the tool written to check the messages.
+    total = sum(1 + len(r) for _, _, r in THREADS) + 2
+    verb = "would send" if args.dry_run else "sent"
+    print(f"{verb}: {tally['ok']} of {total} messages"
+          + (f" — {tally['failed']} FAILED" if tally["failed"] else ""))
+    return 1 if tally["failed"] else 0
 
 
 if __name__ == "__main__":

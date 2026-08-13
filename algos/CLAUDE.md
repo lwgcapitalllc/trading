@@ -819,6 +819,12 @@ sends nothing. ⚠ **It builds real `SetupSnapshot`s and calls the real `alerts.
 sample cannot drift from what the bot sends; hand-typed samples would review wording that does not
 exist. ⚠ **Its `render()` duplicates `SetupAlerts._handle`'s routing** and is the one thing here
 that CAN drift — if the order of the checks in `_handle` changes, change it here too.
+🔴 **Telegram's group ceiling is ~20 messages a minute and a burst tool is the only thing here that
+can reach it** — the first run sent at 1.2s and lost four of twenty-four to `429`, orphaning the
+replies under them. 3.5s now, with one retry after a 30s pause. ⚠ **It reports what LANDED and
+exits non-zero on any failure**: it printed `sent: 24` while four had been refused, which is the
+requested-vs-received rule inside the tool written to check the messages. **The pacing belongs to
+the tool, not to `notify.py`** — a bot sending a handful an hour must not pay for a burst sender.
 
 ⚠ **NEVER RAISES, and it binds harder here than anywhere else in the package**: `on_bar` runs
 inside `_on_bar`, between the strategy stepping and the broker being reconciled.
