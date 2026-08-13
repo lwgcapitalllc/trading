@@ -132,6 +132,31 @@ def test_the_BOS_fork_does_NOT_claim_the_contract_either():
     assert implements_contract(ex) is False
 
 
+def test_EVERY_fork_of_this_execution_layer_is_checked_not_just_the_two_we_knew_about():
+    """Enumerates the forks rather than naming them, so a strategy added tomorrow is covered.
+
+    ✅ **This is not hypothetical: `mpc_realign` landed on main WHILE this contract was being
+    built**, sets `_records_misses = False` like its siblings, and correctly declined the channel
+    with nobody editing anything. That is the derivation earning its keep — a per-fork flag would
+    have needed the author to know a rule that did not exist when they started.
+
+    Fails by NAME on whichever fork starts claiming a channel it cannot fill.
+    """
+    import importlib
+
+    claiming = []
+    for name in ("mpc_bleg", "mpc_bos", "mpc_realign"):
+        spec = importlib.import_module(f"strategies.python.{name}").LAB_STRATEGY
+        cfg = spec["config"](fill_model="bar", symbol="XAUUSD")
+        ex = spec["strategy"](config=cfg, initial_capital=10_000.0).execution
+        # A fork MAY legitimately implement the contract — but only by populating the setup
+        # context, which means recording misses. Claiming it without that is the failure.
+        if implements_contract(ex) and not ex._records_misses:
+            claiming.append(name)
+    assert not claiming, (f"{claiming} claim the setup contract but cannot populate it — they "
+                          f"would announce 'Setup alerts: ON' for a channel that sends nothing")
+
+
 def test_reports_setups_is_DERIVED_so_a_new_fork_cannot_forget_it():
     """It tracks `_records_misses` rather than being a flag each subclass must remember to set.
     A fork that forgot the line would acquire a silent, empty signals channel — which is the

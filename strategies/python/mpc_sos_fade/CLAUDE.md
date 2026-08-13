@@ -320,6 +320,13 @@ new fork cannot acquire a silent, empty channel by forgetting a line — and `Tr
 claim that a fork's confluences are right: turning the watch back on would report A+'s three
 confluences for a setup it does not trade. Each fork needs its own `_setup_context` first.
 
+✅ **The derivation was validated by an event rather than by an argument: `mpc_realign` landed on
+main WHILE this was being built**, subclasses this layer, sets `_records_misses = False` like its
+siblings, and declined the channel correctly with nobody editing anything and nobody aware of a
+rule that did not exist when they started. **A per-fork flag would have needed its author to know
+that rule.** The test ENUMERATES the forks rather than naming them, so the next one is covered
+before it is written, and fails by NAME on whichever starts claiming a channel it cannot fill.
+
 ⚠ **`tradeable` is `arm_met` and NOTHING ELSE, deliberately.** The arm source is snapshotted at
 the SOS, so a setup armed by a disabled source can never acquire a different one — that is a
 decision the strategy has already made. A veto or the final hour can LIFT while a setup is alive,

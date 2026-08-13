@@ -43,10 +43,14 @@ for _p in (_ROOT, _ROOT / "algos" / "live", _ROOT / "algos" / "shared"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+# Every Python strategy, including the ones that do NOT implement the contract — asking about one
+# of those returns an honest REFUSAL naming why, which is more useful than argparse rejecting the
+# name as if the strategy did not exist.
 _STRATEGIES = {
     "mpc_sos_fade": "strategies.python.mpc_sos_fade",
     "mpc_bleg": "strategies.python.mpc_bleg",
     "mpc_bos": "strategies.python.mpc_bos",
+    "mpc_realign": "strategies.python.mpc_realign",
 }
 
 

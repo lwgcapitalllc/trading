@@ -521,7 +521,9 @@ narrative is in `docs/BACKTEST_BUILD_NOTES.md`.
   announced first (159 closed, 158 ENTERED — the one gap is the warm-up boundary) and prints
   🔴 BROKEN if more than one trade arrives unannounced. ⚠ **Re-run it per strategy and after any entry-logic
   change** — same standing as `overlap_audit.py`. It **REFUSES** for a strategy without the
-  contract rather than printing a rate of zero.
+  contract rather than printing a rate of zero, and it accepts EVERY Python strategy including
+  those — an honest refusal naming why beats argparse rejecting the name as though the strategy
+  did not exist.
 
 ## Portfolio stacking (`backtest/portfolio/`)
 
