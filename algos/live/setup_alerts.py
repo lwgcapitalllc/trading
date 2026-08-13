@@ -75,10 +75,15 @@ class SetupAlerts:
 
     def __init__(self, send: Callable[..., Optional[int]], log=None,
                  categories: Sequence[str] = DEFAULT_CATEGORIES,
-                 digits: int = 2) -> None:
+                 digits: int = 2, display: str = "") -> None:
         self._send = send
         self._log = log
         self._digits = digits
+        #: The bot's display name for the message head. Comes from the RUNNER's config, because a
+        #: strategy only knows its own class name — `MpcSosFadeStrategy` where a reader wants
+        #: `MPC SOS Fade`. Empty falls back to the class name, so a caller that does not set it
+        #: still renders something true.
+        self._display = display
         self._categories = tuple(c for c in categories if c in CATEGORIES)
         #: setup key -> the Telegram message id of its root, so every outcome replies to it.
         self._threads: Dict[str, Optional[int]] = {}
@@ -157,7 +162,8 @@ class SetupAlerts:
         if WATCHING_MSG not in sent:
             sent.add(WATCHING_MSG)
             if self._on(WATCHING_MSG):
-                self._threads[snap.key] = self._post(alerts.format_watching(snap, self._digits))
+                self._threads[snap.key] = self._post(
+                    alerts.format_watching(snap, self._digits, self._display))
 
         root = self._threads.get(snap.key)
 

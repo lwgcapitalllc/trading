@@ -812,6 +812,28 @@ and token routing come free.
 resting limit is rebuilt every bar and cleared when not armed — 665 raw transitions across 332
 setups over 6.5 years. Edge-triggering alone still announces one setup two or three times.
 
+**The messages are FOUR lines, and they were eight** (Aaron, 2026-08-13, on the first real renders:
+*"can you make them less verbose?"*). Confluences collapsed onto one line as the strategy's own
+`detail`; `Waiting on a retrace into that zone` went because it sat directly under
+`Retrace zone — not tagged yet`; `(the zone's deep edge)` went because it explained a number rather
+than giving one. 🔴 **`ENTRY ZONE LIVE` now names only what is OUTSTANDING, and that one line is a
+safety property, not a nicety** — an order can rest at 2 of 3 (the gap can exist before price gets
+there), so a message headed `ENTRY ZONE LIVE` with a price on it must not read as *everything is
+met*. ⚠ **The `display` name comes from the RUNNER**, because a strategy only knows its class name
+and `MpcSosFadeStrategy` is not what the same bot is called in every other message.
+
+🔴 **`algos/tests/test_setup_alert_wording.py` exists because there was NOTHING there — every one
+of these four formatters was rewritten and 643 tests stayed green.** `test_setup_alerts.py` covers
+which message fires and in which thread, and asserted not one word of what any of them SAY.
+**A message is not a side effect of this system, it is the product**: nobody sees a `SetupSnapshot`.
+12 tests, all 7 mutations reddening their own named test. It pins the CLAIMS a message makes that
+could be false, never the wording — renaming a label must not redden it.
+
+⚠ **A wording change needs a RESTART but NOT a promote**: `algos/live/` is not in the frozen tree.
+A change to a strategy's confluence `detail` or death sentence is the other way round — that is
+`strategies/python/`, so it needs `promote.py`, and the death sentences are shared with the lab's
+miss report.
+
 **`tools/signal_samples.py` sends one example of every thread shape** — eight of them, covering
 both directions, all three retrace wordings, an order resting at 2 of 3, one blocking rule and
 three, a block that LIFTS, and every death the strategy has a sentence for. `--dry-run` prints and

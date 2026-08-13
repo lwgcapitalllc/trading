@@ -169,7 +169,15 @@ def test_the_sender_posts_to_the_kinds_chat(monkeypatch):
 # ── the guard: every call site states a kind ─────────────────────────────────────────────────
 
 _SEND_CALL = re.compile(r"\bsend_telegram(?:_id)?\s*\(")
-_KIND_TOKEN = re.compile(r"\b(TRADE|HEALTH|notify\.TRADE|notify\.HEALTH|kind)\b")
+# ⚠ **Every room this suite has must appear here, and `SIGNAL` was missing for a day.** It shipped
+# on 2026-08-13 and this list was not touched, so a correctly-routed signals send read as an
+# UNROUTED one — the first to arrive (`tools/signal_samples.py`) failed this test while doing
+# exactly the right thing. It went unnoticed that long because `setup_alerts.py` posts through an
+# injected `self._send` rather than calling `send_telegram` by name, so the only consumer of the
+# new room was invisible to the matcher above. **A guard with a hardcoded list of the valid
+# answers goes stale the moment a valid answer is added, and it fails in the direction that
+# accuses correct code — which is the one people fix by editing the code rather than the guard.**
+_KIND_TOKEN = re.compile(r"\b(TRADE|HEALTH|SIGNAL|notify\.(TRADE|HEALTH|SIGNAL)|kind)\b")
 
 _SOURCES = [
     _ALGOS / "live",

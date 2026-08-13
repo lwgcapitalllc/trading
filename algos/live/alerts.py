@@ -32,7 +32,7 @@ _SHARED = Path(__file__).resolve().parent.parent / "shared"
 if str(_SHARED) not in sys.path:
     sys.path.insert(0, str(_SHARED))
 
-from alert_format import alert  # noqa: E402
+from alert_format import alert, joined  # noqa: E402
 
 # 🔴 **NOTHING FROM `backtest` OR `strategies` MAY BE IMPORTED AT THIS MODULE'S TOP LEVEL, and
 # this is enforced by the version pin rather than by discipline.** `bridge.py` imports this file,
@@ -116,7 +116,30 @@ def _zone_text(zone, digits: int) -> str:
     return f"{_price(lo, digits)} – {_price(hi, digits)}"
 
 
-def format_watching(snap, digits: int = 2) -> str:
+def _confluence_line(snap) -> str:
+    """Every confluence on ONE line, each as the strategy's own `detail`.
+
+    ⚠ **The DETAIL, not `name — detail`.** A strategy writes its details to be read
+    ("swept Day Low", "not tagged yet", "0.5-0.886 tagged, FVG live"), so the name in front of it
+    is the part that repeats on every message. Falls back to the NAME when a strategy gives no
+    detail, so a terser contributor renders something true rather than a stray separator.
+    """
+    parts = [(c.detail or c.name) for c in snap.confluences]
+    line = " · ".join(p for p in parts if p)
+    return line[:1].upper() + line[1:] if line else ""
+
+
+def _outstanding(snap) -> str:
+    """What is still missing, named — and "" when everything is met.
+
+    🔴 **The empty case is the load-bearing half.** An unconditional `Still missing:` with nothing
+    after it sends a reader hunting for a confluence that is already met.
+    """
+    missing = [c.name for c in snap.confluences if not c.met]
+    return f"Still missing: {', '.join(missing)}" if missing else ""
+
+
+def format_watching(snap, digits: int = 2, display: str = "") -> str:
     """A setup forming — Aaron's "2 of 3", the root of the thread.
 
     ⚠ **"SETUP FORMING", never "POTENTIAL TRADE".** Measured over 6.5 years, 609 setups reach this
@@ -124,22 +147,32 @@ def format_watching(snap, digits: int = 2) -> str:
     that promises a trade is wrong 74% of the time, and a channel that is wrong that often is one
     you stop reading on the day it matters.
 
-    ⚠ **"Stop if it fills", never "Stop".** No order exists yet — the stop is projected from the
-    deep edge of the zone. Stating it flat would name a price the bot is not holding.
+    ⚠ **Four lines, and it was eight** (Aaron, 2026-08-13, on the first real renders). What went is
+    everything the reader already knew by the time they reached it: the confluences one per line,
+    `Waiting on a retrace into that zone` sitting directly under `Retrace zone — not tagged yet`,
+    and `(the zone's deep edge)` explaining a number rather than giving one. **Every FACT is still
+    here** — what changed is how many lines they take. The prices are last on purpose: they are
+    what a reader opens the message again for.
+
+    ⚠ **The stop is still a PROJECTION.** No order exists yet; it is derived from the deep edge of
+    the zone. It shares a line with the zone rather than getting its own sentence, which is why the
+    wording no longer says so — if that ever reads as a resting order, put the word back rather
+    than trusting the layout to carry it.
+
+    `display` is the BOT's name (`MPC SOS Fade`); `snap.strategy` is only ever the class name.
     """
-    lines = [f"{snap.strategy} — {snap.symbol}   ({snap.met} of {snap.of})", ""]
-    lines += snap.met_lines()
+    head = joined([display or snap.strategy, snap.symbol, f"{snap.met} of {snap.of}"])
+    lines = [head, _confluence_line(snap)]
     if snap.zone:
-        lines += ["", f"Entry zone {_zone_text(snap.zone, digits)}"]
+        zone = f"Zone {_zone_text(snap.zone, digits)}"
+        # ⚠ The stop and the zone's deep edge are the SAME price on this strategy. `exec_sl_level`
+        # is 0.886, which is also the deep end of the 0.5-0.886 entry band — a documented property
+        # (`mpc_sos_fade/CLAUDE.md` → the `exec_sl_level` warning), not a rounding artefact. A fill
+        # at the very bottom of the zone has almost no stop distance, which is exactly what the
+        # minimum-stop guard exists to refuse.
         if snap.stop is not None:
-            # ⚠ The stop and the zone's deep edge are the SAME price on this strategy, and
-            # saying so is better than printing one number twice and letting it read as a bug.
-            # `exec_sl_level` is 0.886, which is also the deep end of the 0.5-0.886 entry band —
-            # a documented property (`mpc_sos_fade/CLAUDE.md` → the `exec_sl_level` warning),
-            # not a rounding artefact. A fill at the very bottom of the zone has almost no stop
-            # distance, which is exactly what the minimum-stop guard exists to refuse.
-            lines.append(f"Stop just past {_price(snap.stop, digits)} (the zone's deep edge)")
-        lines += ["", "Waiting on a retrace into that zone."]
+            zone = f"{zone} · stop {_price(snap.stop, digits)}"
+        lines.append(zone)
     return alert("👀", "SETUP FORMING", snap.direction, *lines)
 
 
@@ -156,16 +189,17 @@ def format_entry_zone(snap, digits: int = 2) -> str:
     the met confluences (the first version of this) hid exactly the fact a reader needs: the
     order is real, and price has not come to it yet.
     """
-    lines = [f"({snap.met} of {snap.of})", ""]
-    lines += snap.met_lines()
-    lines.append("")
+    order = []
     if snap.entry is not None:
-        lines.append(f"Entry {_price(snap.entry, digits)}   (limit resting)")
+        order.append(f"Entry {_price(snap.entry, digits)}")
     if snap.stop is not None:
-        lines.append(f"Stop {_price(snap.stop, digits)}")
+        order.append(f"stop {_price(snap.stop, digits)}")
+    lines = [f"{snap.met} of {snap.of}", " · ".join(order)]
     if snap.targets:
-        lines.append(" · ".join(f"TP{i} {_price(t, digits)}"
-                                for i, t in enumerate(snap.targets, 1) if t))
+        lines.append("TP " + " · ".join(_price(t, digits) for t in snap.targets if t))
+    # ⚠ This line IS the safety property above. The full confluence dump it replaces said the same
+    # thing in three lines and buried it among two that were fine.
+    lines.append(_outstanding(snap))
     return alert("🎯", "ENTRY ZONE LIVE", snap.direction, *lines)
 
 
@@ -176,9 +210,9 @@ def format_blocked(snap, digits: int = 2) -> str:
     tag has room for one line; a reader asking "is this rule earning its keep" needs the whole set,
     and "blocked by the veto" has to stay true on a setup the final-hour rule was also blocking.
     """
-    lines = [""] + [f"· {r}" for r in snap.blocked_by]
-    lines += ["", "The setup was ready and this rule stopped it."]
-    return alert("🚫", "BLOCKED", snap.direction, *lines)
+    # One line, however many rules. `The setup was ready and this rule stopped it` is gone: it is
+    # what BLOCKED already means, and it was on every send this message ever made.
+    return alert("🚫", "BLOCKED", snap.direction, " · ".join(snap.blocked_by))
 
 
 def format_resolved(snap, digits: int = 2) -> str:
@@ -193,9 +227,10 @@ def format_resolved(snap, digits: int = 2) -> str:
     from backtest.setups import FILLED
 
     if snap.state == FILLED:
-        return alert("✅", "ENTERED", snap.direction,
-                     "", "Filled. The trade alert has the size and the risk.")
-    return alert("👋", "NO TRADE", snap.direction, "", snap.reason)
+        # The trade alert lands seconds later with the price, the size and the risk, so this one
+        # only has to close the thread.
+        return alert("✅", "ENTERED", snap.direction, "Size and risk are in the trade alert.")
+    return alert("👋", "NO TRADE", snap.direction, snap.reason)
 
 
 def format_entry(*, strategy: str, symbol: str, direction: str, entry: float, stop: float,

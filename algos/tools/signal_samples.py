@@ -26,6 +26,7 @@ from backtest.setups import (Confluence, DEAD, FILLED, RESTING,        # noqa: E
 from notify import SIGNAL, send_telegram_id                            # noqa: E402
 
 STRAT, SYM = "MpcSosFadeStrategy", "XAUUSD.p"
+DISPLAY = "MPC SOS Fade"
 
 
 def snap(**kw) -> SetupSnapshot:
@@ -53,14 +54,14 @@ THREADS = [
      snap(side=1, confluences=conf("swept Day Low", True, NOT_YET, False),
           zone=(3312.40, 3298.15), stop=3297.65),
      [snap(side=1, state=DEAD, confluences=conf("swept Day Low", True, NOT_YET, False),
-           reason="Price never retraced into the 0.5-0.886 band, so the entry zone was never "
+           reason="No retrace — Price never retraced into the 0.5-0.886 band, so the entry zone was never "
                   "reached. This is the ordinary way a setup dies.")]),
 
     ("2. Reached the zone, nothing to rest a limit on",
      snap(side=-1, confluences=conf("swept Week High", True, NOT_YET, False),
           zone=(3401.80, 3417.25), stop=3417.75),
      [snap(side=-1, state=DEAD, confluences=conf("swept Week High", True, NO_FVG, False),
-           reason="Price DID reach the 0.5-0.886 band, but no fair-value gap overlapped it while "
+           reason="No FVG in zone — Price DID reach the 0.5-0.886 band, but no fair-value gap overlapped it while "
                   "price was there — there was nothing to rest a limit on.")]),
 
     ("3. The one you want — forming, resting, filled",
@@ -78,7 +79,7 @@ THREADS = [
            zone=(3358.20, 3372.90), entry=3366.05, stop=3373.40,
            targets=(3351.30, 3338.60, 3320.15)),
       snap(side=-1, state=DEAD, confluences=conf("swept Asia High", True, NOT_YET, False),
-           reason="All three confluences met and the limit rested — price never came back to "
+           reason="Never filled — All three confluences met and the limit rested — price never came back to "
                   "touch it.")]),
 
     ("5. Blocked by ONE of your rules, then died",
@@ -87,7 +88,7 @@ THREADS = [
      [snap(side=1, confluences=conf("RSI divergence", True, FVG_LIVE, True),
            blocked_by=("Divergence / extreme-RSI veto",)),
       snap(side=1, state=DEAD, confluences=conf("RSI divergence", True, FVG_LIVE, True),
-           reason="All three confluences met. The divergence / extreme-RSI veto refused the "
+           reason="Divergence / RSI veto — All three confluences met. The divergence / extreme-RSI veto refused the "
                   "entry.")]),
 
     ("6. Blocked by THREE rules at once",
@@ -97,7 +98,7 @@ THREADS = [
            blocked_by=("Divergence / extreme-RSI veto", "Final hour (16:00-18:00 New York)",
                        "HTF breakout / bias filter")),
       snap(side=-1, state=DEAD, confluences=conf("swept Day High", True, FVG_LIVE, True),
-           reason="All three confluences met. The final-hour rule (16:00-18:00 New York) refused "
+           reason="Final hour — All three confluences met. The final-hour rule (16:00-18:00 New York) refused "
                   "the entry.")]),
 
     ("7. Blocked, the rule LIFTED, and it traded anyway",
@@ -114,7 +115,7 @@ THREADS = [
      snap(side=-1, confluences=conf("swept Session High", True, NOT_YET, False),
           zone=(3345.05, 3359.60), stop=3360.10),
      [snap(side=-1, state=DEAD, confluences=conf("swept Session High", True, FVG_LIVE, True),
-           reason="All three confluences met. The HTF breakout / bias filter refused the "
+           reason="HTF filter — All three confluences met. The HTF breakout / bias filter refused the "
                   "entry.")]),
 ]
 
@@ -122,7 +123,7 @@ THREADS = [
 def render(s: SetupSnapshot, is_root: bool) -> str:
     """Exactly the routing `SetupAlerts._handle` uses, so the sample cannot drift from the bot."""
     if is_root:
-        return alerts.format_watching(s)
+        return alerts.format_watching(s, 2, DISPLAY)
     if s.blocked_by:
         return alerts.format_blocked(s)
     if s.state == RESTING:

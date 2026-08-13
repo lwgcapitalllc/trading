@@ -467,7 +467,8 @@ class LiveRunner:
             cats = self.cfg.setup_alert_categories
             cats = DEFAULT_CATEGORIES if cats is None else tuple(cats)
             alerts_obj = SetupAlerts(send=self._notify, log=self.log, categories=cats,
-                                     digits=getattr(self.cfg, "digits", 2))
+                                     digits=getattr(self.cfg, "digits", 2),
+                                     display=self.cfg.display_name)
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(
                     f"Setup alerts: OFF — {self.cfg.strategy_class} does not implement "
