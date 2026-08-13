@@ -812,6 +812,14 @@ and token routing come free.
 resting limit is rebuilt every bar and cleared when not armed — 665 raw transitions across 332
 setups over 6.5 years. Edge-triggering alone still announces one setup two or three times.
 
+**`tools/signal_samples.py` sends one example of every thread shape** — eight of them, covering
+both directions, all three retrace wordings, an order resting at 2 of 3, one blocking rule and
+three, a block that LIFTS, and every death the strategy has a sentence for. `--dry-run` prints and
+sends nothing. ⚠ **It builds real `SetupSnapshot`s and calls the real `alerts.format_*`**, so a
+sample cannot drift from what the bot sends; hand-typed samples would review wording that does not
+exist. ⚠ **Its `render()` duplicates `SetupAlerts._handle`'s routing** and is the one thing here
+that CAN drift — if the order of the checks in `_handle` changes, change it here too.
+
 ⚠ **NEVER RAISES, and it binds harder here than anywhere else in the package**: `on_bar` runs
 inside `_on_bar`, between the strategy stepping and the broker being reconciled.
 
