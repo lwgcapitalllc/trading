@@ -1,0 +1,1017 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/ MPL-2.0
+//@version=6
+// =============================================================================
+//  MPC M15 PLAYBOOK STRATEGY
+// =============================================================================
+//  The five-step SMC continuation model from Lewis Kelly's "This SMC Strategy Is
+//  Too Simple to Ignore", written up in
+//  education/learned/2026-08-11-smc-strategy-too-simple-to-ignore-1150-trades.md,
+//  turned into something the Strategy Tester can score.
+//
+//    1. DIRECTION   — 15-minute swing structure only. Bearish = LH/LL, bullish
+//                     the mirror. Trade with it, never against it.
+//    2. LOCATION    — the current session sweeps the PREVIOUS session's high (for
+//                     shorts) or low (for longs). London sweeps Asia; New York
+//                     sweeps London. This replaces a fib retracement — the video
+//                     is explicit that premium/discount was tested and dropped.
+//    3. CONFIRMATION— the 1-minute must flip to AGREE with the 15-minute. After
+//                     the sweep, wait for a 1m change of character in the trend's
+//                     direction. He names this discrepancy as the edge itself.
+//    4. POINT OF INTEREST — the nearest UNTOUCHED 5-minute fair value gap on the
+//                     far side of price. Limit into it, stop beyond it.
+//    5. TARGETS     — TP1 previous day's low/high, TP2 previous week's low/high.
+//
+//  WHAT THIS FILE IS NOT
+//  ---------------------
+//  `mpc_m15_playbook.pine` is an INDICATOR — a dashboard that draws structure,
+//  sessions, gaps, order blocks and a confirmation table. It places no orders and
+//  cannot be scored. This file is the strategy; keep the indicator on the chart
+//  beside it if you want the full drawing set.
+//
+//  The 15m / 1m structure engine below is LIFTED BYTE-FOR-BYTE from that file
+//  (its drawing-free `MTFStruct` port of `SMCStructure.process()`), which is the
+//  same state machine as `engines/market_structure/`. Do not paraphrase it.
+//
+//  STATUS — read before trusting a number
+//  --------------------------------------
+//  * Not compiled anywhere but TradingView; there is no local Pine compiler.
+//  * No Python port and no parity harness, so no `compare_*.py` covers it.
+//  * The video's POI is "order block OR fair value gap". Only the GAP is modelled.
+//    A gap-only rule takes strictly FEWER setups than he does.
+//  * The 1m confirmation is read through `request.security`, so it is observed at
+//    the CHART bar's close — up to one chart bar late, never early. Run this on
+//    5m for fidelity; 15m buys you more history and a coarser trigger.
+//  * TradingView loads a limited amount of 1-minute history. With the confirmation
+//    ON, the far end of a long backtest may see no 1m structure at all and simply
+//    take no trades there. Check the trade list's FIRST date against the chart's,
+//    and read the tester's window as what you asked for, not what arrived.
+// =============================================================================
+
+strategy("MPC M15 Playbook Strategy", overlay = true, pyramiding = 0,
+  initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+  margin_long = 0.2, margin_short = 0.2, slippage = 0,
+  max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500, max_bars_back = 2000)
+
+//============================================================
+//  INPUTS — Playbook Setup
+//============================================================
+var GRP_SETUP = "Playbook Setup"
+bool   pbTradeLongs  = input.bool(true,  "Trade longs",  group = GRP_SETUP, inline = "dir")
+bool   pbTradeShorts = input.bool(true,  "Trade shorts", group = GRP_SETUP, inline = "dir")
+string pbDirTf       = input.string("15", "1. Direction timeframe", options = ["5", "15", "30", "60", "240"], group = GRP_SETUP, tooltip = "The timeframe whose swing structure sets the bias. Only setups in this timeframe's direction are taken. The video uses 15.")
+int    pbStructLen   = input.int(15, "   ↳ Structure pivot length", minval = 2, maxval = 50, group = GRP_SETUP, tooltip = "Seeds the structure engine's first swing. After the seed, swings come from the 3-candle pullback rule, so this mostly decides warm-up depth.")
+bool   pbRequireConf = input.bool(true, "3. Require a 1m change of character", group = GRP_SETUP, tooltip = "ON: after the sweep, wait for the confirmation timeframe to shift into the direction timeframe's direction. This is the step the video calls the edge. OFF: enter on the sweep alone — expect to be run to the top of the move.")
+string pbConfTf      = input.string("1", "   ↳ Confirmation timeframe", options = ["1", "3", "5", "15"], group = GRP_SETUP, active = pbRequireConf, tooltip = "Where the change of character is read. 1 is the video's. Setting it to the chart timeframe removes the discrepancy the setup is built on.")
+string pbPoiTf       = input.string("5", "4. Zone timeframe", options = ["1", "3", "5", "15"], group = GRP_SETUP, tooltip = "Where the entry zone is found. The video uses a 5-minute order block or fair value gap; only the GAP is modelled here.")
+bool   pbPoiUntouched= input.bool(true, "   ↳ Untouched zones only", group = GRP_SETUP, tooltip = "ON: a gap price has already traded into is skipped — the video's rule (\"they've been traded, they're no longer of interest\"). OFF: any live gap qualifies, which takes more setups at worse prices.")
+float  pbPoiMaxAtr   = input.float(0.0, "   ↳ Max distance to the zone (x ATR14)", minval = 0.0, maxval = 20.0, step = 0.5, group = GRP_SETUP, tooltip = "Refuse a zone further from price than this. 0 = no limit. A zone three ATR away is a setup you will rarely be filled on and never at a good stop.")
+
+//============================================================
+//  INPUTS — Sessions
+//============================================================
+var GRP_SESS = "Sessions"
+string sessAsia = input.session("0900-1800", "Asia",      group = GRP_SESS, inline = "a")
+string tzAsia   = input.string("Asia/Tokyo",   "",        group = GRP_SESS, inline = "a")
+string sessLdn  = input.session("0800-1700", "London",    group = GRP_SESS, inline = "l")
+string tzLdn    = input.string("Europe/London", "",       group = GRP_SESS, inline = "l")
+string sessNy   = input.session("0800-1700", "New York",  group = GRP_SESS, inline = "n")
+string tzNy     = input.string("America/New_York", "",    group = GRP_SESS, inline = "n")
+bool   pbTradeLdn = input.bool(true, "Trade the London session (sweeps Asia)",   group = GRP_SESS)
+bool   pbTradeNy  = input.bool(true, "Trade the New York session (sweeps London)", group = GRP_SESS)
+bool   pbShowSess = input.bool(true, "Shade the sessions", group = GRP_SESS)
+
+//============================================================
+//  INPUTS — Strategy Execution
+//============================================================
+var GRP_EXEC = "Strategy Execution"
+string execZoneEntry = input.string("Proximal edge", "Entry price inside the zone", options = ["Proximal edge", "Midpoint", "Distal edge"], group = GRP_EXEC, tooltip = "Where the limit rests. Proximal = the edge price reaches first (fills most often, widest stop). Distal = the far edge (best price, fills least). Midpoint is the compromise.")
+int    execSlBufTk   = input.int(20, "Stop buffer beyond the zone (ticks)", minval = 0, maxval = 500, group = GRP_EXEC, tooltip = "How far past the zone's far edge the stop sits, so a wick through the gap does not take you out.")
+float  execRiskPct   = input.float(1.0, "Risk % per trade", minval = 0.01, maxval = 100.0, step = 0.25, group = GRP_EXEC, tooltip = "Percent of equity risked to the stop. R is scale-free — measure at a low value first, size after you know the R distribution.")
+string execMinStopMode = input.string("% of price", "Minimum stop distance", options = ["Off", "% of price", "Fixed $", "x ATR(14)"], group = GRP_EXEC, tooltip = "Refuse a setup whose stop lands too close to the entry. Position size is risk / stop distance, so a collapsing stop builds a huge position rather than risking less.")
+float  execMinStopVal = input.float(0.08, "   ↳ Minimum stop value", minval = 0.0, maxval = 100.0, step = 0.01, group = GRP_EXEC, active = execMinStopMode != "Off")
+bool   execUseTp1    = input.bool(true, "TP1 — previous day's low / high", group = GRP_EXEC)
+bool   execUseTp2    = input.bool(true, "TP2 — previous week's low / high", group = GRP_EXEC)
+float  execTp1Pct    = input.float(50, "   ↳ % banked at the first target", minval = 0, maxval = 100, step = 5, group = GRP_EXEC, tooltip = "0 = bank nothing and ride the whole position to the second target. With only one valid target this is ignored and the whole position exits there.")
+float  execTpFallbackR = input.float(3.0, "Fallback target (R) when no liquidity target is valid", minval = 0.0, maxval = 50.0, step = 0.5, group = GRP_EXEC, tooltip = "A target on the wrong side of the entry, or nearer than the minimum below, cannot be used. 0 = refuse the setup instead of substituting a fixed R.")
+float  execMinRr     = input.float(1.0, "Minimum reward:risk to the first target", minval = 0.0, maxval = 20.0, step = 0.25, group = GRP_EXEC, tooltip = "A target closer than this many R is treated as unusable. Entering a hair above the previous day's low is how a 6R model turns into a 0.2R one.")
+bool   execBeAtTp1   = input.bool(true, "Stop to breakeven when the first target is reached", group = GRP_EXEC)
+int    execBeBufTk   = input.int(20, "   ↳ Breakeven buffer (ticks)", minval = 0, maxval = 500, group = GRP_EXEC, active = execBeAtTp1)
+int    execCancelBars = input.int(0, "Cancel an unfilled limit after N bars", minval = 0, maxval = 2000, group = GRP_EXEC, tooltip = "0 = keep it until the session that placed it ends. A resting order is always cancelled at the end of its own session.")
+bool   execCancelFlip = input.bool(true, "Cancel on a direction flip or an opposite 1m shift", group = GRP_EXEC)
+float  execTimeStopHrs = input.float(0.0, "Time stop (hours, 0 = off)", minval = 0.0, maxval = 240.0, step = 1.0, group = GRP_EXEC, tooltip = "Close a trade that has been open this long and has NOT reached its first target. Trades past the first target are left alone — that gate is what stops a clock cutting the winners.")
+
+//============================================================
+//  INPUTS — Debug
+//============================================================
+var GRP_DBG = "Debug"
+bool showSetups  = input.bool(true, "Draw the zone, stop and targets", group = GRP_DBG)
+bool showBlockTag = input.bool(true, "Mark refused setups (pink)", group = GRP_DBG, tooltip = "A setup that reached readiness and was refused by one of the gates. The tooltip names the first rule that refused it.")
+int  debugDays   = input.int(30, "   ↳ Only tag the last N days", minval = 1, maxval = 3650, group = GRP_DBG, active = showBlockTag)
+bool showStatePanel = input.bool(true, "Show the state panel", group = GRP_DBG, tooltip = "A five-row read of where the sequence has got to. Reports the GATES, not just the outcome — a quiet market and a rule set too tight look identical from a trade count alone.")
+bool execDiagLog = input.bool(false, "Write a diagnostic log line per event", group = GRP_DBG)
+
+//============================================================
+//  SHARED
+//============================================================
+float pbBuffer = 0.0
+float atr14    = ta.atr(14)
+float tickSz   = syminfo.mintick
+
+// Previous day / previous week extremes — the trade's targets. `lookahead_on` with a
+// [1] offset is the non-repainting idiom: it asks for the COMPLETED prior period.
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pwh, pwl] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+
+//============================================================
+//  MARKET STRUCTURE ENGINE (drawing-free)
+//============================================================
+// Lifted BYTE-FOR-BYTE from mpc_m15_playbook.pine's MTFStruct block, which is
+// itself a drawing-free port of SMCStructure.process() — the same state machine
+// as engines/market_structure/. It runs inside request.security so each
+// timeframe is tracked on its own bars, independent of the chart timeframe.
+// Do not paraphrase or 'tidy' it: a swing map that disagrees with the chart is
+// a strategy trading a different market from the one being read.
+type MTFStruct
+    int    length
+    float  ash             = na
+    int    ash_loc         = na
+    string ash_type        = ""
+    float  asl             = na
+    int    asl_loc         = na
+    string asl_type        = ""
+    float  last_conf_high     = na
+    int    last_conf_high_loc = na
+    float  last_conf_low      = na
+    int    last_conf_low_loc  = na
+    int    dir            = 0
+    bool   choch_lock     = false
+    int    pb_mode        = 0
+    int    pb_count       = 0
+    float  pb_level       = na
+    float  pb_extreme     = na
+    int    pb_extreme_loc = na
+    bool   pb_started     = false
+    float  pb_last_qualify_close = na
+    float  pb_last_qualify_high  = na
+    float  pb_extreme_close      = na
+    float  prev_close     = na
+    float  prev_high      = na
+    float  prev_low       = na
+    bool   seeded         = false
+    bool   bull_bos       = false
+    float  bull_bos_high  = na
+    int    bull_bos_h_loc = na
+    float  bull_bos_low   = na
+    int    bull_bos_l_loc = na
+    bool   bear_bos       = false
+    float  bear_bos_high  = na
+    int    bear_bos_h_loc = na
+    float  bear_bos_low   = na
+    int    bear_bos_l_loc = na
+    bool   new_swing_high = false
+    bool   new_swing_low  = false
+    bool   bull_sos       = false
+    bool   bear_sos       = false
+
+method mtfCreateAsh(MTFStruct st, float val, int loc) =>
+    st.ash      := val
+    st.ash_loc  := loc
+    st.ash_type := ""
+
+method mtfCreateAsl(MTFStruct st, float val, int loc) =>
+    st.asl      := val
+    st.asl_loc  := loc
+    st.asl_type := ""
+
+// Byte-for-byte the state logic of SMCStructure.process(); drawing removed.
+method processMTF(MTFStruct st, float ph_val, float pl_val) =>
+    st.bull_bos := false
+    st.bear_bos := false
+    st.new_swing_high := false
+    st.new_swing_low  := false
+    st.bull_sos := false
+    st.bear_sos := false
+
+    bool is_inside = false
+    if not na(st.prev_high) and not na(st.prev_low)
+        is_inside := high < st.prev_high and low > st.prev_low
+
+    if st.choch_lock
+        if st.dir == 1 and not na(pl_val)
+            st.choch_lock := false
+        else if st.dir == -1 and not na(ph_val)
+            st.choch_lock := false
+
+    if st.pb_mode == 1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_1 = false
+            if na(st.pb_extreme) or high > st.pb_extreme
+                st.pb_extreme            := high
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_1        := true
+            bool extreme_is_bearish_1 = extreme_updated_1 and close < open
+            bool is_candle1_1 = na(st.pb_last_qualify_close) and not extreme_updated_1
+            if (not is_inside or is_candle1_1) and (not extreme_updated_1 or extreme_is_bearish_1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close < threshold - pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := low
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                st.ash      := st.pb_extreme
+                st.ash_loc  := st.pb_extreme_loc
+                st.ash_type := "LOCKED"
+                st.new_swing_high := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    else if st.pb_mode == -1
+        if not st.pb_started
+            st.pb_started            := true
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_count              := 0
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+        else
+            bool extreme_updated_m1 = false
+            if na(st.pb_extreme) or low < st.pb_extreme
+                st.pb_extreme            := low
+                st.pb_extreme_loc        := bar_index
+                st.pb_extreme_close      := na
+                st.pb_count              := 0
+                st.pb_last_qualify_close := na
+                st.pb_last_qualify_high  := na
+                extreme_updated_m1       := true
+            bool extreme_is_bullish_m1 = extreme_updated_m1 and close > open
+            bool is_candle1_m1 = na(st.pb_last_qualify_close) and not extreme_updated_m1
+            if (not is_inside or is_candle1_m1) and (not extreme_updated_m1 or extreme_is_bullish_m1)
+                float threshold = na(st.pb_last_qualify_high) ? st.pb_extreme : st.pb_last_qualify_high
+                if close > threshold + pbBuffer
+                    st.pb_count              += 1
+                    st.pb_last_qualify_close := close
+                    st.pb_last_qualify_high  := high
+            if st.pb_count >= 3 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+                st.asl      := st.pb_extreme
+                st.asl_loc  := st.pb_extreme_loc
+                st.asl_type := "LOCKED"
+                st.new_swing_low := true
+                st.pb_mode    := 0
+                st.pb_count   := 0
+                st.choch_lock := false
+
+    st.prev_close := close
+    st.prev_high  := high
+    st.prev_low   := low
+
+    if na(st.ash) and na(st.asl) and not st.seeded
+        if not na(ph_val)
+            st.mtfCreateAsh(ph_val, bar_index[st.length])
+            st.dir := -1
+        else if not na(pl_val)
+            st.mtfCreateAsl(pl_val, bar_index[st.length])
+            st.dir := 1
+
+    if not st.seeded
+        if not na(st.ash) and na(st.asl)
+            float seed_low = low
+            int   seed_loc = bar_index
+            int   lb       = math.min(bar_index, 500)
+            for i = 0 to lb
+                if low[i] < seed_low
+                    seed_low := low[i]
+                    seed_loc := bar_index - i
+            if seed_low < st.ash
+                st.asl      := seed_low
+                st.asl_loc  := seed_loc
+                st.asl_type := ""
+                st.seeded := true
+        else if not na(st.asl) and na(st.ash)
+            float seed_high = high
+            int   seed_loc  = bar_index
+            int   lb        = math.min(bar_index, 500)
+            for i = 0 to lb
+                if high[i] > seed_high
+                    seed_high := high[i]
+                    seed_loc  := bar_index - i
+            if seed_high > st.asl
+                st.ash      := seed_high
+                st.ash_loc  := seed_loc
+                st.ash_type := ""
+                st.seeded := true
+        else if not na(st.ash) and not na(st.asl)
+            st.seeded := true
+
+    if na(st.last_conf_high) and na(st.last_conf_low)
+        if not na(ph_val) and not na(st.ash) and st.ash_type == "" and st.pb_mode == 0
+            if ph_val > st.ash
+                st.mtfCreateAsh(ph_val, bar_index[st.length])
+        if not na(pl_val) and not na(st.asl) and st.asl_type == "" and st.pb_mode == 0
+            if pl_val < st.asl
+                st.mtfCreateAsl(pl_val, bar_index[st.length])
+
+    bool ash_broken = not na(st.ash) and close > st.ash
+    bool asl_broken = not na(st.asl) and close < st.asl
+
+    if ash_broken
+        st.bull_bos := true
+        st.bull_bos_high  := st.ash
+        st.bull_bos_h_loc := st.ash_loc
+
+        bool was_in_bear_pb = st.pb_mode == -1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool is_choch = st.dir == -1
+        if is_choch
+            st.bull_sos := true
+            st.choch_lock := true
+
+        st.last_conf_high     := st.ash
+        st.last_conf_high_loc := st.ash_loc
+        st.ash                := na
+        st.dir                := 1
+
+        if was_in_bear_pb
+            st.bull_bos_low   := st.pb_extreme
+            st.bull_bos_l_loc := st.pb_extreme_loc
+            st.asl      := st.pb_extreme
+            st.asl_loc  := st.pb_extreme_loc
+            st.asl_type := "LOCKED"
+            if not is_choch
+                st.last_conf_low     := st.pb_extreme
+                st.last_conf_low_loc := st.pb_extreme_loc
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := 1
+            st.pb_started            := true
+        else
+            if not na(st.asl)
+                bool already_conf_low = (st.asl == st.last_conf_low and st.asl_loc == st.last_conf_low_loc)
+                if not already_conf_low
+                    st.last_conf_low     := st.asl
+                    st.last_conf_low_loc := st.asl_loc
+                st.asl      := na
+
+            float lowest_val = low
+            int   lowest_loc = bar_index
+            int   bars_back  = na(st.last_conf_high_loc) ? bar_index : bar_index - st.last_conf_high_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if low[i] < lowest_val
+                        lowest_val := low[i]
+                        lowest_loc := bar_index - i
+
+            st.bull_bos_low   := lowest_val
+            st.bull_bos_l_loc := lowest_loc
+
+            st.asl      := lowest_val
+            st.asl_loc  := lowest_loc
+            st.asl_type := ""
+
+            st.pb_mode               := 1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := high
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+    else if asl_broken
+        st.bear_bos := true
+        st.bear_bos_low   := st.asl
+        st.bear_bos_l_loc := st.asl_loc
+
+        bool was_in_bull_pb = st.pb_mode == 1 and not na(st.pb_extreme) and not na(st.pb_extreme_loc)
+        st.pb_mode  := 0
+        st.pb_count := 0
+
+        bool is_choch = st.dir == 1
+        if is_choch
+            st.bear_sos := true
+            st.choch_lock := true
+
+        st.last_conf_low     := st.asl
+        st.last_conf_low_loc := st.asl_loc
+        st.asl               := na
+        st.dir               := -1
+
+        if was_in_bull_pb
+            st.bear_bos_high  := st.pb_extreme
+            st.bear_bos_h_loc := st.pb_extreme_loc
+            st.ash      := st.pb_extreme
+            st.ash_loc  := st.pb_extreme_loc
+            st.ash_type := "LOCKED"
+            if not is_choch
+                st.last_conf_high     := st.pb_extreme
+                st.last_conf_high_loc := st.pb_extreme_loc
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_mode               := -1
+            st.pb_started            := true
+        else
+            float highest_val = high
+            int   highest_loc = bar_index
+            int   bars_back   = na(st.last_conf_low_loc) ? bar_index : bar_index - st.last_conf_low_loc
+            if bars_back > 0
+                int max_lb = math.min(math.min(bars_back, 1490), bar_index)
+                for i = 0 to max_lb
+                    if high[i] > highest_val
+                        highest_val := high[i]
+                        highest_loc := bar_index - i
+
+            if not na(st.ash)
+                bool already_conf_high = (st.ash == st.last_conf_high and st.ash_loc == st.last_conf_high_loc)
+                if not already_conf_high
+                    st.last_conf_high     := st.ash
+                    st.last_conf_high_loc := st.ash_loc
+                st.ash      := na
+            else
+                if highest_val != st.last_conf_high
+                    st.last_conf_high     := highest_val
+                    st.last_conf_high_loc := highest_loc
+
+            st.bear_bos_high  := highest_val
+            st.bear_bos_h_loc := highest_loc
+
+            st.ash      := highest_val
+            st.ash_loc  := highest_loc
+            st.ash_type := ""
+
+            st.pb_mode               := -1
+            st.pb_count              := 0
+            st.pb_level              := na
+            st.pb_extreme            := low
+            st.pb_extreme_loc        := bar_index
+            st.pb_extreme_close      := na
+            st.pb_last_qualify_close := na
+            st.pb_last_qualify_high  := na
+            st.pb_started            := true
+
+//============================================================
+//  STEP 1 — DIRECTION, and STEP 3 — CONFIRMATION
+//============================================================
+// One wrapper over the engine above, run on two timeframes. It returns the
+// direction and a SHIFT COUNTER rather than an event flag: a change of character
+// is an EDGE, and a flag read through request.security is a level that stays
+// true, so counting is the only way to tell "it just shifted" from "it shifted
+// at some point". Compare the count with its own previous bar.
+f_pbStruct(int len) =>
+    var mtf = MTFStruct.new(length = len)
+    var int shifts = 0
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low,  len, len)
+    mtf.processMTF(ph, pl)
+    if mtf.bull_sos or mtf.bear_sos
+        shifts += 1
+    [mtf.dir, shifts]
+
+[dirDir,  dirShifts]  = request.security(syminfo.tickerid, pbDirTf,  f_pbStruct(pbStructLen))
+[confDir, confShifts] = request.security(syminfo.tickerid, pbConfTf, f_pbStruct(pbStructLen))
+
+bool newConfShift = not na(confShifts) and not na(confShifts[1]) and confShifts > confShifts[1]
+
+//============================================================
+//  STEP 2 — LOCATION: the previous session's high or low, taken
+//============================================================
+bool inAsia = not na(time("", sessAsia, tzAsia))
+bool inLdn  = not na(time("", sessLdn,  tzLdn))
+bool inNy   = not na(time("", sessNy,   tzNy))
+
+var float asiaHi = na, var float asiaLo = na
+var float ldnHi  = na, var float ldnLo  = na
+if inAsia
+    asiaHi := (not inAsia[1] or na(asiaHi)) ? high : math.max(asiaHi, high)
+    asiaLo := (not inAsia[1] or na(asiaLo)) ? low  : math.min(asiaLo, low)
+if inLdn
+    ldnHi := (not inLdn[1] or na(ldnHi)) ? high : math.max(ldnHi, high)
+    ldnLo := (not inLdn[1] or na(ldnLo)) ? low  : math.min(ldnLo, low)
+
+// New York wins the overlap — it is the later session, and its pool is whatever
+// London had made by the time it opened. The pool is FROZEN at the session open
+// rather than read live, so the level a sweep is measured against cannot move
+// under the setup that is watching it.
+int  rawSess     = inNy ? 2 : inLdn ? 1 : 0
+bool sessTradable = rawSess == 2 ? pbTradeNy : rawSess == 1 ? pbTradeLdn : false
+bool newLeg      = rawSess != rawSess[1]
+
+var float  poolHi = na, var float poolLo = na
+var string poolNm = ""
+var int    legId  = 0
+if newLeg
+    legId += 1
+    if rawSess == 1
+        poolHi := asiaHi
+        poolLo := asiaLo
+        poolNm := "Asia"
+    else if rawSess == 2
+        poolHi := ldnHi
+        poolLo := ldnLo
+        poolNm := "London"
+    else
+        poolHi := na
+        poolLo := na
+        poolNm := ""
+
+var bool sweptHi = false, var bool sweptLo = false
+var bool confShort = false, var bool confLong = false
+var bool tookLeg = false
+if newLeg
+    sweptHi   := false
+    sweptLo   := false
+    confShort := false
+    confLong  := false
+    tookLeg   := false
+
+if rawSess != 0
+    if not na(poolHi) and high > poolHi
+        sweptHi := true
+    if not na(poolLo) and low < poolLo
+        sweptLo := true
+
+// A shift only counts as confirmation once the sweep has happened — the sequence
+// is location THEN confirmation, and a 1m flip before the sweep is a different
+// setup wearing the same flag.
+if rawSess != 0 and newConfShift
+    if sweptHi and confDir == -1
+        confShort := true
+    if sweptLo and confDir == 1
+        confLong := true
+
+bool confOkShort = pbRequireConf ? confShort : sweptHi
+bool confOkLong  = pbRequireConf ? confLong  : sweptLo
+
+//============================================================
+//  STEP 4 — POINT OF INTEREST: the nearest untouched gap
+//============================================================
+// Runs the 3-candle imbalance rule on the zone timeframe and returns the nearest
+// LIVE gap on each side of price. "Untouched" is tracked explicitly: a gap price
+// has already traded into is still alive (it dies only on a close fully past it),
+// and the video skips exactly those.
+f_poiScan(bool untouchedOnly) =>
+    var array<float> zTop  = array.new<float>()
+    var array<float> zBot  = array.new<float>()
+    var array<bool>  zBull = array.new<bool>()
+    var array<bool>  zTap  = array.new<bool>()
+    var array<int>   zBorn = array.new<int>()
+    float thr = timeframe.in_seconds() < 900 ? 0.0 : 0.04
+    if barstate.isconfirmed and bar_index >= 2
+        bool bull = low > high[2] and (low - high[2]) / high[2] * 100 > thr
+        bool bear = high < low[2] and (low[2] - high) / low[2] * 100 > thr
+        if bull
+            array.push(zTop, low)
+            array.push(zBot, high[2])
+            array.push(zBull, true)
+            array.push(zTap, false)
+            array.push(zBorn, bar_index)
+        if bear
+            array.push(zTop, low[2])
+            array.push(zBot, high)
+            array.push(zBull, false)
+            array.push(zTap, false)
+            array.push(zBorn, bar_index)
+        while array.size(zTop) > 30
+            array.shift(zTop)
+            array.shift(zBot)
+            array.shift(zBull)
+            array.shift(zTap)
+            array.shift(zBorn)
+        if array.size(zTop) > 0
+            for i = array.size(zTop) - 1 to 0
+                float t   = array.get(zTop, i)
+                float b   = array.get(zBot, i)
+                bool  isB = array.get(zBull, i)
+                bool  aged = bar_index > array.get(zBorn, i)
+                if aged and (isB ? close <= b : close >= t)
+                    array.remove(zTop, i)
+                    array.remove(zBot, i)
+                    array.remove(zBull, i)
+                    array.remove(zTap, i)
+                    array.remove(zBorn, i)
+                else if aged and high >= b and low <= t
+                    array.set(zTap, i, true)
+    float bullT = na
+    float bullB = na
+    float bearT = na
+    float bearB = na
+    if array.size(zTop) > 0
+        for i = 0 to array.size(zTop) - 1
+            float t = array.get(zTop, i)
+            float b = array.get(zBot, i)
+            bool ok = not untouchedOnly or not array.get(zTap, i)
+            if ok
+                if array.get(zBull, i) and t < close
+                    if na(bullT) or t > bullT
+                        bullT := t
+                        bullB := b
+                if not array.get(zBull, i) and b > close
+                    if na(bearB) or b < bearB
+                        bearT := t
+                        bearB := b
+    [bullT, bullB, bearT, bearB]
+
+[poiBullTop, poiBullBot, poiBearTop, poiBearBot] = request.security(syminfo.tickerid, pbPoiTf, f_poiScan(pbPoiUntouched))
+
+//============================================================
+//  STEP 5 — TARGETS
+//============================================================
+// TP1 is the previous day's extreme, TP2 the previous week's. Which of the two is
+// nearer is a fact about the week, not a constant, so they are ORDERED by distance
+// rather than assumed. A target on the wrong side of the entry, or nearer than the
+// minimum reward, is not a target — it is refused or replaced by the fallback,
+// never quietly used.
+f_targets(int dir, float entry, float dist) =>
+    float a = dir == 1 ? (execUseTp1 ? pdh : na) : (execUseTp1 ? pdl : na)
+    float b = dir == 1 ? (execUseTp2 ? pwh : na) : (execUseTp2 ? pwl : na)
+    float minDist = execMinRr * dist
+    bool aOk = not na(a) and (dir == 1 ? a - entry >= minDist : entry - a >= minDist)
+    bool bOk = not na(b) and (dir == 1 ? b - entry >= minDist : entry - b >= minDist)
+    float t1 = na
+    float t2 = na
+    if aOk and bOk
+        float da = math.abs(a - entry)
+        float db = math.abs(b - entry)
+        t1 := da <= db ? a : b
+        t2 := da <= db ? b : a
+        if math.abs(t2 - t1) < dist * 0.25
+            t2 := na
+    else if aOk
+        t1 := a
+    else if bOk
+        t1 := b
+    if na(t1) and execTpFallbackR > 0
+        t1 := dir == 1 ? entry + execTpFallbackR * dist : entry - execTpFallbackR * dist
+    [t1, t2]
+
+//============================================================
+//  STATE
+//============================================================
+var int   pendDir   = 0
+var float pendEntry = na, var float pendStop = na
+var float pendT1    = na, var float pendT2   = na
+var float pendZTop  = na, var float pendZBot = na
+var int   pendBar   = na
+
+var int   posDir    = 0
+var float posEntry  = na, var float posStop = na
+var float posT1     = na, var float posT2   = na
+var float posZTop   = na, var float posZBot = na
+var float posDist   = na, var float posQty  = na
+var int   posTime   = na
+var float pnlAtFill = 0.0
+var bool  t1Done    = false
+
+float minStopDist = execMinStopMode == "% of price" ? close * execMinStopVal / 100 : execMinStopMode == "Fixed $" ? execMinStopVal : execMinStopMode == "x ATR(14)" ? (na(atr14) ? 0.0 : atr14 * execMinStopVal) : 0.0
+
+//============================================================
+//  CANCEL A RESTING LIMIT
+//============================================================
+// Before arming, so a session that has just rolled cannot leave the previous
+// session's order sitting in the book against a pool nobody is watching.
+if pendDir != 0 and strategy.position_size == 0
+    bool cTtl  = execCancelBars > 0 and not na(pendBar) and bar_index - pendBar > execCancelBars
+    bool cLeg  = newLeg
+    bool cFlip = execCancelFlip and (pendDir == -1 ? dirDir != -1 : dirDir != 1)
+    bool cOpp  = execCancelFlip and newConfShift and confDir == -pendDir
+    if cTtl or cLeg or cFlip or cOpp
+        strategy.cancel(pendDir == -1 ? "PB-S" : "PB-L")
+        if execDiagLog
+            log.info("[CANCEL] {0} reason={1}", pendDir == -1 ? "short" : "long", cLeg ? "session ended" : cTtl ? "expired" : cFlip ? "direction flipped" : "opposite 1m shift")
+        pendDir := 0
+
+//============================================================
+//  THE SETUP — one gate chain per side, first refusal wins
+//============================================================
+bool flat = strategy.position_size == 0
+bool busy = not flat or pendDir != 0 or tookLeg
+
+// The PROXIMAL edge is the one price reaches first, which is the bottom of a zone
+// above price and the top of a zone below it — so this cannot be written without
+// the direction. Getting it the other way round rests every long at the far edge.
+f_zoneEntry(int dir, float zTop, float zBot) =>
+    float prox = dir == 1 ? zTop : zBot
+    float dist = dir == 1 ? zBot : zTop
+    execZoneEntry == "Proximal edge" ? prox : execZoneEntry == "Distal edge" ? dist : (zTop + zBot) / 2
+
+// ── SHORT ─────────────────────────────────────────────────
+float sZTop  = poiBearTop
+float sZBot  = poiBearBot
+float sEntry = na(sZTop) ? na : f_zoneEntry(-1, sZTop, sZBot)
+float sStop  = na(sZTop) ? na : sZTop + execSlBufTk * tickSz
+float sDist  = na(sEntry) or na(sStop) ? na : sStop - sEntry
+[sT1, sT2]   = f_targets(-1, nz(sEntry, close), nz(sDist, close * 0.001))
+
+int sBlk = 0
+if not pbTradeShorts
+    sBlk := 1
+else if dirDir != -1
+    sBlk := 2
+else if rawSess == 0 or not sessTradable
+    sBlk := 3
+else if not sweptHi
+    sBlk := 4
+else if not confOkShort
+    sBlk := 5
+else if na(sZTop) or na(sEntry) or sEntry <= close
+    sBlk := 6
+else if pbPoiMaxAtr > 0 and not na(atr14) and sEntry - close > pbPoiMaxAtr * atr14
+    sBlk := 7
+else if na(sDist) or sDist <= 0 or sDist < minStopDist
+    sBlk := 8
+else if na(sT1)
+    sBlk := 9
+else if busy
+    sBlk := 10
+
+// ── LONG ──────────────────────────────────────────────────
+float lZTop  = poiBullTop
+float lZBot  = poiBullBot
+float lEntry = na(lZTop) ? na : f_zoneEntry(1, lZTop, lZBot)
+float lStop  = na(lZBot) ? na : lZBot - execSlBufTk * tickSz
+float lDist  = na(lEntry) or na(lStop) ? na : lEntry - lStop
+[lT1, lT2]   = f_targets(1, nz(lEntry, close), nz(lDist, close * 0.001))
+
+int lBlk = 0
+if not pbTradeLongs
+    lBlk := 1
+else if dirDir != 1
+    lBlk := 2
+else if rawSess == 0 or not sessTradable
+    lBlk := 3
+else if not sweptLo
+    lBlk := 4
+else if not confOkLong
+    lBlk := 5
+else if na(lZTop) or na(lEntry) or lEntry >= close
+    lBlk := 6
+else if pbPoiMaxAtr > 0 and not na(atr14) and close - lEntry > pbPoiMaxAtr * atr14
+    lBlk := 7
+else if na(lDist) or lDist <= 0 or lDist < minStopDist
+    lBlk := 8
+else if na(lT1)
+    lBlk := 9
+else if busy
+    lBlk := 10
+
+f_blkWhy(int code) =>
+    switch code
+        1  => "that direction is switched off"
+        2  => "the direction timeframe is not on this side"
+        3  => "outside a session that trades"
+        4  => "the previous session's level has not been taken"
+        5  => "no change of character on the confirmation timeframe yet"
+        6  => "no untouched zone left on the far side of price"
+        7  => "the zone is further from price than the limit allows"
+        8  => "the stop is too tight for the minimum-distance guard"
+        9  => "no target far enough away to be worth taking"
+        10 => "already holding, already resting an order, or already traded this session"
+        => ""
+
+//============================================================
+//  ENTRY — freeze the zone, then rest the limit
+//============================================================
+// Everything the trade is priced off is snapshotted HERE. A gap keeps its edges
+// but the SELECTION moves as price does, so re-reading it at the fill would rest
+// the order against one zone and stop it against another.
+bool armShort = sBlk == 0
+bool armLong  = lBlk == 0
+
+if armShort
+    float q = sDist > 0 ? (strategy.equity * execRiskPct / 100) / sDist : 0.0
+    if q > 0
+        strategy.entry("PB-S", strategy.short, qty = q, limit = sEntry)
+        pendDir   := -1
+        pendEntry := sEntry
+        pendStop  := sStop
+        pendT1    := sT1
+        pendT2    := sT2
+        pendZTop  := sZTop
+        pendZBot  := sZBot
+        pendBar   := bar_index
+        if execDiagLog
+            log.info("[ARM] short {0} entry={1} stop={2} tp1={3} tp2={4} qty={5}", poolNm + " sweep", str.tostring(sEntry, format.mintick), str.tostring(sStop, format.mintick), str.tostring(sT1, format.mintick), str.tostring(sT2, format.mintick), str.tostring(q, "#.###"))
+
+if armLong and pendDir == 0
+    float q = lDist > 0 ? (strategy.equity * execRiskPct / 100) / lDist : 0.0
+    if q > 0
+        strategy.entry("PB-L", strategy.long, qty = q, limit = lEntry)
+        pendDir   := 1
+        pendEntry := lEntry
+        pendStop  := lStop
+        pendT1    := lT1
+        pendT2    := lT2
+        pendZTop  := lZTop
+        pendZBot  := lZBot
+        pendBar   := bar_index
+        if execDiagLog
+            log.info("[ARM] long {0} entry={1} stop={2} tp1={3} tp2={4} qty={5}", poolNm + " sweep", str.tostring(lEntry, format.mintick), str.tostring(lStop, format.mintick), str.tostring(lT1, format.mintick), str.tostring(lT2, format.mintick), str.tostring(q, "#.###"))
+
+//============================================================
+//  FILL, STAGED STOP, EXITS
+//============================================================
+bool justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
+bool justClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
+
+if justFilled
+    posDir    := strategy.position_size > 0 ? 1 : -1
+    posEntry  := strategy.opentrades.entry_price(strategy.opentrades - 1)
+    posStop   := pendStop
+    posT1     := pendT1
+    posT2     := pendT2
+    posZTop   := pendZTop
+    posZBot   := pendZBot
+    posQty    := math.abs(strategy.position_size)
+    posDist   := math.abs(posStop - posEntry)
+    posTime   := time
+    pnlAtFill := strategy.netprofit
+    t1Done    := false
+    tookLeg   := true
+    pendDir   := 0
+    if execDiagLog
+        log.info("[FILL] {0} at {1} stop={2} risk={3}", posDir == 1 ? "long" : "short", str.tostring(posEntry, format.mintick), str.tostring(posStop, format.mintick), str.tostring(posDist * posQty, "#.##"))
+
+// The FILL BAR may not stage its own stop. A resting limit is reached by price
+// coming to it from the wrong side, so the fill bar's favourable extreme is the
+// approach to the order, not a move the trade made.
+if strategy.position_size != 0 and strategy.position_size[1] != 0 and not t1Done and not na(posT1)
+    if posDir == 1 ? high >= posT1 : low <= posT1
+        t1Done := true
+        if execBeAtTp1
+            posStop := posDir == 1 ? math.max(posStop, posEntry + execBeBufTk * tickSz) : math.min(posStop, posEntry - execBeBufTk * tickSz)
+
+bool twoLegs  = not na(posT2) and execTp1Pct > 0 and execTp1Pct < 100
+float runTgt  = twoLegs ? posT2 : posT1
+bool  timeUp  = execTimeStopHrs > 0 and not t1Done and not na(posTime) and time - posTime >= execTimeStopHrs * 3600000
+
+// A rung is issued only while it is unfilled: calling strategy.exit again with an
+// id whose order has already FILLED places a NEW order rather than modifying it,
+// which banks another slice of the remainder every bar.
+if strategy.position_size > 0
+    if twoLegs and not t1Done
+        strategy.exit("L-TP1", from_entry = "PB-L", qty_percent = execTp1Pct, limit = posT1, stop = posStop)
+    strategy.exit("L-RUN", from_entry = "PB-L", limit = runTgt, stop = posStop)
+    if timeUp
+        strategy.close("PB-L", comment = "time stop")
+
+if strategy.position_size < 0
+    if twoLegs and not t1Done
+        strategy.exit("S-TP1", from_entry = "PB-S", qty_percent = execTp1Pct, limit = posT1, stop = posStop)
+    strategy.exit("S-RUN", from_entry = "PB-S", limit = runTgt, stop = posStop)
+    if timeUp
+        strategy.close("PB-S", comment = "time stop")
+
+float closedR = na
+if justClosed
+    float pnl = strategy.netprofit - pnlAtFill
+    float riskUsd = posDist * posQty
+    closedR := riskUsd > 0 ? pnl / riskUsd : na
+    if execDiagLog
+        log.info("[CLOSE] {0} R={1} pnl={2}", posDir == 1 ? "long" : "short", str.tostring(closedR, "#.##"), str.tostring(pnl, "#.##"))
+
+//============================================================
+//  DRAWING
+//============================================================
+bgcolor(pbShowSess ? (inNy ? color.new(color.orange, 93) : inLdn ? color.new(color.blue, 94) : inAsia ? color.new(color.gray, 95) : na) : na, title = "Session shading")
+plot(pbShowSess and rawSess != 0 ? poolHi : na, "Pool high", color = color.new(#ef5350, 0), style = plot.style_linebr, linewidth = 1)
+plot(pbShowSess and rawSess != 0 ? poolLo : na, "Pool low",  color = color.new(#26a69a, 0), style = plot.style_linebr, linewidth = 1)
+
+var box   curBox   = na
+var line  curEnt   = na
+var line  curStp   = na
+var line  curT1    = na
+var line  curT2    = na
+var label curLbl   = na
+var array<box>   oldBoxes  = array.new<box>()
+var array<line>  oldLines  = array.new<line>()
+var array<label> oldLabels = array.new<label>()
+
+f_archive() =>
+    if not na(curBox)
+        array.push(oldBoxes, curBox)
+    if not na(curEnt)
+        array.push(oldLines, curEnt)
+    if not na(curStp)
+        array.push(oldLines, curStp)
+    if not na(curT1)
+        array.push(oldLines, curT1)
+    if not na(curT2)
+        array.push(oldLines, curT2)
+    if not na(curLbl)
+        array.push(oldLabels, curLbl)
+    while array.size(oldBoxes) > 20
+        box.delete(array.shift(oldBoxes))
+    while array.size(oldLines) > 80
+        line.delete(array.shift(oldLines))
+    while array.size(oldLabels) > 40
+        label.delete(array.shift(oldLabels))
+    int _r = 0
+
+// A new setup archives the previous one whole — a fixed set of objects per setup,
+// so an eviction can never leave half a setup's levels on the chart.
+bool armedNow  = pendDir != 0 and pendBar == bar_index
+bool armedShort = armedNow and pendDir == -1
+if showSetups and armedNow
+    f_archive()
+    float zt = pendZTop
+    float zb = pendZBot
+    color c  = armedShort ? color.new(#ef5350, 0) : color.new(#26a69a, 0)
+    curBox := box.new(bar_index, zt, bar_index + 12, zb, border_color = c, border_width = 1, bgcolor = color.new(c, 88))
+    curEnt := line.new(bar_index, pendEntry, bar_index + 12, pendEntry, color = color.new(color.gray, 0), style = line.style_dashed, width = 1)
+    curStp := line.new(bar_index, pendStop,  bar_index + 12, pendStop,  color = color.new(#ef5350, 0), style = line.style_solid, width = 1)
+    curT1  := na(pendT1) ? line(na) : line.new(bar_index, pendT1, bar_index + 12, pendT1, color = color.new(#26a69a, 0), style = line.style_solid, width = 1)
+    curT2  := na(pendT2) ? line(na) : line.new(bar_index, pendT2, bar_index + 12, pendT2, color = color.new(#26a69a, 40), style = line.style_dotted, width = 1)
+    curLbl := label.new(bar_index, zt, (armedShort ? "▼ " : "▲ ") + poolNm + " sweep", style = armedShort ? label.style_label_down : label.style_label_up, color = color.new(c, 25), textcolor = color.white, size = size.tiny, tooltip = "Entry " + str.tostring(pendEntry, format.mintick) + "\nStop " + str.tostring(pendStop, format.mintick) + "\nTP1 " + str.tostring(pendT1, format.mintick) + "\nTP2 " + str.tostring(pendT2, format.mintick))
+
+// Extend the live setup while its order rests or its position is open.
+if showSetups and (pendDir != 0 or strategy.position_size != 0) and not na(curBox)
+    box.set_right(curBox, bar_index + 2)
+    line.set_x2(curEnt, bar_index + 2)
+    line.set_x2(curStp, bar_index + 2)
+    if not na(curT1)
+        line.set_x2(curT1, bar_index + 2)
+    if not na(curT2)
+        line.set_x2(curT2, bar_index + 2)
+    // The stop line follows the LIVE stop, so a staged breakeven is visible.
+    if strategy.position_size != 0 and not na(posStop)
+        line.set_y1(curStp, posStop)
+        line.set_y2(curStp, posStop)
+
+if showSetups and justClosed and not na(closedR)
+    color rc = closedR > 0.1 ? color.new(#26a69a, 0) : closedR < -0.1 ? color.new(#ef5350, 0) : color.new(color.orange, 0)
+    label rl = label.new(bar_index, close, str.tostring(closedR, "#.##") + "R", style = posDir == 1 ? label.style_label_down : label.style_label_up, color = color.new(rc, 25), textcolor = color.white, size = size.tiny)
+    array.push(oldLabels, rl)
+    while array.size(oldLabels) > 40
+        label.delete(array.shift(oldLabels))
+
+//============================================================
+//  REFUSED SETUPS
+//============================================================
+// Only refusals from the ZONE onward are tagged. Codes 1-5 are "the sequence has
+// not happened yet", which is the normal state of the market and would bury the
+// four that are actually decisions.
+var int lastTagKey = -1
+int tagCode = sBlk >= 6 and sBlk <= 10 ? sBlk : lBlk >= 6 and lBlk <= 10 ? lBlk : 0
+bool tagShort = sBlk >= 6 and sBlk <= 10
+if showBlockTag and tagCode > 0 and not armedNow and time_close >= timenow - debugDays * 86400000
+    int key = legId * 100 + tagCode * 2 + (tagShort ? 1 : 0)
+    if key != lastTagKey
+        lastTagKey := key
+        label bl = label.new(bar_index, tagShort ? high : low, tagShort ? "▼ REFUSED" : "▲ REFUSED", style = tagShort ? label.style_label_down : label.style_label_up, color = color.new(#ff4dd2, 30), textcolor = color.white, size = size.tiny, tooltip = f_blkWhy(tagCode))
+        array.push(oldLabels, bl)
+        while array.size(oldLabels) > 40
+            label.delete(array.shift(oldLabels))
+        if execDiagLog
+            log.info("[BLOCK] {0} code={1} {2}", tagShort ? "short" : "long", tagCode, f_blkWhy(tagCode))
+
+//============================================================
+//  STATE PANEL — what the sequence is waiting for
+//============================================================
+// It reports the GATES rather than only the outcome, so a quiet market can be told
+// apart from a rule set too tight — those need opposite responses.
+var table pbTbl = table.new(position.top_right, 2, 6, bgcolor = color.new(#1a1a1a, 10), border_color = color.new(color.gray, 70), border_width = 1)
+
+f_row(int r, string k, string v, color vc) =>
+    table.cell(pbTbl, 0, r, k, text_color = color.new(color.gray, 20), text_size = size.tiny, text_halign = text.align_left)
+    table.cell(pbTbl, 1, r, v, text_color = vc, text_size = size.tiny, text_halign = text.align_right)
+    int _r = 0
+
+if showStatePanel and barstate.islast
+    color GOOD = #26a69a
+    color WARN = #ffb74d
+    color OFF  = color.new(color.gray, 30)
+    int sd = dirDir
+    f_row(0, "DIRECTION " + pbDirTf + "m", sd == 1 ? "bullish" : sd == -1 ? "bearish" : "none yet", sd == 0 ? OFF : GOOD)
+    f_row(1, "SESSION", rawSess == 2 ? "New York" : rawSess == 1 ? "London" : "off-hours", rawSess == 0 or not sessTradable ? OFF : GOOD)
+    f_row(2, "POOL " + (poolNm == "" ? "—" : poolNm), rawSess == 0 ? "—" : str.tostring(sd == 1 ? poolLo : poolHi, format.mintick), OFF)
+    f_row(3, "SWEPT", rawSess == 0 ? "—" : (sd == 1 ? sweptLo : sweptHi) ? "yes" : "waiting", (sd == 1 ? sweptLo : sweptHi) ? GOOD : WARN)
+    f_row(4, "1m SHIFT", not pbRequireConf ? "not required" : (sd == 1 ? confOkLong : confOkShort) ? "agreed" : "waiting", (sd == 1 ? confOkLong : confOkShort) ? GOOD : WARN)
+    f_row(5, "ZONE", pendDir != 0 ? "order resting" : strategy.position_size != 0 ? "in a trade" : f_blkWhy(sd == 1 ? lBlk : sBlk) == "" ? "ready" : f_blkWhy(sd == 1 ? lBlk : sBlk), pendDir != 0 or strategy.position_size != 0 ? GOOD : WARN)
