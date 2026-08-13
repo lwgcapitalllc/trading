@@ -202,8 +202,15 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
   downtrends until some bull break appeared and returned **101/101**. Both are now bounded so that
   each outcome is reachable. **A pattern counter that returns 0 or 100% is reporting on its own
   bounds, not on the market.**
-  `internal_realign_scan.py --pattern any|opposing|strict --frame 5` · defaults to `strict`, which
-  is the sequence that was DRAWN and the worst of the three when measured.
+  🔴 **ITS PATTERN RANKING ALSO FAILED TO SURVIVE A REPLAY — THE SECOND FAILURE, AND THE ONE THAT
+  MAKES THIS A PROPERTY OF THE TOOL RATHER THAN A ONE-OFF.** It ranks the strict three-step sequence
+  LAST of three, and a replay over the same history puts it **FIRST on average R, profit factor and
+  drawdown simultaneously** on a free book — it only falls behind once costs are charged. So the
+  tool has now been overturned once in SIGN (the short trigger stream) and once in ORDER. **What it
+  measures is TRIGGER quality; what a strategy is ranked on is what its exits bank. Do not choose a
+  default from this tool.** Tables: `strategies/python/mpc_realign/CLAUDE.md` → *The pattern rule*.
+  `internal_realign_scan.py --pattern any|opposing|strict --frame 5` · defaults to `strict`, the
+  sequence that was DRAWN.
 - **`tools/scratch_audit.py`** + **`tools/swap_audit.py`** (new 2026-08-11) — is a "breakeven" exit
   actually breakeven on a real account, and what does overnight swap cost. Written for Aaron's
   theory that `exec_be_buf_tk` (30 ticks = $0.30) cannot cover a $0.32 spread; full record in

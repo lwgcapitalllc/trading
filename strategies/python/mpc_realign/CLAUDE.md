@@ -99,16 +99,42 @@ The internal frame was swept rather than assumed:
 iBOS/iSOS across Aaron's own window. The two-frame build is not a refinement; without it there is no
 strategy to measure.
 
-## The pattern rule — the loosest one wins
+## 🔴 The pattern rule — the ranking INVERTS with costs, and this file had it wrong
 
 `realign_pattern` takes `any` | `opposing` | `strict`. **Default is `any`, the loosest.**
 
-`strict` (with-trend iBOS → counter iSOS → with-trend iSOS) is the sequence Aaron drew, and it is
-**the WORST of the three**: it cuts the book 183 → 121 and moves BOTH directions the wrong way
-(long −2.3% → −5.7%, short +6.1% → +4.4%). The extra specificity carries no information.
+**This section previously said `strict` — the sequence Aaron actually drew — was "the WORST of the
+three" and that "the extra specificity carries no information". Both sentences were false, and they
+came from the TRIGGER SCAN**, which the section two above says must never decide an exit-sensitive
+question. The correction is the same lesson arriving inside the file that states it.
 
-⚠ Read that as a fact about the FILTER, not about the drawing. The sequence he identified is real;
-requiring the first leg of it just removes setups without improving what is left.
+Measured by REPLAY, 467,352 M5 bars 2020-01-02 → 2026-08-06:
+
+| FREE | trades | total R | avg R | win | PF | maxDD |
+|---|---|---|---|---|---|---|
+| `any` | 162 | +45.14R | +0.279 | 44.4% | 1.658 | 12.15R |
+| `opposing` | 43 | +11.36R | +0.264 | 48.8% | 1.832 | 4.58R |
+| `strict` | 42 | **+12.36R** | **+0.294** | **50.0%** | **1.977** | **4.15R** |
+
+| CHARGED (`puprime_standard`) | trades | total R | avg R | win | PF | maxDD |
+|---|---|---|---|---|---|---|
+| `any` | 162 | **+35.81R** | **+0.221** | 33.3% | 1.496 | 15.52R |
+| `opposing` | 43 | +6.22R | +0.145 | 30.2% | 1.425 | 5.51R |
+| `strict` | 42 | +7.33R | +0.175 | 31.0% | **1.540** | **4.41R** |
+
+**Free, `strict` is the BEST of the three on average R, profit factor and drawdown simultaneously.**
+Charged, it is not — costs take **40% of its average R** (+0.294 → +0.175) against `any`'s **21%**
+(+0.279 → +0.221), and the order flips. A conclusion drawn on a free book does not survive a charged
+one here, which is the practical reason this repo charges costs before ranking anything.
+
+⚠ **The mechanism is NOT measured.** The obvious candidate is that the strict sequence's stops are
+tighter, so a fixed spread costs more R. It is plausible, it is one replay away (median stop distance
+per pattern), and it is deliberately left as a hypothesis rather than written up as a finding.
+
+**`any` still ships**, on the two figures that survive charging: 5x the total R and more R per unit
+of drawdown (2.31 vs 1.66). But `strict` is a real rule with the best per-trade quality in the book,
+and it is the one worth revisiting if the cost model or the entry ever gets cheaper — which is
+exactly the conclusion the old wording would have prevented anyone from reaching.
 
 ---
 
@@ -163,27 +189,55 @@ finding). Re-measure before quoting them against a charged book.
 
 ## Measured — and what is still open
 
-Full-history replay, 5m XAUUSD, 2020-01-02 → 2026-08-06, shipped defaults, costs charged:
+Full-history replay, 5m XAUUSD, 2020-01-02 → 2026-08-06, shipped defaults, warmup 1000, **the 5m
+frame resampled from M1** (see *How to re-run this* below — reading the M5 cache is a trap):
 
-**162 trades · +37.67R · maxDD 14.60R · win 44%**
+| | trades | total R | avg R | win | PF | maxDD |
+|---|---|---|---|---|---|---|
+| free | 162 (77L/85S) | +45.14R | +0.279 | 44.4% | 1.658 | 12.15R |
+| charged (`puprime_standard`) | 162 | +35.81R | +0.221 | 33.3% | 1.496 | 15.52R |
 
 Cross-checked against the TradingView Strategy Tester on the same instrument and window:
 
-**143 trades · +41.35% · PF 1.617 · maxDD 17.79% · win 30.77%**
+**143 trades · +41.35% (≈35R) · PF 1.617 · maxDD 17.79% (≈19.5R) · win 30.77%**
 
-✅ **Total R agrees within noise**, which is the check worth having at this stage — two
-implementations, two fill models, one answer about whether the setup makes money.
+✅ **Total R agrees within noise** — two implementations, two fill models, one answer about whether
+the setup makes money.
 
-🔴 **Two differences are DIAGNOSED AND NOT MEASURED, and neither should be quoted as understood:**
+⚠ **AN EARLIER REVISION OF THIS SECTION CLAIMED +37.67R / maxDD 14.60R CHARGED AND IT DOES NOT
+REPRODUCE.** Same window, same profile, today: +35.81R / 15.52R. **The FREE figure reproduces to the
+cent**, so whatever differs is on the charged path alone. `32b633f` was checked and is not the cause
+— it touched only tools and docs, no execution code. The candidates are a different warmup or a
+different bar set in the original run, and **neither is measured, because the original run's command
+was not recorded.** That is the whole argument for the *How to re-run this* section below.
 
-1. **Drawdown is worse in Pine (17.79% vs 14.60R)** — probably correct, and probably Pine's. The
-   TradingView tester fills a gapped stop at the next bar's OPEN; the bar-replay model fills at the
-   stop PRICE. That errs optimistic in Python, which is the direction that matters.
-2. **The win rate gap (30.77% vs 44%)** — probably scratch classification. This repo counts a trade
-   closing a cent up as a win and TradingView does the same, so the gap is more likely *where the
-   breakeven stop lands* than a counting difference — see `32b633f`, which found the 30-tick
-   breakeven buffer is smaller than the measured spread, so a "breakeven" exit is quietly a small
-   loss.
+✅ **ONE OF THE TWO PINE/PYTHON DIFFERENCES IS NOW LARGELY CLOSED, AND THE CAUSE WAS THE COMPARISON
+RATHER THAN EITHER IMPLEMENTATION.** This section used to report the win-rate gap as "30.77% vs 44%"
+and blame scratch classification. **44% is the FREE book.** The charged book — the one the R figure
+is quoted from — wins **33.3%**, against the tester's 30.77%. The comparison was reading its R off
+one book and its win rate off the other. **Costs move this strategy's win rate 11 points** (44.4% →
+33.3%), because it enters at MARKET and pays the spread both ways rather than resting a limit like
+every other bot here. ⚠ ~2.5 points remain, scratch classification is still the candidate (11 of 162
+counted separately at |r| ≤ 0.02 against a tester that asks only whether P&L > 0), and it is small
+and NOT measured.
+
+🔴 **The drawdown difference is still open and undiagnosed by measurement: 17.79% (≈19.5R) in Pine
+against 15.52R here.** The candidate is that TradingView fills a gapped stop at the next bar's OPEN
+while the bar-replay model fills at the stop PRICE, which would make Python optimistic — the
+direction that matters. Same total R with a deeper drawdown is that signature, but a signature is
+not a measurement, and **the parity gate is what settles it.**
+
+## How to re-run this
+
+```
+.venv/bin/python -m pytest strategies/python/mpc_realign/tests/ -q     # 15 tests
+```
+
+For the replay: build the 5m frame by resampling `backtest/cache/XAUUSD__M1.csv`, never by loading
+the M5 cache. 🔴 **`backtest/cache/XAUUSD__M5.csv` holds 26,887 bars where a complete 2020→2026
+history is ~467,000.** A streaming structure engine fed across holes that size builds structure over
+candles that never traded, and returns a frame and a number that look perfectly clean. Every figure
+in this file is from the M1 resample; a run off the cache is not comparable to any of them.
 
 **Neither is a reason to trust one side over the other yet. They are the two things the parity gate
 exists to settle, and the parity gate does not exist.**

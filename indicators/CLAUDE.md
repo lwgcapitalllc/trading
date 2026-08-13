@@ -424,11 +424,17 @@ no exit ladder, no staged stop and no position slot**, and that short edge lived
 measured is one the strategy never collects.** ⚠ **Take counts from a trigger scan; take the
 direction of anything exit-sensitive from a replay.**
 
-⚠ **THE SEQUENCE AARON DREW IS THE WORST OF THE THREE FILTERS, AND THAT IS A FACT ABOUT THE FILTER,
-NOT ABOUT THE DRAWING.** Requiring the full with-trend-iBOS → counter-iSOS → with-trend-iSOS
-sequence cuts the book 183 → 121 and moves **both** directions the wrong way (long −2.3% → −5.7%,
-short +6.1% → +4.4%). The shipped default is the loosest rule. The sequence he identified is real;
-requiring its first leg removes setups without improving what is left.
+🔴 **THIS ENTRY ORIGINALLY SAID "THE SEQUENCE AARON DREW IS THE WORST OF THE THREE FILTERS". IT IS
+NOT, AND THE CORRECTION IS THE SAME LESSON AS THE PARAGRAPH ABOVE IT.** That claim was the trigger
+scan's, written down one paragraph after the warning never to let the scan decide an exit-sensitive
+question. **Replayed over 467,352 M5 bars, FREE, the strict sequence is the BEST of the three on
+average R (+0.294 vs +0.279), profit factor (1.977 vs 1.658) and drawdown (4.15R vs 12.15R) at
+once.** It loses the ranking only once **costs are charged** — it gives up **40% of its average R**
+against the loose rule's **21%**, and the order flips. The loose rule still ships, on the two
+figures that survive charging: 5x the total R (+35.81R vs +7.33R) and more R per unit of drawdown
+(2.31 vs 1.66). ⚠ **The mechanism is a hypothesis, not a finding** — probably tighter stops paying a
+fixed spread — and it is one replay away. **Twice now this scan's ordering has failed to survive a
+replay, the first time in SIGN; treat its rankings as trigger quality and nothing else.**
 
 ⚠ **The lower frame was swept rather than assumed: 5m carries the edge, 3m is break-even, 1m is
 negative and its stops sit inside gold's spread floor.** A single-engine M15 run gives **9 setups in
@@ -441,12 +447,19 @@ strategies** — a `run_dual` build is locked out of the optimizer, every sweep 
 The correctness condition is that an HTF bar is published only once its last chart bar has CLOSED;
 publishing a forming one is lookahead of the flattering kind and nothing errors.
 
-✅ **Cross-checked rather than asserted: Python 162 trades / +37.67R charged, TradingView 143 /
-+41.35% / PF 1.617. Total R agrees within noise.** 🔴 **Two differences are DIAGNOSED AND NOT
-MEASURED** — drawdown is worse in Pine (probably correct: TradingView fills a gapped stop at the
-next OPEN, the bar model fills at the stop price) and the win rate differs 30.77% vs 44% (probably
-scratch classification, and `32b633f` had just found the 30-tick breakeven buffer is smaller than
-the measured spread). **Neither is settled, and settling them is what the parity gate is for.**
+✅ **Cross-checked rather than asserted: Python 162 trades / +35.81R charged (+45.14R free),
+TradingView 143 / +41.35% / PF 1.617. Total R agrees within noise.** ✅ **THE WIN-RATE DIFFERENCE IS
+NOW LARGELY CLOSED, AND ITS CAUSE WAS THE COMPARISON RATHER THAN EITHER IMPLEMENTATION** — this
+entry reported "30.77% vs 44%" and blamed scratch classification, but **44% is the FREE book while
+the R beside it is the CHARGED one.** The charged book wins **33.3%** against the tester's 30.77%.
+Costs move this strategy's win rate 11 points because it enters at MARKET and pays the spread both
+ways, unlike every other bot here. 🔴 **The DRAWDOWN difference is still open** (Pine ≈19.5R against
+15.52R; the candidate is TradingView filling a gapped stop at the next OPEN where the bar model
+fills at the stop price, which would make Python optimistic) — **a signature is not a measurement,
+and the parity gate is what settles it.** ⚠ **A charged figure of +37.67R quoted on the first pass
+does NOT reproduce and the reason is not known**: the free figure reproduces to the cent, `32b633f`
+was checked and touched no execution code, and **the original run's command was never recorded**,
+which is the only reason it cannot be settled.
 
 ⚠ **NOTHING HERE IS PARITY-VALIDATED.** No export twin, no real CSV, no `compare_realign.py` —
 stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are outstanding, and stage 4 is the one only a

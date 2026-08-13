@@ -15,9 +15,22 @@
 // Python port (stage 5, already built and replayed): strategies/python/mpc_realign/
 //
 // MEASURED by real replay of the Python port, 467,352 M5 bars 2020-01-02 -> 2026-08-06,
-// $10,000, full exit ladder, one position slot:
-//     free                     162 trades (77L/85S)  +45.14R  maxDD 12.15R  -> $73,265
-//     spread + swap charged    162 trades            +37.67R  maxDD 14.60R  -> $38,211
+// $10,000, warmup 1000, full exit ladder, one position slot. The 5m frame is RESAMPLED
+// FROM M1 — backtest/cache/XAUUSD__M5.csv holds 26,887 bars where a complete history is
+// ~467,000, and replaying a streaming structure engine across holes that size builds
+// structure over candles that never traded and returns a clean-looking number:
+//     free                     162 trades (77L/85S)  +45.14R  win 44.4%  maxDD 12.15R
+//     spread + swap charged    162 trades            +35.81R  win 33.3%  maxDD 15.52R
+//   (charged = PROFILES["puprime_standard"], spread $0.32 + swap, no commission)
+//
+// ⚠ AN EARLIER REVISION OF THIS HEADER CLAIMED +37.67R / maxDD 14.60R CHARGED AND IT DOES
+//   NOT REPRODUCE — today's run gives +35.81R / 15.52R on the same window and profile.
+//   The FREE figure reproduces to the cent, so whatever differs is on the charged path
+//   alone. Aaron's 32b633f was checked and is NOT the cause: it touched only tools and
+//   docs, no execution code. The remaining candidates are a different warmup or a
+//   different bar set in the original run, and NEITHER IS MEASURED — the original run's
+//   command was not recorded, which is exactly why it cannot be settled now. The figures
+//   above are the ones a command reproduces; quote those.
 //
 // ⚠ BOTH SIDES TRIGGER ON THE FRAME'S OWN SWING STRUCTURE. An earlier trigger scan said
 //   the short side wanted the engine's INTERNAL (iBOS/iSOS) stream; a real replay through
@@ -34,10 +47,16 @@
 //     fills a gapped stop at the next bar's OPEN; the Python replay is a bar model that
 //     fills at the stop price, which undercounts what a weekend gap costs. Same total R,
 //     deeper drawdown, is exactly the signature of that.
-//   ⚠ WIN RATE 30.77% HERE vs 44% THERE, with PF 1.617 — so the winners run ~3.6x the
-//     losers, which is the runner profile working. The likely cause is classification:
-//     the Python counts a scratch separately (11 of 162) and a win as r > 0.02, while the
-//     tester asks only whether P&L > 0. UNCONFIRMED — check before quoting either.
+//   ✅ THE WIN-RATE GAP IS LARGELY CLOSED, AND THE CAUSE WAS THE COMPARISON RATHER THAN
+//     EITHER IMPLEMENTATION. This note used to read "30.77% HERE vs 44% THERE" and blamed
+//     scratch classification. 44% is the Python's FREE book; its CHARGED book — the one
+//     the R figure above is quoted from — wins 33.3%, against the tester's 30.77%. So the
+//     comparison was reading its R off one book and its win rate off the other. Costs move
+//     this strategy's win rate 11 points (44.4% -> 33.3%) because it enters at MARKET and
+//     pays the spread both ways, which is the whole reason that mattered here.
+//     ⚠ ~2.5 points remain unexplained and scratch classification is still the candidate
+//     (the Python counts 11 of 162 separately at |r| <= 0.02; the tester asks only whether
+//     P&L > 0). Small, and NOT measured — the parity gate is what settles it.
 //
 // ⚠ STILL NOT PARITY-VALIDATED. Stage 2 of docs/STRATEGY_WORKFLOW.md is now done; the
 //   export twin (stage 3), a real CSV (stage 4, human-only) and compare_realign.py
@@ -555,9 +574,18 @@ if armShort and time - armShortMs > windowMs
     armShort := false
 
 // ── the chart-frame realignment ──────────────────────────────────────────────────
-// Pattern: a counter-direction break, then a with-trend SOS. (The tighter three-step
-// sequence was MEASURED as worse on both sides — it cut the book 183 -> 121 and moved
-// both directions the wrong way — so the loose rule is the one that ships.)
+// Pattern: a counter-direction break, then a with-trend SOS — the LOOSE rule.
+// ⚠ THIS COMMENT USED TO SAY THE TIGHTER THREE-STEP SEQUENCE WAS "MEASURED AS WORSE ON
+//   BOTH SIDES". That was the TRIGGER SCAN talking, and a real replay overturns it.
+//   Over 467,352 M5 bars, FREE, the strict sequence is the BEST of the three on average R
+//   (+0.294 vs +0.279), profit factor (1.977 vs 1.658) and drawdown (4.15R vs 12.15R) at
+//   once. It only loses once COSTS ARE CHARGED, where it gives up 40% of its average R
+//   against the loose rule's 21% and the ranking flips.
+//   The loose rule ships because charged it earns 5x the total R (+35.81R vs +7.33R) and
+//   more R per unit of drawdown (2.31 vs 1.66) — not because the tight one is a bad rule.
+//   ⚠ This file has no input for it: the strict sequence would need its own state, and
+//   adding a lever the Python has and the Pine does not is how the two stop being
+//   comparable. Measure it in Python first. Tables: strategies/python/mpc_realign/CLAUDE.md
 bool trigLong  = false
 bool trigShort = false
 

@@ -53,9 +53,35 @@ class RealignConfig(SosFadeConfig):
     "opposing" — the two opposing internal SOS specifically
     "strict"   — with-trend iBOS, then counter iSOS, then with-trend iSOS
 
-    ⚠ MEASURED: `strict` is the WORST of the three. It cuts the book 183 -> 121 and moves
-    BOTH directions the wrong way (long −2.3% -> −5.7%, short +6.1% -> +4.4%). The extra
-    specificity carries no information. Default is the loosest rule for that reason.
+    🔴 **THE RANKING INVERTS WHEN COSTS ARE CHARGED, AND AN EARLIER NOTE HERE HAD IT
+    FLATLY WRONG.** This docstring said `strict` was "the WORST of the three" and cited
+    percentages that came from the TRIGGER SCAN — the one thing the note below
+    `realign_long_source` says must never decide an exit-sensitive question. Measured by
+    REPLAY instead, 467,352 M5 bars 2020-01-02 -> 2026-08-06:
+
+        FREE                trades   total R    avg R    win     PF     maxDD
+          any                 162    +45.14R   +0.279   44.4%   1.658   12.15R
+          opposing             43    +11.36R   +0.264   48.8%   1.832    4.58R
+          strict               42    +12.36R   +0.294   50.0%   1.977    4.15R
+
+        CHARGED (puprime_standard)
+          any                 162    +35.81R   +0.221   33.3%   1.496   15.52R
+          opposing             43     +6.22R   +0.145   30.2%   1.425    5.51R
+          strict               42     +7.33R   +0.175   31.0%   1.540    4.41R
+
+    **Free, `strict` is the BEST of the three on avg R, profit factor AND drawdown.**
+    Charged, it is not: costs take 40% of its average R (+0.294 -> +0.175) against `any`'s
+    21% (+0.279 -> +0.221), and the order flips.
+
+    ⚠ **The mechanism is NOT measured.** The obvious candidate is that the strict
+    sequence's stops are tighter, so a fixed spread costs more R — plausible, cheap to
+    check (median stop distance per pattern) and deliberately NOT asserted here.
+
+    **`any` still ships**, on the two figures that survive charging: 5x the total R
+    (+35.81R vs +7.33R) and more R per unit of drawdown (2.31 vs 1.66). But the sequence
+    Aaron drew is a REAL rule with the best per-trade quality in the book, not a filter
+    that "carries no information" — which is what the old note claimed and what would have
+    stopped anyone looking at it again.
     """
 
     realign_long_source: str = "swing"

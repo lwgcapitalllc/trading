@@ -181,14 +181,28 @@ One +2.1σ cell on its own would be noise-shopping; five target choices trending
 more often than random does. That is an anti-signal, not an absence of signal, and it needs its own
 investigation before the long side is built.
 
-**Pattern selectivity — the STRICT sequence is the worst of the three.** Requiring the with-trend
-iBOS before the opposing pair cuts the book from 183 to 121 and moves BOTH directions the wrong way:
+**Pattern selectivity — the scan ranks the STRICT sequence last.** Requiring the with-trend
+iBOS before the opposing pair cuts the book from 183 to 121 and moves both directions the wrong way
+*by this measure*:
 
 | pattern | setups | long/short | long edge | short edge |
 |---|---|---|---|---|
 | `strict` iBOS → iSOS → iSOS | 121 | 69 / 52 | −5.7% | +4.4% |
 | `opposing` the two iSOS only | 125 | 71 / 54 | −3.8% | +4.3% |
 | **`any`** counter break → with-trend iSOS | **183** | 94 / 89 | −2.3% | **+6.1%** |
+
+🔴 **THE REPLAY OVERTURNS THIS ROW, AND THE TABLE IS KEPT SO THE DISAGREEMENT IS ON THE RECORD.**
+Run through the real exit ladder over the same history (467,352 M5 bars), **free**, `strict` is the
+**BEST** of the three on average R (+0.294 vs `any`'s +0.279), profit factor (1.977 vs 1.658) and
+drawdown (4.15R vs 12.15R) at once. It only loses the ranking once **costs are charged**, where its
+average R falls 40% against `any`'s 21% and the order flips. Full tables in
+`strategies/python/mpc_realign/CLAUDE.md` → *The pattern rule*.
+
+⚠ **This is the SECOND time this scan's ordering has failed to survive a replay** — the first was
+the short trigger stream, where it was wrong in SIGN. Both failures point the same way: the scan
+scores each setup independently at a fixed target with no ladder and no position slot, so it ranks
+**trigger quality**, and a strategy is ranked on what its exits actually bank. **Nothing in this
+section may be used to choose a default.**
 
 🔴 **NO CASCADE. The 5m rung is the whole result and the 3m rung destroys it.** At a 4R target on
 the short side: M5 100 setups **+9.6% (+2.1σ)**, M3 103 setups **−5.4% (−1.6σ)**, and pooling the
@@ -249,16 +263,30 @@ MARKET and pays the spread both ways. Charge it before quoting any of these numb
 
 The Pine compiles and runs. XAUUSD 5m, 2020-01-01 → 2026-08-12, $10,000, **risk 1%**:
 
-| | TradingView | Python port (charged) |
-|---|---|---|
-| trades | 143 | 162 |
-| total | +41.35% ≈ **35R** | **+37.67R** |
-| max drawdown | 17.79% ≈ 19.5R | 14.60R |
-| profit factor | 1.617 | — |
-| win rate | 30.77% | 44% |
+| | TradingView | Python (charged) | Python (free) |
+|---|---|---|---|
+| trades | 143 | 162 | 162 |
+| total | +41.35% ≈ **35R** | **+35.81R** | +45.14R |
+| max drawdown | 17.79% ≈ 19.5R | 15.52R | 12.15R |
+| profit factor | 1.617 | 1.496 | 1.658 |
+| win rate | 30.77% | **33.3%** | 44.4% |
 
 ✅ **Total R agrees within noise across two independent implementations.** That is the first
 real cross-check this strategy has had, and it is on TradingView's own tester rather than ours.
+
+✅ **THE WIN-RATE COLUMN IS WHY THE FREE BOOK IS SHOWN BESIDE THE CHARGED ONE.** The first version
+of this table quoted 30.77% against **44%** and recorded the gap as an open difference blamed on
+scratch classification — but 44% is the FREE book, sitting in a row whose R came from the CHARGED
+one. **Read like for like it is 30.77% against 33.3%, and the difference is mostly gone.** Costs
+move this strategy's win rate 11 points because it enters at MARKET and pays the spread both ways.
+⚠ **A comparison table with two books in it will produce exactly this kind of false finding.** One
+row, one book.
+
+⚠ **The charged column previously read +37.67R / 14.60R and does not reproduce** — same window, same
+`puprime_standard` profile, 5m resampled from M1, warmup 1000. The free column reproduces to the
+cent, and Aaron's `32b633f` was checked and touched no execution code. **The original run's command
+was not recorded, so this cannot be settled** — which is the reason the re-run recipe now lives in
+`strategies/python/mpc_realign/CLAUDE.md` → *How to re-run this*.
 
 🔴 **RISK % IS A MEASUREMENT SETTING HERE, NOT A PREFERENCE.** The first run was taken at 10%
 with `margin = 0` and read **−98.10% / PF 0.193** over 2009–2026: the account died in the first

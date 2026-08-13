@@ -58,6 +58,7 @@ NY = ZoneInfo("America/New_York")
 _STRATEGIES = {
     "mpc_sos_fade": "strategies.python.mpc_sos_fade",
     "mpc_bleg": "strategies.python.mpc_bleg",
+    "mpc_realign": "strategies.python.mpc_realign",
 }
 
 
