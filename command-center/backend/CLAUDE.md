@@ -77,6 +77,9 @@ backend/
 │   ├── scripts/backfill_metrics.py  one-time, idempotent backfill of file-derivable metrics on old runs
 │   ├── scripts/backfill_regime_timeline.py  opt-in backfill of `regime_timeline.json` on old runs (`--force`, `--run-id`); kept OUT of backfill_metrics.py because it fetches OHLC
 │   ├── scripts/prop_kpi_audit.py    read-only dump of every prop ruleset's core KPIs from lab.db (the saved "is our engine in sync" query); feeds docs/PROP_RULESET_KPIS.md
+│   ├── scripts/run_diff.py          read-only: why do two runs disagree? Prints the MEASUREMENT BASIS
+│   │                      difference before the params and the results, and exits 1 when the two were
+│   │                      not measured on the same footing — see *Comparing two runs* below
 │   ├── ohlc_fetcher.py    fetch and cache daily OHLC per (instrument, date); NT8 first, yfinance fallback
 │   ├── chart_spec.py      build the ChartSpec for the price-chart panel (candles + sessions + trades + blocked setups + recomputed strategy structure/ATR + market-structure overlays). Always ships the timeframe the run TRADED and caps the WINDOW instead (`_capped_start` → the newest slice under `_CANDLE_CAP`), with `historyStartMs` telling the panel how far back it may page; see "ChartSpec candles" below. `_build_blocks` reads the run dir's `blocked_setups.json` — see "Blocked setups" below; `_build_misses` reads `missed_setups.json` and ALSO returns the derived `missNoise` list — see "Missed setups" below
 │   ├── fvg_overlays.py    replay the CANONICAL engines/fair_value_gaps/ engine (+ engines/equal_highs_lows/
@@ -2209,6 +2212,51 @@ mid-flight.
 Full mechanism, the evidence table, and the probe's two-phase design: `backtest/CLAUDE.md` →
 *History floors*.
 
+## Comparing two runs — the BASIS before the result
+
+`scripts/run_diff.py <run_a> <run_b>` (read-only, stdlib, `--list` to find ids). Exit 0 when the
+two share a measurement basis, 1 when they do not.
+
+**It exists because this app has shipped the same defect three times** — the Tuning workbench, the
+stress-test children and the stack rerun each launched a child carrying the parent's PARAMS and
+not its `cost_layers` / `broker_profile` / `sizing_mode`, then put the two side by side. The rule
+that came out of it is already stated three times in this file; the script is the way to CHECK it
+on two rows rather than remember it. So the basis is printed FIRST and a difference there is a
+refusal, not a footnote under a table of deltas.
+
+✅ **It found a live instance on the first real pair.** Runs `2240fc689636` and `7d9fb2466867`:
+**160 trades and +141.1774R on both sides**, identical win rate — and **net P&L $49,204,855 against
+$136,657,910**, with max drawdown 45.57% vs 64.51%. Nothing about the strategy differs;
+`cost_layers` and `broker_profile` do. The control is the pair beside it: `e51d95f212e3` vs
+`c3e4c968a4e4` share all 13 basis fields, differ on one param (`exec_req_fvg`), and the result
+delta is therefore attributable — 166 → 322 trades for +6R while PF falls 3.866 → 1.268 and
+drawdown goes 45% → 77%.
+
+⚠ **`BASIS_FIELDS` must stay in step with `stress_tester.child_measurement_fields()` and
+`python_runner._cost_profile`.** Those decide what a child INHERITS; this decides what a reader is
+WARNED about. A field that moves the numbers and is missing from this list makes the script report
+"comparable" over two runs that are not — the same failure it exists to catch, wearing a green
+verdict.
+
+⚠ **NULL `cost_layers` is rendered as a THIRD state, never as `[]`.** NULL is a pre-layer row that
+charges whatever commission and slippage the row states; `[]` charges nothing. **11 of the 19
+completed runs in this lab are NULL**, so this is the common case, not an edge one.
+
+⚠ **A missing total R prints "not recorded", never `0.0`,** and a PARTIAL one refuses rather than
+summing the subset that happens to carry the field. Per-trade `r` has only been written since
+2026-08-03 — measured here, 10 of 16 runs carry it on every trade and 6 on none.
+
+⚠ **Net P&L is never the lead figure and is labelled when the basis moved.** R is the one number a
+change of position size cannot move; the shared-stack audit measured 99 identical trades at
++17.8674R reading $21,064 solo and $47,758,999 stacked.
+
+⚠ **NON-VACUITY IS PARTIAL AND THAT IS WHY IT IS WRITTEN DOWN.** Collapsing NULL into `[]` makes
+the field vanish from the differing list, and **no stored pair isolates it to a VERDICT flip** —
+`cost_layers` and `broker_profile` landed in the same change and always move together, so
+something else always differs too. The guard was proven at the function instead (three inputs,
+three distinct strings, one under mutation). A synthetic-row test would close it; do that before
+trusting the exit code as a gate.
+
 ## ChartSpec candles — cap the WINDOW, never the timeframe
 
 6.5 years of M15 is ~160k candles and a ~15 MB `chart_spec.json` on every chart open. Something has
@@ -3012,6 +3060,17 @@ The economic-calendar (news) filter is a **post-run view layer**, NOT a run-time
 Versions are registered in three places: the **scanner** (every scan, both `.cs`/`.mq5`, before the skip check so unchanged strategies still register), the **deploy** endpoint, and the **upload** endpoint. Lab-VPS deploy/compile state lives as columns on `strategies` (`deployed_source_hash`/`deployed_at`, `compiled_source_hash`/`compiled_at`): `set_strategy_deployed()` stamps the deployed hash + flags needs-compile (`is_compiled=0`); `mark_runner_compiled()` stamps `compiled_source_hash = deployed_source_hash` on compile success (content-accurate, not just the coarse `is_compiled` boolean). **Hash parity is essential** — anything that records a deployed hash must hash the same way the scanner does (decode bytes utf-8 errors=replace → md5), or `deployed_version` won't resolve.
 
 **First-run note:** strategies deployed before this feature have `deployed_source_hash = NULL`, so they correctly show `needs_deploy` until deployed once through the tracked path (we never fake a hash we can't verify — the VPS agent's file listing exposes size/mtime, not content). **Scalability:** the version registry is target-agnostic — a future "deploy version N to bot X" records `(strategy_id, target, version)` in its own table without touching the registry; the lab VPS is just today's only target.
+
+⚠ **`lab_db.mark_strategy_needs_compile` was DELETED 2026-08-12 by `/dead-code-audit`, and it is
+the losing half of exactly the migration described above.** It flipped the coarse `is_compiled = 0`
+boolean for one `class_name`, and it had **zero call sites repo-wide** — `needs_compile` has been
+COMPUTED from content hashes at `routers/strategy_files.py:232`
+(`deployed_hash is not None and deployed_hash != compiled_hash`) since the day that column pair
+landed. The sibling `mark_runner_compiled`'s own docstring says so out loud: *"so `needs_compile`
+can be judged by content, not a coarse boolean."* ⚠ **`is_compiled` itself STAYS** — `mark_runner_compiled`
+writes it and the MT5 branch of the sync check reads it, because MT5 loads the compiled `.ex5` and
+its absence is a real question a hash cannot answer. **What went is the one writer that could set
+that flag from a claim rather than from a measurement.**
 
 ---
 
