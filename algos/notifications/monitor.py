@@ -280,8 +280,15 @@ def check_bot(bot_key: str, state: dict, today: str) -> dict:
     # wrote the field at all. A watchdog whose failure mode is SILENCE is worse than no
     # watchdog, because the empty alert channel reads as good news. Anchoring on the start
     # time means a bot that boots and never stamps alerts like the stalled bot it is.
+    # 🔴 The LATER of the two, never `heartbeat or started`. They are not the same age across a
+    # RESTART: `bot_state.json` outlives the process, so `set_started` refreshes `started` and
+    # leaves the dead run's `heartbeat` in place — and a stale-but-truthy stamp wins an `or`
+    # outright. Measured 2026-08-13: the bot was restarted at 20:38 after stopping at 20:31:11
+    # and this sent `STALLED — 7 minutes`, then `RECOVERED` a minute later, on a healthy bot.
+    # `max` keeps the fallback above intact (a bot that boots and never stamps still ages from
+    # `started`) while a fresh start can no longer be judged on the previous run's clock.
     bot_live    = _bot_state.read_bot(bot_key)
-    heartbeat   = bot_live.get("heartbeat") or bot_live.get("started") or 0
+    heartbeat   = max(bot_live.get("heartbeat") or 0, bot_live.get("started") or 0)
     stale_secs  = (time.time() - heartbeat) if heartbeat else 0
     if stale_secs > LOG_STALE_SECS:
         if not bot_state.get("stale_alerted"):

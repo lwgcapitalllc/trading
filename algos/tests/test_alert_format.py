@@ -80,11 +80,17 @@ def test_joined_drops_what_is_missing():
 
 
 # ── timestamps ───────────────────────────────────────────────────────────────────
+#: ⚠ Pinned rather than left to the wall clock. `when()` renders a date once the moment is not
+#: today, so a test asserting on the bare time has to say which day it is being read on — left
+#: floating it would pass on 2026-08-05 and fail on every other day of the decade.
+_SAME_DAY = datetime(2026, 8, 5, 23, 0, tzinfo=timezone.utc)
+
+
 def test_a_past_moment_is_rendered_in_the_local_clock_with_the_zone_named():
     """The ONE case that needs an explicit time: a message about something that happened
     earlier. The zone is named because the ledger and the logs are UTC, and a bare "1:06" would
     be an hour of arithmetic away from the record it points at."""
-    out = af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc))
+    out = af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc), now=_SAME_DAY)
     assert "1:06 PM" in out
     assert "C" in out.split()[-1]           # CDT or CST depending on the date
 
@@ -94,9 +100,12 @@ def test_the_hour_has_no_leading_zero_and_the_format_string_is_portable():
     `ValueError: Invalid format string` on Windows, where the equivalent is `%#I`. The suite was
     green here and `log_review.py` crashed on the VPS on its first run. The stripping is done in
     Python so one string works on both."""
-    assert af.when(datetime(2026, 8, 5, 6, 6, tzinfo=timezone.utc)).startswith("1:06")
-    assert af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc)).startswith("1:06")
-    assert af.when(datetime(2026, 8, 5, 15, 6, tzinfo=timezone.utc)).startswith("10:06")
+    assert af.when(datetime(2026, 8, 5, 6, 6, tzinfo=timezone.utc),
+                   now=_SAME_DAY).startswith("1:06")
+    assert af.when(datetime(2026, 8, 5, 18, 6, tzinfo=timezone.utc),
+                   now=_SAME_DAY).startswith("1:06")
+    assert af.when(datetime(2026, 8, 5, 15, 6, tzinfo=timezone.utc),
+                   now=_SAME_DAY).startswith("10:06")
 
 
 def test_a_naive_timestamp_is_read_as_utc():
@@ -115,6 +124,57 @@ def test_an_unparseable_timestamp_is_returned_rather_than_raising():
     it could not read — the message it was carrying is the point."""
     assert af.when("not a time") == "not a time"
     assert af.when(None) == "None"
+
+
+# ── which DAY the past moment was on ─────────────────────────────────────────────
+#
+# 🔴 Every test below exists because of one burst of nine Telegram messages on 2026-08-13.
+# `log_review.py` looks back TWO days and renders each finding with `when()`, which printed a
+# bare clock time. Four findings were from that afternoon and five were from the day before, and
+# in the chat they were indistinguishable — "4 starts since 11:12 AM CDT" read as this morning
+# when it meant yesterday morning. Every stamp was CORRECT and the reader still concluded the
+# wrong thing, which is the repo's standing rule about metrics arriving one layer up.
+_REVIEW_RAN = datetime(2026, 8, 13, 21, 20, tzinfo=timezone.utc)      # 4:20 PM CDT
+
+
+def test_a_moment_from_an_EARLIER_DAY_carries_its_date():
+    """The finding that was actually misread: a start at 11:12 AM CDT on the 12th."""
+    out = af.when(datetime(2026, 8, 12, 16, 12, tzinfo=timezone.utc), now=_REVIEW_RAN)
+    assert out.startswith("Aug 12, 11:12 AM"), out
+
+
+def test_a_moment_from_TODAY_carries_no_date():
+    """The common case stays exactly as it was. A date on every stamp would be noise on the 95%
+    of messages that are about the last few minutes, and noise is what gets a channel muted."""
+    out = af.when(datetime(2026, 8, 13, 20, 31, tzinfo=timezone.utc), now=_REVIEW_RAN)
+    assert out.startswith("3:31 PM"), out
+    assert "Aug" not in out
+
+
+def test_the_day_is_decided_in_the_READING_zone_never_in_UTC():
+    """⚠ The two disagree for five hours out of every twenty-four, which is most of a US evening.
+
+    01:00 UTC on the 13th is 8pm CDT on the 12th — the same wall-clock evening as the events
+    around it. Comparing the UTC dates would stamp it "Aug 13" and send the reader to the wrong
+    day's log, which is worse than the bare time this replaced.
+    """
+    late_evening = datetime(2026, 8, 13, 1, 0, tzinfo=timezone.utc)   # 8:00 PM CDT on the 12th
+    reading_it = datetime(2026, 8, 13, 2, 0, tzinfo=timezone.utc)     # 9:00 PM CDT on the 12th
+    out = af.when(late_evening, now=reading_it)
+    assert out.startswith("8:00 PM"), out
+    assert "Aug" not in out, "same local evening, different UTC dates — this is not another day"
+
+
+def test_the_day_of_the_month_has_no_leading_zero_either():
+    """Same portability trap as the hour, one field along: `%-d` is glibc and raises on Windows,
+    where the scheduled task that sends these actually runs."""
+    out = af.when(datetime(2026, 8, 5, 16, 12, tzinfo=timezone.utc), now=_REVIEW_RAN)
+    assert out.startswith("Aug 5, "), out
+
+
+def test_an_unparseable_timestamp_still_comes_back_unchanged_with_a_clock_supplied():
+    """The date logic must not introduce a raise on the path whose whole job is not to raise."""
+    assert af.when("not a time", now=_REVIEW_RAN) == "not a time"
 
 
 # ── the mirror ───────────────────────────────────────────────────────────────────

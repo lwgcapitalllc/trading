@@ -176,6 +176,36 @@ def test_a_bot_that_just_booted_is_given_time_to_warm_up(watch):
     assert watch.sent == []
 
 
+def test_a_bot_that_just_RESTARTED_is_not_stalled_on_the_previous_run_s_stamp(watch):
+    """🔴 MEASURED on 2026-08-13: the live bot was restarted at 20:38 and the watchdog sent
+    `STALLED — has not stamped its heartbeat for 7 minutes`, then `RECOVERED` a minute later.
+    Nothing was wrong. The bot had stopped at 20:31:11, and 20:38 minus 20:31 is 6.9 minutes.
+
+    **The two fields are not the same age and the test above could not see it**, because it
+    supplies `started` with no `heartbeat` at all — the state of a bot that has never run. A
+    RESTART is the other shape: `bot_state.json` survives the process, so `set_started` refreshes
+    `started` and leaves the DEAD run's `heartbeat` sitting there. The check read
+    `heartbeat or started`, and a stale-but-truthy stamp wins that expression outright.
+
+    The fix is to take the LATER of the two. It keeps the regression above intact — a bot that
+    boots and never stamps still ages from `started` and still alerts — while a fresh start can
+    no longer be judged on the previous run's clock.
+    """
+    out = watch.run({"heartbeat": time.time() - 7 * 60, "started": time.time() - 20})
+    assert watch.sent == [], f"false STALLED on a bot that restarted 20s ago: {watch.sent}"
+    assert not out["stale_alerted"]
+
+
+def test_a_bot_whose_stamp_AND_start_are_both_old_is_still_stalled(watch):
+    """The guard against fixing the false alarm by disabling the check. Taking the later of the
+    two fields must not make a genuinely frozen loop unreportable — here both are 20 minutes old,
+    which is the real thing the alert is for."""
+    out = watch.run({"heartbeat": time.time() - 20 * 60, "started": time.time() - 20 * 60})
+    assert len(watch.sent) == 1
+    assert "STALLED" in watch.sent[0]
+    assert out["stale_alerted"]
+
+
 # ── bringing a dead bot back ────────────────────────────────────────────────────
 #
 # The gap this closes, measured. On 31 July a blanket `taskkill /f /im python.exe` killed the

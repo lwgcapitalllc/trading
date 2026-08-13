@@ -75,12 +75,32 @@ def alert(icon: str, label: str, subject: str = "", *lines: str) -> str:
     return "\n".join([head, *body])
 
 
-def when(ts, tz: str = LOCAL_TZ) -> str:
-    """A PAST moment, in the box's local clock with the zone named.
+def when(ts, tz: str = LOCAL_TZ, now: Optional[datetime] = None) -> str:
+    """A PAST moment, in the box's local clock with the zone named — and its DATE if it was not
+    today.
 
     Only for a message about something that already happened. Naming the zone is not decoration:
     the ledger, the logs and the bar times are all UTC, so a bare "18:06" in a Telegram message
     would be one hour of guessing away from the record it refers to.
+
+    🔴 **The date is here because a bare clock time silently claimed the wrong day.**
+    `log_review.py` looks back TWO days, and on 2026-08-13 it sent nine findings in one burst at
+    4:20 PM: four from that afternoon and five from the day before, every one stamped with a bare
+    time like "11:12 AM CDT". Nothing distinguished them, so "4 starts since 11:12 AM CDT" read as
+    that morning when it meant the previous one. Every stamp was CORRECT — this is the repo's
+    standing rule about a metric whose arithmetic is right and whose reader concludes the wrong
+    thing, arriving one layer up in a notifier.
+
+    ⚠ **Today still renders bare, deliberately.** A date on all of it would be noise on the great
+    majority of messages, which are about the last few minutes, and a channel that reads as noise
+    is the one muted before the day it matters.
+
+    ⚠ **"Another day" is decided in the READING zone, never in UTC** — they disagree for five
+    hours out of every twenty-four, which is most of a US evening. 01:00 UTC is 8pm the previous
+    day in Chicago, and stamping that "tomorrow" would send a reader to the wrong day's log: worse
+    than the bare time this replaced.
+
+    `now` is injectable so the day boundary can be tested without waiting for one.
 
     Accepts a datetime or an ISO string, and never raises — a notifier that can be brought down by
     an unparseable timestamp is worse than one printing a stamp it could not read.
@@ -108,7 +128,11 @@ def when(ts, tz: str = LOCAL_TZ) -> str:
     # after a green suite on the Mac, which is the second time in two days that a Windows-only
     # crash reached a scheduled task through a passing test run.
     stamp = ts.strftime("%I:%M %p").lstrip("0")
-    return f"{stamp} {ts.strftime('%Z')}"
+    # Same portability trap as the hour, one field along: `%-d` is the glibc spelling and raises
+    # on Windows, where the scheduled task that sends these actually runs. Strip it in Python.
+    now = (now or datetime.now(timezone.utc)).astimezone(ts.tzinfo)
+    day = "" if ts.date() == now.date() else ts.strftime("%b %d").replace(" 0", " ") + ", "
+    return f"{day}{stamp} {ts.strftime('%Z')}"
 
 
 def money(value: Optional[float], currency: str = "$") -> str:

@@ -492,6 +492,14 @@ the stamp), and the monitor falls back to `started` when no stamp exists. `algos
 pins both halves plus three launcher↔watchdog agreement tests. **A watchdog whose failure mode is
 silence is worse than none — the empty alert channel reads as good news.**
 
+🔴 **The stale-stamp fallback is `max(heartbeat, started)`, never `heartbeat or started`.**
+`bot_state.json` outlives the process, so a restart refreshes `started` and leaves the DEAD run's
+`heartbeat` in the file — a stale-but-truthy stamp wins an `or` outright and every restart drew a
+false `STALLED`/`RECOVERED` pair quoting the previous run's clock (measured 2026-08-13). ⚠ **The
+test that was supposed to cover this passes `started` with NO `heartbeat`** — a bot that has never
+run, not one that restarted — so both fields present with one of them stale was the untested shape.
+Story: `docs/ALGOS_BUILD_NOTES.md` → *The restart that reported itself stalled*.
+
 **`SYS_DEADMAN` is ON as of 2026-08-04** — every 5 minutes as SYSTEM, the external dead-man's
 switch described in the header. It is the only alert here that does not originate on this box.
 ⚠ **It is INERT until `deadman_url` is set in `algos/credentials.json`** (deliberately: it reports
@@ -890,7 +898,16 @@ hour of arithmetic away from the record it points at.
 ⚠ **`log_review._ts` and `_at` are deliberately separate.** `_ts` builds the dedup KEY and `_at`
 renders for a human. They were one function, and changing its output would have re-announced every
 outstanding finding exactly once — so the wording can never be improved without waking the channel up
-unless the two are split.
+unless the two are split. **Cashed in on 2026-08-13**: `when()` gained a date and not one outstanding
+finding re-announced.
+
+🔴 **`when()` prints the DATE once the moment is not today, and today still renders bare.** The
+reviewer looks back TWO days and fires its findings in one hourly burst, so a bare "11:12 AM CDT" put
+yesterday's events and this afternoon's in the same block with nothing to tell them apart — nine
+messages at once, five of them from the day before, all correct and all misread. ⚠ **"Another day" is
+decided in the READING zone, never in UTC**: they disagree for five hours out of twenty-four, and
+stamping an 8pm Chicago event with tomorrow's date is worse than the bare time it replaced.
+Story: `docs/ALGOS_BUILD_NOTES.md` → *The burst of nine*.
 
 ⚠ **The entry states the risk; the exit does not restate it.** The exit posts as a Telegram reply to
 the entry, so "on $200.00 risked" there repeats what is one tap above (Aaron's call). That makes the
