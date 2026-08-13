@@ -174,6 +174,36 @@ through a thin `runner="python"` adapter in `runner_dispatch`, the same thin-shi
 
 ## Tools
 
+- **`tools/internal_realign_scan.py`** (new 2026-08-13) — counts the INTERNAL REALIGNMENT setup in
+  history and scores its geometry against a matched random control. A bullish 15m external trend is
+  broken by a bearish SOS (a false break / structural liquidity grab); on a lower frame the internal
+  structure turns counter and back with-trend to realign, and the scan asks how often that happens
+  and whether the realignment carries information. Both directions. Feeds
+  `strategies/python/mpc_realign/` and `docs/MPC_REALIGN_SPEC.md`.
+  🔴 **ITS SHORT-SIDE RESULT WAS WRONG IN SIGN, AND THAT IS THE STANDING WARNING ON THIS TOOL.** It
+  reported the internal-events stream at **+9.6% over control (+2.1σ)** for shorts — its strongest
+  row — and a real replay through the exit ladder gives **−13.26R against +20.22R** on the other
+  stream. The scan is not broken: it scores every setup **independently, at a FIXED target, with no
+  exit ladder, no staged stop and no position slot**, and that short edge lived entirely in the tail
+  (+0.1σ at 1R, +2.1σ at 4R). The real ladder banks at the structural target and stages the stop to
+  breakeven long before 4R, so **the edge it measured is one the strategy never collects.**
+  ⚠ **Take COUNTS from this tool; take the direction of anything exit-sensitive from a REPLAY.** A
+  trigger prior is not a strategy result, and disagreeing in SIGN is the one disagreement that no
+  amount of care about magnitude protects you from.
+  🔴 **It prefers resampling from contiguous M1 over a cached lower frame, and the reason generalises
+  to every streaming-engine tool here.** The M5 cache held 26,886 bars over 3.5 years; feeding a
+  streaming state machine across holes that size silently builds structure over bars that never
+  traded, and the frame comes back clean. `_gap_report` prints the density so the hole is visible
+  rather than inferred.
+  ⚠ **Two of its filters were VACUOUS on their first attempt and each failed in the reassuring
+  direction.** A lookback slice rejected every `bear_sos` by its own twin `bear_bos` (a CHoCH bar
+  raises both), reporting **ZERO occurrences** — indistinguishable from "the setup never happens";
+  and a forward "did it reclaim" scan stopped only on `bear_sos`, so it walked through entire
+  downtrends until some bull break appeared and returned **101/101**. Both are now bounded so that
+  each outcome is reachable. **A pattern counter that returns 0 or 100% is reporting on its own
+  bounds, not on the market.**
+  `internal_realign_scan.py --pattern any|opposing|strict --frame 5` · defaults to `strict`, which
+  is the sequence that was DRAWN and the worst of the three when measured.
 - **`tools/scratch_audit.py`** + **`tools/swap_audit.py`** (new 2026-08-11) — is a "breakeven" exit
   actually breakeven on a real account, and what does overnight swap cost. Written for Aaron's
   theory that `exec_be_buf_tk` (30 ticks = $0.30) cannot cover a $0.32 spread; full record in

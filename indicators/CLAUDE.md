@@ -389,6 +389,76 @@ this is safe to paste onto a chart already carrying the panel rebuild.
 - `indicators/mpc_h4_sweep_strategy_export.pine` — **the H4 sweep's decision-stream twin (2026-08-12).** `mpc_h4_sweep_strategy.pine` + one appended block, body byte-identical apart from line 166's title; **43 `plot(` columns** (42 here + the parent's own Trend EMA). Regenerate with `cp` + the line-166 `sed` + re-append, never by hand-patching — the recipe and the count check are in the file's own header. ⚠ **It contradicts the parent's own 2026-08-05 SCOPE paragraph, which says "ONE FILE. No export mirror"** — that was written when this was a one-file question and Aaron asked for the twin on 2026-08-12 so the H4 sweep gets the same treatment as every other strategy here. **There is still NO Python port and NO `compare_h4.py`; this export is the PREREQUISITE for one, not a substitute.** 🔴 **THE PARENT NEEDED A WRITE-ONLY ADDITION AND THAT IS THE REUSABLE PART.** `okMin` / `okTrig` / `emaOk*` are LOCALS inside the two trigger blocks, so the reason a trigger was refused was computed and thrown away on every bar — the export would have had to recompute it, i.e. carry a SECOND implementation of the gate that can disagree with the gate. Four `var`s (`hTrigCode` / `hTrigBar` / `hTrigPx` / `hTrigStop`) are now written at decision time and **read by nothing in the parent**, so the export COPIES the refusal. ⚠ **`px_blk` is 0 for a TAKEN trigger and `na` on a bar with no trigger — filter on `px_seq` bit 8, never on `px_blk > 0`**, or every taken trade vanishes from the count. ⚠ **`px_cand_entry` / `px_cand_stop` are set for a REFUSED trigger exactly as for a taken one**, which is what lets a refusal be re-priced offline rather than merely counted: with `px_cc_line` beside them, one export sweeps `maxTrigPct` and both stop modes instead of describing one configuration. ⚠ **`px_volume` is plotted HERE on purpose** — "TradingView exports volume" is false, the CSV carries it only if the Volume STUDY is on the reader's chart (the 2026-08-07 BOS lesson). ⚠ **`px_mfe_r` / `px_mae_r` EXCLUDE the fill bar**, the same rule as the parent's `tMaxFav` (BUG_exit_fill_price_mismatch) — and on this strategy they are the whole argument, because it ships a runner with no target and the only way to judge the trail is how much of the favourable excursion it handed back. ⚠ **`px_stage` is read STRAIGHT off `tStage`, unlike `mpc_d_strategy_export.pine` which tracks its own copy** — safe only because this parent resets its stage at the next ENTRY rather than on the close bar. Check which shape a parent has before copying that shortcut. 🔴 **THREE INPUTS CANNOT BE EXPORTED AT ALL AND THAT HOLE IS NAMED RATHER THAN PAPERED OVER: `tfLiq`, `tfConf` and `emaTf` are `input.timeframe` STRINGS and `plot()` takes only a number.** A reader must record them by hand alongside the CSV — and they are the part of the configuration that changes what the strategy IS, since an H4/15m run and an H1/5m run are different studies. ⚠ **NOT COMPILED** — no local Pine compiler; verified structurally (one-line diff against the parent, 43 plots, every referenced identifier present in the parent, round-trip byte-identical through `export_regen.py`).
 - `indicators/mpc_b_leg_strategy.pine` — a FORK of `mpc_strategy.pine` that trades ONLY the B LEG (the SOS whose retrace arrived late), split out 2026-07-24 to run PARALLEL to the A+ bot. The ONLY logic change vs the parent is the execution layer: the two A+ `strategy.entry` blocks are replaced with cancel-only stand-down (`longArmed`/`shortArmed` are still computed so the "A+ has priority" gate on the B leg is preserved), and the B LEG is the sole entry type. The whole engine + A+ sequence tracker above the execution block stays byte-identical to `mpc_strategy.pine` — do not let it drift. **Leaned out 2026-07-24** (4871 → 4573 lines): the code that went dead when A+ entries were disabled (`f_conf`, `f_slAnchor`, the `execSlLevel` input, `longDeep`/`shortDeep`, `longEdgeSz`/`shortEdgeSz`) plus three self-contained cosmetic subsystems the B leg never reads and that default OFF (VWAP, Session Volume Profile/MV, Order Blocks) were removed. Python port lives in `strategies/python/mpc_bleg/` (its own CLAUDE.md). Same no-local-compiler rule: validate by pasting into TradingView. **No Pine↔Python parity harness yet** — a `mpc_b_leg_strategy_export.pine` + `compare_bleg.py` are the follow-up.
 
+- `indicators/mpc_realign_strategy.pine` — **the REALIGN strategy (built 2026-08-13).** A standalone `strategy()`, NOT a fork of `mpc_strategy.pine`: it embeds `mpc_assistant.pine`'s `MTFStruct` block verbatim (lines 1462-1808) and runs it twice through `request.security`, once on the 15m external frame and once on the chart frame. Trades a **false break** — bullish 15m trend, a bearish SOS that is a structural liquidity grab, then a lower-frame internal realignment back with-trend — entering at market on the realignment, **before** the external SOS that later confirms it. Python port: `strategies/python/mpc_realign/` (its own CLAUDE.md); spec: `docs/MPC_REALIGN_SPEC.md`. **COMPILES and has been RUN** (XAUUSD 5m, 2020-2026: 143 trades / +41.35% / PF 1.617 / maxDD 17.79% / win 30.77%). ⚠ **NO export twin and NO `compare_realign.py`** — the Pine and the Python agree on total R and have never been diffed bar for bar. ⚠ **It does NOT yet follow the numbered-input-panel contract at the top of this file** (`a8fa395`, 2026-08-12) — it predates it by a day. Aligning it is a reorder, so it needs the same "Reset settings to defaults" treatment every other file needed. 🔴 **TWO MARGIN TRAPS, ONE OF WHICH REPORTS NOTHING AT ALL.** Pine's DEFAULT margin is 100% (full cash), and this strategy sizes by `risk ÷ stop distance` — ~$500k notional on a $10k account — so **every order was silently refused and the Strategy Tester showed an empty report with no error anywhere.** Setting `margin = 0` "fixed" it and was worse: unbounded leverage gave **−98.10% / PF 0.193** with the account dead in the first months of an 8-year run. Now `margin_long/short = 0.2` (500x, matching every other strategy file here) with `riskPct` defaulted **10 → 1.0**. **This repo had already recorded the identical lesson in `mpc_d_strategy.pine`'s own tooltip — "10 BUSTS THE ACCOUNT" — and it had to be learnt again from the Strategy Tester rather than from the file one directory over.** ⚠ **The runner trail anchors on the EXTERNAL frame's confirmed swings (`hConfLo`/`hConfHi`), not the chart frame's** — the first build used the chart frame, which is a different, tighter trail on a strategy whose whole thesis is a 15m structure.
+- `indicators/mpc_realign_strategy_export.pine` — **DOES NOT EXIST YET.** It is stage 3 of `docs/STRATEGY_WORKFLOW.md` and the prerequisite for `compare_realign.py`. Until it does, every REALIGN number in this repo is a lab finding.
+
+---
+
+## 2026-08-13 — 🟢 A FALSE BREAK BECAME A STRATEGY, AND THE TOOL THAT COUNTED IT GOT THE SHORT SIDE'S SIGN WRONG
+
+Aaron, off four of his own chart screenshots: a bullish external trend on the 15m, then *"a bearish
+shift of structure — a false break, a structural liquidity grab"*, then on the 5m the internal
+structure turning bearish and back bullish to **realign**, and the trade taken there — *"immediately
+at the internal shift"* — with the stop behind the last bearish internal shift and the target the
+pre-deviation external high. It **front-runs** the external bullish SOS that later confirms it.
+
+Built end to end in one pass: a counting tool, a spec, a Python package and the Pine. Full record in
+`strategies/python/mpc_realign/CLAUDE.md` and `docs/MPC_REALIGN_SPEC.md`; the parts that generalise
+past this strategy are below.
+
+🔴 **"INTERNAL STRUCTURE" HAS TWO DEFENSIBLE READINGS AND THEY GIVE OPPOSITE ANSWERS.** The engine
+publishes `ExternalEvents` (the swing structure a chart draws) and `InternalEvents` (the
+sub-structure within it) per frame. Aaron's *"internal structure on the 5m"* is the **5m's EXTERNAL
+stream** — internal *relative to the 15m* — and not the engine's `InternalEvents`, which is one
+level below what he is pointing at. That is not pedantry: **`InternalEvents` resets on any external
+break of its own frame, and the false break IS such an event, so on 81% of candidates that stream
+was blank at the moment the setup armed.** Reading it there measures a different, mostly-empty
+setup rather than a weaker version of this one.
+
+🔴 **THE TRIGGER SCAN AND THE REPLAY DISAGREED IN SIGN, AND THE SCAN IS NOT BROKEN.**
+`backtest/tools/internal_realign_scan.py` scored shorts-on-`internal` at **+9.6% over a matched
+control (+2.1σ)** — its strongest row. A real replay through the exit ladder gives **−13.26R against
++20.22R** on the other stream. The scan scores every setup **independently, at a fixed target, with
+no exit ladder, no staged stop and no position slot**, and that short edge lived entirely in the tail
+(+0.1σ at 1R, +2.1σ at 4R) — **the real ladder banks at the structural target, so the edge it
+measured is one the strategy never collects.** ⚠ **Take counts from a trigger scan; take the
+direction of anything exit-sensitive from a replay.**
+
+⚠ **THE SEQUENCE AARON DREW IS THE WORST OF THE THREE FILTERS, AND THAT IS A FACT ABOUT THE FILTER,
+NOT ABOUT THE DRAWING.** Requiring the full with-trend-iBOS → counter-iSOS → with-trend-iSOS
+sequence cuts the book 183 → 121 and moves **both** directions the wrong way (long −2.3% → −5.7%,
+short +6.1% → +4.4%). The shipped default is the loosest rule. The sequence he identified is real;
+requiring its first leg removes setups without improving what is left.
+
+⚠ **The lower frame was swept rather than assumed: 5m carries the edge, 3m is break-even, 1m is
+negative and its stops sit inside gold's spread floor.** A single-engine M15 run gives **9 setups in
+5.6 years** — the two-frame build is not a refinement, it is the difference between having a
+strategy to measure and not having one.
+
+⚠ **The strategy is SINGLE-FRAME on purpose and builds its own 15m bars** (`htf.py`, and
+`request.security` on the Pine side), because **`backtest.optimizer.run_sweep` refuses dual-frame
+strategies** — a `run_dual` build is locked out of the optimizer, every sweep and the stress test.
+The correctness condition is that an HTF bar is published only once its last chart bar has CLOSED;
+publishing a forming one is lookahead of the flattering kind and nothing errors.
+
+✅ **Cross-checked rather than asserted: Python 162 trades / +37.67R charged, TradingView 143 /
++41.35% / PF 1.617. Total R agrees within noise.** 🔴 **Two differences are DIAGNOSED AND NOT
+MEASURED** — drawdown is worse in Pine (probably correct: TradingView fills a gapped stop at the
+next OPEN, the bar model fills at the stop price) and the win rate differs 30.77% vs 44% (probably
+scratch classification, and `32b633f` had just found the 30-tick breakeven buffer is smaller than
+the measured spread). **Neither is settled, and settling them is what the parity gate is for.**
+
+⚠ **NOTHING HERE IS PARITY-VALIDATED.** No export twin, no real CSV, no `compare_realign.py` —
+stages 3, 4 and 6 of `docs/STRATEGY_WORKFLOW.md` are outstanding, and stage 4 is the one only a
+human can do.
+
+**The standing lesson is about what a counting tool can and cannot answer: `internal_realign_scan.py`
+did its job perfectly — it found the pattern, counted it on both sides and compared it against a
+control — and it was still wrong about which way to trade one of them, because scoring a trigger at
+a fixed target and running it through a staged exit ladder are different experiments. A prior over
+triggers is evidence that a pattern carries information. It is not evidence about a strategy, and
+when the two disagree the replay wins.**
+
 ---
 
 ## 2026-08-07 — PDH/PDL WIN A TIE AGAINST A SESSION HIGH/LOW AT THE SAME PRICE
