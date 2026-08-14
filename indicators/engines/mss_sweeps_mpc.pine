@@ -17,16 +17,20 @@
 //   - we have a SECOND DEGREE of structure (external, majorLength 15) and they have none.
 //     That is what the trend filter below is built on
 //
-// ⚠ THE ENGINE BLOCK IS BYTE-IDENTICAL TO indicators/engines/structure_engine.pine, lines
-// 27-1044. Regenerate with:  sed -n '27,1044p' structure_engine.pine
+// ⚠ THE ENGINE BLOCK IS indicators/engines/structure_engine.pine LINES 27-1044, with EXACTLY
+// ONE LINE CHANGED. Regenerate in two steps:
+//     sed -n '27,1044p' structure_engine.pine
+//     then change `bool internalActive = showInternal` to `bool internalActive = true`
 // Any structure change lands there FIRST and flows here line-for-line. Never fix a structure
 // bug in this file — engines/market_structure/ is canonical and this file must not become a
 // second implementation of it.
 //
-// ⚠ "Show Internal Structure" IS TRADE-CRITICAL HERE, NOT COSMETIC. The engine gates its whole
-// internal state machine on that display toggle (internalActive = showInternal), so turning it
-// off silently stops every signal in this file. It is left byte-identical rather than patched,
-// and the MSS layer draws a visible warning on the chart instead of failing quietly.
+// ⚠ WHY THAT ONE LINE. In structure_engine.pine the internal state machine is gated on the
+// "Show Internal Structure" DISPLAY toggle, so unticking it to clean up the chart stops every
+// signal here. Forced true: the toggle now controls drawing only. The engine gates its own
+// internal labels and lines on `showInternal` separately, so all three Market Structure
+// display boxes can be unticked for a clean chart and the sweeps keep firing. This is the
+// only line that differs and it must be re-applied after any regeneration.
 //
 // ⚠ NOTHING HERE IS MEASURED. No compile, no Strategy Tester run, no parity gate, no Python
 // port. Every default below is a starting point chosen to be legible, not an optimum. The
@@ -658,7 +662,14 @@ float i_lbl_y_offset = syminfo.mintick * 20   // vertical offset for iBOS/iSOS (
 
 // Internal structure is naturally scoped to the current active external swing —
 // it resets on every external SOS/CHoCH (see block right below).
-bool internalActive = showInternal
+// 🔴 THE ONE DELIBERATE DEVIATION FROM structure_engine.pine. There this reads
+// `= showInternal`, which makes a DISPLAY toggle switch off the state machine. That is
+// tolerable in a file whose only output is drawing; it is not tolerable here, where every
+// signal reads this engine — unticking "Show Internal Structure" to clean up the chart would
+// silently stop the indicator. Forced true, so the toggle now controls ONLY what is drawn:
+// the engine already gates its own labels and lines on `showInternal` separately, so with this
+// off the structure disappears and the sweeps keep working. Re-apply after any regeneration.
+bool internalActive = true
 
 // Tracks every internal-structure label/line drawn during the current external
 // swing, so they can be wiped when a new swing starts (unless showHistoricalInternal is on).
@@ -1088,8 +1099,21 @@ bool   msBlockOnExt = input.bool(true, "Disarm on opposing external SOS", group 
 // ── Style / diagnostics ──────────────────────────────────
 color msBullCol  = input.color(#089981, "Bullish sweep",  group = GRP_MSSTY)
 color msBearCol  = input.color(#f23645, "Bearish sweep",  group = GRP_MSSTY)
-color msLevelCol = input.color(#5b9cf6, "Protected level", group = GRP_MSSTY)
+color msLevelCol = input.color(#ff9800, "Protected level", group = GRP_MSSTY, tooltip = "Amber by default rather than pale blue, so the armed level does not read as another structure line. It turns the sweep colour on the bar it is taken.")
 bool  msShowStats = input.bool(true, "Show stats table", group = GRP_MSSTY, tooltip = "Counts raw sweeps against signalled ones. Read them together — 'signalled' alone says nothing about whether the filter earned its place.")
+
+// ⚠ These are declared LAST on purpose. TradingView keys a chart's saved input values off
+// declaration order WITHIN EACH TYPE, so anything new has to sit after every existing input of
+// its own type or it silently resets the ones below it on a chart that is already tuned.
+bool   msShowZone   = input.bool(true, "Shade the swept wick", group = GRP_MSSTY, tooltip = "Fill the gap between the protected level and the wick that took it. This is the part worth seeing — it is the liquidity grab itself.")
+bool   msShowBg     = input.bool(true, "Tint the signal bar", group = GRP_MSSTY, tooltip = "Colour the whole bar's background on a signal, so a sweep is findable when scrolled out.")
+int    msLevelWidth = input.int(2, "Protected level thickness", minval = 1, maxval = 4, group = GRP_MSSTY)
+string msMarkSizeIn = input.string("Large", "Sweep marker size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = GRP_MSSTY, tooltip = "The marker is a solid triangle rather than a text label, so it cannot be mistaken for one of the structure tags.")
+
+// Structure draws in text labels; sweeps draw in solid triangles, offset off the wick by a
+// fraction of ATR. Different SHAPE, different DISTANCE — that is what stops the two layers
+// reading as one pile of tags on a busy chart.
+string msMarkSize = msMarkSizeIn == "Tiny" ? size.tiny : msMarkSizeIn == "Small" ? size.small : msMarkSizeIn == "Normal" ? size.normal : msMarkSizeIn == "Huge" ? size.huge : size.large
 
 float msAtr = ta.atr(14)
 
@@ -1172,11 +1196,19 @@ if msSweepLow
     if msSignalLow
         msCntSignal += 1
         if msShow
-            label.new(bar_index, low, "HL sweep", style = label.style_label_up, color = msBullCol, textcolor = chart.fg_color, size = size.small, tooltip = "Bullish MSS sweep\nProtected iHL: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
+            float _off = na(msAtr) ? 0.0 : msAtr * 0.5
+            label.new(bar_index, low - _off, "", style = label.style_triangleup, color = msBullCol, size = msMarkSize, tooltip = "Bullish MSS sweep\nProtected iHL: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
+            // The level lights up in the sweep colour, so the chart shows WHICH level was taken
+            // rather than just that something happened here.
+            line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBullCol, style = line.style_solid, width = 2)
+            if msShowZone
+                box.new(bar_index - 1, msArmLevel, bar_index + 1, low, xloc = xloc.bar_index, border_color = color.new(msBullCol, 30), bgcolor = color.new(msBullCol, 75))
     else
         msCntFiltered += 1
         if msShowFiltered
-            label.new(bar_index, low, "hl", style = label.style_label_up, color = color.new(color.gray, 45), textcolor = chart.fg_color, size = size.tiny, tooltip = "REJECTED by the trend filter.\nExternal direction: " + (st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none") + "\nContinuation breaks in run: " + str.tostring(msRunCount) + " (need " + str.tostring(msMinBos) + ")")
+            // A dim cross, not a text label. It is a diagnostic for judging the trend filter,
+            // so it has to be countable without competing with the signals or the structure.
+            label.new(bar_index, low, "", style = label.style_xcross, color = color.new(color.gray, 55), size = size.tiny, tooltip = "REJECTED by the trend filter.\nExternal direction: " + (st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none") + "\nContinuation breaks in run: " + str.tostring(msRunCount) + " (need " + str.tostring(msMinBos) + ")")
     f_msCloseLine()
     msArmDir := 0
     msArmLevel := na
@@ -1197,11 +1229,15 @@ if msSweepHigh
     if msSignalHigh
         msCntSignal += 1
         if msShow
-            label.new(bar_index, high, "LH sweep", style = label.style_label_down, color = msBearCol, textcolor = chart.fg_color, size = size.small, tooltip = "Bearish MSS sweep\nProtected iLH: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
+            float _off = na(msAtr) ? 0.0 : msAtr * 0.5
+            label.new(bar_index, high + _off, "", style = label.style_triangledown, color = msBearCol, size = msMarkSize, tooltip = "Bearish MSS sweep\nProtected iLH: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
+            line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBearCol, style = line.style_solid, width = 2)
+            if msShowZone
+                box.new(bar_index - 1, high, bar_index + 1, msArmLevel, xloc = xloc.bar_index, border_color = color.new(msBearCol, 30), bgcolor = color.new(msBearCol, 75))
     else
         msCntFiltered += 1
         if msShowFiltered
-            label.new(bar_index, high, "lh", style = label.style_label_down, color = color.new(color.gray, 45), textcolor = chart.fg_color, size = size.tiny, tooltip = "REJECTED by the trend filter.\nExternal direction: " + (st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none") + "\nContinuation breaks in run: " + str.tostring(msRunCount) + " (need " + str.tostring(msMinBos) + ")")
+            label.new(bar_index, high, "", style = label.style_xcross, color = color.new(color.gray, 55), size = size.tiny, tooltip = "REJECTED by the trend filter.\nExternal direction: " + (st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none") + "\nContinuation breaks in run: " + str.tostring(msRunCount) + " (need " + str.tostring(msMinBos) + ")")
     f_msCloseLine()
     msArmDir := 0
     msArmLevel := na
@@ -1258,7 +1294,7 @@ if msArmBull
     msArmLoc   := i_last_hl_loc
     msArmBar   := bar_index
     msCntArmed += 1
-    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = msLevelCol, style = line.style_dashed, width = 1) : na
+    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = msLevelCol, style = line.style_dashed, width = msLevelWidth) : na
 
 if msArmBear
     f_msCloseLine()
@@ -1267,7 +1303,7 @@ if msArmBear
     msArmLoc   := i_last_lh_loc
     msArmBar   := bar_index
     msCntArmed += 1
-    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = msLevelCol, style = line.style_dashed, width = 1) : na
+    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = msLevelCol, style = line.style_dashed, width = msLevelWidth) : na
 
 // ── Stats table ──────────────────────────────────────────
 // Read "raw" against "signalled". A filter that removes most of the sample and leaves the same
@@ -1293,17 +1329,15 @@ if barstate.islast and msShowStats
     table.cell(msTbl, 0, 7, "Armed now",      text_color = chart.fg_color, text_size = size.small)
     table.cell(msTbl, 1, 7, msArmDir == 1 ? "bullish @ " + str.tostring(msArmLevel, format.mintick) : msArmDir == -1 ? "bearish @ " + str.tostring(msArmLevel, format.mintick) : "—", text_color = chart.fg_color, text_size = size.small)
 
-// ── The silent-failure guard ─────────────────────────────
-// internalActive = showInternal in the engine block above, so the display toggle switches off
-// the state machine this whole file reads. Rather than patch the engine (it stays byte-
-// identical) or fail quietly, say so on the chart.
-var label msWarnLbl = na
-if barstate.islast
-    if not na(msWarnLbl)
-        label.delete(msWarnLbl)
-        msWarnLbl := na
-    if not showInternal
-        msWarnLbl := label.new(bar_index, high, "MSS SWEEPS DISABLED\nturn on \"Show Internal Structure\"", style = label.style_label_down, color = color.new(color.orange, 20), textcolor = color.white, size = size.normal)
+// ── Signal bar tint ──────────────────────────────────────
+// bgcolor() has to be a top-level call, so it cannot live inside the drawing blocks above.
+// It is the layer that survives being zoomed out, where a marker is a few pixels.
+bgcolor(msShowBg and msSignalLow ? color.new(msBullCol, 85) : msShowBg and msSignalHigh ? color.new(msBearCol, 85) : na, title = "MSS signal bar")
+
+// NOTE — there is deliberately no "signals are switched off" warning here any more. It existed
+// because the engine's internal state machine was gated on the "Show Internal Structure"
+// display toggle. That gate is now forced open (see the engine block), so all three Market
+// Structure display boxes can be unticked for a clean chart and every signal keeps firing.
 
 // ── Alerts ───────────────────────────────────────────────
 // Every one of these is confirmed-bar only. The engine's breaks already require
