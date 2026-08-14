@@ -1898,7 +1898,10 @@ only says *something is wrong* has moved the question rather than answered it.
 `VersionBanner` in `pages/Bots/ConfigureTab.tsx`, first and full width on the detail panel.
 
 🔴 **The version row on `DeployCard` read `v0`, and it always would have** —
-`strategy_version` defaults to 0 in `algos/live/live_config.py` and nothing writes it. So the one
+`strategy_version` defaulted to 0 in `algos/live/live_config.py` and nothing wrote it. (Fixed at
+the source 2026-08-14: `promote.py` stamps a real count, and the field is `number | null` here
+with `null` meaning a deployment made before the stamp. **The banner still renders `compare`**,
+which can answer for such a deployment and is the only side that knows what the BACKTESTER is on.) So the one
 question the Configure tab exists to answer had no answer on it. Aaron said so directly: *"If you
 make me look at commit IDs or parameters from code from a configuration, like exec_time_stop_mode,
 I don't know what any of that means. I just wanna know what is the version that I have compiled in

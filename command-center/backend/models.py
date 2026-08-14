@@ -4,15 +4,17 @@ These shapes are authoritative. Pipeline outputs conform to this; not the revers
 """
 
 from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ── Shared ────────────────────────────────────────────────────────────────────
 
+
 class MonthlyPoint(BaseModel):
-    month: str          # e.g. "2025-01"
+    month: str  # e.g. "2025-01"
     value: float
 
 
@@ -37,7 +39,7 @@ class EquityPoint(BaseModel):
     # what lets the News & Holiday filter report Avg Trade instead of a dash. Older runs predate
     # nothing (output.py has always written it), but NT8/MT5 curves carry neither time.
     exit_ms: Optional[int] = None
-    direction: Optional[str] = None   # 'Long' | 'Short'
+    direction: Optional[str] = None  # 'Long' | 'Short'
     profit: Optional[float] = None
     exit_name: Optional[str] = None
     # Per-trade excursion (Python runner only for now): the most the trade ever showed in profit
@@ -66,6 +68,7 @@ class SizedTimelineDay(BaseModel):
     """One trading day of a SIZED run — the engine's day-by-day record (mirrors
     sizing_engine.DayTimeline). Loaded from engine_timeline.json on disk; drives the
     sized equity curve (eod_balance vs risk_floor) and the timeline view."""
+
     date: str
     trades_taken: int
     contracts_total: int
@@ -80,6 +83,7 @@ class SizedTimelineDay(BaseModel):
 class RegimeBreakdownRow(BaseModel):
     """One market-regime's slice of a run's performance. Built server-side by
     metrics.compute_regime_breakdown — the single source of truth for the table."""
+
     regime: str
     days: int
     trades: int
@@ -93,15 +97,16 @@ class JobStatus(BaseModel):
     name: str
     schedule: str
     # DISABLED is distinct from STOPPED on purpose: switched off deliberately, not broken.
-    status: str         # "RUNNING" | "STOPPED" | "DISABLED" | "UNKNOWN"
+    status: str  # "RUNNING" | "STOPPED" | "DISABLED" | "UNKNOWN"
 
 
 class ProcessStatus(BaseModel):
     name: str
-    status: str         # "RUNNING" | "STOPPED" | "UNKNOWN"
+    status: str  # "RUNNING" | "STOPPED" | "UNKNOWN"
 
 
 # ── Smart Money ───────────────────────────────────────────────────────────────
+
 
 class FunnelStage(BaseModel):
     label: str
@@ -156,10 +161,17 @@ class SmartMoneyConfig(BaseModel):
             raise ValueError("Percentage must be between 0 and 100")
         return v
 
-    @field_validator("min_trades", "min_active_weeks_per_month", "min_account_age_days",
-                     "lookback_min_days", "lookback_preferred_days", "lookback_elite_days",
-                     "strike_months_to_yellow", "strike_months_to_disqualify",
-                     "strike_months_to_reinstate")
+    @field_validator(
+        "min_trades",
+        "min_active_weeks_per_month",
+        "min_account_age_days",
+        "lookback_min_days",
+        "lookback_preferred_days",
+        "lookback_elite_days",
+        "strike_months_to_yellow",
+        "strike_months_to_disqualify",
+        "strike_months_to_reinstate",
+    )
     @classmethod
     def positive_int(cls, v: int) -> int:
         if v < 1:
@@ -184,9 +196,9 @@ class ConfigGitStatus(BaseModel):
 
 class Candidate(BaseModel):
     rank: int
-    id: str                                 # wallet address
-    market: str                             # "crypto" | "forex"
-    source: str                             # "hyperliquid" | "myfxbook" | ...
+    id: str  # wallet address
+    market: str  # "crypto" | "forex"
+    source: str  # "hyperliquid" | "myfxbook" | ...
     composite_score: float
     lookback_tier: Optional[str] = None
     lookback_span_days: Optional[int] = None
@@ -194,7 +206,7 @@ class Candidate(BaseModel):
     # leaderboard stats (real values from exchange, not synthetic)
     account_value: Optional[float] = None
     all_time_pnl: Optional[float] = None
-    all_time_roi: Optional[float] = None    # fractional, e.g. 3.9 = 390%
+    all_time_roi: Optional[float] = None  # fractional, e.g. 3.9 = 390%
     month_roi: Optional[float] = None
     week_roi: Optional[float] = None
     # pnl from our fill analysis window
@@ -203,7 +215,7 @@ class Candidate(BaseModel):
     # performance
     overall_win_rate: float
     monthly_win_rate: list[MonthlyPoint]
-    win_rate_trend: str                     # "improving" | "stable" | "declining"
+    win_rate_trend: str  # "improving" | "stable" | "declining"
     avg_win: float
     avg_loss: float
     avg_rr: Optional[float] = None
@@ -224,7 +236,7 @@ class Candidate(BaseModel):
 
 class RunProgress(BaseModel):
     run_id: str
-    status: str                             # "idle" | "running" | "complete" | "error"
+    status: str  # "idle" | "running" | "complete" | "error"
     stage: int
     stage_name: str
     phase: str
@@ -237,7 +249,7 @@ class RunProgress(BaseModel):
     started_at: Optional[str] = None
     updated_at: Optional[str] = None
     elapsed_seconds: float = 0.0
-    recent_addresses: list[dict] = []      # [{a: address, s: "pass"|"fail"}, ...]
+    recent_addresses: list[dict] = []  # [{a: address, s: "pass"|"fail"}, ...]
 
 
 class DisqualifiedCandidate(BaseModel):
@@ -250,9 +262,10 @@ class DisqualifiedCandidate(BaseModel):
 
 # ── Bots ─────────────────────────────────────────────────────────────────────
 
+
 class BotReviewFinding(BaseModel):
     key: str
-    level: str              # "alert" | "warn"
+    level: str  # "alert" | "warn"
     title: str
     detail: str
 
@@ -265,7 +278,8 @@ class BotReview(BaseModel):
     alive, stamping its heartbeat and showing RUNNING while the order bridge is HALTED and the
     bot places nothing.** Nothing in the system reported that before 2026-08-05.
     """
-    level: str              # the worst level among the findings
+
+    level: str  # the worst level among the findings
     checked_at: str
     findings: list[BotReviewFinding] = []
 
@@ -278,7 +292,7 @@ class BotStatus(BaseModel):
     key: str
     name: str
     account: str
-    account_type: str       # "demo" | "live"
+    account_type: str  # "demo" | "live"
     balance: Optional[float] = None
     # Is the bot's PROCESS still talking to its MT5 terminal? `None` = the bot predates the
     # field or has not stamped one yet — never render an unasked question as a failure.
@@ -301,7 +315,7 @@ class BotStatus(BaseModel):
     # that file every poll through a read-modify-write, so a review written into it would race
     # the heartbeat and could be lost, or clobber a balance on the way past.
     review: Optional[BotReview] = None
-    status: str             # "RUNNING" | "STOPPED" | "ERROR"
+    status: str  # "RUNNING" | "STOPPED" | "ERROR"
     uptime_seconds: Optional[int] = None
     total_pnl_pct: Optional[float] = None
     day_locked: bool = False
@@ -331,6 +345,7 @@ class BotSnapshot(BaseModel):
 
 class BotParamRow(BaseModel):
     """One line of a live bot's configuration, as rendered on the Bots page."""
+
     name: str
     value: Any = None
     label: str
@@ -350,20 +365,21 @@ class BotParamRow(BaseModel):
 class BotParamsView(BaseModel):
     bot_key: str
     display_name: str
-    identity: dict          # account, server, symbol, timeframe, terminal, magic
-    version: dict           # package/class/version + source hash + promoted commit
-    runtime: list[BotParamRow]      # editable on a running bot
-    strategy: list[BotParamRow]     # read-only — changing these needs a re-promote
+    identity: dict  # account, server, symbol, timeframe, terminal, magic
+    version: dict  # package/class/version + source hash + promoted commit
+    runtime: list[BotParamRow]  # editable on a running bot
+    strategy: list[BotParamRow]  # read-only — changing these needs a re-promote
     notes: dict = {}
     readme: Optional[str] = None
 
 
 class BotCodeChange(BaseModel):
     """One commit sitting between the deployed version and the backtester's."""
+
     commit: str
     subject: str
     date: str = ""
-    areas: list[str] = []        # which of the bot's trees it touched — NOT a claim about trades
+    areas: list[str] = []  # which of the bot's trees it touched — NOT a claim about trades
 
 
 class BotSettingChange(BaseModel):
@@ -374,12 +390,13 @@ class BotSettingChange(BaseModel):
     is the reassuring half of the same question, and dropping it leaves the reader unable to
     tell "not affected" from "not checked".
     """
+
     name: str
     label: str
     group: str = ""
     desc: str = ""
-    is_new: bool = False         # the deployed version had no such setting at all
-    was: str = ""                # empty exactly when `is_new` — not "Off", which is a value
+    is_new: bool = False  # the deployed version had no such setting at all
+    was: str = ""  # empty exactly when `is_new` — not "Off", which is a value
     now: str
     stated: bool = False
 
@@ -393,6 +410,7 @@ class BotVersionCompare(BaseModel):
     number and no deploy button, because every state that makes this unanswerable has a
     different fix and none of them is "press deploy".
     """
+
     deployed_version: Optional[int] = None
     local_version: Optional[int] = None
     versions_behind: Optional[int] = None
@@ -415,34 +433,41 @@ class BotDeployedVersion(BaseModel):
     INTENT and goes stale the moment the repo moves; a version display that can be wrong is
     worse than none, because it is what you check before deciding anything.
     """
-    frozen: bool                 # False = still importing from the repo tree (unpromoted)
+
+    frozen: bool  # False = still importing from the repo tree (unpromoted)
     hash: str = ""
-    commit: str = ""             # the commit the snapshot was taken from
+    commit: str = ""  # the commit the snapshot was taken from
     promoted_at: str = ""
     strategy_package: str = ""
     strategy_class: str = ""
-    strategy_version: int = 0
+    # STAMPED at promote time since 2026-08-14 (`algos/tools/promote.py::version_at`) —
+    # the count of commits touching this bot's trees, the SAME definition `compare` computes
+    # from this machine's git. `None` = a deployment made before the stamp existed, or a
+    # count the VPS could not take; it is never 0-for-unknown.
+    strategy_version: Optional[int] = None
     files: int = 0
-    params: dict = {}            # the parameters AS DEPLOYED, not as config.json reads today
-    repo_commit: str = ""        # what the VPS working tree is on now
-    commits_ahead: int = 0       # how far the repo has moved past the deployment
-    snapshot_ok: bool = True     # on-disk hash still matches the record (tamper check)
-    running_hash: str = ""       # what the live PROCESS reports, from bot_state.json
+    params: dict = {}  # the parameters AS DEPLOYED, not as config.json reads today
+    repo_commit: str = ""  # what the VPS working tree is on now
+    commits_ahead: int = 0  # how far the repo has moved past the deployment
+    snapshot_ok: bool = True  # on-disk hash still matches the record (tamper check)
+    running_hash: str = ""  # what the live PROCESS reports, from bot_state.json
     params_drift: list[str] = []  # settings config.json now states differently from deployed
-    # `strategy_version` above is DEAD — `live_config.LiveConfig` defaults it to 0 and nothing
-    # writes it, so the card read v0 before a promote and v0 after. `compare` is the real one.
+    # `strategy_version` above was DEAD until 2026-08-14 — declared, defaulted to 0 and never
+    # assigned, so the card read v0 before a promote and v0 after. `promote.py` stamps it now.
+    # `compare` is still the one the banner renders: it can answer for a deployment made before
+    # the stamp existed, and it is the only side that knows what the BACKTESTER is on.
     compare: Optional[BotVersionCompare] = None
 
 
 class BotPromoteRequest(BaseModel):
-    pull: bool = True            # `git pull` on the VPS first
-    restart: bool = True         # restart the bot onto the new version
+    pull: bool = True  # `git pull` on the VPS first
+    restart: bool = True  # restart the bot onto the new version
     allow_dirty: bool = False
 
 
 class BotPromoteResult(BaseModel):
     ok: bool
-    output: str                  # promote.py's own text — it is written to be read
+    output: str  # promote.py's own text — it is written to be read
     restarted: bool = False
 
 
@@ -452,12 +477,14 @@ class BotRuntimeUpdate(BaseModel):
     `values` is validated against `services/bot_params.RUNTIME_EDITABLE` — the backend is
     authoritative about what is editable, so a frontend bug cannot widen the set.
     """
+
     values: dict[str, float]
-    deploy: bool = True     # commit + push + VPS pull; False writes locally only
+    deploy: bool = True  # commit + push + VPS pull; False writes locally only
 
 
 class BotAccountBot(BaseModel):
     """One bot's place in a trading account."""
+
     key: str
     display: str
     symbol: str
@@ -468,7 +495,7 @@ class BotAccountBot(BaseModel):
     # is invisible from the cap alone.
     risk_pct: Optional[float] = None
     cap_pct: Optional[float] = None
-    unreadable: bool = False       # its config could not be parsed — its cap is UNKNOWN, not absent
+    unreadable: bool = False  # its config could not be parsed — its cap is UNKNOWN, not absent
 
 
 class BotAccountGroup(BaseModel):
@@ -478,6 +505,7 @@ class BotAccountGroup(BaseModel):
     there is no account cap to report, and it is deliberately NOT the max or the min — picking one
     would invent a ceiling nobody configured and hide the fault behind a plausible number.
     """
+
     account: Optional[int] = None
     server: str = ""
     # "account" | "bench" | "unknown". The last two both have no account NUMBER and are not the
@@ -488,8 +516,8 @@ class BotAccountGroup(BaseModel):
     bots: list[BotAccountBot] = []
     risk_cap_pct: Optional[float] = None
     cap_agrees: bool = True
-    cap_unknown: bool = False      # at least one config unreadable, so the cap cannot be confirmed
-    stacked: bool = False          # more than one bot on this BALANCE (never true off an account)
+    cap_unknown: bool = False  # at least one config unreadable, so the cap cannot be confirmed
+    stacked: bool = False  # more than one bot on this BALANCE (never true off an account)
     cap_takes_turns: bool = False  # the cap is at or below the largest per-trade risk here
     # Bots here sharing an order tag. Empty is healthy, and the page shows the fact only when it
     # is true rather than printing a raw magic number nobody can interpret.
@@ -503,8 +531,9 @@ class BotAccountCapUpdate(BaseModel):
     alone". There is no separate clear endpoint precisely so that the absent value keeps meaning
     the one thing.
     """
+
     risk_cap_pct: Optional[float] = None
-    deploy: bool = True            # commit + push + VPS pull; False writes locally only
+    deploy: bool = True  # commit + push + VPS pull; False writes locally only
 
     @field_validator("risk_cap_pct")
     @classmethod
@@ -514,10 +543,14 @@ class BotAccountCapUpdate(BaseModel):
         if v <= 0:
             # 0 refuses every order on the account. If that is what somebody wants, they want the
             # fleet halt, which stops orders WITHOUT making every bot log a risk refusal.
-            raise ValueError("risk_cap_pct must be greater than 0 — use null to run uncapped, "
-                             "or the fleet halt to stop trading")
+            raise ValueError(
+                "risk_cap_pct must be greater than 0 — use null to run uncapped, "
+                "or the fleet halt to stop trading"
+            )
         if v > 100:
-            raise ValueError("risk_cap_pct is a percentage of the live balance and cannot exceed 100")
+            raise ValueError(
+                "risk_cap_pct is a percentage of the live balance and cannot exceed 100"
+            )
         return v
 
 
@@ -534,8 +567,9 @@ class BotAccountAssign(BaseModel):
     would take every bot already on that account off the box at their next restart. See that
     function for why each field is there.
     """
+
     account: Optional[int] = None
-    deploy: bool = True            # commit + push + VPS pull; False writes locally only
+    deploy: bool = True  # commit + push + VPS pull; False writes locally only
 
 
 class BotAccountRegistration(BaseModel):
@@ -556,13 +590,14 @@ class BotAccountRegistration(BaseModel):
     credentials file holds a login for this account, which is the only thing a page needs in
     order to tell you the move will fail before you make it.
     """
+
     account: int
     label: str = ""
     broker: str = ""
-    tier: str = ""                        # the broker's own word: "ECN", "Standard", …
-    kind: str = "demo"                    # "demo" | "live" — a live account is tinted and warned on
+    tier: str = ""  # the broker's own word: "ECN", "Standard", …
+    kind: str = "demo"  # "demo" | "live" — a live account is tinted and warned on
     server: str = ""
-    mt5_path: str = ""                    # "" = no terminal serves it ⇒ not assignable
+    mt5_path: str = ""  # "" = no terminal serves it ⇒ not assignable
     symbol_suffix: Optional[str] = None
     account_profile: str = ""
     note: str = ""
@@ -570,8 +605,8 @@ class BotAccountRegistration(BaseModel):
     # rather than offering a move that is refused after the reader has committed to it.
     assignable: bool = True
     unassignable_reason: str = ""
-    has_password: Optional[bool] = None   # None = the VPS could not be asked, never "no password"
-    bot_keys: list[str] = []              # bots currently naming this account
+    has_password: Optional[bool] = None  # None = the VPS could not be asked, never "no password"
+    bot_keys: list[str] = []  # bots currently naming this account
 
 
 class BotAccountRegistrationWrite(BaseModel):
@@ -581,6 +616,7 @@ class BotAccountRegistrationWrite(BaseModel):
     would make removing a symbol suffix inexpressible, since the absent value and the unchanged
     value would be the same request.
     """
+
     account: int
     label: str = ""
     broker: str = ""
@@ -595,7 +631,7 @@ class BotAccountRegistrationWrite(BaseModel):
     # back out of any endpoint, and it is stored in the git-ignored `algos/credentials.json` on
     # the VPS, never in the registry, never in git, never in a log line.
     password: Optional[str] = None
-    deploy: bool = True                   # commit + push + VPS pull; False writes locally only
+    deploy: bool = True  # commit + push + VPS pull; False writes locally only
 
     @field_validator("account")
     @classmethod
@@ -611,6 +647,7 @@ class BotAccountPassword(BaseModel):
     Separate from the registry write because it goes somewhere else entirely: the registry is
     git-tracked and this is not. There is no read counterpart and there will not be one.
     """
+
     password: str
 
     @field_validator("password")
@@ -634,8 +671,8 @@ TELEGRAM_ROLES = ("admin", "readonly")
 class TelegramUser(BaseModel):
     chat_id: str
     name: str
-    role: str           # "admin" | "readonly"
-    added: str          # YYYY-MM-DD
+    role: str  # "admin" | "readonly"
+    added: str  # YYYY-MM-DD
 
 
 class TelegramUserCreate(BaseModel):
@@ -663,6 +700,7 @@ class TelegramUserRoleUpdate(BaseModel):
 
 
 # ── Lab — strategies ──────────────────────────────────────────────────────────
+
 
 class Strategy(BaseModel):
     id: str
@@ -692,7 +730,7 @@ class Strategy(BaseModel):
     is_orphan: bool = False
     # Strategy-level narrative overlaid from <Strategy>.meta.json (UI only).
     edge: Optional[str] = None
-    steps: list[dict] = []   # flow: [{label, title, detail}]
+    steps: list[dict] = []  # flow: [{label, title, detail}]
     # News-filter default (UI only): 1/true = the News toggle on BacktestDetail starts on "Removed"
     # (this strategy avoids high-impact news); false = starts "Included". From meta.json "avoid_news".
     avoid_news: bool = False
@@ -713,13 +751,13 @@ class ScanResult(BaseModel):
     added: int
     updated: int
     skipped: int
-    orphans: list[str] = []    # DB strategies whose source file is gone from the repo
+    orphans: list[str] = []  # DB strategies whose source file is gone from the repo
     warnings: list[str] = []
 
 
 class ReconcileResult(BaseModel):
-    removed: list[str] = []    # orphaned strategies removed from DB + VPS
-    warnings: list[str] = []   # per-strategy notes (e.g. VPS file could not be deleted)
+    removed: list[str] = []  # orphaned strategies removed from DB + VPS
+    warnings: list[str] = []  # per-strategy notes (e.g. VPS file could not be deleted)
 
 
 class DeployJobStatus(BaseModel):
@@ -732,6 +770,7 @@ class DeployJobStatus(BaseModel):
 
 
 # ── Lab — rulesets ────────────────────────────────────────────────────────────
+
 
 class Ruleset(BaseModel):
     id: str
@@ -747,8 +786,8 @@ class Ruleset(BaseModel):
     allowed_instruments: list[str] = []
     max_contracts: Optional[dict] = None  # null = no contract cap (personal/demo)
     platform_support: list[str] = []
-    account_tier: str = "eval"          # "eval" | "funded" | "live" | "demo"
-    ruleset_type: str = "prop_eval"     # "prop_eval" | "prop_funded" | "personal" | "demo"
+    account_tier: str = "eval"  # "eval" | "funded" | "live" | "demo"
+    ruleset_type: str = "prop_eval"  # "prop_eval" | "prop_funded" | "personal" | "demo"
     daily_loss_cap: Optional[int] = None
     weekly_loss_cap: Optional[int] = None
     daily_profit_goal: Optional[int] = None
@@ -770,8 +809,8 @@ class Ruleset(BaseModel):
     default_slippage_ticks: Optional[int] = None
     daily_halt_fraction: Optional[float] = None
     # M5 — market and drawdown unit
-    market: str = "futures"       # "futures" | "forex" | "mixed"
-    drawdown_unit: str = "usd"    # "usd" | "percent"
+    market: str = "futures"  # "futures" | "forex" | "mixed"
+    drawdown_unit: str = "usd"  # "usd" | "percent"
     # Personal fail conditions (personal/demo rows; NULL on prop rows)
     max_drawdown_from_peak_pct: Optional[float] = None
     max_consecutive_loss_days: Optional[int] = None
@@ -791,8 +830,8 @@ class RulesetCreate(BaseModel):
     allowed_instruments: list[str] = []
     max_contracts: Optional[dict] = None  # null = no contract cap (personal/demo)
     platform_support: list[str] = []
-    account_tier: str = "eval"          # "eval" | "funded" | "live" | "demo"
-    ruleset_type: str = "prop_eval"     # "prop_eval" | "prop_funded" | "personal" | "demo"
+    account_tier: str = "eval"  # "eval" | "funded" | "live" | "demo"
+    ruleset_type: str = "prop_eval"  # "prop_eval" | "prop_funded" | "personal" | "demo"
     daily_loss_cap: Optional[int] = None
     weekly_loss_cap: Optional[int] = None
     daily_profit_goal: Optional[int] = None
@@ -828,6 +867,7 @@ class PersonalRulesetPatch(BaseModel):
     prop-rule lock cannot be bypassed by sneaking fields into this endpoint.
     Explicit nulls are ignored (rules are cleared via PUT, not PATCH).
     """
+
     model_config = ConfigDict(extra="forbid")
 
     account_size: Optional[int] = Field(None, gt=0)
@@ -839,13 +879,15 @@ class PersonalRulesetPatch(BaseModel):
 
 # ── Lab — worthiness scoring ──────────────────────────────────────────────────
 
+
 class WorthinessScore(BaseModel):
-    tier: str                               # "TIER_1_STRESS_TEST" | "TIER_2_OPTIMIZE" | "TIER_3_DISCARD"
+    tier: str  # "TIER_1_STRESS_TEST" | "TIER_2_OPTIMIZE" | "TIER_3_DISCARD"
     reason: Optional[str] = None
     computed_against_firm: Optional[str] = None
 
 
 # ── Lab — backtest runs ───────────────────────────────────────────────────────
+
 
 class BacktestRunRequest(BaseModel):
     strategy_id: str
@@ -853,7 +895,7 @@ class BacktestRunRequest(BaseModel):
     params: dict
     bar_type: str = "Minute"
     bar_value: int = 5
-    start_date: str                 # 'YYYY-MM-DD'
+    start_date: str  # 'YYYY-MM-DD'
     end_date: str
     # 0/0 by design (2026-08-01, Aaron's call). A request model's default is what ships when the
     # caller states nothing, and a silent 2.25/1 — a FUTURES prop-firm figure — was reaching forex
@@ -871,13 +913,13 @@ class BacktestRunRequest(BaseModel):
     # a deliberately frictionless run over a tester that charged commission and slippage.
     cost_layers: Optional[list[str]] = []
     broker_profile: str = "vantage_demo"
-    evaluate_rulesets: list[str] = []   # ruleset_ids to evaluate against
-    evaluate_firms: list[str] = []      # backward-compat alias; prefer evaluate_rulesets
-    source_run_id: Optional[str] = None # run this was derived from (e.g. a tuning iteration)
+    evaluate_rulesets: list[str] = []  # ruleset_ids to evaluate against
+    evaluate_firms: list[str] = []  # backward-compat alias; prefer evaluate_rulesets
+    source_run_id: Optional[str] = None  # run this was derived from (e.g. a tuning iteration)
     # Dynamic-sizing mode: 'consistent' (room÷7) | 'bullet' (max ladder) | 'manual' (a fixed
     # risk % you set). Ignored entirely for a self-sizing strategy — it sizes its own trades.
     sizing_mode: str = "consistent"
-    manual_risk_pct: Optional[float] = None   # required when sizing_mode == 'manual'
+    manual_risk_pct: Optional[float] = None  # required when sizing_mode == 'manual'
 
     @field_validator("manual_risk_pct")
     @classmethod
@@ -902,6 +944,7 @@ class BrokerProfile(BaseModel):
     `swap_*_points` are null when the profile prices no overnight financing. `spread` is in price
     units and is BAR-MODE only — tick mode has the real bid and ask on every tick.
     """
+
     id: str
     spread: float
     commission_per_side_per_lot: float
@@ -919,14 +962,15 @@ class HistoryLimit(BaseModel):
     then 400s (or, before this existed, one that silently replayed substituted bars).
     A null response means no declared floor, not "unlimited".
     """
+
     instrument: str
     runner: str
     timeframe_minutes: int
-    earliest_date: str          # 'YYYY-MM-DD' — the first date with REAL bars
-    broker: str = ""            # the terminal's server, e.g. 'VantageMarkets-Demo'
-    verified: str = ""          # when the floor was last measured
-    source: str = ""            # 'probed' (measured off this broker) | 'seed' (offline fallback)
-    note: str = ""              # plain-English reason, shown under the date field
+    earliest_date: str  # 'YYYY-MM-DD' — the first date with REAL bars
+    broker: str = ""  # the terminal's server, e.g. 'VantageMarkets-Demo'
+    verified: str = ""  # when the floor was last measured
+    source: str = ""  # 'probed' (measured off this broker) | 'seed' (offline fallback)
+    note: str = ""  # plain-English reason, shown under the date field
 
 
 class RetryRunRequest(BaseModel):
@@ -962,7 +1006,7 @@ class BacktestSummary(BaseModel):
     trade_count: Optional[int] = None
     sharpe: Optional[float] = None
     params: dict = {}
-    verdicts: list[dict] = []       # [{firm_id, verdict, notes}]
+    verdicts: list[dict] = []  # [{firm_id, verdict, notes}]
     worthiness: Optional[WorthinessScore] = None
     sweep_id: Optional[str] = None
     optimization_id: Optional[str] = None
@@ -977,7 +1021,7 @@ class EvaluationDetail(BaseModel):
     eval_id: str
     ruleset_id: str
     ruleset_name: str
-    verdict: str                    # prop: 'PASS' | 'WARN' | 'DISCARD'; personal/demo: 'INFO'
+    verdict: str  # prop: 'PASS' | 'WARN' | 'DISCARD'; personal/demo: 'INFO'
     drawdown_pass: bool
     target_pass: bool
     consistency_pass: Optional[bool] = None
@@ -985,7 +1029,7 @@ class EvaluationDetail(BaseModel):
     breach_count: int
     largest_day_share_pct: Optional[float] = None
     adjusted_profit_target: Optional[float] = None
-    contract_cap_status: Optional[str] = None   # 'not_evaluable' | (future: 'pass' | 'fail')
+    contract_cap_status: Optional[str] = None  # 'not_evaluable' | (future: 'pass' | 'fail')
     # Trailing-MLL detail
     mll_final_floor: Optional[float] = None
     mll_highest_eod_balance: Optional[float] = None
@@ -1012,9 +1056,11 @@ class EvaluationDetail(BaseModel):
     trade_count: Optional[int] = None
     avg_win: Optional[float] = None
     avg_loss: Optional[float] = None
-    daily_pnl: list[dict] = []                       # [{date, pnl}] sized for this ruleset
-    sized_timeline: list[SizedTimelineDay] = []      # engine day-by-day, sized for this ruleset
-    equity_curve: list[EquityPoint] = []             # sized trade-by-trade curve (drawdown, long/short, calmar…)
+    daily_pnl: list[dict] = []  # [{date, pnl}] sized for this ruleset
+    sized_timeline: list[SizedTimelineDay] = []  # engine day-by-day, sized for this ruleset
+    equity_curve: list[
+        EquityPoint
+    ] = []  # sized trade-by-trade curve (drawdown, long/short, calmar…)
 
 
 class BacktestDetail(BaseModel):
@@ -1045,17 +1091,17 @@ class BacktestDetail(BaseModel):
     win_rate: Optional[float] = None
     win_count: Optional[int] = None
     trade_count: Optional[int] = None
-    sharpe: Optional[float] = None              # canonical daily-√252 Sharpe
-    platform_sharpe: Optional[float] = None     # NT8/MT5's own reported Sharpe (reference)
-    sharpe_low_sample: bool = False             # < 10 trading days — daily Sharpe is noisy
+    sharpe: Optional[float] = None  # canonical daily-√252 Sharpe
+    platform_sharpe: Optional[float] = None  # NT8/MT5's own reported Sharpe (reference)
+    sharpe_low_sample: bool = False  # < 10 trading days — daily Sharpe is noisy
     profit_concentration_pct: Optional[float] = None  # largest quarter's share of gross profit
     # Added 2026-08-01 — the companions to three numbers that were true and got misread.
     # Reasoning for each is in services/metrics.py; in one line: a drawdown in dollars only hides
     # its own magnitude, a win rate counts a breakeven scratch as a win, and a concentration
     # measured over QUARTERS answers a different question from the one its name suggests.
-    max_drawdown_pct: Optional[float] = None      # worst drop as % of the peak it fell from
-    scratch_count: Optional[int] = None           # trades under 15% of the run's median full loss
-    trade_concentration_pct: Optional[float] = None   # top-5 winners' share of gross profit
+    max_drawdown_pct: Optional[float] = None  # worst drop as % of the peak it fell from
+    scratch_count: Optional[int] = None  # trades under 15% of the run's median full loss
+    trade_concentration_pct: Optional[float] = None  # top-5 winners' share of gross profit
     sortino: Optional[float] = None
     cagr: Optional[float] = None
     avg_win: Optional[float] = None
@@ -1065,7 +1111,7 @@ class BacktestDetail(BaseModel):
     worst_losing_streak: Optional[int] = None
     # Heavy data (loaded from JSON files on disk)
     equity_curve: list[EquityPoint] = []
-    daily_pnl: list[dict] = []     # [{date: 'YYYY-MM-DD', pnl: float}]
+    daily_pnl: list[dict] = []  # [{date: 'YYYY-MM-DD', pnl: float}]
     # EVERY trading day in the run's window with its regime label — [{date, regime}] — not just
     # the days that traded. This is what the equity charts band from: regime is a property of the
     # market on a date, so two runs over the same window must agree about it. Empty on runs that
@@ -1080,26 +1126,34 @@ class BacktestDetail(BaseModel):
     optimization_id: Optional[str] = None
     source_run_id: Optional[str] = None
     runner: str = "ninjatrader"
-    sizing_mode: str = "consistent"   # 'consistent' | 'bullet' | 'manual' — mode this run used
-    manual_risk_pct: Optional[float] = None   # the risk % used, when sizing_mode == 'manual'
-    sized: bool = False               # True once a reshaped strategy emitted engine_trades and the engine sized the run
-    sized_timeline: list[SizedTimelineDay] = []   # the engine's day-by-day record (sized runs only) — sized equity curve + timeline
+    sizing_mode: str = "consistent"  # 'consistent' | 'bullet' | 'manual' — mode this run used
+    manual_risk_pct: Optional[float] = None  # the risk % used, when sizing_mode == 'manual'
+    sized: bool = (
+        False  # True once a reshaped strategy emitted engine_trades and the engine sized the run
+    )
+    sized_timeline: list[
+        SizedTimelineDay
+    ] = []  # the engine's day-by-day record (sized runs only) — sized equity curve + timeline
 
 
 # ── Lab — news filter (post-run trade tagging) ───────────────────────────────
 
+
 class NewsTradeTag(BaseModel):
-    index: Optional[int] = None      # trade number, matches the equity-curve point
-    entry_ms: Optional[int] = None   # trade OPEN time, UTC epoch ms (null on old runs with no stored time)
-    in_coverage: bool = False        # calendar data covers this date (else we don't guess)
-    in_news: bool = False            # opened inside a high-impact news window — the toggle removes these
-    in_holiday: bool = False         # opened on a bank holiday — always removed, not part of the toggle
-    title: Optional[str] = None      # the event that tagged it
+    index: Optional[int] = None  # trade number, matches the equity-curve point
+    entry_ms: Optional[int] = (
+        None  # trade OPEN time, UTC epoch ms (null on old runs with no stored time)
+    )
+    in_coverage: bool = False  # calendar data covers this date (else we don't guess)
+    in_news: bool = False  # opened inside a high-impact news window — the toggle removes these
+    in_holiday: bool = False  # opened on a bank holiday — always removed, not part of the toggle
+    title: Optional[str] = None  # the event that tagged it
 
 
 class RepricedPoint(BaseModel):
     """One trade on the re-priced equity curve. Mirrors the `EquityPoint` fields the charts read,
     so the frontend can swap this in where the stored curve was without a second code path."""
+
     index: int
     equity: float
     profit: float
@@ -1123,12 +1177,13 @@ class RunRepriceReport(BaseModel):
     indicative. It is False for two distinct reasons — a `swap` layer (whose real charge depends on
     which bars existed) or a run predating the stored `r`/`risk_usd` — and the UI must caption it.
     """
+
     layers: list[str] = []
     broker_profile: str
     is_exact: bool
-    derived_basis: bool = False          # run predates the stored per-trade R
-    approximate_layers: list[str] = []   # chosen layers that cannot be exact (today: swap)
-    needs_rerun: list[str] = []          # requested layers that cannot be re-priced at all
+    derived_basis: bool = False  # run predates the stored per-trade R
+    approximate_layers: list[str] = []  # chosen layers that cannot be exact (today: swap)
+    needs_rerun: list[str] = []  # requested layers that cannot be re-priced at all
     #: Layers the RUN ITSELF already charged at replay time, so they are baked into the stored
     #: trades. Re-pricing one on top would bill it TWICE, and the page has no way to notice: the
     #: numbers would move by a plausible amount and simply be wrong. They are reported, dropped
@@ -1151,11 +1206,13 @@ class RunRepriceReport(BaseModel):
 
 
 class RunNewsReport(BaseModel):
-    has_data: bool                             # False when the calendar cache is empty → filter inert
-    coverage_start_ms: Optional[int] = None    # earliest ms with news data — the "news starts here" line
+    has_data: bool  # False when the calendar cache is empty → filter inert
+    coverage_start_ms: Optional[int] = (
+        None  # earliest ms with news data — the "news starts here" line
+    )
     coverage_end_ms: Optional[int] = None
-    pre_minutes: int                           # block window before an event (default 15)
-    post_minutes: int                          # block window after an event (default 30)
+    pre_minutes: int  # block window before an event (default 15)
+    post_minutes: int  # block window after an event (default 30)
     trades: list[NewsTradeTag] = []
     news_trade_count: int = 0
     holiday_trade_count: int = 0
@@ -1163,10 +1220,11 @@ class RunNewsReport(BaseModel):
 
 # ── Lab — progress + system health ───────────────────────────────────────────
 
+
 class LabProgress(BaseModel):
     job_id: Optional[str] = None
-    job_type: Optional[str] = None          # 'backtest' | 'optimize' | 'stress' | 'overfit'
-    status: str = "idle"                    # 'idle' | 'running' | 'complete' | 'failed_*'
+    job_type: Optional[str] = None  # 'backtest' | 'optimize' | 'stress' | 'overfit'
+    status: str = "idle"  # 'idle' | 'running' | 'complete' | 'failed_*'
     strategy_id: Optional[str] = None
     instrument: Optional[str] = None
     pct: int = 0
@@ -1183,9 +1241,11 @@ class SystemHealth(BaseModel):
     # them. Until 2026-08-02 this field carried a fresh `ssh echo ok`, which has
     # nothing to do with the forwards and could report green over a dead tunnel.
     ssh_tunnel: bool = False
-    vps_reachable: bool = False   # the VPS answers SSH at all — separates a dead tunnel from a dead network
-    nt8_agent: bool = False    # NT8 agent (port 8765)
-    mt5_agent: bool = False    # MT5 agent (port 8766)
+    vps_reachable: bool = (
+        False  # the VPS answers SSH at all — separates a dead tunnel from a dead network
+    )
+    nt8_agent: bool = False  # NT8 agent (port 8765)
+    mt5_agent: bool = False  # MT5 agent (port 8766)
     # MT5 TERMINAL state, not the agent's. None = the agent could not be asked,
     # which is not the same as a disconnected terminal and must not render as one.
     mt5_connected: Optional[bool] = None
@@ -1205,9 +1265,10 @@ class SystemHealth(BaseModel):
 
 # ── Lab — running job status ─────────────────────────────────────────────────
 
+
 class RunningJobInfo(BaseModel):
     running: bool
-    job_type: Optional[str] = None   # "backtest" | "sweep" | "optimization"
+    job_type: Optional[str] = None  # "backtest" | "sweep" | "optimization"
     job_id: Optional[str] = None
     description: Optional[str] = None
 
@@ -1219,6 +1280,7 @@ class RunningJobStatus(BaseModel):
 
 
 # ── Lab — sweeps ──────────────────────────────────────────────────────────────
+
 
 class SweepRequest(BaseModel):
     strategy_id: str
@@ -1233,7 +1295,7 @@ class SweepRequest(BaseModel):
     commission_per_side: float = 0.0
     slippage_ticks: int = 0
     ruleset_ids: list[str] = []
-    firm_ids: list[str] = []            # backward-compat alias
+    firm_ids: list[str] = []  # backward-compat alias
     instruments: list[str]
     source_run_id: Optional[str] = None
 
@@ -1285,9 +1347,10 @@ class SweepDetail(BaseModel):
 # portfolio P&L is composed CLIENT-SIDE by summing each child's daily_pnl, and toggling a
 # strategy off is a re-sum without it. Python strategies only.
 
+
 class StackRequest(BaseModel):
-    strategy_ids: list[str]                 # 2+ Python strategy ids to layer
-    instrument: str                         # one shared instrument for the whole stack
+    strategy_ids: list[str]  # 2+ Python strategy ids to layer
+    instrument: str  # one shared instrument for the whole stack
     bar_type: str = "Minute"
     bar_value: int = 15
     start_date: str
@@ -1298,7 +1361,7 @@ class StackRequest(BaseModel):
     # displayed/leg-matching values, not the applied ones.
     commission_per_side: float = 0.0
     slippage_ticks: int = 0
-    ruleset_ids: list[str] = []             # optional — scored per child run, like a normal run
+    ruleset_ids: list[str] = []  # optional — scored per child run, like a normal run
     # Optional per-strategy param override, keyed by strategy id. A strategy not present here
     # uses its stored default_params. Lets the two sleeves carry different risk knobs.
     params_by_strategy: dict[str, dict] = {}
@@ -1315,8 +1378,8 @@ class StackRequest(BaseModel):
     # The shared account. Read ONLY when mode == "shared"; ignored on a screen, where there is
     # no account because each leg had its own.
     account_size: float = 10_000.0
-    risk_cap_pct: float = 10.0              # max OPEN risk across all legs, % of the LIVE balance
-    entry_floor_pct: float = 0.0            # skip an entry granted less than this % in risk
+    risk_cap_pct: float = 10.0  # max OPEN risk across all legs, % of the LIVE balance
+    entry_floor_pct: float = 0.0  # skip an entry granted less than this % in risk
 
     @field_validator("mode")
     @classmethod
@@ -1333,21 +1396,24 @@ class StackRequest(BaseModel):
         # refusal is repeated here so it is a 400 at the request rather than a failed background
         # job the reader has to open a log to understand.
         if v <= 0:
-            raise ValueError("risk_cap_pct must be greater than 0 — a cap of zero refuses "
-                             "every entry, which is a stopped bot rather than a portfolio")
+            raise ValueError(
+                "risk_cap_pct must be greater than 0 — a cap of zero refuses "
+                "every entry, which is a stopped bot rather than a portfolio"
+            )
         return v
 
 
 class StackPreviewRequest(BaseModel):
     """Ask, without running anything, which legs would be REUSED from an existing
     completed run vs RE-RUN fresh, for a given shared instrument/timeframe/window/costs."""
+
     strategy_ids: list[str]
     instrument: str
     bar_type: str = "Minute"
     bar_value: int = 15
     start_date: str
     end_date: str
-    commission_per_side: float = 0.0        # match the Pine (0/0) — see StackRequest
+    commission_per_side: float = 0.0  # match the Pine (0/0) — see StackRequest
     slippage_ticks: int = 0
     # A SHARED stack reuses nothing — a finished standalone run was measured on its own full
     # account with nothing able to block it, so dropping one in would put an un-contended leg
@@ -1364,8 +1430,8 @@ class StackPreviewRequest(BaseModel):
 class StackPreviewLeg(BaseModel):
     strategy_id: str
     strategy_name: str
-    action: str                             # "reuse" | "run"
-    matched_run_id: Optional[str] = None    # set when action == "reuse"
+    action: str  # "reuse" | "run"
+    matched_run_id: Optional[str] = None  # set when action == "reuse"
     net_pnl: Optional[float] = None
     trade_count: Optional[int] = None
     profit_factor: Optional[float] = None
@@ -1393,7 +1459,7 @@ class StackSummary(BaseModel):
     failed_strategies: int
     status: str
     created_at: datetime
-    strategy_names: str = ""                 # " + "-joined display names
+    strategy_names: str = ""  # " + "-joined display names
     # Keyed by ID rather than by the joined names, so "which stacks is this strategy in" is a
     # lookup and not a string match on a label somebody can rename.
     strategy_ids: list[str] = []
@@ -1401,7 +1467,7 @@ class StackSummary(BaseModel):
     # has to say which. Without it two rows sit side by side reporting different numbers with
     # nothing on screen explaining the gap.
     mode: str = "screen"
-    risk_cap_pct: Optional[float] = None     # None on a screen — there is no account to cap
+    risk_cap_pct: Optional[float] = None  # None on a screen — there is no account to cap
     # The portfolio's own result, so a reader can rank the list instead of opening every row. It
     # is the sum of the legs' — the same arithmetic the detail page composes its Made hero from,
     # not a second definition. ⚠ `None` = nothing has finished yet, never 0.0; and it covers only
@@ -1419,7 +1485,7 @@ class StackStrategyLeg(BaseModel):
     max_drawdown: Optional[float] = None
     trade_count: Optional[int] = None
     sharpe: Optional[float] = None
-    avg_trade_duration_min: Optional[float] = None   # trade-weighted into the stack's AVG TRADE KPI
+    avg_trade_duration_min: Optional[float] = None  # trade-weighted into the stack's AVG TRADE KPI
     error_message: Optional[str] = None
     # What this leg was ACTUALLY replayed with, off the child run's own row. Two things need it and
     # neither can derive it: the page has no other way to show a param a stack PINNED (a shared leg
@@ -1428,7 +1494,7 @@ class StackStrategyLeg(BaseModel):
     # leg to its stored defaults — the same class as a tuning child launched without its parent's
     # costs. `{}` = a leg row written before this was served, never "it had no params".
     params: dict = {}
-    daily_pnl: list[dict] = []              # [{date, pnl}]
+    daily_pnl: list[dict] = []  # [{date, pnl}]
     equity_curve: list[EquityPoint] = []
     # The SOLO CONTROL's book — this leg replayed ALONE on its own full account, which is the only
     # answer to "what would this have made if the other strategies never existed". On a SHARED stack
@@ -1470,16 +1536,17 @@ class StackDetail(BaseModel):
     strategies: list[StackStrategyLeg] = []
     # ── Shared-account mode ──────────────────────────────────────────────────
     mode: str = "screen"
-    account_size: Optional[float] = None     # None on a screen: each leg had its own account
+    account_size: Optional[float] = None  # None on a screen: each leg had its own account
     risk_cap_pct: Optional[float] = None
     entry_floor_pct: Optional[float] = None
 
 
 class StackContentionEvent(BaseModel):
     """One entry the shared risk budget refused or shrank."""
+
     leg: str
-    time: Optional[int] = None               # epoch ms
-    blocked: bool = False                    # False = shrunk to fit, True = refused outright
+    time: Optional[int] = None  # epoch ms
+    blocked: bool = False  # False = shrunk to fit, True = refused outright
     desired_risk: float = 0.0
     granted_risk: float = 0.0
 
@@ -1506,8 +1573,9 @@ class StackSharedReport(BaseModel):
     would rarely have had anything to arbitrate*, never as *the cap is not working* — and never
     as *not measured*, which is what a missing `summary` means instead.
     """
+
     stack_id: str
-    available: bool                          # False = this stack is a screen, or has not finished
+    available: bool  # False = this stack is a screen, or has not finished
     opening_balance: Optional[float] = None
     closing_balance: Optional[float] = None
     risk_cap_pct: Optional[float] = None
@@ -1520,11 +1588,12 @@ class StackSharedReport(BaseModel):
     contention_events: Optional[int] = None
     legs: list[StackLegContention] = []
     events: list[StackContentionEvent] = []
-    neutral: Optional[dict] = None           # the shared-vs-solo R check; see portfolio_runner
-    progress: Optional[dict] = None          # live while replaying: {phase, pct, message}
+    neutral: Optional[dict] = None  # the shared-vs-solo R check; see portfolio_runner
+    progress: Optional[dict] = None  # live while replaying: {phase, pct, message}
 
 
 # ── Lab — optimizations ───────────────────────────────────────────────────────
+
 
 class OptimizationRequest(BaseModel):
     strategy_id: str
@@ -1538,12 +1607,14 @@ class OptimizationRequest(BaseModel):
     # and Python runs that have no such cost. State the costs you want charged; nothing is assumed.
     commission_per_side: float = 0.0
     slippage_ticks: int = 0
-    ruleset_id: Optional[str] = None    # null for MT5 / "raw" mode
-    mode: str = "eval"                  # "eval" | "funded" | "raw"
+    ruleset_id: Optional[str] = None  # null for MT5 / "raw" mode
+    mode: str = "eval"  # "eval" | "funded" | "raw"
     search_method: str = "native"
-    param_grid: dict                    # {param: {min, max, step} | [val, ...]}
+    param_grid: dict  # {param: {min, max, step} | [val, ...]}
     source_run_id: Optional[str] = None
-    regime_filter: Optional[str] = None  # TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY
+    regime_filter: Optional[str] = (
+        None  # TRENDING | TRANSITIONING | RANGING | HIGH_VOLATILITY | LOW_VOLATILITY
+    )
     # Layered costs, same contract as BacktestRunRequest — python runner only, and NULL is not
     # []: nothing stated keeps the old free-book behaviour rather than silently charging.
     cost_layers: Optional[list[str]] = None
@@ -1615,6 +1686,7 @@ class OptimizationDetail(BaseModel):
 
 # ── Lab — instrument summary (for Tier 3 modal) ───────────────────────────────
 
+
 class InstrumentResult(BaseModel):
     instrument: str
     best_worthiness: Optional[str] = None
@@ -1629,6 +1701,7 @@ class InstrumentSummary(BaseModel):
 
 # ── Stress Tests ──────────────────────────────────────────────────────────────
 
+
 class StressTestCreate(BaseModel):
     """⚠ Every count here is BOUNDED, and the bounds are the point.
 
@@ -1639,6 +1712,7 @@ class StressTestCreate(BaseModel):
     bounded for a different reason — each window is TWO real backtests on the VPS, so the number
     is a multiplier on wall-clock time and on the platform lock.
     """
+
     run_id: str
     ruleset_id: Optional[str] = None
     include_walk_forward: bool = False
@@ -1657,6 +1731,7 @@ class WalkForwardWindow(BaseModel):
     is refused. `is_pf`/`oos_pf` are the NATIVE path's metric (it has no trade-level data, so it
     degrades on profit factor and leaves both Sharpes null), so without them that path had nothing
     renderable at all."""
+
     window: int
     is_pnl: Optional[float] = None
     oos_pnl: Optional[float] = None
@@ -1731,6 +1806,7 @@ class StressTestDetail(StressTest):
 
 # ── Strategy files (Pass 2 — deployment manager) ─────────────────────────────
 
+
 class StrategyFile(BaseModel):
     filename: str
     size_bytes: int
@@ -1762,14 +1838,14 @@ class StrategyFileSyncStatus(BaseModel):
     in_sync: Optional[bool] = None
     is_compiled: Optional[bool] = None  # MT5 only: True if .ex5 exists alongside .mq5
     # Version tracking — which content version is local vs deployed vs compiled.
-    current_version: Optional[int] = None     # version of the current local source
+    current_version: Optional[int] = None  # version of the current local source
     current_source_hash: Optional[str] = None
-    deployed_version: Optional[int] = None    # version last deployed to the lab VPS
-    deployed_at: Optional[int] = None         # unix seconds
-    compiled_version: Optional[int] = None    # version last compiled on the lab VPS
-    compiled_at: Optional[int] = None         # unix seconds
-    needs_deploy: bool = False                # local source differs from deployed
-    needs_compile: bool = False               # deployed source not yet compiled
+    deployed_version: Optional[int] = None  # version last deployed to the lab VPS
+    deployed_at: Optional[int] = None  # unix seconds
+    compiled_version: Optional[int] = None  # version last compiled on the lab VPS
+    compiled_at: Optional[int] = None  # unix seconds
+    needs_deploy: bool = False  # local source differs from deployed
+    needs_compile: bool = False  # deployed source not yet compiled
 
 
 class StrategyFilesResponse(BaseModel):
@@ -1781,6 +1857,7 @@ class StrategyFilesResponse(BaseModel):
     nobody asked it. Returning `[]` for both is what let the Deployed tab render
     "No files deployed — drop a strategy file above" over an unreachable box.
     """
+
     files: list[StrategyFile] = []
     nt8_error: Optional[str] = None
     mt5_error: Optional[str] = None
@@ -1795,6 +1872,7 @@ class StrategyFileSyncResponse(BaseModel):
     genuinely need the agent (`file_exists_on_vps`, `in_sync`, and MT5's
     `is_compiled`) go `None`.
     """
+
     statuses: list[StrategyFileSyncStatus] = []
     nt8_error: Optional[str] = None
     mt5_error: Optional[str] = None
@@ -1802,7 +1880,7 @@ class StrategyFileSyncResponse(BaseModel):
 
 class CompileJobStatus(BaseModel):
     compile_job_id: str
-    status: str        # "running" | "success" | "failed"
+    status: str  # "running" | "success" | "failed"
     errors: list[str] = []
     warnings: list[str] = []
     started_at: Optional[float] = None
@@ -1810,6 +1888,7 @@ class CompileJobStatus(BaseModel):
 
 
 # ── News calendar (live tab) ────────────────────────────────────────────────────
+
 
 class CalendarEvent(BaseModel):
     """One economic-calendar row for the live News Calendar tab. `forecast`/`previous`/`actual` are
@@ -1822,20 +1901,22 @@ class CalendarEvent(BaseModel):
     The endpoint returns the WHOLE week unfiltered; the frontend does the currency/impact/category/day
     filtering client-side (a week is only a few hundred rows), so filter changes are instant and the
     day-summary counts stay consistent with the list."""
-    timestamp_ms: int          # event time, UTC epoch ms
-    currency: str              # ISO currency the event moves (USD/EUR/…)
-    impact: str                # "HIGH" | "MEDIUM" | "LOW" | "NONE"
+
+    timestamp_ms: int  # event time, UTC epoch ms
+    currency: str  # ISO currency the event moves (USD/EUR/…)
+    impact: str  # "HIGH" | "MEDIUM" | "LOW" | "NONE"
     title: str
     category: Optional[str] = None
     forecast: Optional[str] = None
     previous: Optional[str] = None
     actual: Optional[str] = None
-    surprise: Optional[str] = None   # "beat" | "miss" | "inline" | None
+    surprise: Optional[str] = None  # "beat" | "miss" | "inline" | None
 
 
 class CalendarResponse(BaseModel):
     """The /calendar payload: the window's events plus server time (so the frontend "now" line and
     countdown run off the server clock, not a possibly-wrong browser clock)."""
+
     events: list[CalendarEvent] = []
     server_now_ms: int
     from_ms: int
@@ -1848,4 +1929,5 @@ class CalendarCurrencies(BaseModel):
     Served so the page's currency chips are DERIVED from the backend's country list rather than
     hand-copied beside it. The two are different namespaces — TradingView is queried by bloc code
     (US/EU/GB) and answers with a currency (USD/EUR/GBP) — so only the backend can state this."""
+
     currencies: list[str] = []

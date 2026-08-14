@@ -21,14 +21,14 @@ export interface EquityPoint {
   index: number
   equity: number
   date?: string
-  entry_ms?: number | null   // trade OPEN time, UTC epoch ms — what the news filter tags against
-  exit_ms?: number | null    // trade CLOSE time — with entry_ms, gives duration over any SUBSET
+  entry_ms?: number | null // trade OPEN time, UTC epoch ms — what the news filter tags against
+  exit_ms?: number | null // trade CLOSE time — with entry_ms, gives duration over any SUBSET
   direction?: 'Long' | 'Short'
   profit?: number
   exit_name?: string
-  favorable?: number   // most this trade was ever showing in profit before it closed (≥0)
-  adverse?: number     // deepest it sat against us before it closed (≤0)
-  costs_usd?: number   // commission + swap + slippage charged to this trade (negative)
+  favorable?: number // most this trade was ever showing in profit before it closed (≥0)
+  adverse?: number // deepest it sat against us before it closed (≤0)
+  costs_usd?: number // commission + swap + slippage charged to this trade (negative)
   // The trade's result in R (P&L over the risk it was sized to). The one per-trade figure that does
   // NOT move when position size does — which is why a stack's per-leg row leads with it: a leg posts
   // the same R in a shared book as it does alone, while its dollars differ by whatever the other
@@ -43,8 +43,8 @@ export interface NewsTradeTag {
   index: number | null
   entry_ms: number | null
   in_coverage: boolean
-  in_news: boolean       // opened inside a high-impact news window — the toggle removes these
-  in_holiday: boolean    // opened on a bank holiday — always removed, not part of the toggle
+  in_news: boolean // opened inside a high-impact news window — the toggle removes these
+  in_holiday: boolean // opened on a bank holiday — always removed, not part of the toggle
   title: string | null
 }
 
@@ -57,11 +57,11 @@ export interface HistoryLimit {
   instrument: string
   runner: string
   timeframe_minutes: number
-  earliest_date: string        // 'YYYY-MM-DD' — first date with REAL bars
-  broker: string               // terminal server, e.g. 'VantageMarkets-Demo'
-  verified: string             // when the floor was last measured
-  source: string               // 'probed' | 'seed'
-  note: string                 // plain-English reason, shown under the date field
+  earliest_date: string // 'YYYY-MM-DD' — first date with REAL bars
+  broker: string // terminal server, e.g. 'VantageMarkets-Demo'
+  verified: string // when the floor was last measured
+  source: string // 'probed' | 'seed'
+  note: string // plain-English reason, shown under the date field
 }
 
 /** A broker account's MEASURED cost facts, served by `GET /backtests/broker-profiles`.
@@ -69,9 +69,9 @@ export interface HistoryLimit {
  *  runner bills from, which is what stops the page and the charge disagreeing. */
 export interface BrokerProfile {
   id: string
-  spread: number                     // price units, BAR MODE only (tick mode has the real book)
+  spread: number // price units, BAR MODE only (tick mode has the real book)
   commission_per_side_per_lot: number
-  swap_long_points: number | null    // null = this profile prices no overnight financing
+  swap_long_points: number | null // null = this profile prices no overnight financing
   swap_short_points: number | null
   contract_size: number
 }
@@ -82,7 +82,7 @@ export interface RepricedPoint {
   equity: number
   profit: number
   r: number
-  r_before: number                   // the R the run stored, before this charge
+  r_before: number // the R the run stored, before this charge
   cost_usd: number
 }
 
@@ -102,7 +102,7 @@ export interface RunRepriceReport {
   is_exact: boolean
   derived_basis: boolean
   approximate_layers: CostLayer[]
-  needs_rerun: CostLayer[]           // asked for but un-repriceable — say so, never drop silently
+  needs_rerun: CostLayer[] // asked for but un-repriceable — say so, never drop silently
   /** Layers the RUN ITSELF charged at replay time. Already baked into the stored trades, so
    *  re-pricing one on top would bill it twice; the server drops them from `layers` and the pill
    *  shows them as already-on. There is no way to charge one OFF from here — that is a re-run. */
@@ -120,8 +120,8 @@ export interface RunRepriceReport {
 }
 
 export interface RunNewsReport {
-  has_data: boolean                  // false when the calendar cache is empty → filter inert
-  coverage_start_ms: number | null   // earliest ms with news data — the "news starts here" boundary
+  has_data: boolean // false when the calendar cache is empty → filter inert
+  coverage_start_ms: number | null // earliest ms with news data — the "news starts here" boundary
   coverage_end_ms: number | null
   pre_minutes: number
   post_minutes: number
@@ -222,7 +222,7 @@ export interface Candidate {
   // leaderboard stats (real values from exchange)
   account_value: number | null
   all_time_pnl: number | null
-  all_time_roi: number | null     // fractional, e.g. 3.9 = 390%
+  all_time_roi: number | null // fractional, e.g. 3.9 = 390%
   month_roi: number | null
   week_roi: number | null
   // pnl from our fill analysis window
@@ -248,8 +248,8 @@ export interface Candidate {
 }
 
 export interface ScanEntry {
-  a: string   // wallet address
-  s: string   // "pass" | "fail"
+  a: string // wallet address
+  s: string // "pass" | "fail"
 }
 
 export interface RunProgress {
@@ -566,26 +566,28 @@ export interface BotCodeChange {
   commit: string
   subject: string
   date: string
-  areas: string[]          // which of the bot's trees it touched — NOT a claim about trades
+  areas: string[] // which of the bot's trees it touched — NOT a claim about trades
 }
 
 export interface BotSettingChange {
   name: string
-  label: string            // the STRATEGY's own wording, from its meta file — never ours
+  label: string // the STRATEGY's own wording, from its meta file — never ours
   group: string
   desc: string
-  is_new: boolean          // the deployed version had no such setting at all
-  was: string              // empty exactly when `is_new` — not "Off", which is a value
+  is_new: boolean // the deployed version had no such setting at all
+  was: string // empty exactly when `is_new` — not "Off", which is a value
   now: string
-  stated: boolean          // the bot's config pins it, so a promote will NOT move it
+  stated: boolean // the bot's config pins it, so a promote will NOT move it
 }
 
 /** How far the deployment is behind the code the backtester runs.
  *
- *  `strategy_version` on the card below is DEAD — nothing writes it, so it read v0 before a
- *  promote and v0 after. These numbers are the real ones: a version is the count of commits
- *  that have touched this bot's trees, so subtracting two of them IS the work waiting to go
- *  out. `comparable` false means the question could not be answered (never promoted, commit
+ *  `strategy_version` on the card below was DEAD until 2026-08-14 — declared, defaulted to 0
+ *  and never assigned, so it read v0 before a promote and v0 after; `promote.py` stamps it now
+ *  and `null` means a deployment made before the stamp existed. These numbers are still the
+ *  ones this banner renders, because they can answer for such a deployment. A version is the
+ *  count of commits that have touched this bot's trees, so subtracting two of them IS the work
+ *  waiting to go out. `comparable` false means the question could not be answered (never promoted, commit
  *  not fetched, no git) and carries a plain-English `reason` — render that, never a zero.
  */
 export interface BotVersionCompare {
@@ -604,20 +606,22 @@ export interface BotVersionCompare {
 }
 
 export interface BotDeployedVersion {
-  frozen: boolean          // false = unpromoted, still importing from the repo tree
+  frozen: boolean // false = unpromoted, still importing from the repo tree
   hash: string
-  commit: string           // the commit the snapshot was taken from
+  commit: string // the commit the snapshot was taken from
   promoted_at: string
   strategy_package: string
   strategy_class: string
-  strategy_version: number
+  /** Stamped at promote time since 2026-08-14. `null` = a deployment made before the stamp,
+   *  or a count the VPS could not take. Never 0-for-unknown. */
+  strategy_version: number | null
   files: number
-  params: Record<string, unknown>   // the parameters AS DEPLOYED
-  repo_commit: string      // what the VPS working tree is on now
-  commits_ahead: number    // how far the repo has moved past the deployment
-  snapshot_ok: boolean     // the snapshot still hashes to its record
-  running_hash: string     // what the live PROCESS reports — may lag after a promote
-  params_drift: string[]   // settings config.json now states differently
+  params: Record<string, unknown> // the parameters AS DEPLOYED
+  repo_commit: string // what the VPS working tree is on now
+  commits_ahead: number // how far the repo has moved past the deployment
+  snapshot_ok: boolean // the snapshot still hashes to its record
+  running_hash: string // what the live PROCESS reports — may lag after a promote
+  params_drift: string[] // settings config.json now states differently
   compare: BotVersionCompare | null
 }
 
@@ -648,16 +652,16 @@ export interface ParamSchemaEntry {
   // From the companion meta.json. Wins over `widget`.
   choices?: string[]
   // Editor metadata overlaid from a strategy's companion <Strategy>.meta.json (optional).
-  label?: string            // friendly label, preferred over display_name
-  desc?: string             // plain-English explanation for the explainer panel
-  unit?: string             // e.g. "× ATR", "pips", "R"
-  core?: boolean            // essential knob — shown in the Essentials card up front
+  label?: string // friendly label, preferred over display_name
+  desc?: string // plain-English explanation for the explainer panel
+  unit?: string // e.g. "× ATR", "pips", "R"
+  core?: boolean // essential knob — shown in the Essentials card up front
   widget?: 'toggle' | 'switch' | 'time' | 'number' | 'text'
-  options?: { off: string; on: string }   // labels for a bool rendered as a segmented toggle
+  options?: { off: string; on: string } // labels for a bool rendered as a segmented toggle
   // show only when another param equals a value — or, with an array, equals ANY of them
   show_if?: Record<string, string | number | boolean | Array<string | number | boolean>>
-  guide?: [string, string]  // [what lowering does, what raising does]
-  step?: number             // input step
+  guide?: [string, string] // [what lowering does, what raising does]
+  step?: number // input step
 }
 
 export interface Strategy {
@@ -676,7 +680,7 @@ export interface Strategy {
   // Strategy-level narrative overlaid from <Strategy>.meta.json (optional).
   edge?: string | null
   steps?: StrategyStep[]
-  avoid_news?: boolean   // News toggle starts on "Removed" when true (strategy avoids high-impact news)
+  avoid_news?: boolean // News toggle starts on "Removed" when true (strategy avoids high-impact news)
   // True = the strategy sizes its own trades off its own risk % param, so the sizing engine
   // must not re-size it and SIZING MODE is hidden (there is nothing to choose).
   self_sizing?: boolean
@@ -691,9 +695,9 @@ export interface Strategy {
 }
 
 export interface StrategyStep {
-  label?: string    // e.g. "01 · Asian"
-  title: string     // e.g. "Measure the range"
-  detail?: string   // one-line explanation
+  label?: string // e.g. "01 · Asian"
+  title: string // e.g. "Measure the range"
+  detail?: string // one-line explanation
 }
 
 export interface ScanResult {
@@ -701,13 +705,13 @@ export interface ScanResult {
   added: number
   updated: number
   skipped: number
-  orphans: string[]   // DB strategies whose source file is gone from the repo
+  orphans: string[] // DB strategies whose source file is gone from the repo
   warnings: string[]
 }
 
 export interface ReconcileResult {
-  removed: string[]   // orphaned strategies removed from DB + VPS
-  warnings: string[]  // per-strategy notes (e.g. VPS file could not be deleted)
+  removed: string[] // orphaned strategies removed from DB + VPS
+  warnings: string[] // per-strategy notes (e.g. VPS file could not be deleted)
 }
 
 export interface DeployJobStatus {
@@ -757,7 +761,7 @@ export interface Ruleset {
   default_commission_per_side: number | null
   default_slippage_ticks: number | null
   daily_halt_fraction: number | null
-  market: string    // "futures" | "forex"
+  market: string // "futures" | "forex"
   drawdown_unit: string
   // Personal fail conditions (personal/demo rows; null on prop rows)
   max_drawdown_from_peak_pct: number | null
@@ -797,7 +801,7 @@ export interface BacktestRunRequest {
   evaluate_rulesets: string[]
   source_run_id?: string | null
   sizing_mode?: SizingMode
-  manual_risk_pct?: number | null   // required when sizing_mode === 'manual'
+  manual_risk_pct?: number | null // required when sizing_mode === 'manual'
 }
 
 /** Which costs a python run charges. Empty = free, and that is the DEFAULT: the baseline run
@@ -881,7 +885,7 @@ export interface EvaluationDetail {
   avg_loss: number | null
   daily_pnl: DailyPnlPoint[]
   sized_timeline: SizedTimelineDay[]
-  equity_curve: EquityPoint[]              // sized trade-by-trade curve (drawdown, long/short, calmar…)
+  equity_curve: EquityPoint[] // sized trade-by-trade curve (drawdown, long/short, calmar…)
 }
 
 export interface DailyPnlPoint {
@@ -927,13 +931,13 @@ export interface BacktestDetail {
   win_rate: number | null
   win_count: number | null
   trade_count: number | null
-  sharpe: number | null               // canonical daily-√252 Sharpe
-  platform_sharpe: number | null      // NT8/MT5's own reported Sharpe (reference)
-  sharpe_low_sample: boolean          // < 10 trading days — daily Sharpe is noisy
-  profit_concentration_pct: number | null  // backend-persisted; frontend prefers it when present
-  max_drawdown_pct: number | null          // worst drop as % of the peak it fell from
-  scratch_count: number | null             // trades under 15% of the run's median full loss
-  trade_concentration_pct: number | null   // top-5 winners' share of gross profit
+  sharpe: number | null // canonical daily-√252 Sharpe
+  platform_sharpe: number | null // NT8/MT5's own reported Sharpe (reference)
+  sharpe_low_sample: boolean // < 10 trading days — daily Sharpe is noisy
+  profit_concentration_pct: number | null // backend-persisted; frontend prefers it when present
+  max_drawdown_pct: number | null // worst drop as % of the peak it fell from
+  scratch_count: number | null // trades under 15% of the run's median full loss
+  trade_concentration_pct: number | null // top-5 winners' share of gross profit
   sortino: number | null
   cagr: number | null
   avg_win: number | null
@@ -954,10 +958,10 @@ export interface BacktestDetail {
   optimization_id: string | null
   source_run_id: string | null
   runner: string
-  sizing_mode: SizingMode              // engine sizing mode this run used
-  manual_risk_pct?: number | null      // the risk % used, when sizing_mode === 'manual'
-  sized: boolean                          // true once the engine sized the run (reshaped strategy emitted engine_trades)
-  sized_timeline: SizedTimelineDay[]      // the engine's day-by-day record (sized runs only)
+  sizing_mode: SizingMode // engine sizing mode this run used
+  manual_risk_pct?: number | null // the risk % used, when sizing_mode === 'manual'
+  sized: boolean // true once the engine sized the run (reshaped strategy emitted engine_trades)
+  sized_timeline: SizedTimelineDay[] // the engine's day-by-day record (sized runs only)
 }
 
 // ── Lab — Progress + System Health ───────────────────────────────────────────
@@ -979,10 +983,10 @@ export interface LabProgress {
 
 export interface SystemHealth {
   backend: boolean
-  ssh_tunnel: boolean       // both LocalForwards are bound — the TUNNEL, not a fresh ssh connection
-  vps_reachable: boolean    // the VPS answers SSH at all — tells a dead tunnel from a dead network
-  nt8_agent: boolean   // NT8 agent (port 8765)
-  mt5_agent: boolean   // MT5 agent (port 8766)
+  ssh_tunnel: boolean // both LocalForwards are bound — the TUNNEL, not a fresh ssh connection
+  vps_reachable: boolean // the VPS answers SSH at all — tells a dead tunnel from a dead network
+  nt8_agent: boolean // NT8 agent (port 8765)
+  mt5_agent: boolean // MT5 agent (port 8766)
   // MT5 TERMINAL state. null = the agent could not be asked — NOT "disconnected".
   mt5_connected: boolean | null
   mt5_server: string | null
@@ -1311,7 +1315,7 @@ export interface StackSummary {
   // By ID, so a strategy page can find the stacks it is in without matching a display name.
   strategy_ids: string[]
   mode: StackMode
-  risk_cap_pct: number | null   // null on a screen — there is no account to cap
+  risk_cap_pct: number | null // null on a screen — there is no account to cap
   // The portfolio's own result — the sum of the legs', which is the same arithmetic the detail
   // page's Made hero uses. `null` = nothing has finished, never 0. It covers only the COMPLETED
   // legs, so on a partial stack it is a running total and the row's progress column says so.
@@ -1376,7 +1380,7 @@ export interface StackDetail {
 export interface StackContentionEvent {
   leg: string
   time: number | null
-  blocked: boolean          // false = shrunk to fit, true = refused outright
+  blocked: boolean // false = shrunk to fit, true = refused outright
   desired_risk: number
   granted_risk: number
 }
@@ -1434,7 +1438,7 @@ export interface StackChartLayer {
 // strategies and tints each by its equity-chart colour before handing the spec to ChartPanel.
 export interface StackChartSpec extends ChartSpec {
   layers: StackChartLayer[]
-  base_run_id: string | null   // the leg whose feed backs the shared candles — drives drill-down
+  base_run_id: string | null // the leg whose feed backs the shared candles — drives drill-down
 }
 
 // ── Lab — Optimizations ───────────────────────────────────────────────────────
@@ -1503,7 +1507,10 @@ export interface OptimizationDetail extends OptimizationSummary {
   cost_layers: CostLayer[] | null
   broker_profile: string | null
   min_trades: number
-  grid_sensitivity_summary: Record<string, Partial<Record<'up' | 'down', GridSensitivityNeighbor>>> | null
+  grid_sensitivity_summary: Record<
+    string,
+    Partial<Record<'up' | 'down', GridSensitivityNeighbor>>
+  > | null
 }
 
 // ── Lab — Instrument Summary ──────────────────────────────────────────────────
@@ -1612,20 +1619,20 @@ export type Impact = 'HIGH' | 'MEDIUM' | 'LOW' | 'NONE'
 export type Surprise = 'beat' | 'miss' | 'inline'
 
 export interface CalendarEvent {
-  timestamp_ms: number       // event time, UTC epoch ms
-  currency: string           // ISO currency the event moves (USD/EUR/…)
+  timestamp_ms: number // event time, UTC epoch ms
+  currency: string // ISO currency the event moves (USD/EUR/…)
   impact: Impact
   title: string
-  category: string | null    // grouping label (Labor, Prices, …) for the categories dropdown
+  category: string | null // grouping label (Labor, Prices, …) for the categories dropdown
   forecast: string | null
   previous: string | null
   actual: string | null
-  surprise: Surprise | null  // backend's beat/miss call once actual is out
+  surprise: Surprise | null // backend's beat/miss call once actual is out
 }
 
 export interface CalendarResponse {
   events: CalendarEvent[]
-  server_now_ms: number      // drive the "now" line + countdown off server time, not the browser clock
+  server_now_ms: number // drive the "now" line + countdown off server time, not the browser clock
   from_ms: number
   to_ms: number
 }

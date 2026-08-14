@@ -772,6 +772,44 @@ subsystem, and it went unnoticed for a day. ⚠ **A roster stated once per file 
 N times across the repo: when you delete a strategy, grep the CLASS NAME, not the package
 path.**
 
+🔴 **It went stale a THIRD time on 2026-08-14, and grepping the class name would NOT have caught
+this one.** `strategies/python/mpc_realign` landed 2026-08-13 (`e87c304`) without its roster line,
+and **`MpcRealignStrategy` SUBCLASSES `MpcSosFadeStrategy`** — so a grep for the base class finds
+the file and tells you nothing. **Grep for `LAB_STRATEGY`, which is what the scanner actually
+reads.** Same three tests red, same single cause.
+
+## Three tests that were red on main, and none of them was wrong about the code (2026-08-14)
+
+Found by the formatting/linting pass, which needed a green baseline before it could gate anything.
+Two are the same defect in different files — **a measured number COPIED into a second place** — and
+the third is worse than a stale value.
+
+- **`test_python_runner.py` hardcoded a spread of `0.33`.** The owner of that number is
+  `backtest/fills.py`, `b03aacd` re-measured PU Prime Standard to **0.32** over 1,893,438 ticks on
+  2026-08-10, and this copy had been red since. It now READS `PROFILES["puprime_standard"].spread`
+  and asserts the picked broker differs from the default — the half that can still go red for a real
+  reason (a `broker_profile` nothing consumes). The identical stale `0.33` was also in
+  `services/python_runner.py`'s own docstring and went with it.
+- 🔴 **`test_deploy_commit_gate.py` depended on whether the developer happened to have files
+  staged.** `_run_hook` ran the real `commit-msg` against the AMBIENT index, and that hook exits 0
+  at `[ -z "$STAGED" ] && exit 0` **before** reaching the DOCS parser — so with a clean index the
+  "the hook must refuse a short reason" test got exit 0 for a reason unrelated to its subject, and
+  with real code staged the sibling test would fail on the PAIRING rule instead. ⚠ **Its docstring
+  positively asserted the opposite** (*"it exercises the DOCS-line parser rather than the pairing
+  rule"*) — a claim about another program's control flow that nothing checked, which is this
+  backend's most-repeated defect wearing test clothes.
+
+  **The probe now builds a SCRATCH index** — `GIT_INDEX_FILE` + `read-tree HEAD` + `update-index
+  --force-remove` one instance config — so the staged set is exactly one path, the real index is
+  never touched, and **no git object is written** (`--force-remove` stages a deletion; staging a
+  modification would need a blob in `.git/objects` for a test that claims to commit nothing).
+  ⚠ **The instance config is chosen deliberately**: `needs_proof` does not match it, so the hook
+  reaches the DOCS parser rather than stopping one branch earlier on the money-path evidence rule.
+  ⚠ **`_seed_probe_index` is shared by the helper AND its non-vacuity test.** The first version gave
+  each its own copy of the two git calls, so the guard restated the thing it guarded and could not
+  fail when it broke — dropping `--force-remove` now turns both red together, which was run and
+  watched.
+
 ## Stress tests — the 2026-08-05 audit
 
 **Read this before touching `services/stress_tester.py`, `services/grading.py` or the stress-test
@@ -1229,6 +1267,52 @@ reading. ⚠ **`versions_behind` is deliberately unchanged**: it answers *how fa
 and folding the unpushed count into it would make a true number silently mean something else. This
 is `uncommitted_edits` one step further out — **the working tree is not HEAD, and HEAD is not what
 the VPS can reach.**
+
+### A deploy's three messages are a THREAD, rooted here (2026-08-14)
+
+A promote produces STOPPED, PROMOTED and ONLINE — **this router sends the middle one and the bot
+on the VPS sends the other two**, so they read as three unrelated events. `_notify_telegram` now
+returns Telegram's message id (via the new `services/notify.send_telegram_id`), and
+`_set_alert_thread` writes it into `<instance>/alert_thread.json` with a 15-minute expiry. The
+bot replies to it; the rules that keep a stale id from mis-parenting future messages live in
+`algos/CLAUDE.md`, next to the code that reads the file.
+
+⚠ **The root is sent BEFORE `_kill_bot`, and that ordering is the feature** — the bot writes
+STOPPED seconds later, and a root sent after it is not the root of anything. Nothing was lost by
+moving it: `restarted` was never a measurement (it was `ok and req.restart`, set unconditionally
+after the kill), so the wording now states the INTENT and the replies report the outcome.
+
+⚠ **`_set_alert_thread` NEVER raises and never blocks the promote.** A deploy that failed because
+a Telegram convenience could not be written would be a spectacularly bad trade; the worst case is
+two unthreaded messages, which is every deploy before this. It also writes **nothing** for a
+message id of `0` or `None` — `send_telegram_id` answers 0 for *delivered but the id was
+unreadable*, and writing that asks the bot to reply to message zero.
+
+⚠ **The payload travels over STDIN, not argv** — it is JSON, and `^`-escaping braces through cmd
+is the kind of quoting that works until a value changes shape. Same shape as
+`_write_account_password`, minus the confirmation marker, because this write is allowed to fail.
+
+⚠ **`test_notification_routing.py`'s sweep now matches `send_telegram_id` too.** A pattern naming
+only the wrapper would let a new call site aim at the trades room unseen — **a sweep that
+silently stops covering a function is worse than no sweep, because green reads as checked.**
+
+### The PROMOTED alert now names the versions it moved between (2026-08-14)
+
+🔴 It said only *"It is now running the code that was just deployed"* — a sentence a reader cannot
+check against anything, about the one action in this router that changes what a live account
+trades. Aaron: *"The prompted message should say the version of the bot that was promoted from and
+to."*
+
+`promote.py` prints `##VERSIONS <from> <to>`; `_run_promote` parses it, STRIPS it from the output
+the panel renders, and returns it as a third value. ⚠ **The "from" is read off the PREVIOUS
+`deployed.json`, not off `HEAD~1`** — a bot three deployments behind must not be described as one
+behind. ⚠ **A malformed or absent marker is `(None, None)`, never half-read**: taking the first
+number off a broken line is how a message comes to name a version nobody measured, and an older
+`promote.py` on the VPS prints no marker at all, which must degrade to the sentence rather than
+inventing a version. ⚠ **`_vlabel` renders an unknown `v?`, never `v0`** — 0 is a version somebody
+could be on, and it is the exact value that misreported `strategy_version` for its whole life
+(see `algos/CLAUDE.md`). ⚠ **A FAILED promote sends no alert at all**, so no version pair can
+describe a move that did not happen.
 
 ### The settings that change without anyone asking
 

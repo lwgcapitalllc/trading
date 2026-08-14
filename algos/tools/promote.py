@@ -43,6 +43,7 @@ import sys
 import textwrap
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parent.parent
@@ -52,10 +53,14 @@ for _p in (str(_REPO / "algos" / "live"),):
 
 import live_config  # noqa: E402
 from live_config import deployed_record  # noqa: E402
-from version import deployment_hash, current_commit  # noqa: E402
+from version import current_commit, deployment_hash  # noqa: E402
 
 # Directory names never copied into a snapshot, at any depth.
 SKIP_DIRS = {"tests", "__pycache__", ".pytest_cache", ".git"}
+
+# Machine-readable "which versions did this move between", for a caller that has to report
+# it. Kept out of the prose lines so rewording one cannot break the other.
+_VERSION_MARK = "##VERSIONS"
 
 
 def _tree_sources(root: Path):
@@ -85,9 +90,63 @@ def repo_trees(cfg) -> list[tuple[Path, Path]]:
 def dirty_paths(trees) -> list[str]:
     """Tracked files with uncommitted edits inside the trees being promoted."""
     rels = [str(dest).replace("\\", "/") for _, dest in trees]
-    out = subprocess.run(["git", "-C", str(_REPO), "status", "--porcelain", "--", *rels],
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        ["git", "-C", str(_REPO), "status", "--porcelain", "--", *rels],
+        capture_output=True,
+        text=True,
+    )
     return [ln[3:].strip() for ln in out.stdout.splitlines() if ln.strip()]
+
+
+def version_at(commit: str, trees) -> Optional[int]:
+    """How many commits up to `commit` have touched the trees being promoted.
+
+    🔴 **This is the number the bot reports, and until 2026-08-14 it reported `v0`.**
+    `LiveConfig.strategy_version` was an int defaulting to 0 that NOTHING assigned — so the
+    ONLINE banner read `v0 (e4137dbb)` on every bot, on every start, for ever. A field that is
+    declared and never written is indistinguishable from a measurement, which is the defect
+    this repo has now met in `running=False`, in `is_compiled`, and here.
+
+    **A version is the count of commits touching THIS BOT'S TREES**, so it moves when — and
+    only when — the code this bot runs moves, and subtracting two of them is the work between
+    two deployments. It is derived from `repo_trees`, the same function that decides what is
+    COPIED, so a tree that is promoted is a tree that is counted; a second roster here is how
+    a change deploys while the number says nothing happened.
+
+    ⚠ **`None`, never 0.** 0 is a real version (a tree with no history yet) and is also the
+    value that has been lying on this field since it was declared. An unfetched commit, a
+    checkout that is not a git repo, a `rev-list` that fails — every one of those is *cannot
+    say*, and the bot renders it `v?`.
+
+    ⚠ **`command-center/backend/services/bot_versions.version_at` runs the SAME command over
+    the SAME trees**, so the two agree by construction rather than by being kept in step.
+    They are one definition evaluated in two places, and the difference is WHEN: this one is
+    stamped at the moment the promote is true, which is what lets the bot — with no git and no
+    backend — state its own version.
+    """
+    if not commit or not trees:
+        return None
+    rels = [str(dest).replace("\\", "/") for _, dest in trees]
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_REPO), "rev-list", "--count", commit, "--", *rels],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        return int(out.stdout.strip())
+    except ValueError:
+        return None
+
+
+def vlabel(n: Optional[int]) -> str:
+    """`v165`, or `v?` for a version nobody could count. Never `v0` for an unknown."""
+    return "v?" if n is None else f"v{n}"
 
 
 def stage(cfg, trees, dry_run: bool = False) -> tuple[Path, int]:
@@ -100,9 +159,11 @@ def stage(cfg, trees, dry_run: bool = False) -> tuple[Path, int]:
     tell you the new version is broken.
     """
     staging = cfg.deployed_dir.with_name("deployed.new")
-    files = [(src_file, dest_rel / rel)
-             for src_tree, dest_rel in trees
-             for src_file, rel in _tree_sources(src_tree)]
+    files = [
+        (src_file, dest_rel / rel)
+        for src_tree, dest_rel in trees
+        for src_file, rel in _tree_sources(src_tree)
+    ]
     if dry_run:
         return staging, len(files)
 
@@ -176,15 +237,18 @@ def verify(cfg, root: Path) -> tuple[bool, str]:
         }}
         print("@@" + json.dumps(defaulted))
     """)
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                         cwd=str(root))
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, cwd=str(root)
+    )
     if out.returncode != 0:
         return False, (out.stderr or out.stdout).strip()
     marker = [ln for ln in out.stdout.splitlines() if ln.startswith("@@")]
     return True, marker[0][2:] if marker else "{}"
 
 
-def write_pin(cfg, hash_: str, commit: str, when: str, files: int) -> None:
+def write_pin(
+    cfg, hash_: str, commit: str, when: str, files: int, version: Optional[int] = None
+) -> None:
     """Record what was deployed, in `deployed.json` beside the snapshot.
 
     **Not into `config.json`, and the reason is practical.** Promoting happens ON THE VPS,
@@ -208,16 +272,25 @@ def write_pin(cfg, hash_: str, commit: str, when: str, files: int) -> None:
     that version ran" answerable later.
     """
     (cfg.instance_dir / "deployed.json").write_text(
-        json.dumps({
-            "strategy_source_hash": hash_,
-            "promoted_commit": commit,
-            "promoted_at": when,
-            "strategy_package": cfg.strategy_package,
-            "strategy_class": cfg.strategy_class,
-            "strategy_version": cfg.strategy_version,
-            "strategy_params": cfg.strategy_params,
-            "files": files,
-        }, indent=2) + "\n", encoding="utf-8")
+        json.dumps(
+            {
+                "strategy_source_hash": hash_,
+                "promoted_commit": commit,
+                "promoted_at": when,
+                "strategy_package": cfg.strategy_package,
+                "strategy_class": cfg.strategy_class,
+                # MEASURED here, not carried from `config.json` — that copy is an int defaulting
+                # to 0 that nothing has ever assigned, which is why every bot reported `v0`. See
+                # `version_at`. `None` is written as JSON null and reads back as *cannot say*.
+                "strategy_version": version,
+                "strategy_params": cfg.strategy_params,
+                "files": files,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def show(cfg) -> int:
@@ -225,7 +298,7 @@ def show(cfg) -> int:
     print(f"  frozen   : {'yes' if cfg.is_frozen else 'NO — importing from the repo tree'}")
     print(f"  pinned   : {cfg.strategy_source_hash or '(unpinned)'}")
     print(f"  promoted : {cfg.promoted_commit or '?'} on {cfg.promoted_at or '?'}")
-    print(f"  version  : v{cfg.strategy_version}")
+    print(f"  version  : {vlabel(cfg.strategy_version)}")
     if cfg.is_frozen:
         actual = deployment_hash(cfg.source_roots)
         match = actual == cfg.strategy_source_hash
@@ -248,10 +321,14 @@ def main(argv=None) -> int:
     ap.add_argument("--bot", required=True)
     ap.add_argument("--dry-run", action="store_true", help="report, copy nothing")
     ap.add_argument("--show", action="store_true", help="print what is deployed and exit")
-    ap.add_argument("--allow-dirty", action="store_true",
-                    help="promote uncommitted edits (the recorded commit will not describe them)")
-    ap.add_argument("--no-verify", action="store_true",
-                    help="skip the post-copy import check (not recommended)")
+    ap.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="promote uncommitted edits (the recorded commit will not describe them)",
+    )
+    ap.add_argument(
+        "--no-verify", action="store_true", help="skip the post-copy import check (not recommended)"
+    )
     args = ap.parse_args(argv)
 
     cfg = live_config.load(args.bot)
@@ -271,8 +348,10 @@ def main(argv=None) -> int:
             print(f"    {d}")
         if len(dirty) > 10:
             print(f"    … and {len(dirty) - 10} more")
-        print("Commit them, or pass --allow-dirty and accept that promoted_commit will not "
-              "describe what was copied.")
+        print(
+            "Commit them, or pass --allow-dirty and accept that promoted_commit will not "
+            "describe what was copied."
+        )
         return 1
 
     commit = current_commit(_REPO)
@@ -302,8 +381,10 @@ def main(argv=None) -> int:
             # Settings this version has that the deployment does not state. They take the
             # strategy's own defaults, which is how a new version quietly changes behaviour —
             # so it is named here, at the moment you can still decide about it.
-            print(f"  ! {len(defaulted)} setting(s) not stated in config.json, taking this "
-                  f"version's defaults:")
+            print(
+                f"  ! {len(defaulted)} setting(s) not stated in config.json, taking this "
+                f"version's defaults:"
+            )
             for name, val in sorted(defaulted.items()):
                 print(f"      {name} = {val}")
             print("    Add them to strategy_params to state them deliberately.")
@@ -315,6 +396,25 @@ def main(argv=None) -> int:
     elif old_hash:
         print(f"  code changes: {old_hash[:12]} -> {new_hash[:12]}")
 
+    # The version this promote MOVES FROM and TO, printed on the dry run as well — it is one
+    # of the two questions a preview exists to answer, and it is the one a reader can act on
+    # without knowing what a commit hash means.
+    #
+    # ⚠ `was` is read from the PREVIOUS `deployed.json`, so the "from" is the commit that is
+    # actually running, never `HEAD~1` or whatever the repo happens to hold. A bot three
+    # deployments behind must not be described as one behind.
+    from_version = version_at(was.get("promoted_commit", "") or "", trees)
+    to_version = version_at(commit or "", trees)
+    print(f"  version  : {vlabel(from_version)} -> {vlabel(to_version)}")
+    # A machine-readable line for the caller that has to put those two numbers in a message.
+    # Parsed and STRIPPED by `command-center/backend/routers/bots.py::_run_promote`, the same
+    # way its OK/FAIL markers are — a caller scraping the prose line above would break the
+    # first time somebody rewords it.
+    print(
+        f"{_VERSION_MARK} {from_version if from_version is not None else '?'} "
+        f"{to_version if to_version is not None else '?'}"
+    )
+
     if args.dry_run:
         shutil.rmtree(staging, ignore_errors=True)
         print("  dry run — nothing was deployed, the running bot is untouched.")
@@ -324,8 +424,8 @@ def main(argv=None) -> int:
 
     hash_ = deployment_hash(cfg.source_roots)
     when = date.today().isoformat()
-    write_pin(cfg, hash_, commit, when, n)
-    print(f"  pinned {hash_} ({commit or '?'}, {when})")
+    write_pin(cfg, hash_, commit, when, n, version=to_version)
+    print(f"  pinned {hash_} ({commit or '?'}, {when}) as {vlabel(to_version)}")
     print("  restart the bot to run it — a promote never touches a running process.")
     return 0
 

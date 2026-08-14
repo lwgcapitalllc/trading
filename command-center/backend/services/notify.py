@@ -38,7 +38,7 @@ def _creds() -> dict:
         try:
             _cache = json.loads(Path(_CREDS_PATH).read_text(encoding="utf-8"))
         except Exception:
-            _cache = {}     # absent is normal on a fresh clone — the caller no-ops
+            _cache = {}  # absent is normal on a fresh clone — the caller no-ops
     return _cache
 
 
@@ -64,7 +64,7 @@ TRADE = "trade"
 HEALTH = "health"
 
 CHAT_KEYS = {
-    TRADE:  ("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID"),
+    TRADE: ("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID"),
     HEALTH: ("telegram_health_chat", "LWG_TELEGRAM_HEALTH_CHAT"),
 }
 
@@ -75,8 +75,9 @@ def chat_for(kind: str) -> str:
     """The chat a message of this `kind` goes to. HEALTH falls back to the TRADE chat and says
     so once — the wrong room beats no delivery, which is the same call the algos side makes."""
     if kind not in CHAT_KEYS:
-        raise ValueError(f"unknown notification kind {kind!r} - expected one of "
-                         f"{sorted(CHAT_KEYS)}")
+        raise ValueError(
+            f"unknown notification kind {kind!r} - expected one of {sorted(CHAT_KEYS)}"
+        )
     dest = _cred(*CHAT_KEYS[kind])
     if dest:
         return dest
@@ -84,8 +85,10 @@ def chat_for(kind: str) -> str:
         fallback = _cred(*CHAT_KEYS[TRADE])
         if fallback and kind not in _warned_kinds:
             _warned_kinds.add(kind)
-            print(f"notify: {CHAT_KEYS[kind][0]} is not set - {kind} messages are going to the "
-                  f"main group. Set it in algos/credentials.json to split them out.")
+            print(
+                f"notify: {CHAT_KEYS[kind][0]} is not set - {kind} messages are going to the "
+                f"main group. Set it in algos/credentials.json to split them out."
+            )
         return fallback
     return ""
 
@@ -93,13 +96,18 @@ def chat_for(kind: str) -> str:
 def telegram_configured() -> bool:
     """True when a token and a destination both resolve. Useful for a health check that wants
     to say "notifications are off" instead of silently dropping them."""
-    return bool(_cred("telegram_token", "LWG_TELEGRAM_TOKEN")
-                and _cred("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID"))
+    return bool(
+        _cred("telegram_token", "LWG_TELEGRAM_TOKEN")
+        and _cred("telegram_chat_id", "LWG_TELEGRAM_CHAT_ID")
+    )
 
 
 def send_telegram(text: str, kind: str, chat_id: str = "") -> bool:
     """Best-effort send. Returns True on success, and NEVER raises — a notification failure
     must not turn a working endpoint into a 500.
+
+    Use `send_telegram_id` when the message id is needed; this wrapper exists so the many
+    callers that only care whether it went keep reading cleanly.
 
     Falls back to UNFORMATTED text when Telegram rejects the Markdown. Formatting is a nicety;
     delivery is the point. A single underscore in a strategy name, a symbol or a file path
@@ -107,39 +115,62 @@ def send_telegram(text: str, kind: str, chat_id: str = "") -> bool:
     refuses the whole message — so the alert most likely to be lost is the one carrying an error,
     because error text is full of paths. Measured on the VPS side's first real send, 2026-07-31.
     """
+    return send_telegram_id(text, kind, chat_id) is not None
+
+
+def send_telegram_id(text: str, kind: str, chat_id: str = "", reply_to=None):
+    """The same send, returning Telegram's `message_id` (or None on failure).
+
+    The id is what lets a LATER message reply to this one, which is how a deploy's STOPPED and
+    ONLINE land under the PROMOTED that caused them instead of loose in the feed. Mirrors
+    `algos/shared/notify.py::send_telegram_id`, which the bot on the VPS uses for the same
+    reason — the two are the same shape on purpose, because they thread into each other.
+
+    ⚠ **0 is returned for DELIVERED-BUT-UNREADABLE.** The send is what matters; a thread root
+    nobody can name is a missing reply, not a missing message, and returning None there would
+    read as a failure and invite a caller to send it twice.
+
+    ⚠ `reply_to` is BEST EFFORT: Telegram refuses the whole send when the message being replied
+    to has been deleted, and a missing thread link is never a reason to lose an alert. This side
+    only ever ROOTS a thread, so it does not retry standalone; the bot's copy does.
+    """
     token = _cred("telegram_token", "LWG_TELEGRAM_TOKEN")
     dest = chat_id or chat_for(kind)
     if not token or not dest:
-        return False
+        return None
 
-    def _post(parse_mode) -> None:
+    def _post(parse_mode):
         body = {"chat_id": dest, "text": text}
         if parse_mode:
             body["parse_mode"] = parse_mode
+        if reply_to:
+            body["reply_to_message_id"] = reply_to
         req = urllib.request.Request(
             f"https://api.telegram.org/bot{token}/sendMessage",
             data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=_TIMEOUT).close()
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+            try:
+                return json.loads(r.read().decode()).get("result", {}).get("message_id")
+            except Exception:
+                return 0
 
     try:
-        _post("Markdown")
-        return True
+        return _post("Markdown")
     except urllib.error.HTTPError as e:
         if e.code != 400:
-            return False
+            return None
         try:
             detail = e.read().decode("utf-8", "replace")
         except Exception:
             detail = ""
         if "parse entities" not in detail:
-            return False
+            return None
     except Exception:
-        return False
+        return None
 
     try:
-        _post(None)
-        return True
+        return _post(None)
     except Exception:
-        return False
+        return None

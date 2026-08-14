@@ -919,6 +919,80 @@ to a supergroup** (which happens on its own when enough members join, or it is m
 the sends then fail into the log rather than erroring anywhere visible. A signals channel that has
 gone quiet for days is that, until proven otherwise.
 
+### A deploy is ONE event — its three messages are now a THREAD (2026-08-14)
+
+Aaron: *"Look at the messages every time I promote also; can this be a thread instead of
+individual messages?"* A promote produces **STOPPED, PROMOTED and ONLINE** — and the middle one
+comes from the command center on a laptop while the other two come from this bot on the VPS, so
+they arrived as three unrelated bubbles with nothing saying they were one action.
+
+The command center sends the PROMOTED **root**, then writes its Telegram message id into
+`<instance>/alert_thread.json`. `runner.py` reads it and REPLIES with STOPPED and ONLINE. The
+instance directory is the channel those two processes already share (`stop.request`,
+`bot_state.json`, `review.json`), so nothing new had to exist to carry it.
+
+🔴 **The one way this could be WORSE than not threading is a STALE id**, and it is the
+`stop.request` hazard exactly: a file in an instance directory that outlives what it describes.
+There a leftover request stopped a healthy bot; here a leftover id quietly parents every future
+lifecycle message under an ancient deploy — in the channel whose whole job is saying what is
+happening NOW. **Two guards and neither alone is enough:**
+
+* an **EXPIRY** (15 min, written by the sender) covers a restart that never completed, where
+  nobody is left to delete the file. A record with no expiry at all is ignored — defaulting that
+  field to *forever* would make the missing value the most dangerous one in the file;
+* the **ONLINE alert CONSUMES it**, covering a bot that restarts twice inside the window.
+
+⚠ **STOPPED must NOT consume it** — the ONLINE that follows a promote is sent by a DIFFERENT
+PROCESS, so deleting the file there orphans the message the reader is actually waiting for.
+Pinned by a test that READS `runner.py` and counts call sites, because the behavioural version
+of that check was **measured vacuous**: adding `clear_alert_thread()` beside the STOPPED alert
+left every test green.
+
+⚠ **Only the two lifecycle messages a promote causes are threaded** (`_notify_health(...,
+thread=True)`). Threading everything would file an unrelated 3am reconnect under that morning's
+deploy.
+
+⚠ **Every failure answers "no thread"**, which is the behaviour every bot had before this
+existed — a missing file, an unreadable one, an expired one, a message id of 0. A notifier
+convenience must never be able to cost a lifecycle message.
+
+⚠ **The ROOT is sent BEFORE the bot is stopped**, and the ordering is the feature: this bot
+writes STOPPED the moment it notices its stop file, seconds later, and a root sent afterwards is
+not the root of anything. So the root states the INTENT (*"Restarting it now"*) and the two
+replies report what happened.
+
+### The version a bot reports — it was `v0` for the life of the field (2026-08-14)
+
+🔴 **`LiveConfig.strategy_version` was declared `int = 0` and NOTHING assigned it**, so every
+bot's ONLINE banner read `v0 (e4137dbb)` on every start, and so did the log banner, the ledger's
+startup record and `bot_state.json`. Aaron, off the health channel: *"the last message say V0? Is
+it missing the version deployed."* **A declared field with a default is indistinguishable from a
+measurement** — the same defect as `running=False` in the lab and `is_compiled` defaulting to 1.
+
+**`algos/tools/promote.py::version_at` measures it and stamps it into `deployed.json`** (which
+overrides `config.json` for the version fields, as `promoted_commit` already did). A version is
+the **count of commits touching this bot's PROMOTED trees**, derived from `repo_trees` — the same
+function that decides what is COPIED, so a tree that deploys is a tree that counts. It moves when
+and only when the code this bot runs moves, and subtracting two of them is the work between two
+deployments.
+
+⚠ **`None`, never 0, and it renders `v?` through the single `LiveConfig.version_label`.** 0 is a
+version somebody could genuinely be on, and it is precisely the value that was lying. Four
+readers share that one rendering because `f"v{None}"` prints `vNone` in every one of them.
+
+⚠ **The count is stamped at PROMOTE time and that is the whole point.** `command-center`'s
+`bot_versions.version_at` runs the same command over the same trees, so the two agree by
+construction rather than by being kept in step — the difference is WHEN. The bot has no git and
+no backend; the stamp is what lets it state its own version.
+
+⚠ **A bot promoted before this has no stamp and reads `v?`** until its next promote. That is the
+honest answer, and it is why nothing back-fills a number onto a deployment nobody measured.
+
+⚠ **`promote.py` also prints `##VERSIONS <from> <to>`** — a machine-readable line for the caller
+that has to put those in a message, parsed and stripped by the command center's promote route.
+The prose line beside it is for a human; **scraping the prose is what the OK/FAIL markers already
+exist to avoid**, and a reworded `print` must not change what anything reads.
+
 ### One shape for every message — `shared/alert_format.py`
 
 **Aaron's brief, 2026-08-05, after picking from rendered samples in the health chat:** concise, but

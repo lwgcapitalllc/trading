@@ -49,11 +49,11 @@ RUNTIME_RELOADABLE = frozenset({"exec_risk_pct"})
 @dataclass
 class LiveConfig:
     # ── identity ────────────────────────────────────────────────────────────
-    bot_key: str                      # unique per bot; the process is found by this string
-    display_name: str                 # what Telegram and the Bots page call it
+    bot_key: str  # unique per bot; the process is found by this string
+    display_name: str  # what Telegram and the Bots page call it
 
     # ── which MT5 ───────────────────────────────────────────────────────────
-    mt5_path: str                     # FULL path to terminal64.exe — this is "which instance"
+    mt5_path: str  # FULL path to terminal64.exe — this is "which instance"
     # The login this bot trades. `BotMT5.connect` refuses a mismatch.
     #
     # ⚠ **`None` means ON THE BENCH: registered, configured, and deliberately not on any
@@ -70,18 +70,23 @@ class LiveConfig:
     # guard in the runner alone would leave the bench meaning "until the watchdog notices".
     account: Optional[int]
     server: str
-    symbol: str                       # the BROKER's symbol string (XAUUSD, XAUUSD.s, …)
-    magic: int                        # separates this bot's orders from every other order
+    symbol: str  # the BROKER's symbol string (XAUUSD, XAUUSD.s, …)
+    magic: int  # separates this bot's orders from every other order
     timeframe: str = "M15"
 
     # ── which strategy, and which version of it ─────────────────────────────
-    strategy_package: str = "mpc_sos_fade"     # dir under strategies/python/
+    strategy_package: str = "mpc_sos_fade"  # dir under strategies/python/
     strategy_class: str = "MpcSosFadeStrategy"
     strategy_params: Dict[str, Any] = field(default_factory=dict)
-    strategy_source_hash: str = ""             # "" = UNPINNED (allowed, logged loudly)
+    strategy_source_hash: str = ""  # "" = UNPINNED (allowed, logged loudly)
     promoted_commit: str = ""
     promoted_at: str = ""
-    strategy_version: int = 0                  # the lab's monotonic per-strategy version
+    # 🔴 This was `int = 0` and NOTHING assigned it, so every bot's ONLINE banner read `v0`
+    # from the day it was written. `algos/tools/promote.py::version_at` measures it now (the
+    # count of commits touching this bot's trees) and stamps it into `deployed.json`, which
+    # overrides this field below. `None` means *nobody could count it* — a bot promoted before
+    # 2026-08-14, or a checkout `rev-list` could not read — and renders `v?`, never `v0`.
+    strategy_version: Optional[int] = None
 
     # ── where this bot reports ──────────────────────────────────────────────
     # Both optional, both empty = the shared default from algos/credentials.json. They exist
@@ -115,9 +120,9 @@ class LiveConfig:
     setup_alert_categories: Optional[List[str]] = None
 
     # ── runtime ─────────────────────────────────────────────────────────────
-    warmup_bars: int = 5000           # history replayed to warm the engines before acting
-    poll_seconds: int = 10            # how often to check for a newly closed bar
-    initial_capital: float = 0.0      # 0 = read the live account balance at startup
+    warmup_bars: int = 5000  # history replayed to warm the engines before acting
+    poll_seconds: int = 10  # how often to check for a newly closed bar
+    initial_capital: float = 0.0  # 0 = read the live account balance at startup
     # The most of the account's FREE margin ONE order may consume. An order needing more is
     # REFUSED, never shrunk to fit — see `algos/shared/order_sizing.py`. 50 leaves room for the
     # position to move against us before the broker starts closing things, and for a second bot
@@ -171,6 +176,16 @@ class LiveConfig:
     @property
     def deployed_dir(self) -> Path:
         return self.instance_dir / "deployed"
+
+    @property
+    def version_label(self) -> str:
+        """`v165`, or `v?` when nobody could count it. **Never `v0` for an unknown.**
+
+        One rendering, read by the log banner, the ONLINE alert, the ledger's startup record
+        and `bot_state.json` — four places that would otherwise each decide what to print for
+        `None`, and `f"v{None}"` renders `vNone` in every one of them.
+        """
+        return "v?" if self.strategy_version is None else f"v{self.strategy_version}"
 
     @property
     def is_frozen(self) -> bool:
@@ -279,7 +294,8 @@ def _assert_magic_is_unique(bot_key: str, account, magic) -> None:
                 f"magic {magic} is already used by bot {raw.get('bot_key')!r} on account "
                 f"{account}. Two bots sharing one magic on one account each read the OTHER's "
                 f"orders as their own — cancelling them, moving their stops and booking their "
-                f"fills — so give {bot_key!r} a magic of its own before starting it.")
+                f"fills — so give {bot_key!r} a magic of its own before starting it."
+            )
 
 
 def _assert_account_cap_agrees(bot_key: str, account, cap) -> None:
@@ -335,7 +351,8 @@ def _assert_account_cap_agrees(bot_key: str, account, cap) -> None:
             f"account, so two values mean the real ceiling is whichever bot asks — and a bot "
             f"with no cap fills the account freely while the capped one is refused. Set "
             f"account_risk_cap_pct to the same value in every instance on this account (or to "
-            f"null in all of them to run uncapped).")
+            f"null in all of them to run uncapped)."
+        )
 
 
 def load(bot_key: str) -> LiveConfig:
@@ -354,17 +371,16 @@ def load(bot_key: str) -> LiveConfig:
     if unknown:
         # Loud, not silent: a typo'd key is a setting that reads as applied and is not.
         raise ValueError(
-            f"Unknown key(s) in {p}: {', '.join(unknown)}. "
-            f"Valid keys: {', '.join(sorted(known))}"
+            f"Unknown key(s) in {p}: {', '.join(unknown)}. Valid keys: {', '.join(sorted(known))}"
         )
-    missing = [k for k in ("bot_key", "mt5_path", "account", "server", "symbol", "magic")
-               if k not in raw]
+    missing = [
+        k for k in ("bot_key", "mt5_path", "account", "server", "symbol", "magic") if k not in raw
+    ]
     if missing:
         raise ValueError(f"{p} is missing required key(s): {', '.join(missing)}")
     raw.setdefault("display_name", raw["bot_key"])
     _assert_magic_is_unique(raw["bot_key"], raw["account"], raw["magic"])
-    _assert_account_cap_agrees(raw["bot_key"], raw["account"],
-                               raw.get("account_risk_cap_pct"))
+    _assert_account_cap_agrees(raw["bot_key"], raw["account"], raw.get("account_risk_cap_pct"))
 
     # The DEPLOYMENT record wins on the version fields. `config.json` states the intent; only a
     # promote can state what is actually on disk, and only the machine that ran it knows. Left
@@ -389,6 +405,7 @@ def account_credentials(account: int) -> Optional[dict]:
     (`mt5_accounts` keyed by the account number as a string). Returns None when absent — the
     caller reports that as "not configured", never as a crash."""
     import sys
+
     sys.path.insert(0, str(_REPO_ROOT / "algos" / "shared"))
     from credentials import _load  # noqa
 
@@ -396,6 +413,8 @@ def account_credentials(account: int) -> Optional[dict]:
     entry = accounts.get(str(account))
     if not entry:
         return None
-    return {"login": int(account),
-            "password": entry.get("password", ""),
-            "server": entry.get("server", "")}
+    return {
+        "login": int(account),
+        "password": entry.get("password", ""),
+        "server": entry.get("server", ""),
+    }

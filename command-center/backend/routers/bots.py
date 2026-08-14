@@ -36,15 +36,34 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import config as cfg
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
-
-import config as cfg
-from models import BotAccountAssign, BotAccountBot, BotAccountCapUpdate, BotAccountGroup, BotAccountPassword, BotAccountRegistration, BotAccountRegistrationWrite, BotCodeChange, BotDeployedVersion, BotParamsView, BotPromoteRequest, BotPromoteResult, BotRuntimeUpdate, BotSnapshot, BotStatus, BotVersionCompare, JobStatus, ProcessStatus, TelegramUser, TelegramUserCreate, TelegramUserRoleUpdate
-from services import bot_accounts, bot_account_registry, bot_params, bot_versions, lab_db
-from services import notify
-from services.alert_format import alert
-from services.notify import send_telegram
+from models import (
+    BotAccountAssign,
+    BotAccountBot,
+    BotAccountCapUpdate,
+    BotAccountGroup,
+    BotAccountPassword,
+    BotAccountRegistration,
+    BotAccountRegistrationWrite,
+    BotDeployedVersion,
+    BotParamsView,
+    BotPromoteRequest,
+    BotPromoteResult,
+    BotRuntimeUpdate,
+    BotSnapshot,
+    BotStatus,
+    BotVersionCompare,
+    JobStatus,
+    ProcessStatus,
+    TelegramUser,
+    TelegramUserCreate,
+    TelegramUserRoleUpdate,
+)
+from services import bot_account_registry, bot_accounts, bot_params, bot_versions, lab_db, notify
+from services.alert_format import alert, joined
+from services.notify import send_telegram_id
 
 router = APIRouter(prefix="/bots", tags=["bots"])
 
@@ -90,16 +109,17 @@ class BotReg:
     (`runner.py --bot mpc_sos_fade_demo`) — the script name identifies the FLEET, only the
     key identifies the bot, because every live bot IS `runner.py`.
     """
+
     task: str
     key: str
     display: str
-    account_type: str                 # "demo" | "live" — deliberately no default
-    instance_dir: str = ""            # ⇒ key
-    log_file: str = ""                # ⇒ <key>.log, which is what algos/live/runner.py writes
-    suppress_key: str = ""            # ⇒ key; the short key written to stop_suppress.json
+    account_type: str  # "demo" | "live" — deliberately no default
+    instance_dir: str = ""  # ⇒ key
+    log_file: str = ""  # ⇒ <key>.log, which is what algos/live/runner.py writes
+    suppress_key: str = ""  # ⇒ key; the short key written to stop_suppress.json
     config_section: str = "strategy_params"
-    state_section: str = ""           # ⇒ state_<key>; bots SHARING a bot_state.json share this
-    state_file: str = ""              # ⇒ <instances>\<instance_dir>\bot_state.json
+    state_section: str = ""  # ⇒ state_<key>; bots SHARING a bot_state.json share this
+    state_file: str = ""  # ⇒ <instances>\<instance_dir>\bot_state.json
     # ⇒ <instances>\<instance_dir>\review.json — the hourly log review's standing flag.
     # PER BOT even when two bots share a bot_state.json, because a review is about one bot's
     # own health record and merging two into one file would make "which bot needs attention"
@@ -112,23 +132,32 @@ class BotReg:
                 f"{self.key}: account_type must be 'demo' or 'live', not {self.account_type!r}"
             )
         self.instance_dir = self.instance_dir or self.key
-        self.log_file     = self.log_file or f"{self.key}.log"
+        self.log_file = self.log_file or f"{self.key}.log"
         self.suppress_key = self.suppress_key or self.key
         self.state_section = self.state_section or f"state_{self.key}"
-        self.state_file = self.state_file or \
-            rf"{_VPS_INSTANCES}\{self.instance_dir}\bot_state.json"
-        self.review_file = self.review_file or \
-            rf"{_VPS_INSTANCES}\{self.instance_dir}\review.json"
+        self.state_file = self.state_file or rf"{_VPS_INSTANCES}\{self.instance_dir}\bot_state.json"
+        self.review_file = self.review_file or rf"{_VPS_INSTANCES}\{self.instance_dir}\review.json"
 
     @property
     def config_path(self) -> Path:
-        return (cfg.MONOREPO_ROOT / "algos" / "markets" / "fx" / "instances"
-                / self.instance_dir / "config.json")
+        return (
+            cfg.MONOREPO_ROOT
+            / "algos"
+            / "markets"
+            / "fx"
+            / "instances"
+            / self.instance_dir
+            / "config.json"
+        )
 
 
 _BOTS: list[BotReg] = [
-    BotReg(task="BOT_MPC_SOS_FADE", key="mpc_sos_fade_demo",
-           display="MPC SOS Fade", account_type="demo"),
+    BotReg(
+        task="BOT_MPC_SOS_FADE",
+        key="mpc_sos_fade_demo",
+        display="MPC SOS Fade",
+        account_type="demo",
+    ),
     # ON THE BENCH (`account: null` in its instance config), and registered here anyway — that
     # pairing is the point. Registration is what makes a bot ADDRESSABLE: it is what puts it on
     # the Accounts tab so it can be added to an account from the browser, and it is what makes
@@ -140,36 +169,35 @@ _BOTS: list[BotReg] = [
     # ⚠ It is deliberately NOT in `algos/notifications/monitor.py` or `deadman.py`. Those alarm
     # on a bot that is not running, which is this bot's normal state — registering it there would
     # ring the one alarm that has to stay quiet until it means something.
-    BotReg(task="BOT_MPC_BLEG", key="mpc_bleg_demo",
-           display="MPC B-LEG", account_type="demo"),
+    BotReg(task="BOT_MPC_BLEG", key="mpc_bleg_demo", display="MPC B-LEG", account_type="demo"),
 ]
 
 # ── Derived views. Never edit one of these — add a BotReg above. ──────────────
 _BOT_DISPLAY_ORDER = [b.task for b in _BOTS]
 _BY_TASK: dict[str, BotReg] = {b.task: b for b in _BOTS}
-_BY_KEY:  dict[str, BotReg] = {b.key: b for b in _BOTS}
+_BY_KEY: dict[str, BotReg] = {b.key: b for b in _BOTS}
 
 # ⚠ `SYS_REPORTER` and `SYS_PNLTRACKER` were removed 2026-08-05 with the scripts behind
 # them (see `algos/CLAUDE.md`). They had rendered here as DISABLED jobs "waiting for a bot
 # registry", which reads as a feature switched off rather than one that does nothing:
 # both carried an empty registry inherited from the four bots deleted 2026-06-22.
 _SYS_DISPLAY_NAMES = {
-    "SYS_TELEGRAM":       "Telegram",
-    "SYS_MONITOR":        "Monitor",
-    "SYS_DEADMAN":        "Dead-man switch",
-    "SYS_LOGBACKUP":      "Log backup",
+    "SYS_TELEGRAM": "Telegram",
+    "SYS_MONITOR": "Monitor",
+    "SYS_DEADMAN": "Dead-man switch",
+    "SYS_LOGBACKUP": "Log backup",
 }
 _DISPLAY_NAMES = {**{b.task: b.display for b in _BOTS}, **_SYS_DISPLAY_NAMES}
 _TASK_BOT_KEYS = {b.task: b.key for b in _BOTS}
-_KEY_DISPLAY   = {b.key: b.display for b in _BOTS}
+_KEY_DISPLAY = {b.key: b.display for b in _BOTS}
 
 # The jobs this page reports on. Every entry must have a task in `_SYS_TASK_BY_JOB` below
 # — a name with no task resolves to a permanent UNKNOWN, which reads as a job the page
 # cannot see rather than one it never asked about.
 _SCHEDULED_JOBS = [
-    JobStatus(name="Monitor",          schedule="every 1 min", status="UNKNOWN"),
-    JobStatus(name="Dead-man switch",  schedule="every 5 min", status="UNKNOWN"),
-    JobStatus(name="Log backup",       schedule="daily 00:30", status="UNKNOWN"),
+    JobStatus(name="Monitor", schedule="every 1 min", status="UNKNOWN"),
+    JobStatus(name="Dead-man switch", schedule="every 5 min", status="UNKNOWN"),
+    JobStatus(name="Log backup", schedule="daily 00:30", status="UNKNOWN"),
 ]
 _SYS_TASK_BY_JOB = {v: k for k, v in _SYS_DISPLAY_NAMES.items()}
 
@@ -207,8 +235,7 @@ def _write_instance_config(bot_key: str, data: dict) -> None:
     # human actually reads into noise, and this file is edited by hand far more often than
     # it is written from here.
     info = _BOT_INSTANCE_MAP[bot_key]
-    info["path"].write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-                            encoding="utf-8")
+    info["path"].write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: str) -> str:
@@ -241,29 +268,37 @@ def _git_commit_push(file_paths: list[Path] | Path, message: str, docs_reason: s
         # Guarded here rather than left to the hook: the hook's refusal arrives as a
         # CalledProcessError two lines later and is reported to the browser as "git push failed",
         # which names the wrong step. This says what is actually wrong, to the developer.
-        raise ValueError("docs_reason must say something — the commit-msg hook requires at least "
-                         "ten characters after 'DOCS: none -'")
+        raise ValueError(
+            "docs_reason must say something — the commit-msg hook requires at least "
+            "ten characters after 'DOCS: none -'"
+        )
     message = f"{message}\n\nDOCS: none - {docs_reason.strip()}"
     root = str(cfg.MONOREPO_ROOT)
     paths = [file_paths] if isinstance(file_paths, Path) else file_paths
-    rels  = [str(p.relative_to(cfg.MONOREPO_ROOT)) for p in paths]
+    rels = [str(p.relative_to(cfg.MONOREPO_ROOT)) for p in paths]
     for rel in rels:
         subprocess.run(["git", "-C", root, "add", rel], check=True, capture_output=True, timeout=15)
     status = subprocess.run(
         ["git", "-C", root, "status", "--porcelain"] + rels,
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     if not status.stdout.strip():
         return "nothing to commit"
-    subprocess.run(["git", "-C", root, "commit", "-m", message], check=True, capture_output=True, timeout=15)
+    subprocess.run(
+        ["git", "-C", root, "commit", "-m", message], check=True, capture_output=True, timeout=15
+    )
     out = subprocess.run(
         ["git", "-C", root, "push", "origin", "main"],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     return (out.stdout + out.stderr).strip()
 
 
-def _notify_telegram(text: str) -> None:
+def _notify_telegram(text: str):
     """Send a Telegram notification. Never raises.
 
     Delegates to `services/notify.py` — this router used to carry its own copy of the token,
@@ -275,8 +310,13 @@ def _notify_telegram(text: str) -> None:
     it is the only thing here that can. So this helper hardcodes the kind rather than taking one,
     which is what stops a new endpoint from quietly putting an operational message in the room
     that carries trades.
+
+    Returns Telegram's message id (None on any failure), so a caller can make later messages
+    REPLY to this one. Nothing has to use it — every existing call site ignores it — but the
+    deploy sequence does, because its three messages come from two different machines and a
+    thread is the only thing that says they are one event.
     """
-    send_telegram(text, notify.HEALTH)
+    return send_telegram_id(text, notify.HEALTH)
 
 
 def _suppress_stop_alert(bot_key: str) -> None:
@@ -288,9 +328,9 @@ def _suppress_stop_alert(bot_key: str) -> None:
         return
     _ssh(
         f'python -c "'
-        f'import json,pathlib;'
+        f"import json,pathlib;"
         f"p=pathlib.Path(r'C:/trading/algos/stop_suppress.json');"
-        f'k=json.loads(p.read_text()) if p.exists() else [];'
+        f"k=json.loads(p.read_text()) if p.exists() else [];"
         f"k.append('{suppress_key}') if '{suppress_key}' not in k else None;"
         f'p.write_text(json.dumps(k))"'
     )
@@ -315,7 +355,8 @@ class VpsUnreachable(RuntimeError):
 def _ssh(cmd: str) -> str:
     result = subprocess.run(
         ["ssh", VPS_HOST, cmd],
-        capture_output=True, timeout=30,
+        capture_output=True,
+        timeout=30,
     )
     # Windows stdout is cp1252; decode with replacement so non-UTF-8 chars
     # (arrows, dashes, degree signs) don't raise UnicodeDecodeError → 500.
@@ -387,16 +428,21 @@ def _fetch_vps_snapshot() -> dict[str, str]:
     #    Both sections then merge into one unparseable blob and the bot silently reports no
     #    state at all. This only appears once a state file has CONTENT, so it cannot be
     #    caught before a bot has run once.
-    parts = [f"echo. & echo ==={s.upper()}=== & type {_BOT_STATE_PATHS[s]} 2>nul"
-             for s, _ in _BOT_STATE_SECTIONS]
+    parts = [
+        f"echo. & echo ==={s.upper()}=== & type {_BOT_STATE_PATHS[s]} 2>nul"
+        for s, _ in _BOT_STATE_SECTIONS
+    ]
     # The hourly review's flag, one per bot. It rides on the SAME connection for the same
     # reason the state files do — a second ssh round trip per bot is the cost this batching
     # exists to avoid. Missing is the normal case and means "nothing to review", so the
     # `2>nul` swallowing it is correct rather than lossy.
-    parts += [f"echo. & echo ==={_review_section(b.key).upper()}=== & type {b.review_file} 2>nul"
-              for b in _BOTS]
-    parts.append("echo. & echo ===TELEGRAM_START=== "
-                 "& type C:\\trading\\algos\\telegram_start.json 2>nul")
+    parts += [
+        f"echo. & echo ==={_review_section(b.key).upper()}=== & type {b.review_file} 2>nul"
+        for b in _BOTS
+    ]
+    parts.append(
+        "echo. & echo ===TELEGRAM_START=== & type C:\\trading\\algos\\telegram_start.json 2>nul"
+    )
     sections.update(_parse_sections(_ssh(" & ".join(parts)), "state_main"))
     return sections
 
@@ -498,10 +544,10 @@ def _uptime_seconds(state: dict) -> int | None:
 
 
 _USERS_FILE_VPS = r"C:\trading\algos\users.json"
-_USERS_PY_PATH  = "C:/trading/algos/users.json"
+_USERS_PY_PATH = "C:/trading/algos/users.json"
 
 # Markers the VPS echoes back, so "no file" and "no answer" are different values here too.
-_USERS_ABSENT  = "===USERS_ABSENT==="
+_USERS_ABSENT = "===USERS_ABSENT==="
 _USERS_WRITTEN = "===USERS_WRITTEN==="
 
 
@@ -615,8 +661,11 @@ def add_user(body: TelegramUserCreate):
         users = _users_or_502()
         if body.chat_id in users:
             raise HTTPException(status_code=409, detail="User already exists")
-        users[body.chat_id] = {"name": body.name, "role": body.role,
-                               "added": date.today().isoformat()}
+        users[body.chat_id] = {
+            "name": body.name,
+            "role": body.role,
+            "added": date.today().isoformat(),
+        }
         _save_users_or_502(users)
     return {"status": "ok"}
 
@@ -632,12 +681,13 @@ def _refuse_last_admin(users: dict, after: dict) -> None:
     MISSING or unparseable — a file that exists and lists everyone as `readonly` is read as
     written, so the primary admin loses the commands too. Checked rather than assumed.
     """
-    if any(u.get("role") == "admin" for u in users.values()) and \
-            not any(u.get("role") == "admin" for u in after.values()):
+    if any(u.get("role") == "admin" for u in users.values()) and not any(
+        u.get("role") == "admin" for u in after.values()
+    ):
         raise HTTPException(
             status_code=409,
             detail="That would leave no admin. Nobody could stop a bot from Telegram — "
-                   "promote someone else first.",
+            "promote someone else first.",
         )
 
 
@@ -712,40 +762,42 @@ def get_snapshot():
             except Exception:
                 total_pnl = None
 
-        bots.append(BotStatus(
-            key=bot_key,
-            name=_DISPLAY_NAMES.get(task_name, task_name),
-            # An MT5 login is an INT everywhere it matters — LiveConfig.account is typed
-            # int and BotMT5.connect compares it numerically to refuse the wrong account.
-            # It is only a string for display, so the coercion belongs here and nowhere
-            # upstream: making the registries hold strings to satisfy a label would put a
-            # display concern inside the account guard.
-            account=str(state.get("account") or ""),
-            # From the registry, which cannot omit it — `account_type` has no default on
-            # BotReg, so a bot registered without one is a TypeError at import. The old
-            # `.get(task, "demo")` defaulted in the dangerous direction: a LIVE bot
-            # rendered as demo, losing the amber tinting, the "N of these are LIVE
-            # accounts" warning on every fleet dialog, and its place in the demo/live filter.
-            account_type=_BY_TASK[task_name].account_type,
-            balance=state.get("balance"),
-            # Read with a THREE-way result on purpose: True, False, or "the bot never said".
-            # `state.get("mt5_link")` on a bot that predates the field returns None, and
-            # coercing that to False would paint a healthy bot as disconnected — the same
-            # rule `mt5_connected` follows on the sidebar's MT5 dot.
-            mt5_link=state.get("mt5_link") if status == "RUNNING" else None,
-            # ⚠ NOT gated on `status == "RUNNING"`, unlike `mt5_link` above. A review is about
-            # what the RECORD says happened, and the findings that matter most — it crashed, it
-            # was killed, it refused to start — are precisely the ones you can only read once
-            # the bot is no longer running. Hiding the flag on a stopped bot would suppress the
-            # explanation at the exact moment somebody wants it.
-            review=reviews.get(bot_key),
-            status=status,
-            uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
-            total_pnl_pct=total_pnl,
-            day_locked=bool(state.get("day_locked", False)),
-            lock_reason=state.get("lock_reason") or None,
-            last_updated=state.get("last_updated") or None,
-        ))
+        bots.append(
+            BotStatus(
+                key=bot_key,
+                name=_DISPLAY_NAMES.get(task_name, task_name),
+                # An MT5 login is an INT everywhere it matters — LiveConfig.account is typed
+                # int and BotMT5.connect compares it numerically to refuse the wrong account.
+                # It is only a string for display, so the coercion belongs here and nowhere
+                # upstream: making the registries hold strings to satisfy a label would put a
+                # display concern inside the account guard.
+                account=str(state.get("account") or ""),
+                # From the registry, which cannot omit it — `account_type` has no default on
+                # BotReg, so a bot registered without one is a TypeError at import. The old
+                # `.get(task, "demo")` defaulted in the dangerous direction: a LIVE bot
+                # rendered as demo, losing the amber tinting, the "N of these are LIVE
+                # accounts" warning on every fleet dialog, and its place in the demo/live filter.
+                account_type=_BY_TASK[task_name].account_type,
+                balance=state.get("balance"),
+                # Read with a THREE-way result on purpose: True, False, or "the bot never said".
+                # `state.get("mt5_link")` on a bot that predates the field returns None, and
+                # coercing that to False would paint a healthy bot as disconnected — the same
+                # rule `mt5_connected` follows on the sidebar's MT5 dot.
+                mt5_link=state.get("mt5_link") if status == "RUNNING" else None,
+                # ⚠ NOT gated on `status == "RUNNING"`, unlike `mt5_link` above. A review is about
+                # what the RECORD says happened, and the findings that matter most — it crashed, it
+                # was killed, it refused to start — are precisely the ones you can only read once
+                # the bot is no longer running. Hiding the flag on a stopped bot would suppress the
+                # explanation at the exact moment somebody wants it.
+                review=reviews.get(bot_key),
+                status=status,
+                uptime_seconds=_uptime_seconds(state) if status == "RUNNING" else None,
+                total_pnl_pct=total_pnl,
+                day_locked=bool(state.get("day_locked", False)),
+                lock_reason=state.get("lock_reason") or None,
+                last_updated=state.get("last_updated") or None,
+            )
+        )
 
     # Scheduled jobs
     jobs: list[JobStatus] = []
@@ -857,6 +909,7 @@ def _known_profiles() -> set[str] | None:
     """
     try:
         from backtest.fills import PROFILES
+
         return set(PROFILES)
     except Exception:
         return None
@@ -919,15 +972,20 @@ def _write_account_password(account: int, password: str) -> None:
         "p.write_text(json.dumps(d,indent=2),encoding='utf-8');"
         f"print({_CREDS_WRITTEN!r})"
     )
-    result = subprocess.run(["ssh", VPS_HOST, f'python -c "{script}"'],
-                            input=password.encode("utf-8"), capture_output=True, timeout=30)
+    result = subprocess.run(
+        ["ssh", VPS_HOST, f'python -c "{script}"'],
+        input=password.encode("utf-8"),
+        capture_output=True,
+        timeout=30,
+    )
     out = result.stdout.decode("utf-8", errors="replace")
     if _CREDS_WRITTEN not in out:
         err = result.stderr.decode("utf-8", errors="replace").strip()
         raise HTTPException(
             status_code=502,
             detail=f"the password write to {_VPS_CREDENTIALS} was not confirmed, so the account "
-                   f"may have no credentials — {err or 'the VPS said nothing'}")
+            f"may have no credentials — {err or 'the VPS said nothing'}",
+        )
 
 
 def _registration(entry, bot_keys: list[str], with_password: set[int] | None):
@@ -987,26 +1045,38 @@ def register_account(account: int, body: BotAccountRegistrationWrite):
     afterwards would read as complete.
     """
     if account != body.account:
-        raise HTTPException(status_code=400,
-                            detail=f"path account {account} does not match body {body.account}")
+        raise HTTPException(
+            status_code=400, detail=f"path account {account} does not match body {body.account}"
+        )
 
     entry = bot_account_registry.RegisteredAccount(
-        account=body.account, label=body.label, broker=body.broker, tier=body.tier,
-        kind=body.kind, server=body.server, mt5_path=body.mt5_path,
-        symbol_suffix=body.symbol_suffix, account_profile=body.account_profile, note=body.note)
+        account=body.account,
+        label=body.label,
+        broker=body.broker,
+        tier=body.tier,
+        kind=body.kind,
+        server=body.server,
+        mt5_path=body.mt5_path,
+        symbol_suffix=body.symbol_suffix,
+        account_profile=body.account_profile,
+        note=body.note,
+    )
 
     if body.password:
         _write_account_password(account, body.password)
 
     try:
         stored, created = bot_account_registry.upsert_account(
-            _registry_path(), entry, _known_profiles())
+            _registry_path(), entry, _known_profiles()
+        )
     except bot_account_registry.RegistryError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     if body.deploy:
-        _deploy_registry(f"accounts: {'registered' if created else 'updated'} "
-                         f"{account} ({body.label or body.server}) [command center]")
+        _deploy_registry(
+            f"accounts: {'registered' if created else 'updated'} "
+            f"{account} ({body.label or body.server}) [command center]"
+        )
 
     with_password = _accounts_with_a_password()
     bots_here = [b.key for g in _account_groups() if g.account == account for b in g.bots]
@@ -1024,14 +1094,19 @@ def unregister_account(account: int, deploy: bool = True):
     ⚠ **It does NOT touch the credentials file.** Deleting a password is a separate, irreversible
     action against a file this endpoint has no business rewriting as a side effect.
     """
-    bots_here = [b.key for g in _account_groups()
-                 if g.kind == "account" and g.account == account for b in g.bots]
+    bots_here = [
+        b.key
+        for g in _account_groups()
+        if g.kind == "account" and g.account == account
+        for b in g.bots
+    ]
     if bots_here:
         raise HTTPException(
             status_code=409,
             detail=f"{', '.join(bots_here)} still trade account {account}. Move or bench them "
-                   f"first — unregistering it would leave them on an account this page cannot "
-                   f"describe.")
+            f"first — unregistering it would leave them on an account this page cannot "
+            f"describe.",
+        )
     try:
         removed = bot_account_registry.remove_account(_registry_path(), account)
     except bot_account_registry.RegistryError as e:
@@ -1058,7 +1133,8 @@ def set_account_password(account: int, body: BotAccountPassword):
         raise HTTPException(
             status_code=404,
             detail=f"account {account} is not registered. Register it first — a password for an "
-                   f"account nothing knows about cannot be checked or used.")
+            f"account nothing knows about cannot be checked or used.",
+        )
     _write_account_password(account, body.password)
     return {"status": "ok", "account": account, "has_password": True}
 
@@ -1067,12 +1143,15 @@ def _deploy_registry(message: str) -> None:
     """Commit, push and pull the registry onto the VPS. It is git-tracked and holds no secrets."""
     try:
         _git_commit_push(
-            _registry_path(), message,
+            _registry_path(),
+            message,
             "the broker-account registry was edited from the Bots page; it carries no code and "
-            "no secrets, and the change is named in the message")
+            "no secrets, and the change is named in the message",
+        )
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500,
-                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
     try:
         _ssh("cd C:\\trading && git pull origin main")
     except Exception as e:
@@ -1109,9 +1188,14 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     if not targets:
         # Nothing to write, and therefore nothing to restart — but the bots may still be
         # RUNNING on an older value, which this endpoint cannot see and must not imply.
-        return {"status": "ok", "changed": False, "updated": [],
-                "restart_required": False, "bots": bot_keys,
-                "detail": "Every bot on this account already states that cap."}
+        return {
+            "status": "ok",
+            "changed": False,
+            "updated": [],
+            "restart_required": False,
+            "bots": bot_keys,
+            "detail": "Every bot on this account already states that cap.",
+        }
 
     paths = []
     for key in targets:
@@ -1127,27 +1211,51 @@ def set_account_risk_cap(account: int, update: BotAccountCapUpdate):
     changed = f"account {account} risk cap → {cap_s} ({', '.join(targets)})"
 
     if not update.deploy:
-        return {"status": "ok", "changed": True, "deployed": False, "updated": targets,
-                "restart_required": True, "bots": bot_keys, "detail": changed}
+        return {
+            "status": "ok",
+            "changed": True,
+            "deployed": False,
+            "updated": targets,
+            "restart_required": True,
+            "bots": bot_keys,
+            "detail": changed,
+        }
 
     try:
         _git_commit_push(
-            paths, f"risk cap: {changed} [command center]",
+            paths,
+            f"risk cap: {changed} [command center]",
             "account-level risk cap written to every instance config on the account by the "
-            "Bots page; an operational deployment, and the numbers are in the message")
+            "Bots page; an operational deployment, and the numbers are in the message",
+        )
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500,
-                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
     try:
         out = _ssh("cd C:\\trading && git pull origin main")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
 
-    _notify_telegram(alert("⚙️", "ACCOUNT RISK CAP", f"account {account}",
-                           f"Cap {cap_s} written to {len(targets)} bot(s).",
-                           "Restart them — the cap only applies at startup."))
-    return {"status": "ok", "changed": True, "deployed": True, "updated": targets,
-            "restart_required": True, "bots": bot_keys, "detail": changed, "output": out}
+    _notify_telegram(
+        alert(
+            "⚙️",
+            "ACCOUNT RISK CAP",
+            f"account {account}",
+            f"Cap {cap_s} written to {len(targets)} bot(s).",
+            "Restart them — the cap only applies at startup.",
+        )
+    )
+    return {
+        "status": "ok",
+        "changed": True,
+        "deployed": True,
+        "updated": targets,
+        "restart_required": True,
+        "bots": bot_keys,
+        "detail": changed,
+        "output": out,
+    }
 
 
 @router.patch("/{bot_name}/account")
@@ -1181,8 +1289,9 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         raise HTTPException(
             status_code=409,
             detail=f"{bot_key} is running, so its account cannot be changed — it read its config "
-                   f"at startup and would go on trading the old account while this page showed "
-                   f"the new one. Stop it first, then move it.")
+            f"at startup and would go on trading the old account while this page showed "
+            f"the new one. Stop it first, then move it.",
+        )
 
     groups = _account_groups()
     current = next((g for g in groups if any(b.key == bot_key for b in g.bots)), None)
@@ -1190,24 +1299,26 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
         raise HTTPException(
             status_code=409,
             detail=f"{bot_key}'s config could not be read, so there is nothing safe to write "
-                   f"over. Fix the file first.")
+            f"over. Fix the file first.",
+        )
 
     target = None
     registered = None
     if update.account is not None:
-        target = next((g for g in groups
-                       if g.kind == "account" and g.account == update.account), None)
+        target = next(
+            (g for g in groups if g.kind == "account" and g.account == update.account), None
+        )
         try:
-            registered = bot_account_registry.account_by_number(
-                _registry_path(), update.account)
+            registered = bot_account_registry.account_by_number(_registry_path(), update.account)
         except bot_account_registry.RegistryError as e:
             raise HTTPException(status_code=500, detail=str(e))
         if target is None and registered is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"Account {update.account} is not registered and no bot trades it, so "
-                       f"nothing here knows its server, its terminal or its symbol suffix. Add "
-                       f"it under Accounts first.")
+                f"nothing here knows its server, its terminal or its symbol suffix. Add "
+                f"it under Accounts first.",
+            )
         if registered is not None and not registered.assignable:
             raise HTTPException(status_code=409, detail=registered.unassignable_reason)
 
@@ -1221,14 +1332,19 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
             raise HTTPException(
                 status_code=409,
                 detail=f"No MT5 password is stored for account {update.account}, so {bot_key} "
-                       f"could not log in. Set it under Accounts, then move the bot.")
+                f"could not log in. Set it under Accounts, then move the bot.",
+            )
 
     data = _read_instance_config(bot_key)
 
     try:
         plan = bot_accounts.assign_plan(
-            bot_key, update.account, target=target, registered=registered,
-            current_symbol=str(data.get("symbol") or ""))
+            bot_key,
+            update.account,
+            target=target,
+            registered=registered,
+            current_symbol=str(data.get("symbol") or ""),
+        )
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -1255,38 +1371,65 @@ def set_bot_account(bot_name: str, update: BotAccountAssign):
     changed = f"{bot_key} → {where} (was {was if was is not None else 'the bench'})"
 
     if not update.deploy:
-        return {"status": "ok", "changed": True, "deployed": False, "bot": bot_key,
-                "account": update.account, "restart_required": True, "detail": changed,
-                "notes": plan.notes}
+        return {
+            "status": "ok",
+            "changed": True,
+            "deployed": False,
+            "bot": bot_key,
+            "account": update.account,
+            "restart_required": True,
+            "detail": changed,
+            "notes": plan.notes,
+        }
 
     path = _BOT_INSTANCE_MAP[bot_key]["path"]
     try:
         _git_commit_push(
-            path, f"bots: {changed} [command center]",
+            path,
+            f"bots: {changed} [command center]",
             "a bot moved between accounts from the Bots page; an operational deployment, "
-            "and the move is named in the message")
+            "and the move is named in the message",
+        )
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500,
-                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
     try:
         out = _ssh("cd C:\\trading && git pull origin main")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS git pull failed: {e}")
 
-    _notify_telegram(alert(
-        "⚙️", "BOT MOVED", bot_key,
-        f"Now on {where}."
-        + ("" if update.account is None
-           else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."),
-        "It is not trading it yet — start the bot to apply."
-        if update.account is not None else "It will not start until it is on an account again."))
+    _notify_telegram(
+        alert(
+            "⚙️",
+            "BOT MOVED",
+            bot_key,
+            f"Now on {where}."
+            + (
+                ""
+                if update.account is None
+                else f" Risk cap {plan.fields.get('account_risk_cap_pct') or 'none'}."
+            ),
+            "It is not trading it yet — start the bot to apply."
+            if update.account is not None
+            else "It will not start until it is on an account again.",
+        )
+    )
     # ⚠ `notes` is what could NOT be carried — an account with no recorded symbol suffix, or one
     # that is not registered at all. It is served rather than swallowed because the failure it
     # describes is silent on the box: a bot pointed at a symbol its terminal does not quote
     # connects, warms up and receives no bars, which reads exactly like a quiet market.
-    return {"status": "ok", "changed": True, "deployed": True, "bot": bot_key,
-            "account": update.account, "restart_required": True, "detail": changed,
-            "notes": plan.notes, "output": out}
+    return {
+        "status": "ok",
+        "changed": True,
+        "deployed": True,
+        "bot": bot_key,
+        "account": update.account,
+        "restart_required": True,
+        "detail": changed,
+        "notes": plan.notes,
+        "output": out,
+    }
 
 
 @router.get("/{bot_name}/log", response_class=PlainTextResponse)
@@ -1319,7 +1462,7 @@ def get_bot_log(bot_name: str, lines: int = 500):
 # Each endpoint returns { "status": "ok"|"error", "output": "<ssh stdout>" }.
 # A 502 is raised when the SSH call itself fails or times out.
 
-_LOCK_PATH  = r"C:\trading\algos\mt5_connect.lock"
+_LOCK_PATH = r"C:\trading\algos\mt5_connect.lock"
 _STARTUP_TN = "SYS_STARTUP"
 
 
@@ -1333,6 +1476,58 @@ _STOP_POLL_SECONDS = 3
 
 def _instance_dir(bot_key: str) -> str:
     return f"C:\\trading\\algos\\markets\\fx\\instances\\{bot_key}"
+
+
+# How long a thread root stays usable. A promote's stop-and-start is seconds; anything older
+# is a leftover from a restart that never completed, and threading tomorrow's ONLINE under
+# yesterday's deploy is worse than not threading it at all.
+#
+# 🔴 This is the `stop.request` lesson, and it is the ONE way this feature could be worse than
+# no feature: a file left in an instance directory outlives the thing it describes. There it was
+# a stale request stopping a healthy bot; here it is a stale id quietly mis-parenting every
+# lifecycle message a bot ever sends. Two guards, and the expiry is the one that cannot be
+# forgotten — the bot DELETES the file once it has used it, and ignores one this old regardless.
+_ALERT_THREAD_TTL_SECONDS = 900
+
+
+def _set_alert_thread(bot_key: str, message_id) -> None:
+    """Tell the bot which message its next lifecycle alerts should reply to.
+
+    The bot runs on the VPS and this runs on a laptop, so the id has to travel — and the
+    instance directory is the channel those two already share (`stop.request`, `bot_state.json`,
+    `review.json`). One extra file, written on the connection the promote is already using.
+
+    ⚠ **Never raises and never blocks the promote.** A deploy that failed because a Telegram
+    convenience could not be written would be a spectacularly bad trade. A missing file simply
+    means the two replies arrive unthreaded, which is exactly today's behaviour.
+
+    ⚠ **A message id of 0 or None is NOT written** — `send_telegram_id` returns 0 for "delivered
+    but the id was unreadable", and writing that would ask the bot to reply to message zero.
+    """
+    if not message_id:
+        return
+    payload = json.dumps(
+        {"message_id": int(message_id), "expires_at": _time.time() + _ALERT_THREAD_TTL_SECONDS}
+    )
+    # Over STDIN, not argv — the JSON carries braces and quotes, and `^`-escaping those through
+    # cmd is the kind of quoting that works until the day a value changes shape. The same
+    # one-liner-plus-stdin shape `_write_account_password` uses, minus the marker: this write is
+    # a convenience and a caller must never learn about its failure by having the promote fail.
+    try:
+        subprocess.run(
+            [
+                "ssh",
+                VPS_HOST,
+                f'{_PYTHON_EXE} -c "import sys,pathlib;'
+                f"pathlib.Path(r'{_instance_dir(bot_key)}')"
+                f".joinpath('alert_thread.json').write_text(sys.stdin.read())\"",
+            ],
+            input=payload.encode("utf-8"),
+            capture_output=True,
+            timeout=30,
+        )
+    except Exception as e:  # pragma: no cover - a dead box is already reported by the promote
+        print(f"bots: could not write the alert thread for {bot_key}: {e}")
 
 
 def _bot_is_running(bot_key: str) -> bool:
@@ -1396,10 +1591,12 @@ def _kill_bot(bot_key: str) -> str:
             return "\n".join(s for s in steps if s).strip()
 
     steps.append(f"{bot_key} did not stop within {_GRACEFUL_STOP_SECONDS}s — terminating")
-    steps.append(_ssh(
-        f"wmic process where \"name='python.exe' and commandline like '%--bot {bot_key}%'\" "
-        f"call terminate 2>nul"
-    ))
+    steps.append(
+        _ssh(
+            f"wmic process where \"name='python.exe' and commandline like '%--bot {bot_key}%'\" "
+            f"call terminate 2>nul"
+        )
+    )
     steps.append(_ssh(f"del {_instance_dir(bot_key)}\\stop.request 2>nul"))
     return "\n".join(s for s in steps if s).strip()
 
@@ -1433,8 +1630,7 @@ def start_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram(alert("▶️", "STARTING", "All bots",
-                          "Requested from the command center."))
+    _notify_telegram(alert("▶️", "STARTING", "All bots", "Requested from the command center."))
     return {"status": "ok", "output": out}
 
 
@@ -1449,9 +1645,14 @@ def stop_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram(alert("⏹", "STOPPED", "All bots",
-                          "Stopped from the command center. They will not come back on their "
-                          "own."))
+    _notify_telegram(
+        alert(
+            "⏹",
+            "STOPPED",
+            "All bots",
+            "Stopped from the command center. They will not come back on their own.",
+        )
+    )
     return {"status": "ok", "output": out}
 
 
@@ -1468,16 +1669,15 @@ def restart_bots():
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
-    _notify_telegram(alert("🔄", "RESTARTING", "All bots",
-                          "Requested from the command center."))
+    _notify_telegram(alert("🔄", "RESTARTING", "All bots", "Requested from the command center."))
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}
-
 
 
 # ── Per-bot control actions ───────────────────────────────────────────────────
 #
 # Routes registered AFTER the literal /start|stop|restart|emergency paths so
 # FastAPI matches the literals first (no ambiguity).
+
 
 def _resolve_bot(ref: str) -> tuple[str, str]:
     """Return `(task_name, bot_key)` for a **bot key or a display name**, else 404.
@@ -1508,16 +1708,15 @@ def _resolve_bot(ref: str) -> tuple[str, str]:
 
 _COORDINATOR = r"C:\trading\algos\bots\startup_coordinator.py"
 # WMI does not inherit the user's PATH — must use the full Python executable path.
-_PYTHON_EXE  = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
+_PYTHON_EXE = r"C:\Users\Administrator\AppData\Local\Programs\Python\Python311\python.exe"
+
 
 # Use wmic process call create so startup_coordinator runs under WMI — not
 # under the SSH job object — meaning the bot it spawns survives when SSH closes.
 # Direct SSH call kills children via job-object teardown despite CREATE_NEW_PROCESS_GROUP.
 def _launch_bot(bot_key: str) -> str:
     """Fire startup_coordinator.py --bot <key> via WMI and return wmic output."""
-    return _ssh(
-        f'wmic process call create "{_PYTHON_EXE} {_COORDINATOR} --bot {bot_key}" 2>nul'
-    )
+    return _ssh(f'wmic process call create "{_PYTHON_EXE} {_COORDINATOR} --bot {bot_key}" 2>nul')
 
 
 # ── Which version is deployed, and promoting a new one ────────────────────────
@@ -1530,7 +1729,7 @@ def _launch_bot(bot_key: str) -> str:
 # are built; it says nothing about what is deployed, and until 2026-08-03 the two were the
 # same files — which is exactly the confusion being removed.
 
-_VPS_REPO = r"C:\trading"   # `_VPS_INSTANCES` is defined with the registry, which needs it
+_VPS_REPO = r"C:\trading"  # `_VPS_INSTANCES` is defined with the registry, which needs it
 _PROMOTE_PY = r"C:\trading\algos\tools\promote.py"
 
 
@@ -1632,8 +1831,7 @@ def get_bot_version(bot_name: str):
             missing = object()
             keys = set(deployed_params) | set(current)
             drift = sorted(
-                k for k in keys
-                if deployed_params.get(k, missing) != current.get(k, missing)
+                k for k in keys if deployed_params.get(k, missing) != current.get(k, missing)
             )
         except HTTPException:
             pass
@@ -1643,11 +1841,13 @@ def get_bot_version(bot_name: str):
     # in my backtester" is a question only this machine can answer. It is best-effort: the
     # version card is still worth rendering when git cannot be read.
     try:
-        comparison = BotVersionCompare(**bot_versions.compare(
-            rec.get("strategy_package", ""),
-            rec.get("promoted_commit", ""),
-            current_params,
-        ))
+        comparison = BotVersionCompare(
+            **bot_versions.compare(
+                rec.get("strategy_package", ""),
+                rec.get("promoted_commit", ""),
+                current_params,
+            )
+        )
     except Exception:
         comparison = None
 
@@ -1658,7 +1858,9 @@ def get_bot_version(bot_name: str):
         promoted_at=rec.get("promoted_at", ""),
         strategy_package=rec.get("strategy_package", ""),
         strategy_class=rec.get("strategy_class", ""),
-        strategy_version=rec.get("strategy_version", 0),
+        # `None`, not 0 — a deployment made before promote.py stamped a real version has no
+        # answer here, and 0 is a version somebody could genuinely be on.
+        strategy_version=rec.get("strategy_version"),
         files=rec.get("files", 0),
         params=deployed_params,
         repo_commit=parts.get("head", "").strip().splitlines()[0] if parts.get("head") else "",
@@ -1670,18 +1872,54 @@ def get_bot_version(bot_name: str):
     )
 
 
-_PROMOTE_OK   = "===PROMOTE_OK==="
+_PROMOTE_OK = "===PROMOTE_OK==="
 _PROMOTE_FAIL = "===PROMOTE_FAILED==="
+# `promote.py` prints `##VERSIONS <from> <to>` — the version the bot IS on and the one this
+# deploy moves it to, each a bare int or `?`. Parsed rather than scraped out of the prose for
+# the reason the OK/FAIL markers exist: a reworded `print` must not change what this reads.
+_VERSION_MARK = "##VERSIONS"
 _PROMOTE_UNKNOWN = (
     "\n⚠ promote.py did not report an exit status. Nothing here can say whether it "
     "deployed — check the VPS before assuming either way."
 )
 
 
-def _run_promote(bot_key: str, *, dry_run: bool, pull: bool,
-                 allow_dirty: bool) -> tuple[bool | None, str]:
-    """Run promote.py on the VPS. Returns `(ok, output)`; `ok` is **None** when the run did
-    not report one, which is a third answer and never rounded to False silently.
+def _vlabel(n: int | None) -> str:
+    """`v165`, or `v?`. **Never `v0` for an unknown** — 0 is a version somebody could be on,
+    and it is the exact value that misreported this field for its whole life."""
+    return "v?" if n is None else f"v{n}"
+
+
+def _parse_versions(out: str) -> tuple[int | None, int | None]:
+    """The `##VERSIONS <from> <to>` line promote.py prints, as two ints.
+
+    ⚠ **`None` on every side that could not be counted, and on a missing line entirely** — a
+    deployment made before the marker existed, or a `rev-list` the VPS could not run. The
+    caller words the message around what it has rather than printing `v0`, which is the value
+    that has been misreporting this field since it was declared.
+    """
+    for line in reversed(out.splitlines()):
+        if not line.startswith(_VERSION_MARK):
+            continue
+        parts = line.split()
+        if len(parts) != 3:
+            return None, None
+
+        def num(tok: str) -> int | None:
+            try:
+                return int(tok)
+            except ValueError:
+                return None
+
+        return num(parts[1]), num(parts[2])
+    return None, None
+
+
+def _run_promote(
+    bot_key: str, *, dry_run: bool, pull: bool, allow_dirty: bool
+) -> tuple[bool | None, str, tuple[int | None, int | None]]:
+    """Run promote.py on the VPS. Returns `(ok, output, versions)`; `ok` is **None** when the
+    run did not report one, which is a third answer and never rounded to False silently.
 
     🔴 The result used to be sniffed out of the PROSE — `"pinned" in out` for a promote,
     `"dry run" in out` for a preview. `promote.py` has always returned a real exit code (0
@@ -1709,10 +1947,11 @@ def _run_promote(bot_key: str, *, dry_run: bool, pull: bool,
     else:
         ok = None
     clean = "\n".join(
-        ln for ln in out.splitlines()
-        if _PROMOTE_OK not in ln and _PROMOTE_FAIL not in ln
+        ln
+        for ln in out.splitlines()
+        if _PROMOTE_OK not in ln and _PROMOTE_FAIL not in ln and not ln.startswith(_VERSION_MARK)
     ).strip()
-    return ok, clean
+    return ok, clean, _parse_versions(out)
 
 
 @router.post("/{bot_name}/promote/preview", response_model=BotPromoteResult)
@@ -1726,8 +1965,7 @@ def preview_bot_promote(bot_name: str, req: BotPromoteRequest):
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        ok, out = _run_promote(bot_key, dry_run=True, pull=req.pull,
-                               allow_dirty=req.allow_dirty)
+        ok, out, _ = _run_promote(bot_key, dry_run=True, pull=req.pull, allow_dirty=req.allow_dirty)
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
@@ -1746,8 +1984,9 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
     """
     _, bot_key = _resolve_bot(bot_name)
     try:
-        reported, out = _run_promote(bot_key, dry_run=False, pull=req.pull,
-                                     allow_dirty=req.allow_dirty)
+        reported, out, versions = _run_promote(
+            bot_key, dry_run=False, pull=req.pull, allow_dirty=req.allow_dirty
+        )
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="VPS SSH call timed out")
     except Exception as e:
@@ -1762,6 +2001,34 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
 
     ok = reported
     restarted = False
+    if ok:
+        # 🔴 SENT BEFORE THE RESTART, and the ordering is the feature rather than a detail.
+        # A deploy produces THREE messages from TWO machines — this one, then the bot's own
+        # STOPPED and ONLINE — and Aaron read them as three unrelated events. Threading them
+        # needs a ROOT, and the root has to exist before the thing it is the root of: the bot
+        # writes STOPPED the moment it notices its stop file, seconds from here.
+        #
+        # ⚠ Nothing is lost by moving it. `restarted` was never a MEASUREMENT — it was set to
+        # `ok and req.restart` unconditionally after the kill — so the old placement bought no
+        # extra knowledge, and the wording now states the INTENT ("restarting it now"), which
+        # the two replies then confirm or fail to.
+        was_v, now_v = versions
+        moved = (
+            f"{_vlabel(was_v)} → {_vlabel(now_v)}"
+            if (was_v is not None or now_v is not None)
+            else ""
+        )
+        root = _notify_telegram(
+            alert(
+                "📦",
+                "PROMOTED",
+                _KEY_DISPLAY.get(bot_key, bot_key),
+                joined([moved, "deployed"]) or "The new code is deployed.",
+                "Restarting it now." if req.restart else "Restart it to pick the new version up.",
+            )
+        )
+        if req.restart:
+            _set_alert_thread(bot_key, root)
     if ok and req.restart:
         # Kill it and let SYS_MONITOR bring it back — that path is exercised every time the
         # watchdog fires, so it is the one most likely to work. The suppress key is NOT
@@ -1770,11 +2037,6 @@ def promote_bot(bot_name: str, req: BotPromoteRequest):
         _time.sleep(2)
         _launch_bot(bot_key)
         restarted = True
-    if ok:
-        _notify_telegram(alert(
-            "📦", "PROMOTED", _KEY_DISPLAY.get(bot_key, bot_key),
-            "It is now running the code that was just deployed."
-            + ("" if restarted else " Restart it to pick the new version up.")))
     return BotPromoteResult(ok=ok, output=out, restarted=restarted)
 
 
@@ -1865,12 +2127,15 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
 
     try:
         _git_commit_push(
-            info["path"], f"runtime: {bot_name} — {changed} [command center]",
+            info["path"],
+            f"runtime: {bot_name} — {changed} [command center]",
             "runtime strategy params written from the Bots page; an operational "
-            "deployment, and the fields are named in the message")
+            "deployment, and the fields are named in the message",
+        )
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500,
-                            detail=f"git push failed: {e.stderr.decode(errors='replace')}")
+        raise HTTPException(
+            status_code=500, detail=f"git push failed: {e.stderr.decode(errors='replace')}"
+        )
     try:
         out = _ssh("cd C:\\trading && git pull origin main")
     except Exception as e:
@@ -1879,11 +2144,16 @@ def save_bot_runtime(bot_name: str, update: BotRuntimeUpdate):
     display = _KEY_DISPLAY.get(bot_key, bot_key)
     # Plain text, no Markdown: bot keys and param names are full of underscores, and
     # Telegram drops the WHOLE message on an unbalanced entity rather than escaping it.
-    _notify_telegram(alert("⚙️", "SETTINGS CHANGED", display,
-                           changed,
-                           "It will apply at the next bar the bot is flat."))
-    return {"status": "ok", "changed": True, "deployed": True, "detail": changed,
-            "output": out}
+    _notify_telegram(
+        alert(
+            "⚙️",
+            "SETTINGS CHANGED",
+            display,
+            changed,
+            "It will apply at the next bar the bot is flat.",
+        )
+    )
+    return {"status": "ok", "changed": True, "deployed": True, "detail": changed, "output": out}
 
 
 @router.post("/{bot_name}/start")
@@ -1899,8 +2169,7 @@ def start_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(alert("▶️", "STARTING", display,
-                          "Requested from the command center."))
+    _notify_telegram(alert("▶️", "STARTING", display, "Requested from the command center."))
     return {"status": "ok", "output": out}
 
 
@@ -1916,8 +2185,14 @@ def stop_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(alert("⏹", "STOPPED", display,
-                          "Stopped from the command center. It will not come back on its own."))
+    _notify_telegram(
+        alert(
+            "⏹",
+            "STOPPED",
+            display,
+            "Stopped from the command center. It will not come back on its own.",
+        )
+    )
     return {"status": "ok", "output": out}
 
 
@@ -1935,6 +2210,5 @@ def restart_bot(bot_name: str):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"VPS SSH failed: {e}")
     display = _KEY_DISPLAY.get(bot_key, bot_key)
-    _notify_telegram(alert("🔄", "RESTARTING", display,
-                          "Requested from the command center."))
+    _notify_telegram(alert("🔄", "RESTARTING", display, "Requested from the command center."))
     return {"status": "ok", "output": f"{stop_out}\n{start_out}".strip()}

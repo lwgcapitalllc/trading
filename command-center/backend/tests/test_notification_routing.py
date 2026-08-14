@@ -20,9 +20,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 import config as cfg
+import pytest
 from services import notify
 
 _BACKEND = Path(__file__).resolve().parent.parent
@@ -81,22 +80,51 @@ def test_the_env_var_wins(monkeypatch):
 
 def test_the_sender_posts_to_the_kinds_chat(monkeypatch):
     """The resolver being right is worth nothing if the sender ignores it."""
-    _creds(monkeypatch, telegram_token="T", telegram_chat_id="-100trades",
-           telegram_health_chat="-100health")
+    _creds(
+        monkeypatch,
+        telegram_token="T",
+        telegram_chat_id="-100trades",
+        telegram_health_chat="-100health",
+    )
     seen = {}
 
+    # ⚠ A CONTEXT MANAGER that can be READ, because the real sender reads Telegram's reply for
+    # the message id (`send_telegram_id`, 2026-08-14). A double less capable than production is
+    # the trap this repo records four times over — here it failed LOUDLY, which is the good
+    # direction, and the fix is the FIXTURE rather than the code.
     class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def read(self):
+            import json as _json
+
+            return _json.dumps({"ok": True, "result": {"message_id": 4242}}).encode()
+
         def close(self):
             pass
 
     def _urlopen(req, timeout=None):
         import json as _json
-        seen["chat"] = _json.loads(req.data.decode())["chat_id"]
+
+        body = _json.loads(req.data.decode())
+        seen["chat"] = body["chat_id"]
+        seen["reply_to"] = body.get("reply_to_message_id")
         return _Resp()
 
     monkeypatch.setattr(notify.urllib.request, "urlopen", _urlopen)
     assert notify.send_telegram("bot restarted", notify.HEALTH) is True
     assert seen["chat"] == "-100health"
+    assert seen["reply_to"] is None, "an unthreaded send must not carry a reply id"
+
+    # The id is what a later message REPLIES to — a deploy's STOPPED and ONLINE land under the
+    # PROMOTED that caused them, and the id is the only thing that can say so.
+    assert notify.send_telegram_id("promoted", notify.HEALTH) == 4242
+    assert notify.send_telegram_id("online", notify.HEALTH, reply_to=4242) == 4242
+    assert seen["reply_to"] == 4242
 
 
 def test_the_keys_match_the_algos_side():
@@ -109,7 +137,11 @@ def test_the_keys_match_the_algos_side():
 
 # ── no sender in this app may aim at the trades room ─────────────────────────────────────────
 
-_SEND_CALL = re.compile(r"\bsend_telegram\s*\(")
+# ⚠ `_id` too. `send_telegram_id` landed 2026-08-14 for the deploy thread, and a pattern
+# that names only the wrapper would let a new call site aim at the trades room unseen —
+# a sweep that silently stops covering a function is worse than no sweep, because the
+# green result reads as "checked".
+_SEND_CALL = re.compile(r"\bsend_telegram(?:_id)?\s*\(")
 
 
 def _call_sites():
@@ -120,7 +152,7 @@ def _call_sites():
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
             for i, line in enumerate(lines, 1):
                 if _SEND_CALL.search(line):
-                    yield path, i, "\n".join(lines[i - 1:i + 4])
+                    yield path, i, "\n".join(lines[i - 1 : i + 4])
 
 
 def test_the_sweep_actually_finds_call_sites():
@@ -136,6 +168,9 @@ def test_no_backend_sender_uses_the_trades_room():
 
 
 def test_every_backend_send_states_a_kind():
-    unrouted = [f"{p.name}:{n}" for p, n, text in _call_sites()
-                if not re.search(r"\b(notify\.HEALTH|notify\.TRADE|HEALTH|TRADE|kind)\b", text)]
+    unrouted = [
+        f"{p.name}:{n}"
+        for p, n, text in _call_sites()
+        if not re.search(r"\b(notify\.HEALTH|notify\.TRADE|HEALTH|TRADE|kind)\b", text)
+    ]
     assert not unrouted, f"these Telegram sends do not say which room they belong in: {unrouted}"

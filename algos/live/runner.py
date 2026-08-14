@@ -61,18 +61,22 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parent.parent
-for _p in (str(_REPO), str(_REPO / "algos" / "shared"), str(_REPO / "strategies" / "python"),
-           str(_HERE)):
+for _p in (
+    str(_REPO),
+    str(_REPO / "algos" / "shared"),
+    str(_REPO / "strategies" / "python"),
+    str(_HERE),
+):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import live_config                    # noqa: E402  (algos/live/live_config.py)
-from bridge import OrderBridge, BridgeState, assert_supported  # noqa: E402
-from feed import BarFeed              # noqa: E402
-from ledger import Ledger             # noqa: E402
-from version import verify_pin, current_commit, VersionMismatch  # noqa: E402
+import live_config  # noqa: E402  (algos/live/live_config.py)
 from alert_format import alert, joined, money  # noqa: E402
+from bridge import BridgeState, OrderBridge, assert_supported  # noqa: E402
+from feed import BarFeed  # noqa: E402
 from fleet_halt import read_fleet_halt  # noqa: E402  (algos/shared/fleet_halt.py)
+from ledger import Ledger  # noqa: E402
+from version import VersionMismatch, current_commit, verify_pin  # noqa: E402
 
 _stop_requested = False
 
@@ -224,19 +228,21 @@ class LiveRunner:
             try:
                 stream.reconfigure(encoding="utf-8", errors="replace")
             except (AttributeError, ValueError):
-                pass          # already wrapped, or redirected to something without reconfigure
+                pass  # already wrapped, or redirected to something without reconfigure
 
         self.cfg.instance_dir.mkdir(parents=True, exist_ok=True)
         log = logging.getLogger(self.cfg.bot_key)
-        if log.handlers:      # constructing a second runner must not double every line
+        if log.handlers:  # constructing a second runner must not double every line
             return log
         log.setLevel(logging.INFO)
         fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-        for h in (DailyFileHandler(self.cfg.instance_dir, self.cfg.bot_key),
-                  logging.StreamHandler(sys.stdout)):
+        for h in (
+            DailyFileHandler(self.cfg.instance_dir, self.cfg.bot_key),
+            logging.StreamHandler(sys.stdout),
+        ):
             h.setFormatter(fmt)
             log.addHandler(h)
-        log.propagate = False          # the root logger is not this package's to write through
+        log.propagate = False  # the root logger is not this package's to write through
         return log
 
     def _notify(self, text: str, kind: str, reply_to=None):
@@ -258,23 +264,79 @@ class LiveRunner:
         which the bridge treats as "no thread to reply to" rather than an error.
         """
         try:
-            from notify import send_telegram_id, SIGNAL, TRADE
-            per_bot = {TRADE: self.cfg.telegram_chat_id,
-                       SIGNAL: self.cfg.telegram_signal_chat}
+            from notify import SIGNAL, TRADE, send_telegram_id
+
+            per_bot = {TRADE: self.cfg.telegram_chat_id, SIGNAL: self.cfg.telegram_signal_chat}
             return send_telegram_id(
-                text, kind,
+                text,
+                kind,
                 chat_id=per_bot.get(kind, self.cfg.telegram_health_chat),
                 token_key=self.cfg.telegram_token_key,
-                reply_to=reply_to)
+                reply_to=reply_to,
+            )
         except Exception as e:
             self.log.warning(f"Telegram send failed: {e}")
             return None
 
-    def _notify_health(self, text: str):
+    def _notify_health(self, text: str, *, thread: bool = False):
         """The overwhelming majority of this class's messages. Named so a call site reads as a
-        routing decision rather than as a default nobody chose."""
+        routing decision rather than as a default nobody chose.
+
+        `thread=True` replies to the DEPLOY thread this bot was restarted by, if there is a live
+        one — see `alert_thread`. Only the two lifecycle messages a promote causes pass it: a
+        deploy is one event and it produced three messages from two machines, which read as three
+        unrelated things. Everything else here is its own event and stays loose in the feed.
+        """
         from notify import HEALTH
-        return self._notify(text, HEALTH)
+
+        return self._notify(text, HEALTH, reply_to=self._deploy_thread() if thread else None)
+
+    # ── the deploy that restarted this bot, if one did ───────────────────────
+    #
+    # 🔴 **A file in the instance directory that outlives what it describes is the `stop.request`
+    # trap**, and it is the only way this could be worse than not threading at all: a stale id
+    # would quietly parent every future STOPPED and ONLINE under an ancient deploy, in a channel
+    # whose whole job is telling you what is happening NOW. Two guards, and neither alone is
+    # enough — the EXPIRY covers a restart that never completed (nobody is left to delete it),
+    # and the DELETE covers a bot that restarts twice inside the window.
+    ALERT_THREAD_FILE = "alert_thread.json"
+
+    def alert_thread_path(self) -> Path:
+        return self.cfg.instance_dir / self.ALERT_THREAD_FILE
+
+    def _deploy_thread(self):
+        """The Telegram message id this bot's deploy alerts should reply to, or None.
+
+        ⚠ **Every failure answers None**, which means *send it unthreaded* — the behaviour this
+        bot had before the file existed. A notifier convenience must never be able to cost a
+        lifecycle message, and there is no failure here worth a log line at the volume this runs.
+        """
+        import json as _json
+        import time as _t
+
+        try:
+            raw = _json.loads(self.alert_thread_path().read_text(encoding="utf-8"))
+            # Valid JSON that is not an object — a list, a bare number — raises AttributeError
+            # rather than the ValueError below, which would escape. Caught by its own test.
+            if not isinstance(raw, dict):
+                return None
+            if float(raw.get("expires_at", 0)) < _t.time():
+                return None
+            mid = int(raw.get("message_id") or 0)
+            return mid or None
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def clear_alert_thread(self) -> None:
+        """Consume the deploy thread. Called once the bot is ONLINE — the last message that
+        belongs to a deploy — so a bot restarting again inside the TTL starts a fresh thread
+        rather than replying under the previous deploy."""
+        try:
+            p = self.alert_thread_path()
+            if p.exists():
+                p.unlink()
+        except OSError:
+            pass
 
     def _build_strategy(self):
         """Import the strategy package, build its config from the INSTANCE file only, and
@@ -282,24 +344,28 @@ class LiveRunner:
         a typo'd parameter that silently keeps the default is a bot trading settings nobody
         chose."""
         import importlib
+
         pkg = importlib.import_module(self.cfg.strategy_package)
         lab = getattr(pkg, "LAB_STRATEGY", None)
         if not lab:
             raise RuntimeError(
                 f"{self.cfg.strategy_package} declares no LAB_STRATEGY, so the live runner "
-                f"cannot resolve its strategy or config class.")
+                f"cannot resolve its strategy or config class."
+            )
         cls, cfg_cls = lab["strategy"], lab["config"]
         if cls.__name__ != self.cfg.strategy_class:
             raise RuntimeError(
                 f"Config names strategy_class={self.cfg.strategy_class!r} but package "
-                f"{self.cfg.strategy_package} provides {cls.__name__!r}.")
+                f"{self.cfg.strategy_package} provides {cls.__name__!r}."
+            )
 
         known = set(cfg_cls.__dataclass_fields__)
         unknown = sorted(set(self.cfg.strategy_params) - known)
         if unknown:
             raise RuntimeError(
                 f"Unknown strategy_params in the instance config: {', '.join(unknown)}. "
-                f"They would be ignored, so the bot would trade settings you did not choose.")
+                f"They would be ignored, so the bot would trade settings you did not choose."
+            )
 
         params = dict(self.cfg.strategy_params)
         params.setdefault("symbol", self.cfg.symbol)
@@ -309,11 +375,14 @@ class LiveRunner:
         capital = self.cfg.initial_capital
         if not capital:
             import MetaTrader5 as mt5
+
             info = mt5.account_info()
             capital = float(info.balance) if info else 0.0
             if not capital:
-                raise RuntimeError("Could not read the account balance, and initial_capital is "
-                                   "0 — the strategy would size every trade off nothing.")
+                raise RuntimeError(
+                    "Could not read the account balance, and initial_capital is "
+                    "0 — the strategy would size every trade off nothing."
+                )
         self.log.info(f"Sizing against account balance ${capital:,.2f}")
         return cls(scfg, initial_capital=capital), scfg
 
@@ -337,6 +406,7 @@ class LiveRunner:
         account is not a dead link, and answering "reconnect" to it would be wrong. See there.
         """
         import MetaTrader5 as mt5
+
         try:
             info = mt5.account_info()
         except Exception as e:
@@ -376,13 +446,19 @@ class LiveRunner:
             self.log.error(
                 "MT5 link lost — the terminal is not answering this process. No bars are "
                 "arriving and the strategy is NOT seeing the market until it reconnects. The "
-                "usual cause is the terminal restarting itself after an auto-update.")
+                "usual cause is the terminal restarting itself after an auto-update."
+            )
             self.ledger.event("mt5_link_lost", last_bar=str(self.feed.last_bar_time))
-            self._notify_health(alert(
-                "🔌", "NO MT5 LINK", self.cfg.display_name,
-                "Lost its connection to the terminal — still running, but seeing no market at all.",
-                f"Retrying every {_LINK_RETRY_SECONDS}s. If it does not come back, check "
-                f"MetaTrader on the VPS."))
+            self._notify_health(
+                alert(
+                    "🔌",
+                    "NO MT5 LINK",
+                    self.cfg.display_name,
+                    "Lost its connection to the terminal — still running, but seeing no market at all.",
+                    f"Retrying every {_LINK_RETRY_SECONDS}s. If it does not come back, check "
+                    f"MetaTrader on the VPS.",
+                )
+            )
 
         if now - self._link_retry_at < _LINK_RETRY_SECONDS:
             return
@@ -407,23 +483,36 @@ class LiveRunner:
         self._link_lost_at = None
         self.log.info(f"MT5 link restored after {down / 60:.1f} min — engines re-warmed.")
         self.ledger.event("mt5_link_restored", down_seconds=round(down))
-        self._notify_health(alert(
-            "🟢", "RECONNECTED", self.cfg.display_name,
-            f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
-            f"missed.",
-            "Nothing to do."))
+        self._notify_health(
+            alert(
+                "🟢",
+                "RECONNECTED",
+                self.cfg.display_name,
+                f"Back on the terminal after {down / 60:.0f} minutes. It re-warmed on the bars it "
+                f"missed.",
+                "Nothing to do.",
+            )
+        )
 
     def connect(self) -> bool:
         from mt5_ops import BotMT5
+
         creds = live_config.account_credentials(self.cfg.account)
         if not creds:
             self.log.error(
                 f"No credentials for MT5 account {self.cfg.account}. Add an 'mt5_accounts' "
-                f"entry to algos/credentials.json (see credentials.template.json).")
+                f"entry to algos/credentials.json (see credentials.template.json)."
+            )
             return False
         creds["server"] = creds["server"] or self.cfg.server
-        self.mt5 = BotMT5(self.cfg.symbol, self.cfg.magic, self.cfg.bot_key,
-                          {"mt5_path": self.cfg.mt5_path}, creds, self.log)
+        self.mt5 = BotMT5(
+            self.cfg.symbol,
+            self.cfg.magic,
+            self.cfg.bot_key,
+            {"mt5_path": self.cfg.mt5_path},
+            creds,
+            self.log,
+        )
         return self.mt5.connect()
 
     def _log_risk_cap(self) -> None:
@@ -441,10 +530,13 @@ class LiveRunner:
             self.log.warning(
                 f"Account risk cap: NONE. This bot risks {per_trade}% per trade and nothing "
                 f"limits what the ACCOUNT carries — correct for a one-bot account, and it means "
-                f"a second bot here would stack its risk on top of this one's. See G10.")
+                f"a second bot here would stack its risk on top of this one's. See G10."
+            )
         else:
-            self.log.info(f"Account risk cap: {cap}% of the live balance, across every bot on "
-                          f"this account (this bot risks {per_trade}% per trade).")
+            self.log.info(
+                f"Account risk cap: {cap}% of the live balance, across every bot on "
+                f"this account (this bot risks {per_trade}% per trade)."
+            )
         self.ledger.event("risk_cap", account_cap_pct=cap, per_trade_pct=per_trade)
 
     def _start_setup_alerts(self) -> None:
@@ -461,31 +553,41 @@ class LiveRunner:
         backwards.
         """
         from setup_alerts import DEFAULT_CATEGORIES, SetupAlerts
+
         try:
             # ABSENT means all four; an empty list means the reader switched them all off. Those
             # are different statements and `live_config` keeps them apart deliberately.
             cats = self.cfg.setup_alert_categories
             cats = DEFAULT_CATEGORIES if cats is None else tuple(cats)
-            alerts_obj = SetupAlerts(send=self._notify, log=self.log, categories=cats,
-                                     digits=getattr(self.cfg, "digits", 2),
-                                     display=self.cfg.display_name)
+            alerts_obj = SetupAlerts(
+                send=self._notify,
+                log=self.log,
+                categories=cats,
+                digits=getattr(self.cfg, "digits", 2),
+                display=self.cfg.display_name,
+            )
             if not alerts_obj.supported(self.strategy):
                 self.log.warning(
                     f"Setup alerts: OFF — {self.cfg.strategy_class} does not implement "
                     f"live_setups(). It is not that there are no setups; it cannot report any. "
-                    f"See docs/LIVE_SETUP_ALERTS.md.")
+                    f"See docs/LIVE_SETUP_ALERTS.md."
+                )
                 self.ledger.event("setup_alerts", enabled=False, reason="contract not implemented")
                 return
             if not cats:
-                self.log.warning("Setup alerts: every category is switched off in this bot's "
-                                 "config — the signals channel will stay silent.")
+                self.log.warning(
+                    "Setup alerts: every category is switched off in this bot's "
+                    "config — the signals channel will stay silent."
+                )
             self.setup_alerts = alerts_obj
             room = self.cfg.telegram_signal_chat or "the shared telegram_signal_chat"
             self.log.info(f"Setup alerts: ON — {', '.join(cats) or 'nothing'} → {room}")
             self.ledger.event("setup_alerts", enabled=True, categories=list(cats))
         except Exception as e:
-            self.log.warning(f"Setup alerts could not be started ({e}) — the bot trades on "
-                             f"regardless; only the signals channel is affected.")
+            self.log.warning(
+                f"Setup alerts could not be started ({e}) — the bot trades on "
+                f"regardless; only the signals channel is affected."
+            )
             self.ledger.event("setup_alerts", enabled=False, reason=str(e))
 
     def warm(self):
@@ -497,7 +599,8 @@ class LiveRunner:
             raise RuntimeError(
                 f"Only {len(df)} bars of {self.cfg.timeframe} history available for "
                 f"{self.cfg.symbol}. The engines cannot warm on that — check the symbol name "
-                f"first (a wrong broker suffix returns nothing and looks exactly like this).")
+                f"first (a wrong broker suffix returns nothing and looks exactly like this)."
+            )
         self.stack = EngineStack(self.strategy.engine_config())
         self.strategy.execution.bar_ms = self.feed.bar_seconds * 1000
         t0 = time.time()
@@ -507,7 +610,7 @@ class LiveRunner:
             sig = self.strategy.signals.update(state)
             seq = self.strategy.sequence.update(sig)
             self.strategy.execution.step(sig, seq)
-        self._bar_index = bar.index          # live bars count on from here — see _on_bar
+        self._bar_index = bar.index  # live bars count on from here — see _on_bar
         self.feed.mark_seen(df)
 
         # 🔴 DISCARD what the warm-up recorded, or the decision LEDGER fills with history.
@@ -551,12 +654,18 @@ class LiveRunner:
             replayed = len(drain())
 
         self.log.info(
-            f"Warmed {len(df)} bars ({df.index[0]} → {df.index[-1]}) in {time.time()-t0:.1f}s")
+            f"Warmed {len(df)} bars ({df.index[0]} → {df.index[-1]}) in {time.time() - t0:.1f}s"
+        )
         # `replayed_setups` is COUNTED rather than silently dropped: a number that falls to
         # zero is how anyone notices the strategy stopped recording refusals at all.
-        self.ledger.event("warmed", bars=len(df), first=str(df.index[0]),
-                          last=str(df.index[-1]), replayed_setups=dropped,
-                          replayed_snapshots=replayed)
+        self.ledger.event(
+            "warmed",
+            bars=len(df),
+            first=str(df.index[0]),
+            last=str(df.index[-1]),
+            replayed_setups=dropped,
+            replayed_snapshots=replayed,
+        )
         self.reanchor_equity("after warm-up")
         return df
 
@@ -592,14 +701,14 @@ class LiveRunner:
             self.log.warning(
                 f"Could not read the account balance to re-anchor equity {why}; the strategy "
                 f"keeps its own ({getattr(account, 'balance', '?')}). Sizing may be refused "
-                f"until this clears.")
+                f"until this clears."
+            )
             return
         was = float(getattr(account, "balance", 0.0))
         if abs(was - balance) < 0.005:
             return
         account.balance = float(balance)
-        self.log.info(f"Equity re-anchored to the account {why}: "
-                      f"{was:,.2f} → {balance:,.2f}")
+        self.log.info(f"Equity re-anchored to the account {why}: {was:,.2f} → {balance:,.2f}")
         self.ledger.event("equity_reanchored", was=was, now=float(balance), why=why)
 
     def _bind_code(self) -> None:
@@ -618,15 +727,19 @@ class LiveRunner:
         """
         if not self.cfg.is_frozen:
             return
-        leaked = sorted(m for m in sys.modules
-                        if m == self.cfg.strategy_package
-                        or m.split(".")[0] in ("engines", "backtest")
-                        or m.startswith(f"{self.cfg.strategy_package}."))
+        leaked = sorted(
+            m
+            for m in sys.modules
+            if m == self.cfg.strategy_package
+            or m.split(".")[0] in ("engines", "backtest")
+            or m.startswith(f"{self.cfg.strategy_package}.")
+        )
         if leaked:
             raise RuntimeError(
                 f"Cannot freeze this deployment: {', '.join(leaked)} was already imported from "
                 f"the repo before the snapshot was bound. The bot would run a mix of deployed "
-                f"and repo code while reporting the deployed version. Move that import later.")
+                f"and repo code while reporting the deployed version. Move that import later."
+            )
         for p in reversed(self.cfg.import_paths):
             sys.path.insert(0, str(p))
 
@@ -668,13 +781,18 @@ class LiveRunner:
         tell" must not become "refuse forever" for the process whose absence is silent.
         """
         import subprocess
+
         try:
             r = subprocess.run(
                 ["wmic", "process", "where", "name='python.exe'", "get", "processid,commandline"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
         except Exception as e:
-            self.log.warning(f"Could not check for another copy of this bot ({e}) — starting anyway")
+            self.log.warning(
+                f"Could not check for another copy of this bot ({e}) — starting anyway"
+            )
             return False
         me = str(os.getpid())
         for line in r.stdout.splitlines():
@@ -685,7 +803,8 @@ class LiveRunner:
                 self.log.error(
                     f"{self.cfg.display_name} is already running as PID {pid}. Refusing to start "
                     f"a second copy — two processes on one account would both size a full "
-                    f"position off the same setup. Stop that one first if this is deliberate.")
+                    f"position off the same setup. Stop that one first if this is deliberate."
+                )
                 return True
         return False
 
@@ -710,7 +829,7 @@ class LiveRunner:
         try:
             code, reason = self._run()
             return code
-        except BaseException as e:                       # noqa: BLE001 — re-raised below
+        except BaseException as e:  # noqa: BLE001 — re-raised below
             # KeyboardInterrupt and SystemExit are BaseExceptions and are how this process most
             # often ends by hand. They are an ENDING, not a crash to be swallowed, so the record
             # is written and the exception continues on its way.
@@ -723,9 +842,13 @@ class LiveRunner:
         """Write the run's closing line. Best-effort by design — a logging failure must not be
         able to change the exit code of a trading process."""
         try:
-            self.ledger.event("shutdown", exit_code=code, reason=reason,
-                              uptime_seconds=round(time.time() - self._started_at))
-        except Exception as e:                           # pragma: no cover - defensive
+            self.ledger.event(
+                "shutdown",
+                exit_code=code,
+                reason=reason,
+                uptime_seconds=round(time.time() - self._started_at),
+            )
+        except Exception as e:  # pragma: no cover - defensive
             self.log.warning(f"Could not write the shutdown record: {e}")
 
     def _run(self) -> tuple[int, str]:
@@ -745,7 +868,8 @@ class LiveRunner:
             self.log.warning(
                 f"{self.cfg.bot_key} is not assigned to an account (account: null), so there is "
                 f"nothing for it to trade. Assign it on the command center's Bots → Accounts "
-                f"tab, then start it.")
+                f"tab, then start it."
+            )
             self.ledger.event("not_assigned")
             return 0, "not assigned to an account"
         if self.already_running():
@@ -757,34 +881,45 @@ class LiveRunner:
         try:
             self._bind_code()
             self.source_hash = verify_pin(
-                self.cfg.source_roots, self.cfg.strategy_source_hash,
-                frozen=self.cfg.is_frozen, bot_key=self.cfg.bot_key)
+                self.cfg.source_roots,
+                self.cfg.strategy_source_hash,
+                frozen=self.cfg.is_frozen,
+                bot_key=self.cfg.bot_key,
+            )
         except (VersionMismatch, RuntimeError) as e:
             self.log.error(str(e))
             self.ledger.event("version_mismatch", detail=str(e))
-            self._notify_health(alert(
-                "⛔", "WILL NOT START", self.cfg.display_name,
-                "The code on disk is not the version this bot was promoted to run, so it "
-                "refused to start.",
-                "It is down and will stay down. Promote it again, or restore the snapshot."))
+            self._notify_health(
+                alert(
+                    "⛔",
+                    "WILL NOT START",
+                    self.cfg.display_name,
+                    "The code on disk is not the version this bot was promoted to run, so it "
+                    "refused to start.",
+                    "It is down and will stay down. Promote it again, or restore the snapshot.",
+                )
+            )
             return 2, "version pin mismatch"
         if not self.cfg.strategy_source_hash:
             self.log.warning(
                 f"UNPINNED: this bot has no strategy_source_hash, so nothing checks what it is "
-                f"running. Hash {self.source_hash}. Promote it to pin.")
+                f"running. Hash {self.source_hash}. Promote it to pin."
+            )
         if not self.cfg.is_frozen:
             # Not fatal — a bot has to run unfrozen once to be promotable. But it is the state
             # that let a `git pull` kill the live bot for three days, so it is never silent.
             self.log.warning(
                 f"NOT FROZEN: importing from the repo working tree ({self.cfg.repo_root}), so a "
                 f"`git pull` or a lab edit changes what this bot trades. Promote it with "
-                f"`python algos/tools/promote.py --bot {self.cfg.bot_key}`.")
+                f"`python algos/tools/promote.py --bot {self.cfg.bot_key}`."
+            )
 
         self.log.info(
-            f"{self.cfg.display_name} | {self.cfg.strategy_class} v{self.cfg.strategy_version} "
+            f"{self.cfg.display_name} | {self.cfg.strategy_class} {self.cfg.version_label} "
             f"| hash {self.source_hash[:12]} | commit {commit or '?'} "
             f"| {'frozen' if self.cfg.is_frozen else 'REPO'} "
-            f"| {'DRY RUN' if self.dry_run else 'LIVE'}")
+            f"| {'DRY RUN' if self.dry_run else 'LIVE'}"
+        )
         # 🔴 How the PREVIOUS run ended, recorded on this run's first line. `None` means
         # nothing on record (first ever start, or an unreadable file) and is NOT the same as
         # clean — an unreadable health file must never produce the reassuring answer.
@@ -794,13 +929,22 @@ class LiveRunner:
             self.log.warning(
                 f"The previous run of this bot ended WITHOUT a shutdown record — its last "
                 f"lifecycle line was {last.get('event')!r} at {last.get('ts')}. It was killed, "
-                f"it crashed, or the box went down. Nothing else records that.")
+                f"it crashed, or the box went down. Nothing else records that."
+            )
 
-        self.ledger.event("startup", version=self.cfg.strategy_version, hash=self.source_hash,
-                          commit=commit, dry_run=self.dry_run, symbol=self.cfg.symbol,
-                          timeframe=self.cfg.timeframe, account=self.cfg.account,
-                          mt5_path=self.cfg.mt5_path,
-                          previous_run_clean=prev_clean, pid=os.getpid())
+        self.ledger.event(
+            "startup",
+            version=self.cfg.strategy_version,
+            hash=self.source_hash,
+            commit=commit,
+            dry_run=self.dry_run,
+            symbol=self.cfg.symbol,
+            timeframe=self.cfg.timeframe,
+            account=self.cfg.account,
+            mt5_path=self.cfg.mt5_path,
+            previous_run_clean=prev_clean,
+            pid=os.getpid(),
+        )
 
         # BEFORE anything else can take time. A stop request left behind by a previous run
         # would otherwise stop this one seconds after boot, which reads as a bot refusing to
@@ -814,11 +958,17 @@ class LiveRunner:
         try:
             self.strategy, scfg = self._build_strategy()
             self.feed = BarFeed(self.mt5, self.cfg.timeframe, self.cfg.symbol)
-            self.bridge = OrderBridge(self.mt5, self.strategy.execution, self.ledger, self.log,
-                                      notify=self._notify, dry_run=self.dry_run,
-                                      margin_safety_pct=self.cfg.margin_safety_pct,
-                                      account_risk_cap_pct=self.cfg.account_risk_cap_pct,
-                                      instance_dir=self.cfg.instance_dir)
+            self.bridge = OrderBridge(
+                self.mt5,
+                self.strategy.execution,
+                self.ledger,
+                self.log,
+                notify=self._notify,
+                dry_run=self.dry_run,
+                margin_safety_pct=self.cfg.margin_safety_pct,
+                account_risk_cap_pct=self.cfg.account_risk_cap_pct,
+                instance_dir=self.cfg.instance_dir,
+            )
             # SAY which state the account-level cap is in, every start. An absent guard is
             # silent by construction, and "no cap" and "a cap that is not working" look
             # identical from outside — the same reason `deadman.py --status` reports an unset
@@ -840,32 +990,51 @@ class LiveRunner:
         except Exception as e:
             self.log.error(f"Startup failed: {e}\n{traceback.format_exc()}")
             self.ledger.event("startup_failed", error=str(e))
-            self._notify_health(alert(
-                "⛔", "WILL NOT START", self.cfg.display_name,
-                f"Startup failed: {e}",
-                "It is down and will stay down until someone looks at it."))
+            self._notify_health(
+                alert(
+                    "⛔",
+                    "WILL NOT START",
+                    self.cfg.display_name,
+                    f"Startup failed: {e}",
+                    "It is down and will stay down until someone looks at it.",
+                )
+            )
             return 5, f"startup failed: {e}"
 
-        self._notify_health(alert(
-            "🟢", "ONLINE", self.cfg.display_name,
-            joined([
-                "Trading live" if not self.dry_run else "Dry run — it will place no orders",
-                f"{self.cfg.symbol} {self.cfg.timeframe}",
-                # `probe_link` is the ONE way this class asks for a balance — it returns None
-                # when the terminal cannot be reached, and `money()` renders that as "unknown"
-                # rather than $0.00. A startup banner reporting a fabricated zero would be the
-                # blind-terminal defect of 2026-08-04 all over again, in the first message the
-                # bot ever sends.
-                money(self.probe_link()[1]),
-            ]),
-            f"v{self.cfg.strategy_version} ({self.source_hash[:8]}) · account {self.cfg.account}"))
+        # `thread=True` on both lifecycle messages a promote causes. ONLINE is the LAST of the
+        # three, so it consumes the thread below — a deploy is finished once the bot is back.
+        self._notify_health(
+            alert(
+                "🟢",
+                "ONLINE",
+                self.cfg.display_name,
+                joined(
+                    [
+                        "Trading live" if not self.dry_run else "Dry run — it will place no orders",
+                        f"{self.cfg.symbol} {self.cfg.timeframe}",
+                        # `probe_link` is the ONE way this class asks for a balance — it returns None
+                        # when the terminal cannot be reached, and `money()` renders that as "unknown"
+                        # rather than $0.00. A startup banner reporting a fabricated zero would be the
+                        # blind-terminal defect of 2026-08-04 all over again, in the first message the
+                        # bot ever sends.
+                        money(self.probe_link()[1]),
+                    ]
+                ),
+                f"{self.cfg.version_label} ({self.source_hash[:8]}) · account {self.cfg.account}",
+            ),
+            thread=True,
+        )
+        self.clear_alert_thread()
 
         return self._loop()
 
     def _loop(self) -> tuple[int, str]:
         import bot_state
-        self.log.info(f"Watching for closed {self.cfg.timeframe} bars "
-                      f"(poll {self.cfg.poll_seconds}s). Ctrl-C to stop.")
+
+        self.log.info(
+            f"Watching for closed {self.cfg.timeframe} bars "
+            f"(poll {self.cfg.poll_seconds}s). Ctrl-C to stop."
+        )
         bot_state.set_started(self.cfg.bot_key)
         consecutive_errors = 0
 
@@ -922,12 +1091,16 @@ class LiveRunner:
                         # reported apart because they mean different things — bars we never
                         # ASKED for (the bot was asleep, the link was down) versus a bar we
                         # were handed and DROPPED, which is a defect on this side.
-                        why = (f"{gap} bars missed" if gap > 4
-                               else "a bar raised while being processed")
-                        self.log.warning(f"{why} — re-warming the engines rather "
-                                         f"than resuming with a hole in the stream.")
-                        self.ledger.event("rewarm", missed_bars=gap,
-                                          after_bar_error=stream_broken)
+                        why = (
+                            f"{gap} bars missed"
+                            if gap > 4
+                            else "a bar raised while being processed"
+                        )
+                        self.log.warning(
+                            f"{why} — re-warming the engines rather "
+                            f"than resuming with a hole in the stream."
+                        )
+                        self.ledger.event("rewarm", missed_bars=gap, after_bar_error=stream_broken)
                         # Same reason as `_recover_link`: a hole in the stream must not cost the
                         # open trade. The re-warm rebuilds the ENGINES from real bars, which is
                         # right; the emulator's own book is handed across intact.
@@ -951,25 +1124,37 @@ class LiveRunner:
                             bar_errors += 1
                             self.log.error(
                                 f"Bar {row.name} raised ({bar_errors}): {e}\n"
-                                f"{traceback.format_exc()}")
-                            self.ledger.event("bar_error", error=str(e),
-                                              bar=str(row.name), count=bar_errors)
+                                f"{traceback.format_exc()}"
+                            )
+                            self.ledger.event(
+                                "bar_error", error=str(e), bar=str(row.name), count=bar_errors
+                            )
                             if bar_errors == 1:
                                 # Once per outage, on the transition — the re-warm clears the
                                 # counter as soon as a bar lands cleanly, so a recurrence after
                                 # a real recovery alerts again. Repeating it every poll is how
                                 # a channel that also carries trade alerts gets muted.
-                                self._notify_health(alert(
-                                    "⚠️", "DROPPED A BAR", self.cfg.display_name,
-                                    f"Failed to process the {row.name} bar, so it is re-warming "
-                                    f"the engines on the history it missed.",
-                                    f"Reason: {e}"))
+                                self._notify_health(
+                                    alert(
+                                        "⚠️",
+                                        "DROPPED A BAR",
+                                        self.cfg.display_name,
+                                        f"Failed to process the {row.name} bar, so it is re-warming "
+                                        f"the engines on the history it missed.",
+                                        f"Reason: {e}",
+                                    )
+                                )
                             if bar_errors >= 10:
-                                self._notify_health(alert(
-                                    "⛔", "STOPPING", self.cfg.display_name,
-                                    "Ten bars in a row failed to process and re-warming is not "
-                                    "fixing it, so it is shutting itself down.",
-                                    f"Last error: {e}"))
+                                self._notify_health(
+                                    alert(
+                                        "⛔",
+                                        "STOPPING",
+                                        self.cfg.display_name,
+                                        "Ten bars in a row failed to process and re-warming is not "
+                                        "fixing it, so it is shutting itself down.",
+                                        f"Last error: {e}",
+                                    )
+                                )
                                 return 6, f"10 consecutive bar errors, last: {e}"
                             break
 
@@ -994,11 +1179,16 @@ class LiveRunner:
                 self.log.error(f"Loop error ({consecutive_errors}): {e}\n{traceback.format_exc()}")
                 self.ledger.event("loop_error", error=str(e), count=consecutive_errors)
                 if consecutive_errors >= 10:
-                    self._notify_health(alert(
-                        "⛔", "STOPPING", self.cfg.display_name,
-                        "Ten passes of its main loop failed in a row, so it is shutting itself "
-                        "down rather than running blind.",
-                        f"Last error: {e}"))
+                    self._notify_health(
+                        alert(
+                            "⛔",
+                            "STOPPING",
+                            self.cfg.display_name,
+                            "Ten passes of its main loop failed in a row, so it is shutting itself "
+                            "down rather than running blind.",
+                            f"Last error: {e}",
+                        )
+                    )
                     return 6, f"10 consecutive loop errors, last: {e}"
             time.sleep(self.cfg.poll_seconds)
 
@@ -1006,9 +1196,19 @@ class LiveRunner:
         # Consume the request, so the file cannot outlive the stop it asked for. The startup
         # clear is the real guard; this only keeps the instance directory honest between runs.
         self.clear_stop_request()
-        self._notify_health(alert(
-            "⏹", "STOPPED", self.cfg.display_name,
-            "Shut down cleanly. It will not come back on its own."))
+        # ⚠ It does NOT consume the thread — the ONLINE that follows a promote is sent by a
+        # DIFFERENT PROCESS, and deleting the file here would leave that message loose in the
+        # feed under a thread it belongs to. The restart that never happens is covered by the
+        # expiry instead.
+        self._notify_health(
+            alert(
+                "⏹",
+                "STOPPED",
+                self.cfg.display_name,
+                "Shut down cleanly. It will not come back on its own.",
+            ),
+            thread=True,
+        )
         try:
             self.mt5.disconnect()
         except Exception:
@@ -1091,11 +1291,16 @@ class LiveRunner:
             self.bridge.halt(f"fleet halt — {reading.reason}")
         # HEALTH, not TRADE: this is the machinery refusing to trade, and it must not sit in the
         # room that is only opened when a fill arrives.
-        self._notify_health(alert(
-            "⛔", "FLEET HALT", self.cfg.display_name,
-            reading.reason,
-            "It keeps running and keeps its open positions and their stops. Clear the flag and "
-            "restart the bots to resume — clearing it alone will not."))
+        self._notify_health(
+            alert(
+                "⛔",
+                "FLEET HALT",
+                self.cfg.display_name,
+                reading.reason,
+                "It keeps running and keeps its open positions and their stops. Clear the flag and "
+                "restart the bots to resume — clearing it alone will not.",
+            )
+        )
 
     def _check_account_identity(self) -> None:
         """Halt if the terminal is logged into an account this bot was not pointed at.
@@ -1138,20 +1343,29 @@ class LiveRunner:
         if seen is None or seen == self.cfg.account:
             return
         self._account_mismatch_halted = True
-        why = (f"the terminal is logged into account {seen}, but this bot is configured for "
-               f"{self.cfg.account}")
-        self.log.error(f"ACCOUNT MISMATCH: {why}. Halting — every balance, position and order "
-                       f"this bot can read belongs to {seen}.")
+        why = (
+            f"the terminal is logged into account {seen}, but this bot is configured for "
+            f"{self.cfg.account}"
+        )
+        self.log.error(
+            f"ACCOUNT MISMATCH: {why}. Halting — every balance, position and order "
+            f"this bot can read belongs to {seen}."
+        )
         self.ledger.event("account_mismatch", observed=seen, expected=self.cfg.account)
         if self.bridge is not None:
             # One place answers "may this bot place an order", for `_check_fleet_halt`'s reason.
             self.bridge.halt(f"account mismatch — {why}")
         # HEALTH: this is the machinery refusing to trade, not a setup being refused.
-        self._notify_health(alert(
-            "⛔", "ACCOUNT MISMATCH", self.cfg.display_name,
-            f"Terminal is on #{seen}; this bot trades #{self.cfg.account}.",
-            "It placed nothing and kept its open positions and their stops. Log the terminal "
-            "back, or move the bot properly in its instance config, then restart it."))
+        self._notify_health(
+            alert(
+                "⛔",
+                "ACCOUNT MISMATCH",
+                self.cfg.display_name,
+                f"Terminal is on #{seen}; this bot trades #{self.cfg.account}.",
+                "It placed nothing and kept its open positions and their stops. Log the terminal "
+                "back, or move the bot properly in its instance config, then restart it.",
+            )
+        )
 
     def _maybe_pulse(self, *, link_up: bool | None, balance: float | None) -> None:
         """Write a `pulse` to the health stream on a fixed cadence.
@@ -1188,10 +1402,13 @@ class LiveRunner:
             return
         self._last_pulse_at = now
         self.ledger.pulse(
-            link=bool(link_up), balance=balance, account=self._observed_account,
+            link=bool(link_up),
+            balance=balance,
+            account=self._observed_account,
             bridge_state=self.bridge.state.value if self.bridge else None,
             position=bool(getattr(self.bridge, "_pos_ticket", 0)) if self.bridge else None,
-            last_bar=str(self.feed.last_bar_time) if self.feed and self.feed.last_bar_time
+            last_bar=str(self.feed.last_bar_time)
+            if self.feed and self.feed.last_bar_time
             else None,
             bars_seen=self._bar_index,
             gap_bars=self.feed.gap_bars() if self.feed else None,
@@ -1210,10 +1427,15 @@ class LiveRunner:
         # so restarting it at 0 would make every stale setup look fresh and re-arm legs that
         # have already traded.
         self._bar_index += 1
-        bar = ReplayBar(index=self._bar_index,
-                        timestamp_ms=int(ts.value // 1_000_000), time=ts,
-                        open=float(row["open"]), high=float(row["high"]),
-                        low=float(row["low"]), close=float(row["close"]))
+        bar = ReplayBar(
+            index=self._bar_index,
+            timestamp_ms=int(ts.value // 1_000_000),
+            time=ts,
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+        )
 
         state = self.stack.step(bar)
         sig = self.strategy.signals.update(state)
@@ -1278,7 +1500,7 @@ class LiveRunner:
         try:
             mtime = live_config.config_path(self.cfg.bot_key).stat().st_mtime
         except OSError:
-            return                                   # file briefly missing mid-write
+            return  # file briefly missing mid-write
         if mtime == self._cfg_mtime:
             return
 
@@ -1286,35 +1508,45 @@ class LiveRunner:
             fresh = live_config.load(self.cfg.bot_key)
         except Exception as e:
             # Do NOT consume the mtime: a half-written file re-reads cleanly next poll.
-            self.log.warning(f"Config changed but could not be parsed ({e}) — ignoring it "
-                             f"for now and staying on the settings already loaded.")
+            self.log.warning(
+                f"Config changed but could not be parsed ({e}) — ignoring it "
+                f"for now and staying on the settings already loaded."
+            )
             return
 
         allowed, blocked = self._config_delta(fresh)
         if blocked:
-            self._cfg_mtime = mtime                  # handled: refused, do not re-warn
+            self._cfg_mtime = mtime  # handled: refused, do not re-warn
             detail = ", ".join(f"{k}: {a!r} → {b!r}" for k, a, b in blocked)
             self.log.error(
                 f"Config changed in ways that CANNOT be applied to a running bot: {detail}. "
                 f"Still running the settings loaded at startup. Restart the bot to take "
-                f"them (the version pin and the engine warmup are re-checked on restart).")
+                f"them (the version pin and the engine warmup are re-checked on restart)."
+            )
             self.ledger.event("config_change_refused", changes=detail)
-            self._notify_health(alert(
-                "⚠️", "SETTINGS NOT APPLIED", self.cfg.display_name,
-                f"Its config changed on disk but the new values were refused, so it is still "
-                f"trading the ones it started with.",
-                f"Refused: {detail}",
-                "Restart it to take them."))
+            self._notify_health(
+                alert(
+                    "⚠️",
+                    "SETTINGS NOT APPLIED",
+                    self.cfg.display_name,
+                    "Its config changed on disk but the new values were refused, so it is still "
+                    "trading the ones it started with.",
+                    f"Refused: {detail}",
+                    "Restart it to take them.",
+                )
+            )
             return
 
         if not allowed:
-            self._cfg_mtime = mtime                  # cosmetic edit (a comment, a note)
+            self._cfg_mtime = mtime  # cosmetic edit (a comment, a note)
             return
 
         if not self.bridge.is_flat:
-            self.log.info("Runtime config change is waiting for the bot to be flat "
-                          f"({', '.join(k for k, _, _ in allowed)}).")
-            return                                   # mtime NOT consumed — retry next poll
+            self.log.info(
+                "Runtime config change is waiting for the bot to be flat "
+                f"({', '.join(k for k, _, _ in allowed)})."
+            )
+            return  # mtime NOT consumed — retry next poll
 
         self._cfg_mtime = mtime
         detail = ", ".join(f"{k} {a} → {b}" for k, a, b in allowed)
@@ -1337,10 +1569,15 @@ class LiveRunner:
 
         self.log.info(f"Runtime config applied while flat (strategy rebuilt): {detail}")
         self.ledger.event("config_applied", changes=detail)
-        self._notify_health(alert(
-            "⚙️", "SETTINGS APPLIED", self.cfg.display_name,
-            detail,
-            "Applied straight away — the bot was flat. Nothing to do."))
+        self._notify_health(
+            alert(
+                "⚙️",
+                "SETTINGS APPLIED",
+                self.cfg.display_name,
+                detail,
+                "Applied straight away — the bot was flat. Nothing to do.",
+            )
+        )
 
     def _config_delta(self, fresh):
         """Split what changed into (reloadable, blocked).
@@ -1354,21 +1591,31 @@ class LiveRunner:
             old = self.cfg.strategy_params.get(name)
             if old == new:
                 continue
-            (allowed if name in live_config.RUNTIME_RELOADABLE
-             else blocked).append((name, old, new))
+            (allowed if name in live_config.RUNTIME_RELOADABLE else blocked).append(
+                (name, old, new)
+            )
         for name in set(self.cfg.strategy_params) - set(fresh.strategy_params):
             blocked.append((name, self.cfg.strategy_params[name], None))
 
-        for name in ("account", "server", "symbol", "magic", "timeframe",
-                     "mt5_path", "strategy_package", "strategy_class",
-                     "strategy_source_hash"):
+        for name in (
+            "account",
+            "server",
+            "symbol",
+            "magic",
+            "timeframe",
+            "mt5_path",
+            "strategy_package",
+            "strategy_class",
+            "strategy_source_hash",
+        ):
             old, new = getattr(self.cfg, name), getattr(fresh, name)
             if old != new:
                 blocked.append((name, old, new))
         return allowed, blocked
 
-    def _heartbeat(self, bot_state, *, link_up: bool | None = None,
-                   balance: float | None = None) -> None:
+    def _heartbeat(
+        self, bot_state, *, link_up: bool | None = None, balance: float | None = None
+    ) -> None:
         """Stamp that the loop turned, then record what it saw.
 
         `heartbeat` is the field SYS_MONITOR reads to catch a process that is ALIVE but no
@@ -1415,43 +1662,52 @@ class LiveRunner:
                 total_pct = round((balance - float(start)) / float(start) * 100, 2)
 
         try:
-            bot_state.write_bot(self.cfg.bot_key, {
-                "status": self.bridge.state.value,
-                "heartbeat": time.time(),
-                "balance": balance,
-                "total_pnl_pct": total_pct,
-                "mt5_link": bool(link_up),
-                "account": self.cfg.account,
-                "symbol": self.cfg.symbol,
-                "version": self.cfg.strategy_version,
-                "source_hash": self.source_hash[:12],
-                # WHICH VERSION IS RUNNING, reported by the process that is running it.
-                # Aaron's requirement, and the reason it has to come from here rather than from
-                # reading a file on the VPS: `config.json` states intent and the repo moves under
-                # it, so either one can describe a version that is not the one in memory. These
-                # four are what the live process actually loaded, so "look at the params for
-                # that version" has an unambiguous answer.
-                "promoted_commit": self.cfg.promoted_commit,
-                "promoted_at": self.cfg.promoted_at,
-                "frozen": self.cfg.is_frozen,
-                "strategy_package": self.cfg.strategy_package,
-                "dry_run": self.dry_run,
-                "last_bar": str(self.feed.last_bar_time) if self.feed.last_bar_time else None,
-                "last_updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            })
+            bot_state.write_bot(
+                self.cfg.bot_key,
+                {
+                    "status": self.bridge.state.value,
+                    "heartbeat": time.time(),
+                    "balance": balance,
+                    "total_pnl_pct": total_pct,
+                    "mt5_link": bool(link_up),
+                    "account": self.cfg.account,
+                    "symbol": self.cfg.symbol,
+                    "version": self.cfg.strategy_version,
+                    "source_hash": self.source_hash[:12],
+                    # WHICH VERSION IS RUNNING, reported by the process that is running it.
+                    # Aaron's requirement, and the reason it has to come from here rather than from
+                    # reading a file on the VPS: `config.json` states intent and the repo moves under
+                    # it, so either one can describe a version that is not the one in memory. These
+                    # four are what the live process actually loaded, so "look at the params for
+                    # that version" has an unambiguous answer.
+                    "promoted_commit": self.cfg.promoted_commit,
+                    "promoted_at": self.cfg.promoted_at,
+                    "frozen": self.cfg.is_frozen,
+                    "strategy_package": self.cfg.strategy_package,
+                    "dry_run": self.dry_run,
+                    "last_bar": str(self.feed.last_bar_time) if self.feed.last_bar_time else None,
+                    "last_updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                },
+            )
         except Exception as e:
             self.log.warning(f"Heartbeat write failed: {e}")
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Run a Python strategy live on an MT5 terminal.")
-    ap.add_argument("--bot", required=True, help="bot_key — the instance dir under "
-                                                 "algos/markets/fx/instances/")
+    ap.add_argument(
+        "--bot", required=True, help="bot_key — the instance dir under algos/markets/fx/instances/"
+    )
     mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--dry-run", action="store_true", default=True,
-                      help="(default) run everything, send no orders")
-    mode.add_argument("--live", action="store_true",
-                      help="actually place orders — must be typed explicitly")
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=True,
+        help="(default) run everything, send no orders",
+    )
+    mode.add_argument(
+        "--live", action="store_true", help="actually place orders — must be typed explicitly"
+    )
     args = ap.parse_args(argv)
 
     signal.signal(signal.SIGINT, _handle_signal)
@@ -1459,6 +1715,7 @@ def main(argv=None) -> int:
 
     cfg = live_config.load(args.bot)
     import os
+
     os.environ.setdefault("BROKER_TZ_OFFSETS", cfg.broker_tz_offsets)
     return LiveRunner(cfg, dry_run=not args.live).run()
 

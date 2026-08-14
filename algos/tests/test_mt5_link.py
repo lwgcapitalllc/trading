@@ -28,8 +28,6 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 # Import the way runner.py does — bare names off algos/live. Importing `live.runner` instead
 # loads a second copy of the module under a different name, and monkeypatching one leaves the
 # code under test reading the other (see test_runtime_reload.py's note).
@@ -38,8 +36,8 @@ for _p in (str(_REPO), str(_REPO / "algos" / "live")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import runner as runner_mod                                          # noqa: E402
-from runner import LiveRunner                                        # noqa: E402
+import runner as runner_mod  # noqa: E402
+from runner import LiveRunner  # noqa: E402
 
 
 class _Ledger:
@@ -95,6 +93,7 @@ class _Feed:
     def new_bars(self):
         self.bar_calls += 1
         import pandas as pd
+
         return pd.DataFrame()
 
 
@@ -129,15 +128,24 @@ def _runner(monkeypatch, *, account_info):
     file, and none of this behaviour depends on either.
     """
     r = LiveRunner.__new__(LiveRunner)
-    r.cfg = SimpleNamespace(bot_key="bot", display_name="Bot", account=1, symbol="XAUUSD.s",
-                            timeframe="M15", poll_seconds=0, strategy_version="1.0.0",
-                            strategy_package="demo_pkg", promoted_commit="abc1234",
-                            promoted_at="2026-08-04", is_frozen=True,
-                            # A real, empty directory: the loop checks it every pass for a
-                            # stop request. A stand-in that does not exist would also work
-                            # today and would stop testing the moment the check does anything
-                            # more than `.exists()`.
-                            instance_dir=Path(tempfile.mkdtemp()))
+    r.cfg = SimpleNamespace(
+        bot_key="bot",
+        display_name="Bot",
+        account=1,
+        symbol="XAUUSD.s",
+        timeframe="M15",
+        poll_seconds=0,
+        strategy_version="1.0.0",
+        strategy_package="demo_pkg",
+        promoted_commit="abc1234",
+        promoted_at="2026-08-04",
+        is_frozen=True,
+        # A real, empty directory: the loop checks it every pass for a
+        # stop request. A stand-in that does not exist would also work
+        # today and would stop testing the moment the check does anything
+        # more than `.exists()`.
+        instance_dir=Path(tempfile.mkdtemp()),
+    )
     r.dry_run = True
     r.source_hash = "0123456789abcdef"
     r.ledger = _Ledger()
@@ -161,14 +169,18 @@ def _runner(monkeypatch, *, account_info):
     r._account_mismatch_halted = False
     r._observed_account = None
     r.notes, r.warns, r.errors = [], [], []
-    r.log = SimpleNamespace(info=lambda m, *a, **k: r.notes.append(m),
-                            warning=lambda m, *a, **k: r.warns.append(m),
-                            error=lambda m, *a, **k: r.errors.append(m))
+    r.log = SimpleNamespace(
+        info=lambda m, *a, **k: r.notes.append(m),
+        warning=lambda m, *a, **k: r.warns.append(m),
+        error=lambda m, *a, **k: r.errors.append(m),
+    )
     r.alerts = []
-    r._notify_health = lambda m: r.alerts.append(m)
+    # ⚠ `**_kw` because `_notify_health` takes `thread=` — a double LESS capable than the real
+    # method breaks loudly rather than hiding anything, which is the good direction, but it has
+    # to be kept in step or unrelated suites go red on a signature.
+    r._notify_health = lambda m, **_kw: r.alerts.append(m)
 
-    monkeypatch.setitem(sys.modules, "MetaTrader5",
-                        SimpleNamespace(account_info=account_info))
+    monkeypatch.setitem(sys.modules, "MetaTrader5", SimpleNamespace(account_info=account_info))
     return r
 
 
@@ -186,10 +198,12 @@ def _dead():
 def _raises():
     def _f():
         raise RuntimeError("IPC recv failed")
+
     return _f
 
 
 # ── the probe ───────────────────────────────────────────────────────────────────
+
 
 def test_a_live_terminal_answers_with_its_balance(monkeypatch):
     r = _runner(monkeypatch, account_info=_live())
@@ -214,6 +228,7 @@ def test_a_probe_that_raises_is_a_dead_link_not_a_crash(monkeypatch):
 
 
 # ── what the state file says ────────────────────────────────────────────────────
+
 
 def test_the_heartbeat_records_the_link_state(monkeypatch):
     """A null balance is not a diagnosis. `mt5_link` is what makes a blank cell on the Bots
@@ -240,6 +255,7 @@ def test_an_unstated_link_is_probed_not_assumed_down(monkeypatch):
 
 
 # ── the outage ──────────────────────────────────────────────────────────────────
+
 
 def test_the_outage_is_announced_once_not_every_poll(monkeypatch):
     """At a 10s poll, alerting per pass is 6 messages a minute for as long as it lasts, which
@@ -286,8 +302,7 @@ def test_recovery_re_warms_rather_than_resuming(monkeypatch):
     r = _runner(monkeypatch, account_info=_dead())
     warmed = []
     monkeypatch.setattr(r, "connect", lambda: True)
-    monkeypatch.setattr(r, "_build_strategy",
-                        lambda: (SimpleNamespace(execution="NEW"), None))
+    monkeypatch.setattr(r, "_build_strategy", lambda: (SimpleNamespace(execution="NEW"), None))
     monkeypatch.setattr(r, "warm", lambda: warmed.append(1))
 
     r._recover_link()
@@ -301,6 +316,7 @@ def test_recovery_re_warms_rather_than_resuming(monkeypatch):
 
 
 # ── the loop ────────────────────────────────────────────────────────────────────
+
 
 def _run_one_pass(r, monkeypatch, state):
     """Turn `_loop` exactly once. `_stop_requested` is a module global the signal handler sets;
