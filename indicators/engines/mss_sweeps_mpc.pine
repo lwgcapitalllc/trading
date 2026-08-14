@@ -1109,6 +1109,11 @@ bool   msShowZone   = input.bool(true, "Shade the swept wick", group = GRP_MSSTY
 bool   msShowBg     = input.bool(true, "Tint the signal bar", group = GRP_MSSTY, tooltip = "Colour the whole bar's background on a signal, so a sweep is findable when scrolled out.")
 int    msLevelWidth = input.int(2, "Protected level thickness", minval = 1, maxval = 4, group = GRP_MSSTY)
 string msMarkSizeIn = input.string("Large", "Sweep marker size", options = ["Tiny", "Small", "Normal", "Large", "Huge"], group = GRP_MSSTY, tooltip = "The marker is a solid triangle rather than a text label, so it cannot be mistaken for one of the structure tags.")
+bool   msRejectText  = input.bool(false, "Label rejected sweeps with the reason", group = GRP_MSSTY, tooltip = "Print the failing gate next to the grey cross. Useful while you are deciding whether the trend filter earns its place; noisy afterwards.")
+color  msRejectCol   = input.color(#787b86, "Rejected sweep", group = GRP_MSSTY, tooltip = "Rejected sweeps are deliberately a neutral grey — never a dimmed green or red, because a washed-out green reads as a weak BUY rather than as no trade at all.")
+string msRejectSizeIn = input.string("Small", "Rejected marker size", options = ["Tiny", "Small", "Normal", "Large"], group = GRP_MSSTY)
+
+string msRejectSize = msRejectSizeIn == "Tiny" ? size.tiny : msRejectSizeIn == "Normal" ? size.normal : msRejectSizeIn == "Large" ? size.large : size.small
 
 // Structure draws in text labels; sweeps draw in solid triangles, offset off the wick by a
 // fraction of ATR. Different SHAPE, different DISTANCE — that is what stops the two layers
@@ -1184,6 +1189,21 @@ bool msRunOk      = msRunCount >= msMinBos
 bool msSignalLow  = msSweepLow  and msExtOkLong  and msRunOk
 bool msSignalHigh = msSweepHigh and msExtOkShort and msRunOk
 
+// ── Why a sweep was refused ──────────────────────────────
+// 🔴 The first version of this tooltip printed the external direction and the break count and
+// left the reader to work out which one failed. On a bearish sweep refused by a bullish trend
+// it therefore read "External direction: bullish / breaks: 1 (need 1)" — two lines that both
+// look like passes, on a marker that means NO. A verdict has to name the gate that failed and
+// the direction the sweep WAS, or it is not a verdict, it is a data dump.
+string msExtTxt = st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none yet"
+
+f_msWhy(bool dirOk, bool runOk, string want) =>
+    string _head = not dirOk ? "TREND DIRECTION" : not runOk ? "TREND MATURITY" : "—"
+    "REJECTED — failed on " + _head + "\n\n" + (dirOk ? "PASS" : "FAIL") + "  trend direction: external is " + msExtTxt + ", needs " + want + "\n" + (runOk ? "PASS" : "FAIL") + "  trend maturity: " + str.tostring(msRunCount) + " continuation break(s), needs " + str.tostring(msMinBos)
+
+f_msWhyShort(bool dirOk, bool runOk) =>
+    not dirOk ? "wrong trend" : not runOk ? "trend too young" : ""
+
 // ── Draw and disarm ──────────────────────────────────────
 f_msCloseLine() =>
     if not na(msArmLine)
@@ -1197,7 +1217,7 @@ if msSweepLow
         msCntSignal += 1
         if msShow
             float _off = na(msAtr) ? 0.0 : msAtr * 0.5
-            label.new(bar_index, low - _off, "", style = label.style_triangleup, color = msBullCol, size = msMarkSize, tooltip = "Bullish MSS sweep\nProtected iHL: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
+            label.new(bar_index, low - _off, "", style = label.style_triangleup, color = msBullCol, size = msMarkSize, tooltip = "SIGNAL — bullish HL sweep, all gates passed\n\nProtected iHL: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
             // The level lights up in the sweep colour, so the chart shows WHICH level was taken
             // rather than just that something happened here.
             line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBullCol, style = line.style_solid, width = 2)
@@ -1206,9 +1226,13 @@ if msSweepLow
     else
         msCntFiltered += 1
         if msShowFiltered
-            // A dim cross, not a text label. It is a diagnostic for judging the trend filter,
-            // so it has to be countable without competing with the signals or the structure.
-            label.new(bar_index, low, "", style = label.style_xcross, color = color.new(color.gray, 55), size = size.tiny, tooltip = "REJECTED by the trend filter.\nExternal direction: " + (st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none") + "\nContinuation breaks in run: " + str.tostring(msRunCount) + " (need " + str.tostring(msMinBos) + ")")
+            // Same LANE as a real signal — one ATR off the wick — so valid and refused sweeps
+            // line up and can be compared by eye. Everything else about them differs: a cross
+            // instead of a filled triangle, neutral grey instead of the direction colour, and
+            // no wick box and no bar tint. Shape, colour and supporting marks all disagree with
+            // a signal, which is what makes the two unmistakable at a glance.
+            float _roff = na(msAtr) ? 0.0 : msAtr * 0.5
+            label.new(bar_index, low - _roff, msRejectText ? f_msWhyShort(msExtOkLong, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bullish HL sweep — NOT TAKEN\n\n" + f_msWhy(msExtOkLong, msRunOk, "bullish"))
     f_msCloseLine()
     msArmDir := 0
     msArmLevel := na
@@ -1230,14 +1254,15 @@ if msSweepHigh
         msCntSignal += 1
         if msShow
             float _off = na(msAtr) ? 0.0 : msAtr * 0.5
-            label.new(bar_index, high + _off, "", style = label.style_triangledown, color = msBearCol, size = msMarkSize, tooltip = "Bearish MSS sweep\nProtected iLH: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
+            label.new(bar_index, high + _off, "", style = label.style_triangledown, color = msBearCol, size = msMarkSize, tooltip = "SIGNAL — bearish LH sweep, all gates passed\n\nProtected iLH: " + str.tostring(msArmLevel, format.mintick) + "\nHeld for " + str.tostring(bar_index - msArmBar) + " bars\nContinuation breaks in run: " + str.tostring(msRunCount))
             line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBearCol, style = line.style_solid, width = 2)
             if msShowZone
                 box.new(bar_index - 1, high, bar_index + 1, msArmLevel, xloc = xloc.bar_index, border_color = color.new(msBearCol, 30), bgcolor = color.new(msBearCol, 75))
     else
         msCntFiltered += 1
         if msShowFiltered
-            label.new(bar_index, high, "", style = label.style_xcross, color = color.new(color.gray, 55), size = size.tiny, tooltip = "REJECTED by the trend filter.\nExternal direction: " + (st.dir == 1 ? "bullish" : st.dir == -1 ? "bearish" : "none") + "\nContinuation breaks in run: " + str.tostring(msRunCount) + " (need " + str.tostring(msMinBos) + ")")
+            float _roff = na(msAtr) ? 0.0 : msAtr * 0.5
+            label.new(bar_index, high + _roff, msRejectText ? f_msWhyShort(msExtOkShort, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bearish LH sweep — NOT TAKEN\n\n" + f_msWhy(msExtOkShort, msRunOk, "bearish"))
     f_msCloseLine()
     msArmDir := 0
     msArmLevel := na
@@ -1309,7 +1334,7 @@ if msArmBear
 // Read "raw" against "signalled". A filter that removes most of the sample and leaves the same
 // hit rate has not helped; it has just made the sample smaller. That question is settled by
 // replaying it, not by this table — the table only tells you how big the difference IS.
-var table msTbl = table.new(position.top_right, 2, 8, border_width = 1)
+var table msTbl = table.new(position.top_right, 2, 10, border_width = 1)
 
 if barstate.islast and msShowStats
     table.cell(msTbl, 0, 0, "MSS Sweeps (MPC)", text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
@@ -1328,6 +1353,13 @@ if barstate.islast and msShowStats
     table.cell(msTbl, 1, 6, str.tostring(msCntExpired), text_color = chart.fg_color, text_size = size.small)
     table.cell(msTbl, 0, 7, "Armed now",      text_color = chart.fg_color, text_size = size.small)
     table.cell(msTbl, 1, 7, msArmDir == 1 ? "bullish @ " + str.tostring(msArmLevel, format.mintick) : msArmDir == -1 ? "bearish @ " + str.tostring(msArmLevel, format.mintick) : "—", text_color = chart.fg_color, text_size = size.small)
+    // The legend is not decoration. The one question a reader has in front of this chart is
+    // "is that mark a trade or not", and answering it in a tooltip means it is only answered
+    // for whoever hovers. Two rows, always on screen.
+    table.cell(msTbl, 0, 8, "▲▼ solid", text_color = msBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 8, "SIGNAL — shaded wick, tinted bar", text_color = msBullCol, text_size = size.small)
+    table.cell(msTbl, 0, 9, "✕ grey",   text_color = msRejectCol, text_size = size.small)
+    table.cell(msTbl, 1, 9, "swept, refused — hover for the gate", text_color = msRejectCol, text_size = size.small)
 
 // ── Signal bar tint ──────────────────────────────────────
 // bgcolor() has to be a top-level call, so it cannot live inside the drawing blocks above.
