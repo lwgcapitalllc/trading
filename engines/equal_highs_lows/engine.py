@@ -47,7 +47,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Deque, List, Optional
 
-from .types import EqEvents, EqLevel
+from .types import EqLevel, EqEvents
 
 
 class _Rma:
@@ -101,7 +101,6 @@ class _Atr:
 
 class _Bar:
     """One bar's fields the EQ logic needs: absolute index and price extremes."""
-
     __slots__ = ("index", "high", "low")
 
     def __init__(self, index: int, high: float, low: float) -> None:
@@ -118,13 +117,12 @@ class EqualHighsLowsEngine:
     up to 6 active levels per side (oldest evicted first).
     """
 
-    def __init__(
-        self, pivot_len: int = 2, atr_mult: float = 0.1, max_levels: int = 6, atr_len: int = 50
-    ) -> None:
-        self._pivot_len = pivot_len  # Pine eqPivotLen (default 2)
-        self._atr_mult = atr_mult  # Pine eqAtrMult (default 0.1)
-        self._max_levels = max_levels  # Pine eqMax (default 6, per side)
-        self._atr = _Atr(atr_len)  # Pine ta.atr(50)
+    def __init__(self, pivot_len: int = 2, atr_mult: float = 0.1, max_levels: int = 6,
+                 atr_len: int = 50) -> None:
+        self._pivot_len = pivot_len        # Pine eqPivotLen (default 2)
+        self._atr_mult = atr_mult          # Pine eqAtrMult (default 0.1)
+        self._max_levels = max_levels      # Pine eqMax (default 6, per side)
+        self._atr = _Atr(atr_len)          # Pine ta.atr(50)
 
         # Rolling window of the last (2·pivot_len + 1) bars — enough to test the centred candidate.
         self._window: Deque[_Bar] = deque(maxlen=2 * pivot_len + 1)
@@ -145,35 +143,28 @@ class EqualHighsLowsEngine:
     def update(self, bar_index: int, high: float, low: float, close: float) -> EqEvents:
         """Feed one closed bar (index + high/low/close). Returns this bar's EQ events + live state."""
         atr = self._atr.update(high, low, close)
-        tol = 0.0 if atr is None else atr * self._atr_mult  # Pine eqTol
+        tol = 0.0 if atr is None else atr * self._atr_mult   # Pine eqTol
         self._window.append(_Bar(bar_index, high, low))
 
         events = EqEvents(tolerance=tol)
 
-        ph = self._pivot_high()  # ta.pivothigh(high, L, L): candidate high or None
-        pl = self._pivot_low()  # ta.pivotlow(low,  L, L)
+        ph = self._pivot_high()   # ta.pivothigh(high, L, L): candidate high or None
+        pl = self._pivot_low()    # ta.pivotlow(low,  L, L)
         events.pivot_high = ph
         events.pivot_low = pl
 
         # The candidate bar is L bars back — the centre of a full window.
-        candidate = (
-            self._window[self._pivot_len] if len(self._window) == self._window.maxlen else None
-        )
+        candidate = self._window[self._pivot_len] if len(self._window) == self._window.maxlen else None
 
         # ── EQH: on a confirmed pivot high ──
         if ph is not None and candidate is not None:
             ph_bar = candidate.index
             if self._prev_ph is not None and abs(ph - self._prev_ph) <= tol:
-                level = EqLevel(
-                    is_high=True,
-                    price=max(ph, self._prev_ph),
-                    left_bar=self._prev_ph_bar,
-                    formed_bar=bar_index,
-                    id=self._take_id(),
-                )
+                level = EqLevel(is_high=True, price=max(ph, self._prev_ph),
+                                left_bar=self._prev_ph_bar, formed_bar=bar_index, id=self._take_id())
                 self._eqh.append(level)
                 events.formed.append(level)
-                while len(self._eqh) > self._max_levels:  # FIFO-evict oldest past the cap
+                while len(self._eqh) > self._max_levels:       # FIFO-evict oldest past the cap
                     self._eqh.pop(0)
             self._prev_ph = ph
             self._prev_ph_bar = ph_bar
@@ -182,13 +173,8 @@ class EqualHighsLowsEngine:
         if pl is not None and candidate is not None:
             pl_bar = candidate.index
             if self._prev_pl is not None and abs(pl - self._prev_pl) <= tol:
-                level = EqLevel(
-                    is_high=False,
-                    price=min(pl, self._prev_pl),
-                    left_bar=self._prev_pl_bar,
-                    formed_bar=bar_index,
-                    id=self._take_id(),
-                )
+                level = EqLevel(is_high=False, price=min(pl, self._prev_pl),
+                                left_bar=self._prev_pl_bar, formed_bar=bar_index, id=self._take_id())
                 self._eql.append(level)
                 events.formed.append(level)
                 while len(self._eql) > self._max_levels:
@@ -233,12 +219,10 @@ class EqualHighsLowsEngine:
         c = self._window[L].high
         for i, b in enumerate(self._window):
             if i < L:
-                if b.high > c:  # left: an equal high is allowed, a higher one disqualifies
+                if b.high > c:               # left: an equal high is allowed, a higher one disqualifies
                     return None
             elif i > L:
-                if (
-                    b.high >= c
-                ):  # right: an equal (or higher) bar disqualifies — later bar wins ties
+                if b.high >= c:              # right: an equal (or higher) bar disqualifies — later bar wins ties
                     return None
         return c
 
@@ -249,10 +233,10 @@ class EqualHighsLowsEngine:
         c = self._window[L].low
         for i, b in enumerate(self._window):
             if i < L:
-                if b.low < c:  # left: an equal low is allowed, a lower one disqualifies
+                if b.low < c:                # left: an equal low is allowed, a lower one disqualifies
                     return None
             elif i > L:
-                if b.low <= c:  # right: an equal (or lower) bar disqualifies — later bar wins ties
+                if b.low <= c:               # right: an equal (or lower) bar disqualifies — later bar wins ties
                     return None
         return c
 

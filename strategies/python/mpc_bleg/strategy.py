@@ -37,15 +37,9 @@ from .execution import BLegExecution  # noqa: E402
 
 
 class MpcBLegStrategy(MpcSosFadeStrategy):
-    def __init__(
-        self,
-        config: Optional[BLegConfig] = None,
-        initial_capital: float = 1_000_000.0,
-        tick_source=None,
-        cost_profile=None,
-        account=None,
-        leg: str = "strat",
-    ) -> None:
+    def __init__(self, config: Optional[BLegConfig] = None,
+                 initial_capital: float = 1_000_000.0, tick_source=None,
+                 cost_profile=None, account=None, leg: str = "strat") -> None:
         self.config = config or BLegConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
@@ -55,15 +49,10 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
         # reservation, the P&L booking, `equity`) is the parent's, so the seam works here for
         # free. It has to be threaded through this constructor because this one does not call
         # super().__init__. See the parent's __init__ for what `leg` must satisfy.
-        self.execution = BLegExecution(
-            self.config,
-            initial_capital=initial_capital,
-            resolver=resolver,
-            profile=profile,
-            account=account,
-            leg=leg,
-        )
-        self.tracker: Optional[BLegTracker] = None  # built in run() once the timeframe is known
+        self.execution = BLegExecution(self.config, initial_capital=initial_capital,
+                                       resolver=resolver, profile=profile,
+                                       account=account, leg=leg)
+        self.tracker: Optional[BLegTracker] = None   # built in run() once the timeframe is known
         self.decisions: List[Decision] = []
         # The tracker's per-bar state, recorded alongside the decisions. REPORTING ONLY —
         # nothing reads it back, so it cannot move a decision. `compare_bleg.py` diffs it
@@ -86,7 +75,6 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
         that has caught up is a config change here, not a reason to delete the override.
         """
         import dataclasses
-
         return dataclasses.replace(MpcSosFadeStrategy.engine_config(), eq_exempt_fvg=False)
 
     def step(self, bar_state) -> Decision:
@@ -127,5 +115,4 @@ class MpcBLegStrategy(MpcSosFadeStrategy):
 
     def run_dual(self, *args, **kwargs):
         raise NotImplementedError(
-            "MpcBLegStrategy has no 1m secondary re-entry — use run(). run_dual is A+-only."
-        )
+            "MpcBLegStrategy has no 1m secondary re-entry — use run(). run_dual is A+-only.")

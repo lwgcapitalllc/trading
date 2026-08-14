@@ -36,7 +36,7 @@ from mpc_sos_fade.execution import Execution, _Pending  # noqa: E402
 
 
 class RealignExecution(Execution):
-    _state = None  # set by step() before the parent calls _place_entries
+    _state = None          # set by step() before the parent calls _place_entries
     _records_misses = False
 
     def step(self, sig, seq, state):  # type: ignore[override]
@@ -75,7 +75,8 @@ class RealignExecution(Execution):
         tp2 = target
         tp1 = entry + (target - entry) * 0.5
 
-        pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2, sos_bar=None, fib=None)
+        pend = _Pending(dir=d, edge=entry, qty=qty, sl=sl, tp1=tp1, tp2=tp2,
+                        sos_bar=None, fib=None)
         # Market fill: open immediately at this bar's close rather than resting the order.
         self._open_position(pend, entry, sig, dec)
 
@@ -101,6 +102,5 @@ class RealignExecution(Execution):
             # and doing nothing. Neither is acceptable, so say so.
             raise NotImplementedError(
                 "exec_min_stop_mode='x ATR(14)' is not wired in mpc_realign — use "
-                "'% of price' or 'Fixed $', or switch the guard Off deliberately."
-            )
+                "'% of price' or 'Fixed $', or switch the guard Off deliberately.")
         raise ValueError(f"unknown exec_min_stop_mode {mode!r}")

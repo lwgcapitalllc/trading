@@ -26,6 +26,6 @@ canonical implementation — no consumer builds its own.
 """
 
 from .engine import EqualHighsLowsEngine
-from .types import EqEvents, EqLevel
+from .types import EqLevel, EqEvents
 
 __all__ = ["EqualHighsLowsEngine", "EqLevel", "EqEvents"]

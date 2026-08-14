@@ -34,13 +34,12 @@ class OrderBlock:
     sell from). `top`/`bottom` are the anchor candle's high/low, or its body extremes when
     `body_only`. Mirrors the Pine `OrderBlock` type; the `box bg` field is drawing-only and dropped.
     """
-
     top: float
     bottom: float
     is_bullish: bool
-    origin_index: int  # bar index of the anchor candle itself (Pine's box left edge)
-    created_index: int  # bar index the block was actually added on (Pine reads ~10 bars late)
-    id: int  # stable id so a consumer can match a created OB to its later mitigation
+    origin_index: int      # bar index of the anchor candle itself (Pine's box left edge)
+    created_index: int     # bar index the block was actually added on (Pine reads ~10 bars late)
+    id: int                # stable id so a consumer can match a created OB to its later mitigation
 
     # Pine `fromBreak`: true = born on a BOS/SOS/iBOS/iSOS, false = born at a turn. Every live
     # source now passes false — the structure sources are commented out in the Pine — so this is
@@ -79,15 +78,9 @@ class OrderBlockEvents:
     either way.
     """
 
-    created: List[OrderBlock] = field(default_factory=list)  # OBs created THIS bar (events)
-    mitigated: List[OrderBlock] = field(default_factory=list)  # OBs consumed THIS bar (events)
-    expired: List[OrderBlock] = field(default_factory=list)  # OBs aged out THIS bar — NOT a signal
-    evicted: List[OrderBlock] = field(
-        default_factory=list
-    )  # OBs dropped past the cap — NOT a signal
-    active_bull: List[OrderBlock] = field(
-        default_factory=list
-    )  # live bull OBs, oldest-first (state)
-    active_bear: List[OrderBlock] = field(
-        default_factory=list
-    )  # live bear OBs, oldest-first (state)
+    created: List[OrderBlock] = field(default_factory=list)      # OBs created THIS bar (events)
+    mitigated: List[OrderBlock] = field(default_factory=list)    # OBs consumed THIS bar (events)
+    expired: List[OrderBlock] = field(default_factory=list)      # OBs aged out THIS bar — NOT a signal
+    evicted: List[OrderBlock] = field(default_factory=list)      # OBs dropped past the cap — NOT a signal
+    active_bull: List[OrderBlock] = field(default_factory=list)  # live bull OBs, oldest-first (state)
+    active_bear: List[OrderBlock] = field(default_factory=list)  # live bear OBs, oldest-first (state)

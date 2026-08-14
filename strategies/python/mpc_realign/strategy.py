@@ -46,27 +46,16 @@ from .tracker import RealignTracker  # noqa: E402
 
 
 class MpcRealignStrategy(MpcSosFadeStrategy):
-    def __init__(
-        self,
-        config: Optional[RealignConfig] = None,
-        initial_capital: float = 1_000_000.0,
-        tick_source=None,
-        cost_profile=None,
-        account=None,
-        leg: str = "strat",
-    ) -> None:
+    def __init__(self, config: Optional[RealignConfig] = None,
+                 initial_capital: float = 1_000_000.0, tick_source=None,
+                 cost_profile=None, account=None, leg: str = "strat") -> None:
         self.config = config or RealignConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
         resolver, profile = self._fill_model(tick_source, cost_profile)
-        self.execution = RealignExecution(
-            self.config,
-            initial_capital=initial_capital,
-            resolver=resolver,
-            profile=profile,
-            account=account,
-            leg=leg,
-        )
+        self.execution = RealignExecution(self.config, initial_capital=initial_capital,
+                                          resolver=resolver, profile=profile,
+                                          account=account, leg=leg)
         self.tracker = RealignTracker(self.config)
         self.htf = HtfStructure(self.config.realign_htf_minutes)
         self.decisions: List[Decision] = []
@@ -86,10 +75,10 @@ class MpcRealignStrategy(MpcSosFadeStrategy):
         b = state.bar
         closed = self.htf.update(bar_time_ms, b.open, b.high, b.low, b.close)
         if closed is not None:
-            self.tracker.on_htf(closed, bar_time_ms, self.htf.broken_high, self.htf.broken_low)
-        rs = self.tracker.update(
-            bar_time_ms, b.high, b.low, state.structure.external, state.structure.internal
-        )
+            self.tracker.on_htf(closed, bar_time_ms,
+                                self.htf.broken_high, self.htf.broken_low)
+        rs = self.tracker.update(bar_time_ms, b.high, b.low,
+                                 state.structure.external, state.structure.internal)
         sig = self.signals.update(state)
         seq = self.sequence.update(sig)
         dec = self.execution.step(sig, seq, rs)
@@ -120,5 +109,4 @@ class MpcRealignStrategy(MpcSosFadeStrategy):
 
     def run_dual(self, *args, **kwargs):
         raise NotImplementedError(
-            "MpcRealignStrategy is single-frame — the 15m is aggregated internally. Use run()."
-        )
+            "MpcRealignStrategy is single-frame — the 15m is aggregated internally. Use run().")

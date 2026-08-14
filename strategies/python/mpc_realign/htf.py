@@ -51,8 +51,8 @@ class HtfStructure:
         self._engine = StructureEngine(major_length=major_length)
         self._bucket: Optional[int] = None
         self._o = self._h = self._l = self._c = 0.0
-        self._filling = False  # is a bucket open? NEVER infer this from a price
-        self._n = 0  # HTF bars published so far — the engine's bar index
+        self._filling = False            # is a bucket open? NEVER infer this from a price
+        self._n = 0                      # HTF bars published so far — the engine's bar index
         # The external high/low that stood at the last HTF break, latched for the target.
         self.broken_high: Optional[float] = None
         self.broken_low: Optional[float] = None
@@ -69,9 +69,8 @@ class HtfStructure:
             self._bucket = b
         elif b != self._bucket:
             # The previous bucket is complete — publish it BEFORE folding this bar in.
-            ev = self._engine.update(
-                Bar(index=self._n, open=self._o, high=self._h, low=self._l, close=self._c)
-            ).external
+            ev = self._engine.update(Bar(index=self._n, open=self._o, high=self._h,
+                                         low=self._l, close=self._c)).external
             self._n += 1
             if ev.broken_high_price is not None:
                 self.broken_high = ev.broken_high_price

@@ -15,14 +15,9 @@ import dataclasses
 import pytest
 
 from strategies.python.mpc_sos_fade.config import SosFadeConfig
-from strategies.python.mpc_sos_fade.signals import (
-    POI_RANK_FVG,
-    POI_RANK_FVG_ON_OB,
-    POI_RANK_OB,
-    PoiSourceUnavailable,
-    Signals,
-    pois_for,
-)
+from strategies.python.mpc_sos_fade.signals import (POI_RANK_FVG, POI_RANK_FVG_ON_OB,
+                                                    POI_RANK_OB, PoiSourceUnavailable,
+                                                    Signals, pois_for)
 from strategies.python.mpc_sos_fade.strategy import MpcSosFadeStrategy
 
 # Deliberately NOT overlapping — 104.0 vs 103.0 — so the default fixture exercises the plain
@@ -44,50 +39,21 @@ def _sig(**kw) -> Signals:
     production does not produce, which is the fixture-more-complete-than-the-code trap that hid the
     `run_dual` AttributeError for three weeks (see this package's CLAUDE.md)."""
     base = dict(
-        index=10,
-        time_ms=0,
-        open=1.0,
-        high=1.0,
-        low=1.0,
-        close=1.0,
-        session_gap_bar=False,
-        ny_hour=10,
-        bull_sos=False,
-        bear_sos=False,
-        bull_bos=False,
-        bear_bos=False,
-        recent_ssl="",
-        recent_ssl_bar=None,
-        recent_ssl_time=None,
-        recent_bsl="",
-        recent_bsl_bar=None,
-        recent_bsl_time=None,
-        last_bull_div_bar=None,
-        last_bear_div_bar=None,
-        bull_div_active=False,
-        bear_div_active=False,
-        veto_on=False,
-        veto_rsi_ob=False,
-        veto_rsi_os=False,
+        index=10, time_ms=0, open=1.0, high=1.0, low=1.0, close=1.0,
+        session_gap_bar=False, ny_hour=10,
+        bull_sos=False, bear_sos=False, bull_bos=False, bear_bos=False,
+        recent_ssl="", recent_ssl_bar=None, recent_ssl_time=None,
+        recent_bsl="", recent_bsl_bar=None, recent_bsl_time=None,
+        last_bull_div_bar=None, last_bear_div_bar=None,
+        bull_div_active=False, bear_div_active=False,
+        veto_on=False, veto_rsi_ob=False, veto_rsi_os=False,
         fibo_dir=1,
-        fibo_p1=106.18,
-        fibo_p2=105.0,
-        fibo_p3=103.82,
-        fibo_p4=102.8,
-        fibo_p5=102.0,
-        fibo_p6=101.14,
-        fibo_p7=110.0,
-        fibo_p10=100.0,
-        fibo_ash=110.0,
-        fibo_asl=100.0,
-        fibo_half_reached=True,
-        fibo_618_ever_reached=True,
-        fibo7_touched=False,
-        fvgs=[_GAP],
-        obs=[_BLOCK],
-        obs_available=True,
-        poi_long_now=False,
-        poi_short_now=False,
+        fibo_p1=106.18, fibo_p2=105.0, fibo_p3=103.82, fibo_p4=102.8,
+        fibo_p5=102.0, fibo_p6=101.14, fibo_p7=110.0, fibo_p10=100.0,
+        fibo_ash=110.0, fibo_asl=100.0,
+        fibo_half_reached=True, fibo_618_ever_reached=True, fibo7_touched=False,
+        fvgs=[_GAP], obs=[_BLOCK], obs_available=True,
+        poi_long_now=False, poi_short_now=False,
     )
     base.update(kw)
     return Signals(**base)
@@ -124,7 +90,7 @@ def test_an_order_block_arrives_in_the_GAP_shape_so_the_same_rules_apply():
     """A block must be a `(top, bottom, is_bullish, born)` tuple + its rank, because both consumers
     unpack it into exactly those names. A different shape would raise inside the entry loop rather
     than at the seam, which is a long way from the cause."""
-    ((top, bottom, is_bullish, born, _rank),) = pois_for(_cfg("Order block"), _sig())
+    (top, bottom, is_bullish, born, _rank), = pois_for(_cfg("Order block"), _sig())
     assert (top, bottom, is_bullish, born) == _BLOCK
     assert top > bottom
 
@@ -133,7 +99,7 @@ def test_an_unknown_source_RAISES_rather_than_falling_back_to_gaps():
     """A typo that silently ran the default would make a whole replay a lie about what it tested —
     the run would report itself as an order-block run and be an FVG one."""
     with pytest.raises(ValueError) as exc:
-        pois_for(_cfg("order blocks"), _sig())  # lower-case, plural: a plausible typo
+        pois_for(_cfg("order blocks"), _sig())     # lower-case, plural: a plausible typo
     assert "exec_poi_source" in str(exc.value)
 
 
@@ -195,9 +161,8 @@ def test_a_gap_an_order_block_SITS_ON_takes_the_top_tier():
     confirmed = (105.0, 104.0, True, 7)
     plain = (99.0, 98.0, True, 7)
     block = (104.5, 103.5, True, 9)
-    ranks = {
-        p[:4]: p[4] for p in pois_for(_cfg("FVG first"), _sig(fvgs=[confirmed, plain], obs=[block]))
-    }
+    ranks = {p[:4]: p[4] for p in pois_for(
+        _cfg("FVG first"), _sig(fvgs=[confirmed, plain], obs=[block]))}
     assert ranks[confirmed] == POI_RANK_FVG_ON_OB
     assert ranks[plain] == POI_RANK_FVG
     assert POI_RANK_FVG_ON_OB > POI_RANK_FVG
@@ -209,7 +174,7 @@ def test_the_confirming_block_must_point_the_SAME_WAY_as_the_gap():
     reading of Aaron's rule that his words did not settle, so it is pinned rather than assumed —
     and it must be flipped here and in `mpc_strategy.pine` together or the parity gate goes red."""
     gap = (105.0, 104.0, True, 7)
-    opposing = (104.5, 103.5, False, 9)  # same price, opposite direction
+    opposing = (104.5, 103.5, False, 9)     # same price, opposite direction
     ranks = {p[:4]: p[4] for p in pois_for(_cfg("FVG first"), _sig(fvgs=[gap], obs=[opposing]))}
     assert ranks[gap] == POI_RANK_FVG
 
@@ -232,7 +197,6 @@ def test_overlap_is_INCLUSIVE_at_the_edges():
 def _edges(source, **sigkw):
     """The (long, short) resting-limit price `Execution` would rest, for one bar."""
     from strategies.python.mpc_sos_fade.execution import Execution
-
     # deep-only OFF so the fixture's zones are judged on the band alone — this test is about
     # RANK, and leaving the gate on would make it about which zone clears 0.5.
     cfg = dataclasses.replace(_cfg(source), exec_fvg_deep_only=False)
@@ -250,7 +214,7 @@ def test_a_higher_tier_wins_even_when_a_lower_one_rests_NEARER():
     block = (104.9, 104.5, True, 9)
     pooled, _ = _edges("Either", fvgs=[gap], obs=[block])
     ranked, _ = _edges("FVG first", fvgs=[gap], obs=[block])
-    assert pooled == 104.9  # nearest wins when nothing is ranked
+    assert pooled == 104.9      # nearest wins when nothing is ranked
     # The gap wins on rank and is then priced by the ordinary entry model — it floats deeper than
     # 0.618, so `exec_fib_nearest` rests it on fib 0.702 (102.8) rather than its own edge. Asserted
     # as the price the entry ACTUALLY rests at, not the raw zone edge: a rank that chose the right
@@ -273,12 +237,12 @@ def test_the_confirmed_gap_beats_a_plain_gap_that_rests_nearer():
     which is precisely the case Aaron said it exists for ("multiple fair value gaps")."""
     confirmed = (102.5, 102.0, True, 7)
     plain = (104.9, 104.5, True, 7)
-    block = (102.4, 101.9, True, 9)  # overlaps `confirmed`, not `plain`
+    block = (102.4, 101.9, True, 9)          # overlaps `confirmed`, not `plain`
     # 102.8 = fib 0.702, where the entry model rests the confirmed gap (see the note above).
     # The plain gap would have rested at its own 104.9 edge, so the two are far apart and the
     # assertion cannot pass by accident.
     assert _edges("FVG first", fvgs=[confirmed, plain], obs=[block])[0] == 102.8
-    assert _edges("FVG", fvgs=[confirmed, plain], obs=[])[0] == 104.9  # control: nearest wins
+    assert _edges("FVG", fvgs=[confirmed, plain], obs=[])[0] == 104.9   # control: nearest wins
 
 
 def test_the_stack_builds_the_order_block_engine_ONLY_when_the_config_needs_it():
@@ -324,12 +288,8 @@ def test_stack_config_preserves_every_other_engine_pin():
 def _ob_only(**over):
     """`_edges` for this mode with the gates under test left at their real defaults."""
     from strategies.python.mpc_sos_fade.execution import Execution
-
-    sigkw = {
-        k: over.pop(k)
-        for k in list(over)
-        if k in ("fvgs", "obs", "fibo_dir", "fibo_half_bar") or k.startswith("fibo_p")
-    }
+    sigkw = {k: over.pop(k) for k in list(over)
+             if k in ("fvgs", "obs", "fibo_dir", "fibo_half_bar") or k.startswith("fibo_p")}
     cfg = dataclasses.replace(_cfg("Order block (no FVG)"), **over)
     return Execution(cfg)._entry_edges(_sig(**sigkw), _Seq())
 
@@ -373,14 +333,13 @@ def test_a_gap_the_DEEP_ONLY_gate_refuses_does_NOT_stand_the_leg_down():
 
     ⚠ Watched against a `sig.fvgs`-based test: that returns None here.
     """
-    shallow_gap = (105.5, 104.0, True, 7)  # IN the band, but top > fibo_p2 -> deep-only refuses
+    shallow_gap = (105.5, 104.0, True, 7)      # IN the band, but top > fibo_p2 -> deep-only refuses
     block = (104.9, 104.5, True, 9)
     assert _ob_only(fvgs=[shallow_gap], obs=[block], exec_fvg_deep_only=True)[0] == 104.9
     # Non-vacuity, both halves: that gap really is in the band (so the test is not passing because
     # nothing overlapped), and deep-only really is what refuses it.
-    assert _edges("FVG", fvgs=[shallow_gap], obs=[])[0] is not None  # gate off -> qualifies
+    assert _edges("FVG", fvgs=[shallow_gap], obs=[])[0] is not None          # gate off -> qualifies
     from strategies.python.mpc_sos_fade.execution import Execution
-
     gated = dataclasses.replace(_cfg("FVG"), exec_fvg_deep_only=True)
     assert Execution(gated)._entry_edges(_sig(fvgs=[shallow_gap], obs=[]), _Seq())[0] is None
 
@@ -388,18 +347,10 @@ def test_a_gap_the_DEEP_ONLY_gate_refuses_does_NOT_stand_the_leg_down():
 def test_a_gap_the_PRE_ZONE_gate_refuses_does_NOT_stand_the_leg_down():
     """The same ordering through the other gate. The gap was born AFTER price reached the zone, so
     the gap leg may not use it; the block was there first and this leg may."""
-    late_gap = (102.5, 102.0, True, 9)  # born 9, after fibo_half_bar
-    block = (104.9, 104.5, True, 3)  # born 3, before it
-    assert (
-        _ob_only(
-            fvgs=[late_gap],
-            obs=[block],
-            fibo_half_bar=5,
-            exec_fvg_pre_zone=True,
-            exec_fvg_deep_only=False,
-        )[0]
-        == 104.9
-    )
+    late_gap = (102.5, 102.0, True, 9)         # born 9, after fibo_half_bar
+    block = (104.9, 104.5, True, 3)            # born 3, before it
+    assert _ob_only(fvgs=[late_gap], obs=[block], fibo_half_bar=5,
+                    exec_fvg_pre_zone=True, exec_fvg_deep_only=False)[0] == 104.9
 
 
 def test_a_gap_an_order_block_SITS_ON_also_stands_the_leg_down():
@@ -411,7 +362,7 @@ def test_a_gap_an_order_block_SITS_ON_also_stands_the_leg_down():
     take the same setup — the exact failure the mode exists to prevent.
     """
     gap = (102.5, 102.0, True, 7)
-    block = (102.4, 101.9, True, 9)  # overlaps the gap
+    block = (102.4, 101.9, True, 9)            # overlaps the gap
     assert _ob_only(fvgs=[gap], obs=[block], exec_fvg_deep_only=False)[0] is None
 
 
@@ -421,15 +372,8 @@ def test_the_stand_down_holds_on_the_SHORT_side_too():
     # A short leg runs the fib the other way, so the fixture's long ladder has to be mirrored —
     # 0.5 (p2) is now the LOW of the band and 0.886 (p6) the high. Passing fibo_dir alone would
     # leave every zone failing the band test and the assertions would pass on geometry, not rule.
-    short = dict(
-        fibo_dir=-1,
-        fibo_p1=100.0,
-        fibo_p2=101.14,
-        fibo_p3=102.36,
-        fibo_p4=103.2,
-        fibo_p5=104.0,
-        fibo_p6=105.0,
-    )
+    short = dict(fibo_dir=-1, fibo_p1=100.0, fibo_p2=101.14, fibo_p3=102.36,
+                 fibo_p4=103.2, fibo_p5=104.0, fibo_p6=105.0)
     gap = (103.5, 103.0, False, 7)
     block = (101.5, 101.2, False, 9)
     assert _ob_only(fvgs=[gap], obs=[block], exec_fvg_deep_only=False, **short)[1] is None
@@ -446,9 +390,8 @@ def test_require_FVG_off_may_NOT_undo_a_stand_down():
     """
     gap = (102.5, 102.0, True, 7)
     block = (104.9, 104.5, True, 9)
-    assert (
-        _ob_only(fvgs=[gap], obs=[block], exec_req_fvg=False, exec_fvg_deep_only=False)[0] is None
-    )
+    assert _ob_only(fvgs=[gap], obs=[block],
+                    exec_req_fvg=False, exec_fvg_deep_only=False)[0] is None
     # ...and the fallback still works when the leg genuinely found nothing.
     assert _ob_only(fvgs=[], obs=[], exec_req_fvg=False)[0] == _sig().fibo_p3 == 103.82
 
@@ -465,16 +408,14 @@ def test_the_new_mode_is_in_the_lab_choices_and_the_wire_format():
     make every export on disk claim a run it never made."""
     import json
     import pathlib
-
     from strategies.python.mpc_sos_fade.tools.compare_strategy import _POI_SOURCE
 
     assert _POI_SOURCE[4] == "Order block (no FVG)"
     assert [_POI_SOURCE[i] for i in range(4)] == ["FVG", "Order block", "Either", "FVG first"]
 
-    meta = json.loads(
-        (pathlib.Path(__file__).resolve().parents[1] / "mpc_sos_fade.meta.json").read_text()
-    )
-    (row,) = [p for p in meta["params"] if p["name"] == "exec_poi_source"]
+    meta = json.loads((pathlib.Path(__file__).resolve().parents[1]
+                       / "mpc_sos_fade.meta.json").read_text())
+    row, = [p for p in meta["params"] if p["name"] == "exec_poi_source"]
     assert row["choices"] == sorted(_POI_SOURCE.values(), key=list(_POI_SOURCE.values()).index)
 
 
@@ -501,8 +442,8 @@ class _Seq:
 
 def _leg():
     from strategies.python.mpc_sos_fade.execution import Execution
-
-    return Execution(dataclasses.replace(_cfg("Order block (no FVG)"), exec_fvg_deep_only=False))
+    return Execution(dataclasses.replace(_cfg("Order block (no FVG)"),
+                                         exec_fvg_deep_only=False))
 
 
 def test_a_gap_seen_EARLIER_still_stands_the_leg_down_after_it_is_gone():
@@ -515,11 +456,9 @@ def test_a_gap_seen_EARLIER_still_stands_the_leg_down_after_it_is_gone():
     ex = _leg()
     ex._sync_gap_latch(_Seq(l_sos_bar=42))
     gap, block = (102.5, 102.0, True, 7), (104.9, 104.5, True, 9)
-    assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]), _Seq())[0] is None  # bar 1: gap present
-    ex._sync_gap_latch(_Seq(l_sos_bar=42))  # same setup
-    assert (
-        ex._entry_edges(_sig(fvgs=[], obs=[block]), _Seq())[0] is None
-    )  # bar 2: gap gone, still out
+    assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]), _Seq())[0] is None      # bar 1: gap present
+    ex._sync_gap_latch(_Seq(l_sos_bar=42))                               # same setup
+    assert ex._entry_edges(_sig(fvgs=[], obs=[block]), _Seq())[0] is None        # bar 2: gap gone, still out
 
 
 def test_a_NEW_break_of_structure_re_opens_the_leg():
@@ -533,7 +472,7 @@ def test_a_NEW_break_of_structure_re_opens_the_leg():
     ex._sync_gap_latch(_Seq(l_sos_bar=42))
     gap, block = (102.5, 102.0, True, 7), (104.9, 104.5, True, 9)
     assert ex._entry_edges(_sig(fvgs=[gap], obs=[block]), _Seq())[0] is None
-    ex._sync_gap_latch(_Seq(l_sos_bar=99))  # a new SOS arms
+    ex._sync_gap_latch(_Seq(l_sos_bar=99))                               # a new SOS arms
     assert ex._entry_edges(_sig(fvgs=[], obs=[block]), _Seq())[0] == 104.9
 
 
@@ -541,22 +480,14 @@ def test_the_latch_is_per_SIDE():
     """A gap on the long side must not stand the SHORT side down — they are different setups with
     different SOS bars, and one shared flag would halve the leg."""
     ex = _leg()
-    short = dict(
-        fibo_dir=-1,
-        fibo_p1=100.0,
-        fibo_p2=101.14,
-        fibo_p3=102.36,
-        fibo_p4=103.2,
-        fibo_p5=104.0,
-        fibo_p6=105.0,
-    )
+    short = dict(fibo_dir=-1, fibo_p1=100.0, fibo_p2=101.14, fibo_p3=102.36,
+                 fibo_p4=103.2, fibo_p5=104.0, fibo_p6=105.0)
     ex._sync_gap_latch(_Seq(l_sos_bar=42, s_sos_bar=43))
-    ex._entry_edges(_sig(fvgs=[(102.5, 102.0, True, 7)], obs=[]), _Seq())  # a LONG gap
+    ex._entry_edges(_sig(fvgs=[(102.5, 102.0, True, 7)], obs=[]), _Seq())        # a LONG gap
     assert ex._gap_seen_l and not ex._gap_seen_s
     ex._sync_gap_latch(_Seq(l_sos_bar=42, s_sos_bar=43))
-    assert (
-        ex._entry_edges(_sig(fvgs=[], obs=[(101.5, 101.2, False, 9)], **short), _Seq())[1] == 101.2
-    )
+    assert ex._entry_edges(_sig(fvgs=[], obs=[(101.5, 101.2, False, 9)],
+                                **short), _Seq())[1] == 101.2
 
 
 def test_a_gap_the_gates_REFUSE_does_not_arm_the_latch():

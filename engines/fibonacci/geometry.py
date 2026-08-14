@@ -59,9 +59,7 @@ def fib_levels(
     return {name: fib_level(anchor_high, anchor_low, direction, r) for name, r in ratios}
 
 
-def origin_index(
-    direction: int, anchor_high_loc: Optional[int], anchor_low_loc: Optional[int]
-) -> Optional[int]:
+def origin_index(direction: int, anchor_high_loc: Optional[int], anchor_low_loc: Optional[int]) -> Optional[int]:
     """The bar the fib is anchored FROM (its 0.0 origin, where the leg started).
 
     Pine: fiboStartIndex = fibo_dir == 1 ? fibo_asl_loc : fibo_ash_loc — a bull leg starts at

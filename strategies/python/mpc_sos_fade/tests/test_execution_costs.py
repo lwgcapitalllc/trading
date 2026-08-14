@@ -25,8 +25,8 @@ _ROOT = Path(__file__).resolve().parents[4]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from backtest.data.ticks import Tick
 from backtest.fills import AccountProfile, TickPathResolver
+from backtest.data.ticks import Tick
 from strategies.python.mpc_sos_fade.config import SosFadeConfig
 from strategies.python.mpc_sos_fade.execution import Execution, _Pending
 
@@ -49,31 +49,28 @@ def _long_in(ex, entry=99.5, sl=99.0, tp1=100.5, tp2=101.0, qty=100.0):
 
 # ── commission ───────────────────────────────────────────────────────────────────
 
-
 def test_commission_is_per_lot_per_side_not_per_unit():
     """$3/side/lot on 100 oz (= 1 lot) is $3 in and $3 out, NOT $300. Getting the unit wrong
     would look entirely plausible on the page and be off by the contract size."""
     ex = Execution(SosFadeConfig(), initial_capital=10_000.0, profile=_lab_profile(3.0))
     _long_in(ex, qty=100.0)
-    assert ex._costs_usd == -3.0  # entry side
+    assert ex._costs_usd == -3.0                       # entry side
     ex._close_at(Sig(o=100.0, h=101.0, l=99.0), 100.0, "x", Dec())
-    assert ex._costs_usd == -6.0  # exit side too
+    assert ex._costs_usd == -6.0                       # exit side too
 
 
 def test_commission_scales_with_size():
     ex = Execution(SosFadeConfig(), initial_capital=10_000.0, profile=_lab_profile(3.0))
-    _long_in(ex, qty=250.0)  # 2.5 lots
+    _long_in(ex, qty=250.0)                            # 2.5 lots
     assert ex._costs_usd == -7.5
 
 
 # ── slippage ─────────────────────────────────────────────────────────────────────
 
-
 def test_slippage_is_charged_on_a_market_exit():
     """A stop is a market order. 2 ticks × $0.01 × 100 oz × pv 1.0 = $2.00."""
-    ex = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_lab_profile(slippage_ticks=2)
-    )
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_lab_profile(slippage_ticks=2))
     _long_in(ex, qty=100.0)
     assert ex._costs_usd == 0.0, "the entry is a resting limit — it does not slip"
     ex._close_at(Sig(o=100.0, h=101.0, l=99.0), 99.0, "stop", Dec())
@@ -94,12 +91,8 @@ def test_tick_mode_ignores_the_slippage_estimate():
     """Tick mode fills at the next price that actually existed, so the slippage is already in the
     fill price. Charging the estimate on top would book it twice."""
     resolver = TickPathResolver(FakeTicks([Tick(0, bid=99.0, ask=99.33)]), "XAUUSD", latency_ms=0)
-    ex = Execution(
-        SosFadeConfig(),
-        initial_capital=10_000.0,
-        profile=_lab_profile(slippage_ticks=50),
-        resolver=resolver,
-    )
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_lab_profile(slippage_ticks=50), resolver=resolver)
     ex._pos_dir, ex._qty, ex._entry, ex._entry_ms = 1, 100.0, 100.0, 0
     ex._filled_qty, ex._entry_equity, ex._exit_notional, ex._exit_qty = 0.0, 10_000.0, 0.0, 0.0
     ex._costs_usd = 0.0
@@ -117,18 +110,16 @@ def test_no_profile_means_no_slippage_and_no_commission():
 
 # ── the whole trade ──────────────────────────────────────────────────────────────
 
-
 def test_costs_land_inside_the_trades_own_pnl_and_r():
     """Costs are charged AFTER the R baseline is snapshotted, so they reduce the trade's own
     result rather than being quietly excluded from it. A $1 stop loss on 100 oz is -$100 gross;
     with $3/side commission and 2 ticks of slippage it is -$108 net."""
-    ex = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_lab_profile(3.0, slippage_ticks=2)
-    )
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_lab_profile(3.0, slippage_ticks=2))
     _long_in(ex, entry=100.0, sl=99.0, qty=100.0)
     ex._close_at(Sig(o=100.0, h=101.0, l=99.0), 99.0, "stop", Dec())
     trade = ex.trades[-1]
-    assert trade.costs_usd == -8.0  # 3 + 3 commission, 2.00 slippage
+    assert trade.costs_usd == -8.0                     # 3 + 3 commission, 2.00 slippage
     assert round(trade.pnl_usd, 6) == -108.0
     assert round(ex.equity, 6) == 10_000.0 - 108.0
 
@@ -140,7 +131,6 @@ def test_costs_land_inside_the_trades_own_pnl_and_r():
 # These pin the two things that would look plausible if wrong: that one round turn costs exactly
 # ONE spread however many rungs the ladder fills, and that turning on `bid_ask_fills` stops the
 # cost path rather than adding to it.
-
 
 def _spread_profile(spread=0.22, bid_ask_fills=False):
     return AccountProfile("lab", 0.0, spread=spread, bid_ask_fills=bid_ask_fills, swap=None)
@@ -165,16 +155,15 @@ def test_a_three_rung_exit_still_pays_exactly_one_spread():
     ex._exit_portion("L-TP1", 100.5, 30.0, Sig(), Dec(), market=False)
     ex._exit_portion("L-TP2", 101.0, 40.0, Sig(), Dec(), market=False)
     ex._exit_portion("L-RUN", 101.5, 30.0, Sig(), Dec(), market=False)
-    assert round(ex._costs_usd, 6) == -22.0  # 11 in + 11 spread across all three rungs
+    assert round(ex._costs_usd, 6) == -22.0            # 11 in + 11 spread across all three rungs
 
 
 def test_spread_is_not_charged_when_the_fills_already_pay_it():
     """`bid_ask_fills` books the entry on the ask and the exit on the bid, so the spread is paid
     BY CONSTRUCTION. Charging it as well would bill the same spread twice — the two are
     alternatives, not layers that stack."""
-    ex = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_spread_profile(0.22, bid_ask_fills=True)
-    )
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_spread_profile(0.22, bid_ask_fills=True))
     _long_in(ex, qty=100.0)
     ex._close_at(Sig(o=100.0, h=101.0, l=99.0), 99.0, "stop", Dec())
     assert ex._costs_usd == 0.0
@@ -184,9 +173,8 @@ def test_tick_mode_ignores_the_stated_spread():
     """Same rule as slippage: the resolver transacts on the real side of the book, so the spread
     is already in the fill price."""
     resolver = TickPathResolver(FakeTicks([Tick(0, bid=99.0, ask=99.22)]), "XAUUSD", latency_ms=0)
-    ex = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_spread_profile(0.22), resolver=resolver
-    )
+    ex = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_spread_profile(0.22), resolver=resolver)
     assert ex._spread() == 0.0
 
 
@@ -198,7 +186,6 @@ def test_no_profile_means_no_spread():
 
 # ── spread, as a FILL rule (bid_ask_fills on) — the half that moves trades ───────
 
-
 def test_a_longs_entry_limit_needs_the_bid_to_reach_one_spread_below_it():
     """Broker bars are the BID and a long BUYS the ask. A limit at 99.50 is reached when the ask
     touches it, i.e. when the bid is at 99.28 — so a bar whose low is exactly 99.50 fills the
@@ -207,17 +194,14 @@ def test_a_longs_entry_limit_needs_the_bid_to_reach_one_spread_below_it():
     off._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
     assert off._try_entry_fill(Sig(o=100.0, h=101.0, l=99.50), Dec()) is True
 
-    on = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_spread_profile(0.22, bid_ask_fills=True)
-    )
+    on = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_spread_profile(0.22, bid_ask_fills=True))
     on._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
-    assert on._try_entry_fill(Sig(o=100.0, h=101.0, l=99.50), Dec()) is False, (
+    assert on._try_entry_fill(Sig(o=100.0, h=101.0, l=99.50), Dec()) is False, \
         "the ask never got to the limit — this long did not happen"
-    )
 
-    on2 = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_spread_profile(0.22, bid_ask_fills=True)
-    )
+    on2 = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                    profile=_spread_profile(0.22, bid_ask_fills=True))
     on2._pend_long = _pend(1, 99.5, 99.0, 100.5, 101.0)
     assert on2._try_entry_fill(Sig(o=100.0, h=101.0, l=99.28), Dec()) is True
     assert on2._entry == 99.5, "it fills AT the limit — the limit price is the ask price"
@@ -225,9 +209,8 @@ def test_a_longs_entry_limit_needs_the_bid_to_reach_one_spread_below_it():
 
 def test_a_shorts_entry_is_unchanged_because_it_sells_the_bid():
     """The asymmetry is the point: only two of the four order sides are buys."""
-    on = Execution(
-        SosFadeConfig(), initial_capital=10_000.0, profile=_spread_profile(0.22, bid_ask_fills=True)
-    )
+    on = Execution(SosFadeConfig(), initial_capital=10_000.0,
+                   profile=_spread_profile(0.22, bid_ask_fills=True))
     on._pend_short = _pend(-1, 100.5, 101.0, 99.5, 99.0)
     assert on._try_entry_fill(Sig(o=100.0, h=100.50, l=99.0), Dec()) is True
     assert on._entry == 100.5
@@ -243,7 +226,8 @@ def test_a_shorts_stop_triggers_one_spread_earlier_than_the_bid_bar_shows():
     off._manage_open(Sig(o=100.0, h=100.90, l=100.0), Dec())
     assert off._pos_dir == -1, "bid high 100.90 never reached the 101.00 stop"
 
-    on = Execution(cfg, initial_capital=10_000.0, profile=_spread_profile(0.22, bid_ask_fills=True))
+    on = Execution(cfg, initial_capital=10_000.0,
+                   profile=_spread_profile(0.22, bid_ask_fills=True))
     on._pend_short = _pend(-1, 100.0, 101.0, 99.0, 98.5)
     assert on._try_entry_fill(Sig(o=99.0, h=100.2, l=98.0), Dec()) is True
     on._manage_open(Sig(o=100.0, h=100.90, l=100.0), Dec())
@@ -254,7 +238,8 @@ def test_a_shorts_stop_triggers_one_spread_earlier_than_the_bid_bar_shows():
 def test_bid_ask_fills_leaves_a_longs_exits_alone():
     """A long exits by SELLING — the bar already IS the bid, so nothing shifts."""
     cfg = dataclasses.replace(SosFadeConfig(), exec_be_buf_tk=0.0)
-    ex = Execution(cfg, initial_capital=10_000.0, profile=_spread_profile(0.22, bid_ask_fills=True))
+    ex = Execution(cfg, initial_capital=10_000.0,
+                   profile=_spread_profile(0.22, bid_ask_fills=True))
     ex._pend_long = _pend(1, 100.0, 99.0, 101.0, 101.5)
     assert ex._try_entry_fill(Sig(o=101.0, h=101.5, l=99.5), Dec()) is True
     ex._manage_open(Sig(o=100.0, h=100.5, l=99.10), Dec())

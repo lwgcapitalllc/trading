@@ -23,17 +23,11 @@ if str(_REPO_ROOT) not in sys.path:
 from fibonacci import MacroFib, StructureSnapshot
 
 
-def _snap(
-    bull_sos=False, bear_sos=False, lch=None, lch_loc=None, lcl=None, lcl_loc=None, direction=0
-):
+def _snap(bull_sos=False, bear_sos=False, lch=None, lch_loc=None, lcl=None, lcl_loc=None, direction=0):
     return StructureSnapshot(
-        bull_sos=bull_sos,
-        bear_sos=bear_sos,
-        last_conf_high=lch,
-        last_conf_high_loc=lch_loc,
-        last_conf_low=lcl,
-        last_conf_low_loc=lcl_loc,
-        direction=direction,
+        bull_sos=bull_sos, bear_sos=bear_sos,
+        last_conf_high=lch, last_conf_high_loc=lch_loc,
+        last_conf_low=lcl, last_conf_low_loc=lcl_loc, direction=direction,
     )
 
 
@@ -42,15 +36,10 @@ def _lock_cycle(fib):
 
     Returns after the lock bar (bar 20, price parked up near the top so nothing is touched yet).
     """
-    fib.update(10, high=105, low=100, close=101, snap=_snap(bear_sos=True))  # bear SOS, low 100
-    fib.update(12, high=95, low=90, close=92, snap=_snap())  # deeper low 90
-    return fib.update(
-        20,
-        high=200,
-        low=195,
-        close=198,
-        snap=_snap(bull_sos=True, lch=200, lch_loc=18, lcl=90, lcl_loc=12),
-    )
+    fib.update(10, high=105, low=100, close=101, snap=_snap(bear_sos=True))          # bear SOS, low 100
+    fib.update(12, high=95, low=90, close=92, snap=_snap())                           # deeper low 90
+    return fib.update(20, high=200, low=195, close=198,
+                      snap=_snap(bull_sos=True, lch=200, lch_loc=18, lcl=90, lcl_loc=12))
 
 
 def test_no_cycle_until_bull_sos():
@@ -75,18 +64,18 @@ def test_bull_sos_locks_cycle_with_correct_anchors_and_levels():
 
 def test_gate_then_target_sequence():
     fib = MacroFib()
-    _lock_cycle(fib)  # E1 = 132.02, TP1 = 145
-    ev = fib.update(21, high=200, low=130, close=140, snap=_snap())  # pull back to the gate
+    _lock_cycle(fib)                       # E1 = 132.02, TP1 = 145
+    ev = fib.update(21, high=200, low=130, close=140, snap=_snap())   # pull back to the gate
     assert "E1" in {t.level for t in ev.touched}
-    assert "TP1" not in {t.level for t in ev.touched}  # target can't fire the bar the gate is hit
-    ev = fib.update(22, high=150, low=148, close=149, snap=_snap())  # push back up to TP1
+    assert "TP1" not in {t.level for t in ev.touched}   # target can't fire the bar the gate is hit
+    ev = fib.update(22, high=150, low=148, close=149, snap=_snap())   # push back up to TP1
     assert {t.level for t in ev.touched} == {"TP1"}
     assert ev.touched[0].role == "target"
 
 
 def test_deeper_retrace_levels_fire_together():
     fib = MacroFib()
-    _lock_cycle(fib)  # E1=132.02 E2=122.78 E3=113.54
+    _lock_cycle(fib)                       # E1=132.02 E2=122.78 E3=113.54
     ev = fib.update(21, high=200, low=113.0, close=120, snap=_snap())  # stab through 0.786
     assert {t.level for t in ev.touched} == {"E1", "E2", "E3"}
     assert all(t.role == "entry" for t in ev.touched)
@@ -95,7 +84,7 @@ def test_deeper_retrace_levels_fire_together():
 def test_close_below_bottom_resets_cycle():
     fib = MacroFib()
     _lock_cycle(fib)
-    ev = fib.update(21, high=95, low=88, close=89.0, snap=_snap())  # close under the locked LL
+    ev = fib.update(21, high=95, low=88, close=89.0, snap=_snap())     # close under the locked LL
     assert not ev.active and not ev.locked and ev.direction == 0
 
 
@@ -104,18 +93,17 @@ def test_close_above_top_hides_but_stays_locked():
     _lock_cycle(fib)
     ev = fib.update(21, high=206, low=201, close=205.0, snap=_snap())  # close above the top
     assert not ev.active and not ev.visible
-    assert ev.locked  # cycle is hidden, not reset
+    assert ev.locked                                                   # cycle is hidden, not reset
 
 
 def test_new_hh_extends_top_and_resets_touches():
     fib = MacroFib()
     _lock_cycle(fib)
-    fib.update(21, high=200, low=130, close=140, snap=_snap())  # E1 touched on the old range
-    ev = fib.update(
-        22, high=205, low=195, close=203, snap=_snap(lch=210, lch_loc=30)
-    )  # new confirmed HH 210
+    fib.update(21, high=200, low=130, close=140, snap=_snap())         # E1 touched on the old range
+    ev = fib.update(22, high=205, low=195, close=203,
+                    snap=_snap(lch=210, lch_loc=30))                   # new confirmed HH 210
     assert ev.extended and ev.top == 210.0
-    assert ev.touched_so_far == set()  # new range wipes touches
+    assert ev.touched_so_far == set()                                  # new range wipes touches
 
 
 def test_bottom_anchor_is_always_running_low_not_structure_lcl():
@@ -124,16 +112,11 @@ def test_bottom_anchor_is_always_running_low_not_structure_lcl():
     SOS). Here the running low bottomed at 90 while last_conf_low reports a deeper 85 from further
     back — the lock must use 90."""
     fib = MacroFib()
-    fib.update(10, high=105, low=100, close=101, snap=_snap(bear_sos=True))  # bear SOS, low 100
-    fib.update(12, high=95, low=90, close=92, snap=_snap())  # running low bottoms at 90
-    ev = fib.update(
-        20,
-        high=200,
-        low=195,
-        close=198,
-        snap=_snap(bull_sos=True, lch=200, lch_loc=18, lcl=85, lcl_loc=15),
-    )
-    assert ev.new_cycle and ev.bot == 90.0  # 90 (running low), NOT 85 (structure lcl)
+    fib.update(10, high=105, low=100, close=101, snap=_snap(bear_sos=True))   # bear SOS, low 100
+    fib.update(12, high=95, low=90, close=92, snap=_snap())                    # running low bottoms at 90
+    ev = fib.update(20, high=200, low=195, close=198,
+                    snap=_snap(bull_sos=True, lch=200, lch_loc=18, lcl=85, lcl_loc=15))
+    assert ev.new_cycle and ev.bot == 90.0            # 90 (running low), NOT 85 (structure lcl)
 
 
 def test_same_bar_reset_and_retouch_emits_no_event():
@@ -143,14 +126,9 @@ def test_same_bar_reset_and_retouch_emits_no_event():
     bar, even though E1 is (re)touched within it."""
     fib = MacroFib()
     _lock_cycle(fib)
-    fib.update(21, high=200, low=130, close=140, snap=_snap())  # E1 touched (prev-bar True)
-    ev = fib.update(
-        22,
-        high=200,
-        low=130,
-        close=140,  # extend to 210 AND low still at 130
-        snap=_snap(lch=210, lch_loc=30),
-    )
+    fib.update(21, high=200, low=130, close=140, snap=_snap())         # E1 touched (prev-bar True)
+    ev = fib.update(22, high=200, low=130, close=140,                  # extend to 210 AND low still at 130
+                    snap=_snap(lch=210, lch_loc=30))
     assert ev.extended
-    assert "E1" not in {t.level for t in ev.touched}  # suppressed: was True last bar
-    assert "E1" in ev.touched_so_far  # ...but it IS (re)touched
+    assert "E1" not in {t.level for t in ev.touched}                   # suppressed: was True last bar
+    assert "E1" in ev.touched_so_far                                   # ...but it IS (re)touched

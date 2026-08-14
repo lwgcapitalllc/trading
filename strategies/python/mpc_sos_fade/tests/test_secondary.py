@@ -12,14 +12,13 @@ import dataclasses
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[4]  # repo root (…/trading)
+_ROOT = Path(__file__).resolve().parents[4]        # repo root (…/trading)
 sys.path.insert(0, str(_ROOT))
 # reuse the structure engine's hand-traced bar scenario as ground truth
 sys.path.insert(0, str(_ROOT / "engines" / "market_structure" / "tests"))
 
-from test_engine import _SCENARIO_BARS  # noqa: E402
-
 from strategies.python.mpc_sos_fade.secondary import Structure1m
+from test_engine import _SCENARIO_BARS  # noqa: E402
 
 
 def _run():
@@ -31,22 +30,22 @@ def _run():
 def test_bear_sos_latches_on_bar_8_with_its_leg():
     states = _run()
     st8 = states[8]
-    assert st8.new_bear_sos is True  # the SOS fires on bar 8
+    assert st8.new_bear_sos is True                      # the SOS fires on bar 8
     assert st8.bear_sos_bar == 8
     assert st8.bear_leg_hi is not None and st8.bear_leg_lo is not None
-    assert st8.bear_leg_hi > st8.bear_leg_lo  # a valid leg (0.0 above 1.0)
+    assert st8.bear_leg_hi > st8.bear_leg_lo             # a valid leg (0.0 above 1.0)
 
 
 def test_new_bear_sos_edge_fires_exactly_once():
     states = _run()
     fired = [i for i, s in enumerate(states) if s.new_bear_sos]
-    assert fired == [8]  # the edge is a one-bar pulse
+    assert fired == [8]                                  # the edge is a one-bar pulse
 
 
 def test_no_bull_sos_in_this_scenario():
     states = _run()
-    assert all(not s.new_bull_sos for s in states)  # scenario has no bull SOS
-    assert states[-1].bull_sos_bar is None  # so the bull side never latched
+    assert all(not s.new_bull_sos for s in states)       # scenario has no bull SOS
+    assert states[-1].bull_sos_bar is None               # so the bull side never latched
     assert states[-1].bull_leg_hi is None
 
 
@@ -55,7 +54,7 @@ def test_leg_persists_after_the_sos_bar():
     overwrites them (a consumer reads the current leg on any bar, not just the SOS bar)."""
     states = _run()
     hi8, lo8 = states[8].bear_leg_hi, states[8].bear_leg_lo
-    for s in states[9:]:  # no further bear SOS after bar 8 in this scenario
+    for s in states[9:]:            # no further bear SOS after bar 8 in this scenario
         assert s.bear_leg_hi == hi8 and s.bear_leg_lo == lo8
         assert s.new_bear_sos is False
 
@@ -111,7 +110,7 @@ def test_run_dual_primary_is_identical_to_run_when_secondary_off():
     cfg = SosFadeConfig(exec_secondary=False)
     a = MpcSosFadeStrategy(cfg).run(df15)
     b = MpcSosFadeStrategy(cfg).run_dual(df15, df1m)
-    assert a.decisions == b.decisions  # Decision/Fill are dataclasses → structural ==
+    assert a.decisions == b.decisions           # Decision/Fill are dataclasses → structural ==
     assert a.execution.trades == b.execution.trades
 
 
@@ -127,68 +126,34 @@ from strategies.python.mpc_sos_fade.secondary import M1State, SecArm, SecondaryA
 
 # A 15m LONG fib: up-leg low(1.0)=100 → high(0.0)=110. Retrace zone 0.618-0.886 = [101.14, 103.82].
 _SIG_LONG = SimpleNamespace(
-    fibo_dir=1,
-    fibo_p1=106.18,
-    fibo_p2=105.0,
-    fibo_p3=103.82,
-    fibo_p6=101.14,
-    fibo_p7=110.0,
-    fibo_p10=100.0,
-    bull_div_active=True,
-    bear_div_active=False,
-    veto_on=False,
-    veto_rsi_ob=False,
-    veto_rsi_os=False,
-)
+    fibo_dir=1, fibo_p1=106.18, fibo_p2=105.0, fibo_p3=103.82, fibo_p6=101.14,
+    fibo_p7=110.0, fibo_p10=100.0, bull_div_active=True, bear_div_active=False,
+    veto_on=False, veto_rsi_ob=False, veto_rsi_os=False)
 _SEQ_LONG = SimpleNamespace(l_sos_bar=500, s_sos_bar=None)
 
 
 def _m1_bull_sos(hi, lo):
-    return M1State(
-        bull_sos_bar=1000,
-        bear_sos_bar=None,
-        bull_leg_hi=hi,
-        bull_leg_lo=lo,
-        bear_leg_hi=None,
-        bear_leg_lo=None,
-        direction=1,
-        new_bull_sos=True,
-        new_bear_sos=False,
-    )
+    return M1State(bull_sos_bar=1000, bear_sos_bar=None, bull_leg_hi=hi, bull_leg_lo=lo,
+                   bear_leg_hi=None, bear_leg_lo=None, direction=1,
+                   new_bull_sos=True, new_bear_sos=False)
 
 
 def test_arm_fires_and_rests_the_right_limit():
     cfg = SosFadeConfig(exec_secondary=True)
     arm_sm = SecondaryArm(cfg)
     # a 1m leg 102.0→103.0 inside the zone; primary on this 15m leg reached BE (be_sos_l == l_sos_bar)
-    out = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                        ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert out.l_armed is True
-    assert abs(out.l_edge - (103.0 - 1.0 * 0.382)) < 1e-9  # 38.2% retrace of the 1m leg
-    assert out.l_sl == 102.0  # stop = 1m leg origin (1.0)
-    assert out.l_tp1 == 105.0 and out.l_tp2 == 106.18  # 15m 0.5 / 0.382
+    assert abs(out.l_edge - (103.0 - 1.0 * 0.382)) < 1e-9   # 38.2% retrace of the 1m leg
+    assert out.l_sl == 102.0                                # stop = 1m leg origin (1.0)
+    assert out.l_tp1 == 105.0 and out.l_tp2 == 106.18       # 15m 0.5 / 0.382
     assert out.l_leg == 1000
 
     # once that leg has re-entered, it must not re-arm (each 1m leg fires once)
     arm_sm.mark_traded(1)
-    again = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    again = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert again.l_armed is False
 
 
@@ -197,17 +162,9 @@ def test_arm_blocked_until_primary_reached_breakeven():
     arm_sm = SecondaryArm(cfg)
     # the primary on this 15m leg has NOT reached breakeven (be_sos_l is None): a primary that
     # opened and got stopped at its initial stop leaves no re-entry.
-    out = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=None,
-        be_sos_s=None,
-    )
-    assert out.l_armed is False  # a re-entry is never the first trade
+    out = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                        ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None)
+    assert out.l_armed is False                             # a re-entry is never the first trade
 
 
 def test_dead_leg_blocks_further_reentries():
@@ -216,83 +173,37 @@ def test_dead_leg_blocks_further_reentries():
     cfg = SosFadeConfig(exec_secondary=True)
     arm_sm = SecondaryArm(cfg)
     # arms normally on the first fresh 1m leg
-    a = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    a = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                      ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert a.l_armed is True
 
     # that re-entry stops out → driver kills the leg
     arm_sm.mark_dead(1, _SEQ_LONG)
     # a brand-new 1m leg (bar 1001) forms in the same setup — must NOT arm (leg is dead)
-    dead = arm_sm.update(
-        M1State(
-            bull_sos_bar=1001,
-            bear_sos_bar=None,
-            bull_leg_hi=104.0,
-            bull_leg_lo=103.0,
-            bear_leg_hi=None,
-            bear_leg_lo=None,
-            direction=1,
-            new_bull_sos=True,
-            new_bear_sos=False,
-        ),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    dead = arm_sm.update(M1State(bull_sos_bar=1001, bear_sos_bar=None, bull_leg_hi=104.0,
+                                 bull_leg_lo=103.0, bear_leg_hi=None, bear_leg_lo=None,
+                                 direction=1, new_bull_sos=True, new_bear_sos=False),
+                         _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                         ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert dead.l_armed is False
 
     # a new break of structure (l_sos_bar goes None) resets the dead flag
     seq_dead = SimpleNamespace(l_sos_bar=None, s_sos_bar=None)
-    arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        seq_dead,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=None,
-        be_sos_s=None,
-    )
+    arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, seq_dead, zone_close=102.5,
+                  ny_hour=10, flat=True, be_sos_l=None, be_sos_s=None)
     # the next setup on a new leg (600) can arm again
     seq_new = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
-    revived = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        seq_new,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=600,
-        be_sos_s=None,
-    )
+    revived = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, seq_new, zone_close=102.5,
+                            ny_hour=10, flat=True, be_sos_l=600, be_sos_s=None)
     assert revived.l_armed is True
 
 
 def _bar1m(i, o, h, l, c):
     # last_conf_* feed the STRUCTURE runner trail; None here = no confirmed swing on this
     # synthetic 1m stream, so the trail stays off and the stage-2 floor alone holds the stop.
-    return SimpleNamespace(
-        index=i,
-        time_ms=1_700_000_000_000 + i * 60_000,
-        open=o,
-        high=h,
-        low=l,
-        close=c,
-        last_conf_high=None,
-        last_conf_low=None,
-    )
+    return SimpleNamespace(index=i, time_ms=1_700_000_000_000 + i * 60_000,
+                           open=o, high=h, low=l, close=c,
+                           last_conf_high=None, last_conf_low=None)
 
 
 def test_execution_fills_and_closes_a_secondary_trade():
@@ -312,11 +223,10 @@ def test_execution_fills_and_closes_a_secondary_trade():
     t = execu.trades[0]
     assert t.kind == "secondary" and t.dir == 1
     assert abs(t.entry_price - 102.618) < 1e-9
-    assert t.pnl_usd < 0  # stopped for a loss
+    assert t.pnl_usd < 0                                    # stopped for a loss
 
 
 # ── the 1m signal object PRODUCTION builds, not the one this file hand-rolls ──────────
-
 
 def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
     """The bug this pins: `_bar1m` above is a TEST fixture, and it carries `last_conf_*` because
@@ -353,9 +263,8 @@ def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
 
     Execution.step_secondary = capture
     try:
-        MpcSosFadeStrategy(
-            config=SosFadeConfig(exec_secondary=True, symbol="XAUUSD"), initial_capital=10_000.0
-        ).run_dual(frame(15, 40), frame(1, 600))
+        MpcSosFadeStrategy(config=SosFadeConfig(exec_secondary=True, symbol="XAUUSD"),
+                           initial_capital=10_000.0).run_dual(frame(15, 40), frame(1, 600))
     finally:
         Execution.step_secondary = orig
 
@@ -363,8 +272,7 @@ def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
     missing = sorted(f for f in needed if not hasattr(seen[0], f))
     assert not missing, (
         f"run_dual's 1m sig is missing {missing}, which _advance_stage reads on every managed "
-        f"bar — any secondary trade surviving to its next 1m bar raises AttributeError"
-    )
+        f"bar — any secondary trade surviving to its next 1m bar raises AttributeError")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -376,35 +284,18 @@ def test_run_dual_builds_a_1m_sig_carrying_every_field_advance_stage_reads():
 # that matters most — that the two 15m-keyed latches did not get merged into one.
 # ─────────────────────────────────────────────────────────────────────────────
 
-
 def _second_1m_leg():
     """A different 1m leg (bar 1001) on the SAME 15m setup — what the cap has to refuse."""
-    return M1State(
-        bull_sos_bar=1001,
-        bear_sos_bar=None,
-        bull_leg_hi=104.0,
-        bull_leg_lo=103.0,
-        bear_leg_hi=None,
-        bear_leg_lo=None,
-        direction=1,
-        new_bull_sos=True,
-        new_bear_sos=False,
-    )
+    return M1State(bull_sos_bar=1001, bear_sos_bar=None, bull_leg_hi=104.0, bull_leg_lo=103.0,
+                   bear_leg_hi=None, bear_leg_lo=None, direction=1,
+                   new_bull_sos=True, new_bear_sos=False)
 
 
 def _armed_and_traded(cfg):
     """Arm once on the first 1m leg and fill it, the state both paths start from."""
     arm_sm = SecondaryArm(cfg)
-    first = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    first = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert first.l_armed is True, "the fixture never armed — nothing below proves anything"
     arm_sm.mark_traded(1)
     return arm_sm
@@ -412,19 +303,10 @@ def _armed_and_traded(cfg):
 
 def test_the_cap_refuses_a_second_reentry_on_the_same_15m_setup():
     arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=True))
-    again = arm_sm.update(
-        _second_1m_leg(),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert again.l_armed is False, (
-        "a fresh 1m leg re-armed on a 15m setup that has already had its one re-entry"
-    )
+        "a fresh 1m leg re-armed on a 15m setup that has already had its one re-entry")
     assert again.l_edge is None, "refused but still published a resting price"
 
 
@@ -434,16 +316,8 @@ def test_with_the_cap_OFF_a_fresh_1m_leg_re_arms_on_the_same_setup():
     Without this the cap could be made unconditional and every test above would still pass —
     the shipped default is ON, so nothing else exercises the other branch."""
     arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=False))
-    again = arm_sm.update(
-        _second_1m_leg(),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    again = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert again.l_armed is True, "the un-capped rule is one re-entry per 1m LEG, not per setup"
 
 
@@ -452,16 +326,8 @@ def test_the_cap_is_per_SETUP_not_per_LIFETIME():
     the feature, and reading it as a kill switch would make the measured numbers meaningless."""
     arm_sm = _armed_and_traded(SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=True))
     seq_new = SimpleNamespace(l_sos_bar=600, s_sos_bar=None)
-    revived = arm_sm.update(
-        _second_1m_leg(),
-        _SIG_LONG,
-        seq_new,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=600,
-        be_sos_s=None,
-    )
+    revived = arm_sm.update(_second_1m_leg(), _SIG_LONG, seq_new, zone_close=102.5,
+                            ny_hour=10, flat=True, be_sos_l=600, be_sos_s=None)
     assert revived.l_armed is True, "a NEW 15m setup was refused its first re-entry"
 
 
@@ -479,31 +345,14 @@ def test_the_stop_out_latch_is_not_the_cap_latch():
     covers the shortcut; neither test does alone."""
     cfg = SosFadeConfig(exec_secondary=True, exec_sec_once_per_setup=False)
     arm_sm = SecondaryArm(cfg)
-    first = arm_sm.update(
-        _m1_bull_sos(103.0, 102.0),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    first = arm_sm.update(_m1_bull_sos(103.0, 102.0), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert first.l_armed is True
     arm_sm.mark_dead(1, _SEQ_LONG)
-    after = arm_sm.update(
-        _second_1m_leg(),
-        _SIG_LONG,
-        _SEQ_LONG,
-        zone_close=102.5,
-        ny_hour=10,
-        flat=True,
-        be_sos_l=500,
-        be_sos_s=None,
-    )
+    after = arm_sm.update(_second_1m_leg(), _SIG_LONG, _SEQ_LONG, zone_close=102.5,
+                          ny_hour=10, flat=True, be_sos_l=500, be_sos_s=None)
     assert after.l_armed is False, (
-        "a stopped-out leg re-armed with the cap off — the stop-out rule is not a preference"
-    )
+        "a stopped-out leg re-armed with the cap off — the stop-out rule is not a preference")
 
 
 def test_the_secondary_and_its_cap_ship_ON():
@@ -519,11 +368,11 @@ def test_the_secondary_and_its_cap_ship_ON():
 # ── the minimum-stop floor on the 1m path ────────────────────────────────────────
 
 # A 1m long: buy limit 102.618, stop at the leg origin 102.0 → a 0.618 stop distance.
-_TIGHT_LONG = SecArm(
-    l_armed=True, l_edge=102.618, l_sl=102.0, l_tp1=105.0, l_tp2=106.18, l_leg=1000
-)
+_TIGHT_LONG = SecArm(l_armed=True, l_edge=102.618, l_sl=102.0, l_tp1=105.0, l_tp2=106.18,
+                     l_leg=1000)
 # The same leg read short: sell limit 102.0, stop above at 102.618. Same 0.618 distance.
-_TIGHT_SHORT = SecArm(s_armed=True, s_edge=102.0, s_sl=102.618, s_tp1=99.0, s_tp2=98.0, s_leg=1000)
+_TIGHT_SHORT = SecArm(s_armed=True, s_edge=102.0, s_sl=102.618, s_tp1=99.0, s_tp2=98.0,
+                      s_leg=1000)
 
 
 def _pending(**cfg_kw):
@@ -539,7 +388,7 @@ def test_the_min_stop_floor_refuses_a_secondary_whose_stop_is_too_tight():
     0.618 against a floor of ~1.03 (0.618 is 60% of it). Measured on real history, 90 of 1,956
     secondary limits rested under the shipped 0.08% floor."""
     execu = _pending(exec_min_stop_mode="% of price", exec_min_stop_val=1.0)
-    assert execu._min_stop_floor(102.618) > 0.618  # the floor really does bite here
+    assert execu._min_stop_floor(102.618) > 0.618           # the floor really does bite here
     assert execu._secondary_pending(_TIGHT_LONG) is None
     assert execu._secondary_pending(_TIGHT_SHORT) is None
 
@@ -579,7 +428,7 @@ def test_the_floor_is_LIVE_on_the_secondary_at_the_shipped_defaults():
 
 
 def test_the_floor_is_inert_when_the_mode_is_switched_Off():
-    """ "Off" is a real floor of 0.0 that every positive distance clears — not a skipped check —
+    """"Off" is a real floor of 0.0 that every positive distance clears — not a skipped check —
     so pinning the mode reproduces the pre-guard behaviour exactly."""
     execu = _pending(exec_min_stop_mode="Off")
     assert execu._min_stop_floor(102.618) == 0.0
@@ -588,12 +437,12 @@ def test_the_floor_is_inert_when_the_mode_is_switched_Off():
 
 
 def test_an_unknowable_floor_refuses_the_secondary_exactly_as_it_refuses_the_primary():
-    """ "x ATR(14)" before the ATR has 14 bars has no floor to compare against. The 15m path
+    """"x ATR(14)" before the ATR has 14 bars has no floor to compare against. The 15m path
     refuses there (Pine's NA comparison reads as false), and the 1m path must not quietly
     diverge into permitting — an unknown floor is the one case where the two rules disagreeing
     would be invisible, because it only happens during warm-up."""
     execu = _pending(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=0.3)
-    assert execu._atr is None  # no 15m bar has been stepped
+    assert execu._atr is None                               # no 15m bar has been stepped
     assert execu._min_stop_floor(102.618) is None
     assert execu._secondary_pending(_TIGHT_LONG) is None
     assert execu._secondary_pending(_TIGHT_SHORT) is None

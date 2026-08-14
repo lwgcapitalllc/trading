@@ -66,24 +66,15 @@ def _real_context(ex, is_long=True):
     # The leg is ash 105 / asl 90, so on a long the 0.236 level sits at 101.46. These extremes
     # sit ABOVE it deliberately, so the default context is NOT yet announce-ready and a test
     # that wants the other state has to say so.
-    sig = SimpleNamespace(
-        fibo_p2=100.0,
-        fibo_p3=98.0,
-        fibo_p4=97.0,
-        fibo_p5=96.0,
-        fibo_p6=95.0,
-        fibo_p10=94.0,
-        fibo_dir=1 if is_long else -1,
-        fibo_ash=105.0,
-        fibo_asl=90.0,
-        low=102.5 if is_long else 91.0,
-        high=104.0 if is_long else 93.5,
-    )
+    sig = SimpleNamespace(fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0,
+                          fibo_p6=95.0, fibo_p10=94.0, fibo_dir=1 if is_long else -1,
+                          fibo_ash=105.0, fibo_asl=90.0,
+                          low=102.5 if is_long else 91.0,
+                          high=104.0 if is_long else 93.5)
     m = _MissWatch()
     m.open(sos_bar=7, arm_src="SWP", swp_nm="Day Low")
-    return ex._setup_context(
-        sig, m, is_long, arm_swp=True, arm_div=False, veto=False, late=False, htf_any=False
-    )
+    return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
+                             veto=False, late=False, htf_any=False)
 
 
 def test_drain_clears_resolved_setups_so_they_are_not_re_sent_every_bar():
@@ -95,7 +86,7 @@ def test_drain_clears_resolved_setups_so_they_are_not_re_sent_every_bar():
     ex = _strategy().execution
     ex._setup_ctx[0] = _real_context(ex)
     ex._book_setup_end(ex._setup_ctx[0], DEAD, "died")
-    assert len(ex.drain_setups()) == 2  # the terminal one + the still-live slot 0
+    assert len(ex.drain_setups()) == 2      # the terminal one + the still-live slot 0
     assert ex._setup_done == []
 
 
@@ -108,9 +99,9 @@ def test_the_context_carries_every_key_the_snapshot_builders_read():
     ex = _strategy().execution
     ctx = _real_context(ex)
     ex._setup_ctx[0] = ctx
-    live = ex.live_setups()  # reads ctx through the WATCHING path
-    ex._book_setup_end(ctx, "dead", "died")  # ...and through the terminal path
-    assert live and ex._setup_done  # neither raised a KeyError
+    live = ex.live_setups()                     # reads ctx through the WATCHING path
+    ex._book_setup_end(ctx, "dead", "died")     # ...and through the terminal path
+    assert live and ex._setup_done               # neither raised a KeyError
     assert live[0].tradeable is True
 
 
@@ -173,10 +164,8 @@ def test_EVERY_fork_of_this_execution_layer_is_checked_not_just_the_two_we_knew_
         # context, which means recording misses. Claiming it without that is the failure.
         if implements_contract(ex) and not ex._records_misses:
             claiming.append(name)
-    assert not claiming, (
-        f"{claiming} claim the setup contract but cannot populate it — they "
-        f"would announce 'Setup alerts: ON' for a channel that sends nothing"
-    )
+    assert not claiming, (f"{claiming} claim the setup contract but cannot populate it — they "
+                          f"would announce 'Setup alerts: ON' for a channel that sends nothing")
 
 
 def test_reports_setups_is_DERIVED_so_a_new_fork_cannot_forget_it():
@@ -196,24 +185,13 @@ def _ctx_at(ex, low, high, is_long=True, sos_bar=7):
 
     from strategies.python.mpc_sos_fade.execution import _MissWatch
 
-    sig = SimpleNamespace(
-        fibo_p2=100.0,
-        fibo_p3=98.0,
-        fibo_p4=97.0,
-        fibo_p5=96.0,
-        fibo_p6=95.0,
-        fibo_p10=94.0,
-        fibo_dir=1 if is_long else -1,
-        fibo_ash=105.0,
-        fibo_asl=90.0,
-        low=low,
-        high=high,
-    )
+    sig = SimpleNamespace(fibo_p2=100.0, fibo_p3=98.0, fibo_p4=97.0, fibo_p5=96.0,
+                          fibo_p6=95.0, fibo_p10=94.0, fibo_dir=1 if is_long else -1,
+                          fibo_ash=105.0, fibo_asl=90.0, low=low, high=high)
     m = _MissWatch()
     m.open(sos_bar=sos_bar, arm_src="SWP", swp_nm="Day Low")
-    return ex._setup_context(
-        sig, m, is_long, arm_swp=True, arm_div=False, veto=False, late=False, htf_any=False
-    )
+    return ex._setup_context(sig, m, is_long, arm_swp=True, arm_div=False,
+                             veto=False, late=False, htf_any=False)
 
 
 def test_a_limit_is_not_announced_until_price_retraces_to_the_configured_fib():

@@ -203,26 +203,26 @@ It needs **no timestamp and no volume**.
 ```python
 from order_blocks import OrderBlockEngine
 
-ob = OrderBlockEngine()  # max_active=10, body_only=False, … — the Pine defaults
+ob = OrderBlockEngine()   # max_active=10, body_only=False, … — the Pine defaults
 
 # Each closed bar, in order:
 ev = ob.update(bar.index, bar.open, bar.high, bar.low, bar.close)
 
-for o in ev.created:  # zones created THIS bar (event)
+for o in ev.created:      # zones created THIS bar (event)
     o.top, o.bottom, o.is_bullish
-    o.origin_index  # bar index of the anchor candle itself
-    o.created_index  # bar index it was added on (~10 bars later — the sources read late)
-    o.id  # stable id: match a created OB to its later mitigation
-    o.entered  # has a candle closed inside it yet (mitigation state)
-    o.from_break  # always False today — the structure sources are commented out in the Pine
-for o in ev.mitigated:  # zones CONSUMED this bar — the signal
+    o.origin_index        # bar index of the anchor candle itself
+    o.created_index       # bar index it was added on (~10 bars later — the sources read late)
+    o.id                  # stable id: match a created OB to its later mitigation
+    o.entered             # has a candle closed inside it yet (mitigation state)
+    o.from_break          # always False today — the structure sources are commented out in the Pine
+for o in ev.mitigated:    # zones CONSUMED this bar — the signal
     ...
-for o in ev.expired:  # zones that simply aged out — NOT a signal
+for o in ev.expired:      # zones that simply aged out — NOT a signal
     ...
-for o in ev.evicted:  # zones dropped past the cap — NOT a signal
+for o in ev.evicted:      # zones dropped past the cap — NOT a signal
     ...
-ev.active_bull  # live bull OBs, oldest-first (state) — mirrors Pine activeBullOBs
-ev.active_bear  # live bear OBs, oldest-first (state) — mirrors Pine activeBearOBs
+ev.active_bull            # live bull OBs, oldest-first (state) — mirrors Pine activeBullOBs
+ev.active_bear            # live bear OBs, oldest-first (state) — mirrors Pine activeBearOBs
 ```
 
 Every Pine constant is a constructor arg (`max_active`, `body_only`, `max_age`, `min_back`,

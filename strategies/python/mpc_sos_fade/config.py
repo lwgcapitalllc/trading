@@ -31,18 +31,18 @@ _NOGAP_ARMS = frozenset({"Any", "Sweep + RSI div"})
 @dataclass(frozen=True)
 class SosFadeConfig:
     # ── GRP_EXEC — Strategy Execution (mpc_strategy.pine 4159-4183) ──────────────
-    exec_longs: bool = True  # "Trade longs"
-    exec_shorts: bool = True  # "Trade Shorts"
-    exec_aplus: bool = True  # "Trade A+ setups" (Pine execAplus)
+    exec_longs: bool = True            # "Trade longs"
+    exec_shorts: bool = True           # "Trade Shorts"
+    exec_aplus: bool = True            # "Trade A+ setups" (Pine execAplus)
     #   On (default) = the A+ reversal sequence arms normally. Off = no A+ entry ever fires —
     #   pair with `exec_bleg` ON in the B-LEG bot to read that setup's results in isolation.
-    exec_bleg: bool = False  # "Trade B-Leg setups" (Pine execBLeg)
+    exec_bleg: bool = False            # "Trade B-Leg setups" (Pine execBLeg)
     #   The A+ bot never trades a B leg, so this stays False here; `mpc_bleg.BLegConfig`
     #   overrides it to True to match `indicators/strategies/mpc_b_leg_strategy.pine`'s own default.
-    exec_arm_sweep: bool = True  # "Arm on liquidity sweep"  (Stage-1 trigger)
-    exec_arm_div: bool = False  # "Arm on RSI divergence"   (Stage-1 trigger)
-    exec_req_fvg: bool = True  # "Require an FVG in the zone"
-    exec_nogap_arm: str = "Any"  # "↳ No-FVG entries need" ∈ {Any, Sweep + RSI div}
+    exec_arm_sweep: bool = True        # "Arm on liquidity sweep"  (Stage-1 trigger)
+    exec_arm_div: bool = False         # "Arm on RSI divergence"   (Stage-1 trigger)
+    exec_req_fvg: bool = True          # "Require an FVG in the zone"
+    exec_nogap_arm: str = "Any"        # "↳ No-FVG entries need" ∈ {Any, Sweep + RSI div}
     #   PYTHON-ONLY, NO PINE COUNTERPART (2026-08-10). `mpc_strategy.pine` has `execReqFVG` and
     #   nothing beside it, so `compare_strategy.py` can never configure a non-default run and a
     #   result taken with one is a LAB FINDING, not a validated one. No live bot may run it.
@@ -74,7 +74,7 @@ class SosFadeConfig:
     #   spread of 15.06R. **The FREQUENCY is the measured gain** — median gap between trades
     #   9.5 → 7.3 days, worst drought 99.7 → 54.5 days, months with no trade at all 8 of 80 → 4.
     #   ⚠ And it is bought with drawdown: 5.61R → 9.54R free, 6.03R → 11.12R charged.
-    exec_poi_source: str = "FVG"  # ∈ {FVG, Order block, Either, FVG first, Order block (no FVG)}
+    exec_poi_source: str = "FVG"       # ∈ {FVG, Order block, Either, FVG first, Order block (no FVG)}
     #   THE PINE SIDE EXISTS (2026-08-09, later the same day). This comment previously read
     #   "PYTHON-ONLY, NO PINE COUNTERPART" and that is now FALSE — it is corrected in place
     #   rather than left to be read as current. `mpc_strategy.pine` and its export mirror carry
@@ -124,8 +124,8 @@ class SosFadeConfig:
     #   gap is the opposite of confirmation, and ranking that gap TOP would promote the worst
     #   candidate on the leg. One predicate in `signals.pois_for` to flip if the undirected
     #   version is wanted — and it must be flipped in `mpc_strategy.pine` in the same commit.
-    exec_fvg_deep_only: bool = True  # "Gap must sit fully past 0.5"
-    exec_fvg_pre_zone: bool = False  # "Gap must pre-date the zone"
+    exec_fvg_deep_only: bool = True    # "Gap must sit fully past 0.5"
+    exec_fvg_pre_zone: bool = False    # "Gap must pre-date the zone"
     #   Pine execFvgPreZone (2026-08-02). ON = a gap only counts if it was already alive on the bar
     #   price first tagged 0.5. A gap BORN inside the 0.5-0.886 band, printed by the flip once price
     #   is already there, is the retrace manufacturing the confluence it is judged on. It gates BOTH
@@ -138,16 +138,16 @@ class SosFadeConfig:
     #   FLOATING gap rest? — so they CASCADE, each overriding the one below it. Every level scan
     #   stops at 0.786: 0.886 is the stop, so an entry resting there is a zero stop distance and a
     #   cancelled order. Ported from Pine `f_fibEntry`.
-    exec_fib_overlap: bool = False  # "Gap on a fib → enter on the fib"
-    exec_fib_deep_edge: bool = False  # "Floating gap → its own deep edge"
+    exec_fib_overlap: bool = False     # "Gap on a fib → enter on the fib"
+    exec_fib_deep_edge: bool = False   # "Floating gap → its own deep edge"
     #   Rule 2, MEASURED WORSE than rule 3 alone over 2020-2026, hence OFF. The only deep rule that
     #   ALWAYS fills (the limit sits INSIDE the gap). Overrides rule 3 and Method 3.
-    exec_fib_nearest: bool = True  # "Floating gap → nearest fib (either side)"
+    exec_fib_nearest: bool = True      # "Floating gap → nearest fib (either side)"
     #   Rule 3, the SHIPPED default. Measures the near edge up to the level above and the far edge
     #   down to the level below, and rests on whichever is closer (ties go to the shallower). Not
     #   free: when the deeper level wins the limit rests PAST the gap, so a setup that only tags the
     #   gap and turns never fills. Deeper entry and a tighter stop, bought with fill rate.
-    exec_ob_deepen: bool = False  # "Order block deeper than the entry → rest on the block"
+    exec_ob_deepen: bool = False       # "Order block deeper than the entry → rest on the block"
     #   Aaron's confluence question, 2026-08-09: a same-direction order block sitting DEEPER than
     #   the chosen entry edge re-prices the limit onto that block's near edge (clamped into the
     #   0.5-0.886 band). The stop is a fib and does not move, so a deeper fill is a TIGHTER stop —
@@ -168,7 +168,7 @@ class SosFadeConfig:
     #   and the exit no longer happens at the stop price. A risk % is only the real risk if it does.
     #   ⚠ NO PINE COUNTERPART, so `compare_strategy.py` can never configure it and any result is a
     #   LAB finding. Python-first, the same standing as `exec_sl_custom`.
-    exec_deep_fib: bool = False  # "Floating gap → nearest fib shallower"
+    exec_deep_fib: bool = False        # "Floating gap → nearest fib shallower"
     #   Method 3 (Pine execDeepFib) — the original one-sided form of rules 2 and 3, kept so any
     #   historical result reproduces. Reachable only with rules 2 AND 3 both off. It never looks at
     #   the level BELOW the gap however much closer that one is, which is the bug rule 3 fixes.
@@ -177,15 +177,15 @@ class SosFadeConfig:
     #   favorable): FVG must touch the 0.5 line". It was never ported and never used, and Aaron
     #   had the Pine input DELETED, so the field went with it. `compare_strategy.py` still
     #   refuses an ARCHIVED export carrying cfg_bits bit 65536, reading the bit directly.)
-    exec_respect_veto: bool = True  # "Respect divergence/extreme veto"
-    exec_close_opp_sos: bool = False  # "Close on opposite SOS"
+    exec_respect_veto: bool = True     # "Respect divergence/extreme veto"
+    exec_close_opp_sos: bool = False   # "Close on opposite SOS"
     exec_htf_exhaust_only: bool = False  # "Only fade HTF exhaustion, not breakouts"
-    exec_htf_source: str = "Weekly"  # "HTF exhaustion source"  ∈ {Weekly, Daily, Either}
-    exec_htf_weekly: str = "Ignore"  # "Weekly bias requirement"
-    exec_htf_daily: str = "Ignore"  # "Daily bias requirement"
+    exec_htf_source: str = "Weekly"    # "HTF exhaustion source"  ∈ {Weekly, Daily, Either}
+    exec_htf_weekly: str = "Ignore"    # "Weekly bias requirement"
+    exec_htf_daily: str = "Ignore"     # "Daily bias requirement"
     #   HTF-bias options: Ignore | Must agree | Must not oppose | Must oppose (reversal)
-    exec_risk_pct: float = 10.0  # "Risk % per trade"
-    exec_sl_level: str = "0.886"  # "Stop fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
+    exec_risk_pct: float = 10.0        # "Risk % per trade"
+    exec_sl_level: str = "0.886"       # "Stop fib level"  ∈ {0.618, 0.702, 0.786, 0.886, 1.0, Custom}
     #   **Defaulted "1.0" → "0.886" on 2026-07-27** (Aaron's call, and how his TradingView chart is
     #   configured), in lockstep with both A+ Pine files. 0.886 is the DEEP EDGE of the 0.5-0.886
     #   entry band, so the stop sits just past the deepest price a limit may rest at. Evidence: the
@@ -199,9 +199,7 @@ class SosFadeConfig:
     #   **"Custom" (added 2026-08-02, Aaron's request)** frees the level from the five-value dropdown
     #   and reads `exec_sl_custom` instead — the ladder never had a 0.90, and a stop is a price, not
     #   a member of a set. It is the ONE value here with no Pine counterpart; see the field below.
-    exec_sl_custom: float = (
-        0.886  # "Custom stop fib level", read ONLY when exec_sl_level == "Custom"
-    )
+    exec_sl_custom: float = 0.886      # "Custom stop fib level", read ONLY when exec_sl_level == "Custom"
     #   The retracement ratio of the SOS leg, priced through the canonical `engines.fibonacci`
     #   `fib_level()` off the leg anchors the fiboP* were built from — so 0.886 here is the SAME
     #   price to the last bit as picking "0.886" from the dropdown, and the two are interchangeable.
@@ -220,7 +218,7 @@ class SosFadeConfig:
     #   options, so a Custom run has nothing to diff against and `compare_strategy.py` can never
     #   configure one (it decodes `cfg_strcodes` into those five). A Custom result is a LAB finding,
     #   not a validated one — port the input to the Pine before trading it.
-    exec_sl_deep: bool = False  # "↳ entries at 0.786 or deeper stop at 1.0 instead"
+    exec_sl_deep: bool = False         # "↳ entries at 0.786 or deeper stop at 1.0 instead"
     #   Pine execSlDeep (2026-08-02). OFF = every trade's stop is `exec_sl_level`, whatever the fill.
     #   ON = an entry that fills AT OR DEEPER THAN the 0.786 fib puts its stop at the leg origin (1.0)
     #   instead; 0.702 and shallower keeps the chosen level. It exists because the entry band and the
@@ -231,7 +229,7 @@ class SosFadeConfig:
     #   that survives spread and noise, and pay for it in reward. Measure it, do not assume it.
     #   The test is INCLUSIVE (<= / >=) because 0.786 is a SNAP TARGET — rule 3 assigns fiboP5 to the
     #   edge directly with no arithmetic in between, so the comparison is exact.
-    exec_sl_buf_tk: float = 0.0  # "Stop buffer beyond the level (ticks)"
+    exec_sl_buf_tk: float = 0.0        # "Stop buffer beyond the level (ticks)"
     exec_min_stop_mode: str = "% of price"  # "Minimum stop distance" (Pine execMinStopMode)
     #   ∈ {"Off", "% of price", "Fixed $", "x ATR(14)"}. An ENTRY filter, nothing to do with the
     #   runner trail: refuse a setup whose stop lands closer to the entry than this floor.
@@ -270,12 +268,12 @@ class SosFadeConfig:
     #   and 0.40 it never refuses the $1.03 stop at all, because that bar was quiet and $1.03 was
     #   not tight *relative to ATR*. The hazard is `qty = risk / dist`, which is pure price units —
     #   volatility does not enter it. ATR blocks a different set of trades than the one at risk.
-    exec_min_stop_val: float = 0.08  # "Minimum stop floor (unit = mode above)"
+    exec_min_stop_val: float = 0.08    # "Minimum stop floor (unit = mode above)"
     #   A PERCENT in "% of price", DOLLARS of price in "Fixed $", a MULTIPLE in "x ATR(14)".
     #   Read only when the mode is not "Off". See the sweep table above for every measured rung;
     #   below 0.05 the floor refuses nothing at all, and 0.09 upward starts costing.
-    exec_tp1_pct: float = 0.0  # "TP1 size %"
-    exec_tp2_pct: float = 0.0  # "TP2 size %"
+    exec_tp1_pct: float = 0.0          # "TP1 size %"
+    exec_tp2_pct: float = 0.0          # "TP2 size %"
     #   **Both defaulted 30/40 → 0/0 on 2026-07-27** (Aaron's call, and how his TradingView chart
     #   has actually been configured). 0 = bank NOTHING at the target: the whole position rides to
     #   the runner. The targets still MATTER at 0 — `_advance_stage` stages the stop off price
@@ -287,9 +285,9 @@ class SosFadeConfig:
     #   across all 21 combos (~−2R for every 10% moved off the runner). The runner is the edge.
     #   NOTE this is `BLegConfig`'s parent, so the B-LEG bot inherits 0/0 too — intended, both bots
     #   share one exit ladder.
-    exec_be_buf_tk: float = 30.0  # "Breakeven buffer (ticks)"
-    exec_trail_step: float = 5.0  # "Runner trail step ($ of price)" — Fixed-step mode only
-    exec_runner_trail: str = "Structure + % ratchet"  # "Runner trail method"
+    exec_be_buf_tk: float = 30.0       # "Breakeven buffer (ticks)"
+    exec_trail_step: float = 5.0       # "Runner trail step ($ of price)" — Fixed-step mode only
+    exec_runner_trail: str = "Structure + % ratchet"   # "Runner trail method"
     #   ∈ {"Fixed step", "Structure (swing)", "Structure + % ratchet"}. How the TP3 runner is
     #   trailed once TP2 fills.
     #   "Fixed step" = the `exec_trail_step` grid ratchet off TP2 (the pre-2026-07-25 behaviour).
@@ -303,7 +301,7 @@ class SosFadeConfig:
     exec_struct_trail_buf_tk: float = 20.0  # "Structure trail buffer (ticks)"
     #   Structure mode only. The runner stop sits this many ticks BELOW the confirmed swing low
     #   (long) / ABOVE the swing high (short), so a wick through the swing doesn't clip it.
-    exec_trail_pct: float = 1.0  # "Runner ratchet step (% of price)"
+    exec_trail_pct: float = 1.0        # "Runner ratchet step (% of price)"
     #   "Structure + % ratchet" mode only. A PERCENT of price, not a dollar figure, and that is
     #   the whole point: gold ran 1,500 → 3,400 over the backtest window, so no fixed $ step is
     #   right at both ends ($20 is a 1.3% trail at 1,500 and a 0.6% trail at 3,400 — the dollar
@@ -313,12 +311,12 @@ class SosFadeConfig:
     #   identical to the bar). Only 11 exits change — 8 better, 3 worse, net +1.7R, i.e. the EDGE
     #   is unchanged within noise and what improves is how much of each run survives to the close.
     #   Below ~0.5 it starts clipping runners and costs real edge (0.25% → 43.6R vs 109.3R at 1.0).
-    exec_tp2_stop_mode: str = "TP1 price"  # "TP2 → stop floor"
+    exec_tp2_stop_mode: str = "TP1 price"   # "TP2 → stop floor"
     #   ∈ {"TP1 price", "Breakeven", "One trail step behind"}. What the stop FLOOR becomes the
     #   moment TP2 fills, before the runner trail takes over. "TP1 price" (default) snaps the stop
     #   up to TP1; "Breakeven" holds at entry ± the BE buffer (most room); "One trail step behind"
     #   keeps it one `exec_trail_step` under the high-water mark, never below breakeven.
-    exec_time_stop_mode: str = "Before TP1 only"  # "Time stop" (Pine execTimeStopMode)
+    exec_time_stop_mode: str = "Before TP1 only"   # "Time stop" (Pine execTimeStopMode)
     #   ∈ {"Off", "Before TP1 only", "Always"}. Close a position that has been open for
     #   `exec_time_stop_hrs` CALENDAR hours. An EXIT lever, and the only one here driven by the
     #   clock rather than by price.
@@ -351,7 +349,7 @@ class SosFadeConfig:
     #   ⚠ **"Always" cuts winners and losers at nearly the same rate below ~16h**, because losers
     #   die FASTER than winners here (median hold: losers 2.0h, winners 17.8h). The stop is already
     #   the fast exit; the clock can only ever catch the tail that lingers.
-    exec_time_stop_hrs: float = 36.0  # "Time stop (hours)"
+    exec_time_stop_hrs: float = 36.0   # "Time stop (hours)"
     #   Calendar hours since the FILL, weekends included — the same clock a swap is charged on, and
     #   the one a reader can check against a chart. Read only when the mode is not "Off".
     #   **MEASURED BY REAL REPLAY over 155,440 M15 bars (2020-01-01 → 2026-08-03), one full
@@ -382,14 +380,14 @@ class SosFadeConfig:
     #   deviation. **The case for this lever is the DRAWDOWN — 7.99R → 5.62R at 36h (30%), 5.38R
     #   at 30h — bought for R that is indistinguishable from noise, and resting on 6 trades in
     #   6.5 years.** It is not a profit lever.
-    exec_no_late_day: bool = True  # "No entries in final hour (16:00-17:00 NY)"
-    exec_conf_sz: bool = False  # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
+    exec_no_late_day: bool = True      # "No entries in final hour (16:00-17:00 NY)"
+    exec_conf_sz: bool = False         # "Allow Sniper Zone as entry confirmation" (Pine execConfSZ)
     #   Added to `mpc_strategy.pine` 2026-07-21. NOT PORTED YET — the field exists so the toggle is
     #   readable from the export's cfg_bits and `compare_strategy.py` can REFUSE a run made with it
     #   on, rather than silently diffing against logic this bot does not have. Porting it means
     #   reading the Sniper fib (already in the replay stack as `BarState.sniper`) and using its
     #   0.5-0.618 pocket as an entry edge on any leg with no qualifying FVG.
-    exec_secondary: bool = True  # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
+    exec_secondary: bool = True        # "Secondary re-entries (1m SOS)" — the 1m sniper re-entry
     #   OFF = primary only, one entry per 15m A+ leg (keeps compare_strategy.py parity).
     #   ON (default since 2026-08-07) = also re-enter on the same 15m leg from the 1m chart. It
     #   NEEDS run_dual and a 1m feed, which is the whole reason the default matters — see the
@@ -423,7 +421,7 @@ class SosFadeConfig:
     #   ⚠ It was believed to be un-measurable because this repo's own docs said the broker served
     #   ~35 days of 1m. That was a guess and it is FALSE — real M1 runs back to 2018-09-14.
 
-    exec_sec_retrace: float = 0.382  # "Secondary entry retrace" — where the 1m limit rests
+    exec_sec_retrace: float = 0.382    # "Secondary entry retrace" — where the 1m limit rests
     #   How far back into the 1m leg the re-entry's resting limit sits, as a fib ratio of that leg.
     #   0.382 (default) = the shipped behaviour, byte-identical to the hardcoded constant it replaced.
     #   0.0 = rest AT the leg extreme, i.e. enter ON the 1m SOS itself rather than waiting for a
@@ -437,7 +435,7 @@ class SosFadeConfig:
     #   ⚠ A number rather than a two-way switch on purpose — that is what lets the optimizer sweep
     #   it, the same reasoning as exec_sl_custom.
 
-    exec_sec_once_per_setup: bool = True  # "One re-entry per primary" — cap the cascade
+    exec_sec_once_per_setup: bool = True   # "One re-entry per primary" — cap the cascade
     #   ON (default) = a 15m setup hands out AT MOST ONE re-entry. OFF = the original rule, one per
     #   1-MINUTE leg, which is what let 2024-12-02 take two re-entries off a single structure break
     #   (~100 minutes apart, the second two minutes after the first closed).
@@ -460,10 +458,10 @@ class SosFadeConfig:
     #   the optimizer may sweep it behind an OFF secondary. That is a wasted grid, not an error.
 
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
-    exec_scratch_r: float = 0.15  # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
+    exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
 
     # ── Alerts only — NOT a Pine input and NOT a trade decision (2026-08-14) ────────
-    alert_resting_fib: float = 0.236  # "Announce a resting limit at fib"
+    alert_resting_fib: float = 0.236   # "Announce a resting limit at fib"
     #   How far price must retrace before the signals channel announces that a limit is
     #   PENDING. Aaron, on a live message: *"I only want to know a limit is pending when price
     #   gets back to 23.6% of the retracement."* The order itself is placed the moment the setup
@@ -483,27 +481,27 @@ class SosFadeConfig:
     #   `backtest/tools/alert_rate.py` is the end-to-end check; re-run it after moving this.
 
     # ── GRP_APLUS — A+ sequence (156) ───────────────────────────────────────────
-    aplus_window: int = 4320  # "Max time: sweep → SOS (minutes)" — staleness backstop
+    aplus_window: int = 4320           # "Max time: sweep → SOS (minutes)" — staleness backstop
 
     # ── GRP_DIV — RSI divergence: feeds the veto + the live DIV confluence (169-180) ─
-    show_div: bool = True  # "Track RSI Divergence" (Pine showDivInput)
-    div_rsi_len: int = 14  # "RSI Length"
-    div_pivot_len: int = 5  # "Pivot Width (bars)"
-    div_valid_bars: int = 100  # "Divergence valid for (bars)"
-    div_veto: bool = True  # "Veto setups on extreme/divergence"
-    div_extreme_ob: int = 80  # "Extreme Overbought"
-    div_extreme_os: int = 20  # "Extreme Oversold"
+    show_div: bool = True              # "Track RSI Divergence" (Pine showDivInput)
+    div_rsi_len: int = 14              # "RSI Length"
+    div_pivot_len: int = 5             # "Pivot Width (bars)"
+    div_valid_bars: int = 100          # "Divergence valid for (bars)"
+    div_veto: bool = True              # "Veto setups on extreme/divergence"
+    div_extreme_ob: int = 80           # "Extreme Overbought"
+    div_extreme_os: int = 20           # "Extreme Oversold"
 
     # ── Instrument facts (Layer-B injection, not Pine inputs) ───────────────────
-    mintick: float = 0.01  # syminfo.mintick — XAUUSD price tick
-    point_value: float = 1.0  # 1.0 of price = 1 unit quote/contract (XAUUSD/most CFDs)
+    mintick: float = 0.01              # syminfo.mintick — XAUUSD price tick
+    point_value: float = 1.0           # 1.0 of price = 1 unit quote/contract (XAUUSD/most CFDs)
 
     # ── Deliberate deviations from the Pine (docs/MPC_SOS_FADE_SPEC.md) ─────────────
     # OFF for the parity check (to match the Pine, which holds the runner overnight);
     # ON for real runs. Force-flat all trades `flat_by_close_min` before the daily close.
     flat_by_close: bool = False
     flat_by_close_min: int = 15
-    daily_close_hour_ny: int = 17  # gold closes 17:00 New York
+    daily_close_hour_ny: int = 17      # gold closes 17:00 New York
 
     # ── Fill & cost model (A2) — the other deliberate deviation ──────────────────
     # "bar"  = the Pine's own intrabar GUESS, zero costs. The parity harness MUST run this:
@@ -512,13 +510,13 @@ class SosFadeConfig:
     #          `account_profile`. This is what a real backtest runs, and it WILL disagree with
     #          the Pine on ambiguous bars — that is the model improving, not drifting.
     # See backtest/fills.py's module docstring for why both must exist.
-    fill_model: str = "bar"  # ∈ {"bar", "tick"}. Parity REQUIRES "bar"; real runs pick "tick".
+    fill_model: str = "bar"            # ∈ {"bar", "tick"}. Parity REQUIRES "bar"; real runs pick "tick".
     # Defaults are the BACKTEST broker — Vantage demo — so a tick run matches the VANTAGE_XAUUSD
     # TradingView feed the strategy is designed against (Aaron: backtest on Vantage, trade live on PU
     # Prime). "vantage_demo" is zero-commission (a demo) with the account's real swap; see
     # backtest/fills.py. The old PU Prime values were "XAUUSD.s" / "puprime_standard".
-    account_profile: str = "vantage_demo"  # a key of backtest.fills.PROFILES; used only for "tick"
-    symbol: str = "XAUUSD"  # Vantage broker symbol for the tick pull (no ".s" suffix)
+    account_profile: str = "vantage_demo"   # a key of backtest.fills.PROFILES; used only for "tick"
+    symbol: str = "XAUUSD"                   # Vantage broker symbol for the tick pull (no ".s" suffix)
 
     def __post_init__(self) -> None:
         """Refuse a Custom SL ratio outside (0, 1.0], and a time stop of 0 hours — LOUDLY,

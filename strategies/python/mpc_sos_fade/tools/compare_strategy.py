@@ -25,7 +25,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -35,8 +35,9 @@ for p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from mpc_sos_fade import MpcSosFadeStrategy, SosFadeConfig  # noqa: E402
+from mpc_sos_fade import SosFadeConfig, MpcSosFadeStrategy  # noqa: E402
 from mpc_sos_fade.execution import Decision  # noqa: E402
+
 
 # ── packed-column decoders — MUST match mpc_strategy_export.pine's plot scheme ──
 # The base strategy sits under Pine's main-body statement cap, so the export packs many
@@ -57,17 +58,18 @@ _NOGAP_ARM = {0: "Any", 1: "Sweep + RSI div"}
 # ⚠ A WIRE FORMAT, so codes are APPENDED and never renumbered — an export already on disk
 # carries the old number, and re-pointing it is silent: the file still reads, and now claims
 # to have run a mode it never ran. "FVG first" was added as 3 on 2026-08-09 for that reason.
-_POI_SOURCE = {0: "FVG", 1: "Order block", 2: "Either", 3: "FVG first", 4: "Order block (no FVG)"}
+_POI_SOURCE = {0: "FVG", 1: "Order block", 2: "Either", 3: "FVG first",
+               4: "Order block (no FVG)"}
 
 # decision columns compared, after _expand_packed() has unpacked cfg_bits/px_dec_bits/etc.
 _DEC_BOOL = ["px_long_armed", "px_short_armed", "px_long_veto", "px_short_veto"]
 _DEC_INT = ["px_l_stage", "px_s_stage"]
-_DEC_PRICE = ["px_edge", "px_stop", "px_entry_price", "px_exit_tp1", "px_exit_tp2", "px_exit_run"]
+_DEC_PRICE = ["px_edge", "px_stop", "px_entry_price",
+              "px_exit_tp1", "px_exit_tp2", "px_exit_run"]
 
 
-def config_from_export(
-    df: pd.DataFrame, base: Optional[SosFadeConfig] = None, allow_bleg: bool = False
-) -> SosFadeConfig:
+def config_from_export(df: pd.DataFrame, base: Optional[SosFadeConfig] = None,
+                       allow_bleg: bool = False) -> SosFadeConfig:
     """Build a config from the export's packed cfg_* columns (constant per run — read from
     the first row). Columns absent from the export keep the base default, so a toggle the
     Pine doesn't export stays where the caller put it.
@@ -89,30 +91,19 @@ def config_from_export(
     if bits is not None:
         b = int(round(bits))
         vals.update(
-            exec_longs=bool(b & 1),
-            exec_shorts=bool(b & 2),
-            exec_arm_sweep=bool(b & 4),
-            exec_arm_div=bool(b & 8),
-            exec_req_fvg=bool(b & 16),
-            exec_fvg_deep_only=bool(b & 32),
-            exec_respect_veto=bool(b & 64),
-            exec_close_opp_sos=bool(b & 128),
-            exec_htf_exhaust_only=bool(b & 256),
-            exec_no_late_day=bool(b & 512),
-            show_div=bool(b & 1024),
-            div_veto=bool(b & 2048),
-            exec_conf_sz=bool(b & 4096),
-            exec_deep_fib=bool(b & 8192),
-            exec_aplus=bool(b & 16384),
-            exec_bleg=bool(b & 32768),
+            exec_longs=bool(b & 1), exec_shorts=bool(b & 2), exec_arm_sweep=bool(b & 4),
+            exec_arm_div=bool(b & 8), exec_req_fvg=bool(b & 16), exec_fvg_deep_only=bool(b & 32),
+            exec_respect_veto=bool(b & 64), exec_close_opp_sos=bool(b & 128),
+            exec_htf_exhaust_only=bool(b & 256), exec_no_late_day=bool(b & 512),
+            show_div=bool(b & 1024), div_veto=bool(b & 2048),
+            exec_conf_sz=bool(b & 4096), exec_deep_fib=bool(b & 8192),
+            exec_aplus=bool(b & 16384), exec_bleg=bool(b & 32768),
             # The 2026-08-02 entry model. Bit 65536 is RETIRED (execFvg50) — see the guard
             # below — so these start at 131072. An export taken BEFORE that date has all five
             # clear, which decodes to Method 3 alone with the pre-zone gate off: exactly the
             # build it was taken from, so an archived export still replays correctly.
-            exec_fib_overlap=bool(b & 131072),
-            exec_fib_deep_edge=bool(b & 262144),
-            exec_fib_nearest=bool(b & 524288),
-            exec_fvg_pre_zone=bool(b & 1048576),
+            exec_fib_overlap=bool(b & 131072), exec_fib_deep_edge=bool(b & 262144),
+            exec_fib_nearest=bool(b & 524288), exec_fvg_pre_zone=bool(b & 1048576),
             exec_sl_deep=bool(b & 2097152),
         )
         # Bit 4096 (Pine execConfSZ, added 2026-07-21) turns the Sniper Zone into a second
@@ -189,26 +180,22 @@ def config_from_export(
         # (it is what the 2026-07-25 → 2026-07-28 window ran); anything older ran fixed
         # step and is not recoverable from this file at all.
         vals["exec_runner_trail"] = "Structure (swing)"
-        print(
-            "WARNING: no cfg_exitmode column — this export predates 2026-07-26 and does not "
-            "record the runner trail or the TP2 stop floor. Assuming the runner trail was "
-            "'Structure (swing)' (NOT the current default) and the rest at their defaults; "
-            "re-export to compare them honestly."
-        )
+        print("WARNING: no cfg_exitmode column — this export predates 2026-07-26 and does not "
+              "record the runner trail or the TP2 stop floor. Assuming the runner trail was "
+              "'Structure (swing)' (NOT the current default) and the rest at their defaults; "
+              "re-export to compare them honestly.")
     else:
         e = int(round(em))
         vals["exec_runner_trail"] = _RUNNER_TRAIL.get(e // 10, vals["exec_runner_trail"])
         vals["exec_tp2_stop_mode"] = _TP2_STOP.get(e % 10, vals["exec_tp2_stop_mode"])
-    for col, field in (
-        ("cfg_struct_buf", "exec_struct_trail_buf_tk"),
-        ("cfg_trail_pct", "exec_trail_pct"),
-        ("cfg_trail_step", "exec_trail_step"),
-        ("cfg_tp1_pct", "exec_tp1_pct"),
-        ("cfg_tp2_pct", "exec_tp2_pct"),
-        ("cfg_be_buf", "exec_be_buf_tk"),
-        ("cfg_sl_buf", "exec_sl_buf_tk"),
-        ("cfg_scratch_r", "exec_scratch_r"),
-    ):
+    for col, field in (("cfg_struct_buf", "exec_struct_trail_buf_tk"),
+                       ("cfg_trail_pct", "exec_trail_pct"),
+                       ("cfg_trail_step", "exec_trail_step"),
+                       ("cfg_tp1_pct", "exec_tp1_pct"),
+                       ("cfg_tp2_pct", "exec_tp2_pct"),
+                       ("cfg_be_buf", "exec_be_buf_tk"),
+                       ("cfg_sl_buf", "exec_sl_buf_tk"),
+                       ("cfg_scratch_r", "exec_scratch_r")):
         v = get(col)
         if v is not None:
             vals[field] = float(v)
@@ -219,9 +206,8 @@ def config_from_export(
     # moved under it). Do not "improve" this to fall back on the base config: the moment the
     # Python default is anything but Off, that would refuse setups the exported Pine took.
     ms = get("cfg_min_stop")
-    vals["exec_min_stop_mode"] = (
-        "Off" if ms is None else _MIN_STOP.get(int(round(ms)), vals["exec_min_stop_mode"])
-    )
+    vals["exec_min_stop_mode"] = "Off" if ms is None else \
+        _MIN_STOP.get(int(round(ms)), vals["exec_min_stop_mode"])
     msv = get("cfg_min_stop_val")
     if msv is not None:
         vals["exec_min_stop_val"] = float(msv)
@@ -232,9 +218,8 @@ def config_from_export(
     # anything but Off, that would close positions the exported Pine held to the end, and the
     # diff would report the harness's own configuration as a logic bug.
     tsm = get("cfg_time_stop")
-    vals["exec_time_stop_mode"] = (
-        "Off" if tsm is None else _TIME_STOP.get(int(round(tsm)), vals["exec_time_stop_mode"])
-    )
+    vals["exec_time_stop_mode"] = "Off" if tsm is None else \
+        _TIME_STOP.get(int(round(tsm)), vals["exec_time_stop_mode"])
     tsh = get("cfg_time_stop_hrs")
     if tsh is not None and float(tsh) > 0:
         # Guarded because the config REFUSES 0 hours behind a live mode (it would close every
@@ -252,9 +237,8 @@ def config_from_export(
     # That is the min-stop guard's 2026-08-04 trap ("green on a branch neither side entered"), and
     # `_warn_unexercised` below is what stops it being read as validation.
     nga = get("cfg_nogap_arm")
-    vals["exec_nogap_arm"] = (
-        "Any" if nga is None else _NOGAP_ARM.get(int(round(nga)), vals["exec_nogap_arm"])
-    )
+    vals["exec_nogap_arm"] = "Any" if nga is None else \
+        _NOGAP_ARM.get(int(round(nga)), vals["exec_nogap_arm"])
     # POI source (added 2026-08-09) — WHICH ZONE the entry may read: fair value gaps, order
     # blocks, or both. Same shape and same reasoning as the two decoders directly above: an
     # export with no column predates the lever, and the parent shipped "FVG" from the day it
@@ -273,9 +257,8 @@ def config_from_export(
     # the engine follows the config rather than the harness having to remember. If it did not,
     # the blind stack would raise PoiSourceUnavailable rather than quietly finding no blocks.
     ps = get("cfg_poi_source")
-    vals["exec_poi_source"] = (
-        "FVG" if ps is None else _POI_SOURCE.get(int(round(ps)), vals["exec_poi_source"])
-    )
+    vals["exec_poi_source"] = "FVG" if ps is None else \
+        _POI_SOURCE.get(int(round(ps)), vals["exec_poi_source"])
     return cls(**vals)
 
 
@@ -301,14 +284,12 @@ def warn_unexercised(cfg, df) -> List[str]:
         out.append(
             "`exec_nogap_arm` was NOT exercised: this export ran with Require-FVG ON, so neither "
             "side ever entered the no-gap fallback branch and a green run says nothing about it. "
-            "Re-export with execReqFVG OFF (once at cfg_nogap_arm 0, once at 1) to test it."
-        )
+            "Re-export with execReqFVG OFF (once at cfg_nogap_arm 0, once at 1) to test it.")
     elif "cfg_nogap_arm" not in df.columns:
         out.append(
             "This export ran Require-FVG OFF but carries no `cfg_nogap_arm` column, so it "
-            'predates the gate and is being decoded as "Any" — correct for that export, and '
-            'still no evidence about "Sweep + RSI div".'
-        )
+            "predates the gate and is being decoded as \"Any\" — correct for that export, and "
+            "still no evidence about \"Sweep + RSI div\".")
     return out
 
 
@@ -333,7 +314,6 @@ def engine_config_from_export(df: pd.DataFrame, base, eq_exempt: Optional[bool] 
     exact failure this column exists to end. Re-export, or state it with `--eq-exempt`.
     """
     import dataclasses
-
     col = "cfg_eq_exempt"
     if eq_exempt is None:
         if col not in df.columns:
@@ -385,7 +365,7 @@ def load_export(path: Path) -> pd.DataFrame:
         raise ValueError("export has no 'time' column")
     t = df[tcol]
     if pd.api.types.is_numeric_dtype(t):
-        idx = pd.to_datetime(t, unit="s", utc=True)  # TradingView unix seconds
+        idx = pd.to_datetime(t, unit="s", utc=True)          # TradingView unix seconds
     else:
         idx = pd.to_datetime(t, utc=True)
     df.index = idx.dt.tz_convert("UTC").dt.tz_localize(None)
@@ -401,11 +381,9 @@ def _decision_row(dec: Decision) -> Dict[str, object]:
     edge is a single `px_edge`: long_edge and short_edge are mutually exclusive (fibo_dir
     is either +1 or -1), matching the Pine's `na(longEdge) ? shortEdge : longEdge`."""
     entry = next((f for f in dec.fills if f.kind == "entry"), None)
-
     def exit_px(suffix):
         f = next((f for f in dec.fills if f.kind == "exit" and f.order_id.endswith(suffix)), None)
         return f.price if f else None
-
     run_px = exit_px("RUN")
     if run_px is None:
         # Anything that is not a TP rung closes the RUNNER slot, which is the slot Pine plots
@@ -415,33 +393,24 @@ def _decision_row(dec: Decision) -> Dict[str, object]:
         # a clock exit that matched Pine to the cent showed as `py=None pine=3855.13`. A parity
         # tool that has to be taught every new leg name will keep failing this way, and it fails
         # in the worst direction: it manufactures a mismatch in code that is correct.
-        f = next(
-            (f for f in dec.fills if f.kind == "exit" and not f.order_id.endswith(("TP1", "TP2"))),
-            None,
-        )
+        f = next((f for f in dec.fills if f.kind == "exit"
+                  and not f.order_id.endswith(("TP1", "TP2"))), None)
         run_px = f.price if f else None
     edge = dec.long_edge if dec.long_edge is not None else dec.short_edge
     return {
-        "px_long_armed": dec.long_armed,
-        "px_short_armed": dec.short_armed,
-        "px_long_veto": dec.long_veto,
-        "px_short_veto": dec.short_veto,
-        "px_l_stage": dec.l_stage,
-        "px_s_stage": dec.s_stage,
-        "px_edge": edge,
-        "px_stop": dec.stop,
+        "px_long_armed": dec.long_armed, "px_short_armed": dec.short_armed,
+        "px_long_veto": dec.long_veto, "px_short_veto": dec.short_veto,
+        "px_l_stage": dec.l_stage, "px_s_stage": dec.s_stage,
+        "px_edge": edge, "px_stop": dec.stop,
         "px_entry_price": entry.price if entry else None,
         "px_entry_dir": (entry.dir if entry else 0),
-        "px_exit_tp1": exit_px("TP1"),
-        "px_exit_tp2": exit_px("TP2"),
-        "px_exit_run": run_px,
+        "px_exit_tp1": exit_px("TP1"), "px_exit_tp2": exit_px("TP2"), "px_exit_run": run_px,
         "px_closed_r": dec.closed_r,
     }
 
 
-def compare(
-    df: pd.DataFrame, decisions: List[Decision], warmup: int, price_tol: float, r_tol: float
-) -> List[str]:
+def compare(df: pd.DataFrame, decisions: List[Decision], warmup: int,
+            price_tol: float, r_tol: float) -> List[str]:
     """Diff the Python decision stream against the export's px_* columns from `warmup`
     on. Returns a list of human-readable mismatch messages (empty = parity)."""
     msgs: List[str] = []
@@ -509,14 +478,9 @@ def _num_match(a: Optional[float], b: Optional[float], tol: float) -> bool:
     return abs(a - b) <= tol
 
 
-def run_parity(
-    path: Path,
-    warmup: int = 0,
-    price_tol: float = 0.01,
-    r_tol: float = 0.02,
-    base_config: Optional[SosFadeConfig] = None,
-    eq_exempt: Optional[bool] = None,
-) -> List[str]:
+def run_parity(path: Path, warmup: int = 0, price_tol: float = 0.01,
+               r_tol: float = 0.02, base_config: Optional[SosFadeConfig] = None,
+               eq_exempt: Optional[bool] = None) -> List[str]:
     """Load, configure, replay, diff. Returns the mismatch list (empty = exit 0)."""
     df = load_export(path)
     cfg = config_from_export(df, base_config)
@@ -536,17 +500,8 @@ def run_parity(
 _SSL_CODE = {"": 0, "H4 Low": 1, "Day Low": 2, "Asia Low": 3, "Ldn Low": 4, "NY Low": 5}
 _BSL_CODE = {"": 0, "H4 High": 1, "Day High": 2, "Asia High": 3, "Ldn High": 4, "NY High": 5}
 # the arming fields compared, in report order
-_ARM_FIELDS = [
-    "ssl_bar",
-    "bsl_bar",
-    "ssl_code",
-    "bsl_code",
-    "session_gap",
-    "l_sweep_bar",
-    "l_sos_bar",
-    "s_sweep_bar",
-    "s_sos_bar",
-]
+_ARM_FIELDS = ["ssl_bar", "bsl_bar", "ssl_code", "bsl_code", "session_gap",
+               "l_sweep_bar", "l_sos_bar", "s_sweep_bar", "s_sos_bar"]
 
 
 def _decode_dbg(row) -> Optional[Dict[str, int]]:
@@ -559,19 +514,13 @@ def _decode_dbg(row) -> Optional[Dict[str, int]]:
         aL = int(round(row["dbg_armL_bars"])) if not pd.isna(row.get("dbg_armL_bars")) else 0
         aS = int(round(row["dbg_armS_bars"])) if not pd.isna(row.get("dbg_armS_bars")) else 0
         return {
-            "ssl_bar": rb // 1_000_000 - 1,
-            "bsl_bar": rb % 1_000_000 - 1,
-            "ssl_code": src // 10,
-            "bsl_code": src % 10,
+            "ssl_bar": rb // 1_000_000 - 1, "bsl_bar": rb % 1_000_000 - 1,
+            "ssl_code": src // 10, "bsl_code": src % 10,
             "session_gap": 1 if bits & 16 else 0,
-            "new_sweep_l": 1 if bits & 1 else 0,
-            "new_sweep_s": 1 if bits & 2 else 0,
-            "too_old_l": 1 if bits & 4 else 0,
-            "too_old_s": 1 if bits & 8 else 0,
-            "l_sweep_bar": aL // 1_000_000 - 1,
-            "l_sos_bar": aL % 1_000_000 - 1,
-            "s_sweep_bar": aS // 1_000_000 - 1,
-            "s_sos_bar": aS % 1_000_000 - 1,
+            "new_sweep_l": 1 if bits & 1 else 0, "new_sweep_s": 1 if bits & 2 else 0,
+            "too_old_l": 1 if bits & 4 else 0, "too_old_s": 1 if bits & 8 else 0,
+            "l_sweep_bar": aL // 1_000_000 - 1, "l_sos_bar": aL % 1_000_000 - 1,
+            "s_sweep_bar": aS // 1_000_000 - 1, "s_sos_bar": aS % 1_000_000 - 1,
         }
     return None
 
@@ -581,7 +530,6 @@ def _capture_arm(df: pd.DataFrame, cfg: SosFadeConfig) -> List[Dict[str, int]]:
     same encoding _decode_dbg produces for the Pine side (-1 = none/na)."""
     import sys as _sys
     from pathlib import Path as _P
-
     _r = _P(__file__).resolve().parents[4]
     if str(_r) not in _sys.path:
         _sys.path.insert(0, str(_r))
@@ -589,7 +537,7 @@ def _capture_arm(df: pd.DataFrame, cfg: SosFadeConfig) -> List[Dict[str, int]]:
 
     bars = df[["open", "high", "low", "close"]].copy()
     strat = MpcSosFadeStrategy(cfg)
-    stack = EngineStack(strat.engine_config())  # same fvgMaxCount=7 the bot runs with
+    stack = EngineStack(strat.engine_config())   # same fvgMaxCount=7 the bot runs with
     seq = strat.sequence
     rows: List[Dict[str, int]] = []
 
@@ -599,21 +547,16 @@ def _capture_arm(df: pd.DataFrame, cfg: SosFadeConfig) -> List[Dict[str, int]]:
     for bar in iter_bars(bars):
         state = stack.step(bar)
         sig = strat.signals.update(state)
-        seq_state = seq.update(sig)  # SeqState, returned by update()
-        strat.execution.step(sig, seq_state)  # advance execution so nothing drifts
-        rows.append(
-            {
-                "ssl_bar": b(sig.recent_ssl_bar),
-                "bsl_bar": b(sig.recent_bsl_bar),
-                "ssl_code": _SSL_CODE.get(sig.recent_ssl, 0),
-                "bsl_code": _BSL_CODE.get(sig.recent_bsl, 0),
-                "session_gap": 1 if sig.session_gap_bar else 0,
-                "l_sweep_bar": b(seq._l_sweep_bar),
-                "l_sos_bar": b(seq._l_sos_bar),
-                "s_sweep_bar": b(seq._s_sweep_bar),
-                "s_sos_bar": b(seq._s_sos_bar),
-            }
-        )
+        seq_state = seq.update(sig)                 # SeqState, returned by update()
+        strat.execution.step(sig, seq_state)        # advance execution so nothing drifts
+        rows.append({
+            "ssl_bar": b(sig.recent_ssl_bar), "bsl_bar": b(sig.recent_bsl_bar),
+            "ssl_code": _SSL_CODE.get(sig.recent_ssl, 0),
+            "bsl_code": _BSL_CODE.get(sig.recent_bsl, 0),
+            "session_gap": 1 if sig.session_gap_bar else 0,
+            "l_sweep_bar": b(seq._l_sweep_bar), "l_sos_bar": b(seq._l_sos_bar),
+            "s_sweep_bar": b(seq._s_sweep_bar), "s_sos_bar": b(seq._s_sos_bar),
+        })
     return rows
 
 
@@ -639,18 +582,15 @@ def export_truncation(df: pd.DataFrame) -> int:
     return max(0, max_bar - (n - 1))
 
 
-def debug_arm(
-    path: Path, warmup: int = 0, base_config: Optional[SosFadeConfig] = None
-) -> List[str]:
+def debug_arm(path: Path, warmup: int = 0,
+              base_config: Optional[SosFadeConfig] = None) -> List[str]:
     """Diff the arming INPUTS + arm-state (Python vs the export's dbg_* columns) from
     `warmup` on. Returns messages; the first names the earliest diverging bar + field
     with a small context window so the liquidity/gap reconstruction gap is pinpointed."""
     df = load_export(path)
     if _decode_dbg(df.iloc[0]) is None:
-        return [
-            "export has no dbg_* columns — re-export mpc_strategy_export.pine "
-            "(the diagnostic block was just added)."
-        ]
+        return ["export has no dbg_* columns — re-export mpc_strategy_export.pine "
+                "(the diagnostic block was just added)."]
     cfg = config_from_export(df, base_config)
     py = _capture_arm(df, cfg)
     n = min(len(df), len(py))
@@ -669,40 +609,25 @@ def debug_arm(
                 for f in _ARM_FIELDS:
                     flag = " *" if py[j][f] != pj[f] else ""
                     msgs.append(f"      {f:14s} py={py[j][f]:>7} pine={pj[f]:>7}{flag}")
-                msgs.append(
-                    f"      pine newSweepL={pj['new_sweep_l']} newSweepS={pj['new_sweep_s']}"
-                    f" tooOldL={pj['too_old_l']} tooOldS={pj['too_old_s']}"
-                )
+                msgs.append(f"      pine newSweepL={pj['new_sweep_l']} newSweepS={pj['new_sweep_s']}"
+                            f" tooOldL={pj['too_old_l']} tooOldS={pj['too_old_s']}")
             return msgs
     return []
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(
-        description="A+ strategy logic-parity check (Python vs Pine export)"
-    )
+    ap = argparse.ArgumentParser(description="A+ strategy logic-parity check (Python vs Pine export)")
     ap.add_argument("csv", type=Path, help="mpc_strategy_export.pine chart-data CSV")
-    ap.add_argument(
-        "--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)"
-    )
-    ap.add_argument(
-        "--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)"
-    )
+    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars (engine cold-start)")
+    ap.add_argument("--price-tol", type=float, default=0.01, help="price match tolerance (default 1 tick)")
     ap.add_argument("--r-tol", type=float, default=0.02, help="R match tolerance")
-    ap.add_argument(
-        "--eq-exempt",
-        choices=("on", "off"),
-        default=None,
-        help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
-        "surviving the FVG cap). Only needed for an export with no "
-        "cfg_eq_exempt column — i.e. taken before 2026-08-06.",
-    )
-    ap.add_argument(
-        "--debug-arm",
-        action="store_true",
-        help="diff the A+ arming INPUTS (recentSSL / session-gap / arm-state) "
-        "against the export's dbg_* columns, to locate an arming gap",
-    )
+    ap.add_argument("--eq-exempt", choices=("on", "off"), default=None,
+                    help="state whether the chart ran `eqExemptFvg` (a gap on an EQ level "
+                         "surviving the FVG cap). Only needed for an export with no "
+                         "cfg_eq_exempt column — i.e. taken before 2026-08-06.")
+    ap.add_argument("--debug-arm", action="store_true",
+                    help="diff the A+ arming INPUTS (recentSSL / session-gap / arm-state) "
+                         "against the export's dbg_* columns, to locate an arming gap")
     args = ap.parse_args(argv)
 
     # A truncated export (Pine's bar_index runs past the CSV row count) means Pine warmed its
@@ -720,8 +645,8 @@ def main(argv=None) -> int:
         print(f"PARTIAL EXPORT — the CSV is missing ~{_gap} warmup bars.")
         print(f"  Pine's bar_index runs past the {len(_df)} exported rows, so its engine state was")
         print(f"  built on ~{_gap} bars that aren't in this file. For a clean run, re-export the")
-        print("  FULL history: scroll the chart all the way left (load the oldest bar) before")
-        print("  Export chart data, so row 0 is the chart's first bar.")
+        print(f"  FULL history: scroll the chart all the way left (load the oldest bar) before")
+        print(f"  Export chart data, so row 0 is the chart's first bar.")
         if args.debug_arm:
             print("  --debug-arm compares dbg_* BAR INDICES, which are chart-relative here and")
             print("  cannot be corrected for. Re-export the full history and re-run.")
@@ -730,17 +655,13 @@ def main(argv=None) -> int:
             print(f"  Refusing to diff at --warmup {args.warmup}: the Python engine is still cold.")
             print(f"  Re-run with --warmup {_gap} or more ({len(_df) - _gap} bars would remain).")
             return 2
-        print(
-            f"  Proceeding at --warmup {args.warmup} (>= the missing {_gap}); "
-            f"{len(_df) - args.warmup} bars compared."
-        )
+        print(f"  Proceeding at --warmup {args.warmup} (>= the missing {_gap}); "
+              f"{len(_df) - args.warmup} bars compared.")
 
     if args.debug_arm:
         msgs = debug_arm(args.csv, args.warmup)
         if not msgs:
-            print(
-                f"ARM OK — arming inputs + state match the Pine on every bar from {args.warmup} on."
-            )
+            print(f"ARM OK — arming inputs + state match the Pine on every bar from {args.warmup} on.")
             return 0
         print("\n".join(msgs))
         return 1

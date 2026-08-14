@@ -20,7 +20,6 @@ Public API:
         ...
 """
 
-from .engine import InternalFib, MacroFib, SniperFib, StructureFib
 from .geometry import fib_from_origin, fib_level, fib_levels, origin_index
 from .types import (
     FibTouch,
@@ -30,6 +29,7 @@ from .types import (
     StructureFibEvents,
     StructureSnapshot,
 )
+from .engine import InternalFib, MacroFib, SniperFib, StructureFib
 
 __all__ = [
     "fib_level",

@@ -32,15 +32,9 @@ from .signals import SignalAdapter
 
 
 class MpcSosFadeStrategy:
-    def __init__(
-        self,
-        config: Optional[SosFadeConfig] = None,
-        initial_capital: float = 1_000_000.0,
-        tick_source=None,
-        cost_profile=None,
-        account=None,
-        leg: str = "strat",
-    ) -> None:
+    def __init__(self, config: Optional[SosFadeConfig] = None,
+                 initial_capital: float = 1_000_000.0, tick_source=None,
+                 cost_profile=None, account=None, leg: str = "strat") -> None:
         self.config = config or SosFadeConfig()
         self.signals = SignalAdapter(self.config)
         self.sequence = SosFadeSequence(self.config)
@@ -52,14 +46,9 @@ class MpcSosFadeStrategy:
         # in that account and MUST be distinct per leg: the account holds one open position per
         # key, so two legs sharing a name would overwrite each other's reservation and the cap
         # would silently under-count the open risk. See backtest/portfolio/.
-        self.execution = Execution(
-            self.config,
-            initial_capital=initial_capital,
-            resolver=resolver,
-            profile=profile,
-            account=account,
-            leg=leg,
-        )
+        self.execution = Execution(self.config, initial_capital=initial_capital,
+                                   resolver=resolver, profile=profile,
+                                   account=account, leg=leg)
         # What a pre-trade setup alert calls this bot. REPORTING ONLY — it names the STRATEGY,
         # which `Execution` cannot know: `mpc_bleg` and `mpc_bos` share this execution layer, so
         # its own class name would label all three "Execution" in Telegram. Set here because the
@@ -84,19 +73,16 @@ class MpcSosFadeStrategy:
         if cfg.fill_model != "tick":
             raise ValueError(f"fill_model must be 'bar' or 'tick', got {cfg.fill_model!r}")
         from backtest.fills import PROFILES, TickPathResolver
-
         if cfg.account_profile not in PROFILES:
             raise ValueError(
                 f"account_profile {cfg.account_profile!r} unknown — tick mode prices real costs, "
-                f"so it needs a real account. Pick one of: {sorted(PROFILES)}"
-            )
+                f"so it needs a real account. Pick one of: {sorted(PROFILES)}")
         if not cfg.symbol:
             raise ValueError("tick mode needs config.symbol (the broker symbol to pull ticks for)")
         profile = PROFILES[cfg.account_profile]
         if tick_source is None:
             from backtest.data.mt5_agent import Mt5Agent
             from backtest.data.ticks import TickSource
-
             tick_source = TickSource(Mt5Agent())
         resolver = TickPathResolver(tick_source, cfg.symbol, latency_ms=profile.latency_ms)
         return resolver, profile
@@ -118,7 +104,6 @@ class MpcSosFadeStrategy:
         base = engine_config or self.engine_config()
         if self.config.exec_poi_source != "FVG" and not base.order_blocks:
             import dataclasses
-
             return dataclasses.replace(base, order_blocks=True)
         return base
 
@@ -171,14 +156,8 @@ class MpcSosFadeStrategy:
         If a bot ever tunes another engine input off its default, add it here (and export it
         if it must vary per run)."""
         from backtest.replay import EngineConfig
-
-        return EngineConfig(
-            fvg_max_count=7,
-            show_internal=False,
-            fvg_require_close=True,
-            fvg_threshold_pct=0.1,
-            eq_exempt_fvg=True,
-        )
+        return EngineConfig(fvg_max_count=7, show_internal=False, fvg_require_close=True,
+                            fvg_threshold_pct=0.1, eq_exempt_fvg=True)
 
     def run(self, df, engine_config=None, warmup: int = 0) -> "MpcSosFadeStrategy":
         """Replay a canonical bar frame end-to-end. Engines warm on every bar; the
@@ -203,9 +182,8 @@ class MpcSosFadeStrategy:
                 self.decisions.append(dec)
         return self
 
-    def run_dual(
-        self, df15, df1m, engine_config=None, warmup: int = 0, progress=None, should_cancel=None
-    ) -> "MpcSosFadeStrategy":
+    def run_dual(self, df15, df1m, engine_config=None, warmup: int = 0,
+                 progress=None, should_cancel=None) -> "MpcSosFadeStrategy":
         """Replay the PRIMARY on 15m and the SECONDARY (1m sniper re-entry) on 1m, on one merged
         clock. The primary path is byte-identical to `run(df15)` — 15m bars are stepped in the same
         order with the same OHLC and `step_secondary` never touches a primary position — so
@@ -223,7 +201,6 @@ class MpcSosFadeStrategy:
         from zoneinfo import ZoneInfo
 
         from backtest.replay import EngineStack, iter_bars
-
         from .secondary import SecondaryArm, Structure1m
 
         # `last_conf_high`/`last_conf_low` are the STRUCTURE runner trail's anchors, read by the
@@ -234,8 +211,7 @@ class MpcSosFadeStrategy:
         # (TP1 0.5, TP2 0.382) and it shares the parent's exit ladder, so its runner must trail the
         # same 15m confirmed swings the primary does. `Structure1m` is for the 1m SOS latch only.
         _Bar1mSig = namedtuple(
-            "_Bar1mSig", "index time_ms open high low close last_conf_high last_conf_low"
-        )
+            "_Bar1mSig", "index time_ms open high low close last_conf_high last_conf_low")
         ny = ZoneInfo("America/New_York")
 
         if len(df15.index) > 1:
@@ -246,15 +222,13 @@ class MpcSosFadeStrategy:
 
         stack = EngineStack(self.stack_config(engine_config))
         bars15 = list(iter_bars(df15))
-        close15 = [b.timestamp_ms + tf15_ms for b in bars15]  # when each 15m bar is known
+        close15 = [b.timestamp_ms + tf15_ms for b in bars15]   # when each 15m bar is known
         n15 = len(bars15)
         struct1m = Structure1m(major_length=(engine_config or self.engine_config()).major_length)
         arm_sm = SecondaryArm(self.config)
 
         last_sig = last_seq = None
-        last_close15 = (
-            None  # the last-CLOSED 15m bar's close — the zone gate reads this (Pine's 15m `close`)
-        )
+        last_close15 = None     # the last-CLOSED 15m bar's close — the zone gate reads this (Pine's 15m `close`)
         i15 = 0
         # progress/cancel are optional hooks so a lab run keeps a live bar + a working Stop button
         # (the 1m stream is the long one — ~50k bars over a month). Both no-ops when not supplied.
@@ -281,34 +255,16 @@ class MpcSosFadeStrategy:
 
             m1 = struct1m.update(b1.index, b1.open, b1.high, b1.low, b1.close)
             if self.config.exec_secondary and last_sig is not None:
-                ny_hour = (
-                    datetime.fromtimestamp(b1.timestamp_ms / 1000.0, tz=timezone.utc)
-                    .astimezone(ny)
-                    .hour
-                )
-                arm = arm_sm.update(
-                    m1,
-                    last_sig,
-                    last_seq,
-                    last_close15,
-                    ny_hour,
-                    self.execution.is_flat,
-                    self.execution.be_sos_l,
-                    self.execution.be_sos_s,
-                )
-                sig1m = _Bar1mSig(
-                    b1.index,
-                    b1.timestamp_ms,
-                    b1.open,
-                    b1.high,
-                    b1.low,
-                    b1.close,
-                    last_sig.last_conf_high,
-                    last_sig.last_conf_low,
-                )
+                ny_hour = datetime.fromtimestamp(b1.timestamp_ms / 1000.0, tz=timezone.utc) \
+                    .astimezone(ny).hour
+                arm = arm_sm.update(m1, last_sig, last_seq, last_close15, ny_hour,
+                                    self.execution.is_flat, self.execution.be_sos_l,
+                                    self.execution.be_sos_s)
+                sig1m = _Bar1mSig(b1.index, b1.timestamp_ms, b1.open, b1.high, b1.low, b1.close,
+                                  last_sig.last_conf_high, last_sig.last_conf_low)
                 filled = self.execution.step_secondary(sig1m, arm)
                 if filled is not None:
-                    arm_sm.mark_traded(filled)  # retire the just-filled 1m leg
+                    arm_sm.mark_traded(filled)   # retire the just-filled 1m leg
                 elif self.execution.sec_stop_dir is not None:
                     # a re-entry hit its initial stop → kill this 15m leg (no more re-entries)
                     arm_sm.mark_dead(self.execution.sec_stop_dir, last_seq)

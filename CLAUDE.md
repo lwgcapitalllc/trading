@@ -460,6 +460,16 @@ and changes nothing about whether they may be committed. They may not.
 source, so no `compare_*.py` can exist. Unit tests are the only gate they will ever have. Do not
 read this as rule 22 having a general exception.
 
+🔴 **THE CARVE-OUT IS ENFORCED IN `ruff.toml`, NOT BY REMEMBERING WHAT YOU REVERTED.** It was
+first done with `git checkout --` on those paths, which holds exactly until the next
+`ruff format .` over the whole repo — which re-formatted every one of them, `git add -A` staged
+it, and the LIVE `mpc_sos_fade` shipped in a commit whose message said it was excluded. **Nothing
+failed and no test went red; the commit message was the only thing that disagreed with the tree.**
+⚠ **A decision that lives in your memory of what you reverted is not one the next command
+respects.** ⚠ **The exclusion only binds an explicitly-named path when `--force-exclude` is
+passed** — `lint-staged.config.mjs` passes it on both ruff commands, the same flag that protects
+`deployed/`.
+
 Per-gate bar counts and the full verdict table: `HISTORY.md` → *The bulk reformat, and the nine
 gates that could not answer*. Outside those two trees the repo still converges as it is worked on.
 

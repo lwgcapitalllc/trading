@@ -33,6 +33,7 @@ if str(_PYPKGS) not in sys.path:
 
 from mpc_sos_fade.execution import BlockedSetup, Execution, _Pending  # noqa: E402
 
+
 # ── BOS block codes (Pine `f_blkCode` / `f_blkWhy`, 3971-3985) ────────────────────
 # The NUMBERS are the Pine's and the meanings are NOT the A+'s — code 5 is the per-regime cap
 # here and the HTF breakout filter there. That is why this fork carries its own tables rather
@@ -55,25 +56,18 @@ _BOS_BLOCK_REASON = {
     1: "'Trade longs' / 'Trade shorts' is OFF for this side.",
     2: "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close.",
     3: "Divergence KILL — an opposing divergence is live, or RSI is at an extreme. For a "
-    "continuation that is the fakeout signature.",
+       "continuation that is the fakeout signature.",
     4: "HTF bias requirement — your Weekly / Daily bias gate is not satisfied.",
     5: "Max trades per regime reached — standing down until the next SOS.",
     6: "Minimum stop distance — the stop sits closer to the entry than your floor, so this "
-    "position would be oversized and noise-sensitive.",
+       "position would be oversized and noise-sensitive.",
     7: "Session VWAP — price is not closing on the trend's own side of the line. Re-checked "
-    "every bar, so this setup can still arm if price closes back across before the leg dies.",
+       "every bar, so this setup can still arm if price closes back across before the leg dies.",
 }
 # Pine's `f_blkCode` precedence, as the ORDER the codes are emitted in.
 _BOS_PRECEDENCE = ("dir_off", "late", "veto", "htf_bias", "vwap", "capped", "tight")
-_BOS_CODE_OF = {
-    "dir_off": 1,
-    "late": 2,
-    "veto": 3,
-    "htf_bias": 4,
-    "vwap": 7,
-    "capped": 5,
-    "tight": 6,
-}
+_BOS_CODE_OF = {"dir_off": 1, "late": 2, "veto": 3, "htf_bias": 4,
+                "vwap": 7, "capped": 5, "tight": 6}
 
 
 class BosBlockedSetup(BlockedSetup):
@@ -96,7 +90,7 @@ class BosBlockedSetup(BlockedSetup):
 class BosExecution(Execution):
     """BOS-only execution. Reuses the parent's whole broker emulator and exit ladder."""
 
-    _bos = None  # set by step() before the parent reaches _entry_edges / _place_entries
+    _bos = None          # set by step() before the parent reaches _entry_edges / _place_entries
     _records_misses = False
     #   The parent's MISSED-setup watch answers "how far did this **A+** setup get before it
     #   died" — it counts the sweep arm, the SOS and the 0.5-0.886 zone, none of which this
@@ -106,10 +100,10 @@ class BosExecution(Execution):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._tp3: Optional[float] = None  # the third rung, frozen at placement
-        self._atr_bar: Optional[int] = None  # `prime_atr`'s once-per-bar guard
+        self._tp3: Optional[float] = None      # the third rung, frozen at placement
+        self._atr_bar: Optional[int] = None    # `prime_atr`'s once-per-bar guard
         self._bar_index: Optional[int] = None  # this bar, for the moving stop's fill-bar guard
-        self._tracker = None  # set by the strategy; `record_fill` target
+        self._tracker = None                   # set by the strategy; `record_fill` target
         self._bos_blk_keys: List[Optional[tuple]] = [None, None]
 
     # ── ATR, computed once and read by BOTH layers ───────────────────────────────
@@ -149,13 +143,9 @@ class BosExecution(Execution):
         # ⚠ CONFIRMED divergence only, never extreme RSI — an overbought reading is the normal
         # state of a healthy long continuation, and closing on it would flatten the runner on
         # every winner. The entry BLOCK still reads both (`_veto`), exactly as the spec says.
-        if (
-            self._cfg.bos_close_opp_div
-            and self._cfg.show_div
-            and self._pos_dir != 0
-            and self._pending_close is None
-        ):
-            opposing = sig.bear_div_active if self._pos_dir > 0 else sig.bull_div_active
+        if (self._cfg.bos_close_opp_div and self._cfg.show_div and self._pos_dir != 0
+                and self._pending_close is None):
+            opposing = (sig.bear_div_active if self._pos_dir > 0 else sig.bull_div_active)
             if opposing:
                 self._pending_close = ("opp-div", "CLOSE")
         return dec
@@ -176,7 +166,8 @@ class BosExecution(Execution):
         """
         if not self._cfg.show_div:
             return False, False
-        return (sig.bear_div_active or sig.veto_rsi_ob, sig.bull_div_active or sig.veto_rsi_os)
+        return (sig.bear_div_active or sig.veto_rsi_ob,
+                sig.bull_div_active or sig.veto_rsi_os)
 
     # ── the entry ladder (Pine 3652-3775) ────────────────────────────────────────
     def _entry_edges(self, sig, seq) -> Tuple[Optional[float], Optional[float]]:  # type: ignore[override]
@@ -218,34 +209,18 @@ class BosExecution(Execution):
         # ── 1 + 2: a gap inside the band, optionally re-priced onto a fib ──
         if cfg.bos_use_fvg:
             for top, bot, is_bull, _born in sig.fvgs:
-                if (
-                    l_on
-                    and is_bull
-                    and bot <= l_top
-                    and top >= lv[0.886]
-                    and (not cfg.exec_fvg_deep_only or top <= l_top)
-                ):
-                    df = (
-                        self._deep_fib_edge(bot, top, True, lv[0.618], lv[0.702], lv[0.786])
-                        if cfg.exec_deep_fib
-                        else None
-                    )
+                if (l_on and is_bull and bot <= l_top and top >= lv[0.886]
+                        and (not cfg.exec_fvg_deep_only or top <= l_top)):
+                    df = (self._deep_fib_edge(bot, top, True, lv[0.618], lv[0.702], lv[0.786])
+                          if cfg.exec_deep_fib else None)
                     e = min(top, l_top) if df is None else df
                     # `max` for a long: of two candidate prices, the SHALLOWER is the one price
                     # reaches FIRST, and a resting limit is filled by whichever it reaches first.
                     long_edge = e if long_edge is None else max(long_edge, e)
-                if (
-                    s_on
-                    and not is_bull
-                    and top >= s_top
-                    and bot <= sv[0.886]
-                    and (not cfg.exec_fvg_deep_only or bot >= s_top)
-                ):
-                    df = (
-                        self._deep_fib_edge(bot, top, False, sv[0.618], sv[0.702], sv[0.786])
-                        if cfg.exec_deep_fib
-                        else None
-                    )
+                if (s_on and not is_bull and top >= s_top and bot <= sv[0.886]
+                        and (not cfg.exec_fvg_deep_only or bot >= s_top)):
+                    df = (self._deep_fib_edge(bot, top, False, sv[0.618], sv[0.702], sv[0.786])
+                          if cfg.exec_deep_fib else None)
                     e = max(bot, s_top) if df is None else df
                     short_edge = e if short_edge is None else min(short_edge, e)
 
@@ -253,31 +228,16 @@ class BosExecution(Execution):
         # `sz_bar >= bos.long.bar` is the load-bearing half: a zone left over from an EARLIER
         # leg would otherwise price this one, which is a limit resting on geometry that belongs
         # to a break the strategy has already moved on from.
-        if (
-            cfg.bos_use_fvg
-            and cfg.exec_conf_sz2
-            and cfg.exec_conf_sz
-            and sig.sniper_zone_top is not None
-            and sig.sniper_zone_bot is not None
-            and sig.sz_bar is not None
-        ):
-            if (
-                long_edge is None
-                and l_on
-                and sig.sz_bullish
-                and bos.long.bar is not None
-                and sig.sz_bar >= bos.long.bar
-            ):
+        if (cfg.bos_use_fvg and cfg.exec_conf_sz2 and cfg.exec_conf_sz
+                and sig.sniper_zone_top is not None and sig.sniper_zone_bot is not None
+                and sig.sz_bar is not None):
+            if (long_edge is None and l_on and sig.sz_bullish
+                    and bos.long.bar is not None and sig.sz_bar >= bos.long.bar):
                 e = min(sig.sniper_zone_bot, l_top)
                 if e >= lv[0.886]:
                     long_edge = e
-            if (
-                short_edge is None
-                and s_on
-                and not sig.sz_bullish
-                and bos.short.bar is not None
-                and sig.sz_bar >= bos.short.bar
-            ):
+            if (short_edge is None and s_on and not sig.sz_bullish
+                    and bos.short.bar is not None and sig.sz_bar >= bos.short.bar):
                 e = max(sig.sniper_zone_top, s_top)
                 if e <= sv[0.886]:
                     short_edge = e
@@ -309,9 +269,8 @@ class BosExecution(Execution):
         return min(raw, top) if bull else max(raw, top)
 
     @staticmethod
-    def _deep_fib_edge(
-        gap_bot: float, gap_top: float, bull: bool, p3: float, p4: float, p5: float
-    ) -> Optional[float]:
+    def _deep_fib_edge(gap_bot: float, gap_top: float, bull: bool,
+                       p3: float, p4: float, p5: float) -> Optional[float]:
         """Pine `f_deepFibEdge` (3676-3682) — Method 3.
 
         The entry price for a DEEP gap whose NEAR EDGE sits past 0.618, or None when the near
@@ -326,9 +285,8 @@ class BosExecution(Execution):
         return None
 
     # ── the stop model (Pine `f_bosSlRaw` / `f_bosSl`, 3842-3856) ────────────────
-    def _bos_stop(
-        self, sig, entry: float, levels: dict, broken: Optional[float], *, bull: bool
-    ) -> Optional[float]:
+    def _bos_stop(self, sig, entry: float, levels: dict, broken: Optional[float],
+                  *, bull: bool) -> Optional[float]:
         cfg = self._cfg
         model = cfg.bos_sl_model
         if model == "Broken swing level":
@@ -404,48 +362,33 @@ class BosExecution(Execution):
         veto_l, veto_s = self._veto(sig)
         dec.long_veto, dec.short_veto = veto_l, veto_s
 
-        long_armed = (
-            cfg.exec_longs
-            and bos.long.on
-            and bos.l_ready
-            and long_edge is not None
-            and not late
-            and not bias_l
-            and not bos.vwap_block_l
-            and (not veto_l or not cfg.bos_respect_veto)
-            and bos.traded_l < cfg.bos_max_per_regime
-            and self._pos_dir == 0
-            and (self._traded_sos_l is None or bos.long.bar != self._traded_sos_l)
-        )
-        short_armed = (
-            cfg.exec_shorts
-            and bos.short.on
-            and bos.s_ready
-            and short_edge is not None
-            and not late
-            and not bias_s
-            and not bos.vwap_block_s
-            and (not veto_s or not cfg.bos_respect_veto)
-            and bos.traded_s < cfg.bos_max_per_regime
-            and self._pos_dir == 0
-            and (self._traded_sos_s is None or bos.short.bar != self._traded_sos_s)
-        )
+        long_armed = (cfg.exec_longs and bos.long.on and bos.l_ready and long_edge is not None
+                      and not late and not bias_l and not bos.vwap_block_l
+                      and (not veto_l or not cfg.bos_respect_veto)
+                      and bos.traded_l < cfg.bos_max_per_regime
+                      and self._pos_dir == 0
+                      and (self._traded_sos_l is None or bos.long.bar != self._traded_sos_l))
+        short_armed = (cfg.exec_shorts and bos.short.on and bos.s_ready and short_edge is not None
+                       and not late and not bias_s and not bos.vwap_block_s
+                       and (not veto_s or not cfg.bos_respect_veto)
+                       and bos.traded_s < cfg.bos_max_per_regime
+                       and self._pos_dir == 0
+                       and (self._traded_sos_s is None or bos.short.bar != self._traded_sos_s))
         dec.long_armed, dec.short_armed = long_armed, short_armed
 
-        self._record_bos_blocks(
-            sig, dec, bos, long_edge, short_edge, late, bias_l, bias_s, veto_l, veto_s
-        )
+        self._record_bos_blocks(sig, dec, bos, long_edge, short_edge,
+                                late, bias_l, bias_s, veto_l, veto_s)
 
         # deliberate deviation (real runs only): no NEW entry inside the flat-by-close window
         if cfg.flat_by_close and self._in_flat_window(sig):
             long_armed = short_armed = False
 
         if long_armed:
-            self._pend_long = self._build_pending(sig, bos.long, bos.l_levels, long_edge, bull=True)
+            self._pend_long = self._build_pending(
+                sig, bos.long, bos.l_levels, long_edge, bull=True)
         if short_armed:
             self._pend_short = self._build_pending(
-                sig, bos.short, bos.s_levels, short_edge, bull=False
-            )
+                sig, bos.short, bos.s_levels, short_edge, bull=False)
 
     def _build_pending(self, sig, leg, levels: dict, edge: float, *, bull: bool):
         """The order, or None when the setup is refused on PRICE rather than on a toggle."""
@@ -474,7 +417,7 @@ class BosExecution(Execution):
         # two-rung shape and is shared with the other two bots. Widening that dataclass for a
         # rung only this fork has would put a `tp3` field on every A+ and B-LEG order that can
         # only ever be None.
-        pend.bos_tp3 = tp3  # type: ignore[attr-defined]
+        pend.bos_tp3 = tp3          # type: ignore[attr-defined]
         return pend
 
     # ── the fill: TP3 and the per-regime counter ────────────────────────────────
@@ -508,11 +451,9 @@ class BosExecution(Execution):
         out: List[Tuple[str, Optional[float], float]] = []
         remaining = self._qty - self._filled_qty
         done = 0.0
-        for name, target, portion in (
-            ("TP1", self._tp1, p1),
-            ("TP2", self._tp2, p2),
-            ("TP3", self._tp3, p3),
-        ):
+        for name, target, portion in (("TP1", self._tp1, p1),
+                                      ("TP2", self._tp2, p2),
+                                      ("TP3", self._tp3, p3)):
             if target is None or remaining <= 1e-12:
                 done += portion
                 continue
@@ -567,9 +508,8 @@ class BosExecution(Execution):
         return max(base, move) if self._pos_dir > 0 else min(base, move)
 
     # ── blocked setups, with this fork's own code set ───────────────────────────
-    def _record_bos_blocks(
-        self, sig, dec, bos, long_edge, short_edge, late, bias_l, bias_s, veto_l, veto_s
-    ) -> None:
+    def _record_bos_blocks(self, sig, dec, bos, long_edge, short_edge,
+                           late, bias_l, bias_s, veto_l, veto_s) -> None:
         """Pine 3993-4009 — a setup price and the engine had READY that one of your own toggles
         refused. It places no order, so it is in no trade list; this is its only channel.
 
@@ -585,22 +525,14 @@ class BosExecution(Execution):
         returned alone.
         """
         cfg = self._cfg
-        for slot, (bull, leg, levels, edge, bias, veto) in enumerate(
-            (
-                (True, bos.long, bos.l_levels, long_edge, bias_l, veto_l),
-                (False, bos.short, bos.s_levels, short_edge, bias_s, veto_s),
-            )
-        ):
-            ready = (
-                (bos.l_ready if bull else bos.s_ready)
-                and leg.on
-                and edge is not None
-                and self._pos_dir == 0
-                and (
-                    (self._traded_sos_l if bull else self._traded_sos_s) is None
-                    or leg.bar != (self._traded_sos_l if bull else self._traded_sos_s)
-                )
-            )
+        for slot, (bull, leg, levels, edge, bias, veto) in enumerate((
+            (True, bos.long, bos.l_levels, long_edge, bias_l, veto_l),
+            (False, bos.short, bos.s_levels, short_edge, bias_s, veto_s),
+        )):
+            ready = ((bos.l_ready if bull else bos.s_ready) and leg.on and edge is not None
+                     and self._pos_dir == 0
+                     and ((self._traded_sos_l if bull else self._traded_sos_s) is None
+                          or leg.bar != (self._traded_sos_l if bull else self._traded_sos_s)))
             if not ready or leg.bar is None:
                 continue
             # The min-stop refusal happens at placement; recomputed here so a setup refused on
@@ -632,13 +564,6 @@ class BosExecution(Execution):
             if key == self._bos_blk_keys[slot]:
                 continue
             self._bos_blk_keys[slot] = key
-            self.blocks.append(
-                BosBlockedSetup(
-                    dir=1 if bull else -1,
-                    index=sig.index,
-                    time_ms=sig.time_ms,
-                    codes=codes,
-                    edge=float(edge),
-                    sos_bar=int(leg.bar),
-                )
-            )
+            self.blocks.append(BosBlockedSetup(
+                dir=1 if bull else -1, index=sig.index, time_ms=sig.time_ms,
+                codes=codes, edge=float(edge), sos_bar=int(leg.bar)))

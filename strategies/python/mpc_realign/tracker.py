@@ -24,29 +24,27 @@ from typing import List, Optional, Tuple
 # The ordered internal sequence each pattern requires, as (kind, direction-relative-to-trade).
 # "any" matches a break of either kind; +1 is with-trend, -1 is counter-trend.
 _PATTERNS = {
-    "strict": (("bos", +1), ("sos", -1), ("sos", +1)),
+    "strict":   (("bos", +1), ("sos", -1), ("sos", +1)),
     "opposing": (("sos", -1), ("sos", +1)),
-    "any": (("any", -1), ("sos", +1)),
+    "any":      (("any", -1), ("sos", +1)),
 }
 
 
 @dataclass
 class Armed:
     """One live setup, waiting for its internal realignment."""
-
-    dir: int  # +1 long, -1 short
+    dir: int                      # +1 long, -1 short
     armed_ms: int
-    target: float  # the external extreme that stood before the deviation
-    step: int = 0  # how far through the internal pattern we are
-    counter_bar: Optional[int] = None  # newest counter-direction internal break
+    target: float                 # the external extreme that stood before the deviation
+    step: int = 0                 # how far through the internal pattern we are
+    counter_bar: Optional[int] = None   # newest counter-direction internal break
     counter_ext: Optional[float] = None  # running extreme since that break — the stop
 
 
 @dataclass
 class RealignState:
     """Per-bar tracker output. REPORTING plus the one trigger the execution reads."""
-
-    trigger_dir: int = 0  # 0 = nothing fired this bar
+    trigger_dir: int = 0          # 0 = nothing fired this bar
     trigger_stop: float = 0.0
     trigger_target: float = 0.0
     long_armed: bool = False
@@ -86,16 +84,13 @@ class RealignTracker:
 
         # A break against a setup's own direction kills it: the deviation has become a
         # trend, which is exactly the thing this setup bets against.
-        self._armed = [
-            a
-            for a in self._armed
-            if not (
-                (a.dir > 0 and bear and not ev.bear_sos) or (a.dir < 0 and bull and not ev.bull_sos)
-            )
-        ]
+        self._armed = [a for a in self._armed
+                       if not ((a.dir > 0 and bear and not ev.bear_sos)
+                               or (a.dir < 0 and bull and not ev.bull_sos))]
 
     # ── the 5m side ──────────────────────────────────────────────────────────────
-    def update(self, time_ms: int, high: float, low: float, ext, internal) -> RealignState:
+    def update(self, time_ms: int, high: float, low: float,
+               ext, internal) -> RealignState:
         """Fold one chart bar in and report any trigger."""
         cfg = self._cfg
         out = RealignState()
@@ -106,7 +101,7 @@ class RealignTracker:
         alive: List[Armed] = []
         for a in self._armed:
             if time_ms - a.armed_ms > window_ms:
-                continue  # died waiting — the deviation is accepted as a real trend
+                continue    # died waiting — the deviation is accepted as a real trend
 
             src = cfg.realign_long_source if a.dir > 0 else cfg.realign_short_source
             stream = internal if src == "internal" else ext
@@ -114,7 +109,8 @@ class RealignTracker:
 
             # Track the extreme since the newest counter-direction break — the stop.
             if a.counter_bar is not None:
-                a.counter_ext = min(a.counter_ext, low) if a.dir > 0 else max(a.counter_ext, high)
+                a.counter_ext = (min(a.counter_ext, low) if a.dir > 0
+                                 else max(a.counter_ext, high))
 
             fired = False
             for kind, sign in _breaks(stream):
@@ -132,7 +128,7 @@ class RealignTracker:
                 out.trigger_dir = a.dir
                 out.trigger_stop = a.counter_ext
                 out.trigger_target = a.target
-                continue  # consumed — a setup fires once
+                continue    # consumed — a setup fires once
             alive.append(a)
 
         self._armed = alive

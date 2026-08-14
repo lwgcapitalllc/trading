@@ -67,6 +67,32 @@ fields with zero mismatches.
 no `compare_*.py` can exist. Unit tests are the only gate they will ever have. That is a genuine
 structural exception, not a precedent.
 
+🔴 **AND THE CARVE-OUT DID NOT HOLD THE FIRST TIME — IT SHIPPED THE LIVE STRATEGY, AND THE WAY IT
+FAILED IS THE MOST TRANSFERABLE THING HERE.** The 10 ungated trees were reverted with
+`git checkout --`, which is correct exactly once. The pre-commit hook then refused the commit on 46
+un-autofixable lint findings; clearing that meant re-running `ruff format .` **over the whole repo**,
+which re-formatted all 10 straight back, and `git add -A` staged them. **77 files of `mpc_sos_fade`,
+`mpc_bleg`, `mpc_bos` and six engines went out in a commit whose own message says they were
+excluded.** Nothing failed, no test went red, the suite was green, the push gate passed — **the
+commit message was the only artefact in the system that disagreed with the tree**, and it was
+disagreeing about the LIVE bot's strategy. Caught only by counting test functions afterwards to
+chase an unrelated +5.
+
+**Three things came out of it:**
+
+- **A carve-out belongs where the TOOL reads it, never in your memory of what you reverted.** The 10
+  trees are now `extend-exclude` entries in `ruff.toml` with the reason attached, so `ruff format .`
+  cannot touch them however it is invoked. ⚠ **An explicitly-NAMED path still needs
+  `--force-exclude`** — `lint-staged.config.mjs` passes it on both ruff commands, the same flag that
+  keeps `deployed/` intact.
+- **`git add -A` is how somebody else's work gets a label it did not choose.** Aaron was committing
+  in parallel; the same sweep pulled his uncommitted `routers/bots.py`, `services/bot_versions.py`
+  and **4 new tests** in `test_bot_promote.py` into a commit titled `style:`. Nothing was lost and
+  it is all pushed — but a `style:` commit that carries a feature is a commit nobody will think to
+  read, and `git log --follow` on those files now points at the wrong change.
+- ⚠ **A green suite says NOTHING about whether the right files changed.** Every gate this repo owns
+  passed on the wrong tree, because they all check behaviour and none checks scope.
+
 ⚠ **Two harnesses print a bar count that OVERSTATES what they compared** — `compare_svp.py` and
 `compare_rsi_div.py` increment before the warmup `continue`, so they report bars *fed*. The real
 figures are `total - warmup`, and the table above uses those.

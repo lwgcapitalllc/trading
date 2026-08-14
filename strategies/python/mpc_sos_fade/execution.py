@@ -41,8 +41,8 @@ if str(_ROOT) not in sys.path:
 
 from backtest import fills as _fills
 from backtest.portfolio.account import SoloAccount
-from backtest.setups import DEAD, FILLED, RESTING, WATCHING, Confluence, SetupSnapshot
-
+from backtest.setups import (Confluence, DEAD, FILLED, RESTING, SetupSnapshot,
+                             WATCHING)
 # The canonical ratio→price helper, and the only one allowed: `_sl_anchor`'s Custom branch has to
 # land on the exact float the fib engine would have produced for that ratio, and re-deriving
 # `ash - range*ratio` here would be a second implementation free to drift by a bit.
@@ -81,11 +81,11 @@ def _nearest(shallow, deep, deep_dist, shallow_dist):
 class Fill:
     """One order fill this bar — an entry or a (partial) exit."""
 
-    kind: str  # "entry" | "exit"
-    order_id: str  # "Long" | "Short" | "L-TP1" | "L-TP2" | "L-RUN" | (short mirror)
+    kind: str          # "entry" | "exit"
+    order_id: str      # "Long" | "Short" | "L-TP1" | "L-TP2" | "L-RUN" | (short mirror)
     price: float
     qty: float
-    dir: int  # +1 long, -1 short (of the position it belongs to)
+    dir: int           # +1 long, -1 short (of the position it belongs to)
 
 
 @dataclass
@@ -102,9 +102,9 @@ class Decision:
     s_stage: int = 0
     long_veto: bool = False
     short_veto: bool = False
-    stop: Optional[float] = None  # the active stop of the open trade (if any)
+    stop: Optional[float] = None          # the active stop of the open trade (if any)
     fills: List[Fill] = field(default_factory=list)
-    closed_r: Optional[float] = None  # R booked on the bar a trade closed
+    closed_r: Optional[float] = None      # R booked on the bar a trade closed
     # The OPEN trade's frozen TP ladder, or None when flat — mirroring the Pine's
     # `strategy.position_size > 0 ? lTP1 : ...` plot gate. The A+ bot reads its rungs off
     # fib levels the export already carries, so `compare_strategy.py` does NOT diff these;
@@ -205,33 +205,23 @@ _BLOCK_REASON = {
     3: "Final-hour rule — no new entries 16:00-18:00 New York, ahead of the daily close.",
     4: "Divergence / extreme-RSI veto — opposing divergence live at the SOS, or RSI at an extreme.",
     5: "HTF exhaustion filter — the higher timeframe just CLOSED through its prior extreme, so "
-    "this is a fresh breakout rather than an exhaustion fade.",
+       "this is a fresh breakout rather than an exhaustion fade.",
     6: "HTF bias requirement — your Weekly / Daily bias gate is not satisfied.",
     7: "Minimum stop distance — the stop sits closer to the entry than your floor, so this "
-    "position would be oversized and noise-sensitive.",
+       "position would be oversized and noise-sensitive.",
 }
 
 
-def _block_codes(
-    dir_off: bool,
-    arm_off: bool,
-    late: bool,
-    veto: bool,
-    htf_brk: bool,
-    htf_bias: bool,
-    tight: bool = False,
-) -> List[int]:
+def _block_codes(dir_off: bool, arm_off: bool, late: bool, veto: bool,
+                 htf_brk: bool, htf_bias: bool, tight: bool = False) -> List[int]:
     """Every rule refusing this side, in the Pine's `f_blkCode` precedence order.
     Empty = nothing is blocking; `[0]` is what `f_blkCode` itself would have returned.
 
     `tight` (the minimum-stop floor) is LAST in precedence and defaults False because it is
     the only code that depends on price rather than on a toggle — a caller that has not
     computed the stop distance yet simply omits it."""
-    return [
-        c
-        for c, on in enumerate((dir_off, arm_off, late, veto, htf_brk, htf_bias, tight), start=1)
-        if on
-    ]
+    return [c for c, on in enumerate(
+        (dir_off, arm_off, late, veto, htf_brk, htf_bias, tight), start=1) if on]
 
 
 @dataclass
@@ -240,10 +230,10 @@ class BlockedSetup:
     rested — the price the trade never got. `codes` holds EVERY rule that was refusing it,
     in precedence order (see the deviation note above), so `codes[0]` is the primary."""
 
-    dir: int  # +1 long, -1 short
-    index: int  # bar index
+    dir: int              # +1 long, -1 short
+    index: int            # bar index
     time_ms: int
-    codes: List[int]  # 1-7, the Pine reason codes, precedence-ordered
+    codes: List[int]      # 1-7, the Pine reason codes, precedence-ordered
     edge: float
     sos_bar: int
 
@@ -333,18 +323,18 @@ class MissedSetup:
     the watch outlives the visit by a median 18 and up to 718 bars, and over that range the extreme
     routinely belongs to a different move entirely."""
 
-    dir: int  # +1 long, -1 short
-    index: int  # bar index the miss was booked on (the bar the setup died)
+    dir: int              # +1 long, -1 short
+    index: int            # bar index the miss was booked on (the bar the setup died)
     time_ms: int
-    met: int  # 2 or 3 (of 3)
-    code: int  # 1-7 — the single missing piece
-    arm_text: str  # what armed it, in words: "Sweep · Day Low" / "RSI divergence"
-    arm_met: bool  # ...and whether that source is one you have enabled
-    zone: bool  # price tagged the 0.5-0.886 band
-    zone_time_ms: Optional[int]  # WHEN it first did — see below
-    zone_turn_ms: Optional[int]  # ...and the deepest bar of that visit
-    fvg: bool  # ...and a gap was live while it was there
-    edge: float  # where the limit would have rested
+    met: int              # 2 or 3 (of 3)
+    code: int             # 1-7 — the single missing piece
+    arm_text: str         # what armed it, in words: "Sweep · Day Low" / "RSI divergence"
+    arm_met: bool         # ...and whether that source is one you have enabled
+    zone: bool            # price tagged the 0.5-0.886 band
+    zone_time_ms: Optional[int]   # WHEN it first did — see below
+    zone_turn_ms: Optional[int]   # ...and the deepest bar of that visit
+    fvg: bool             # ...and a gap was live while it was there
+    edge: float           # where the limit would have rested
     near: bool
 
     @property
@@ -357,10 +347,8 @@ class MissedSetup:
         # Code 1 is the only DYNAMIC sentence: it has to name the source that armed the setup,
         # because "the trigger you switched off" is meaningless without saying which one.
         if self.code == 1:
-            return [
-                f"Armed by {self.arm_text} — that arm source is switched OFF. Every other "
-                f"confluence was there."
-            ]
+            return [f"Armed by {self.arm_text} — that arm source is switched OFF. Every other "
+                    f"confluence was there."]
         return [_MISS_REASON.get(self.code, "")]
 
     @property
@@ -384,25 +372,25 @@ class _MissWatch:
 
     watch: bool = False
     sos_bar: Optional[int] = None
-    arm_src: str = ""  # "SWP" / "DIV" — which source actually armed it
-    swp_nm: str = ""  # the swept level's name, e.g. "Day Low"
+    arm_src: str = ""                 # "SWP" / "DIV" — which source actually armed it
+    swp_nm: str = ""                  # the swept level's name, e.g. "Day Low"
     zone: bool = False
     # The DEEPEST visit to the band, and the visit currently in progress. A setup can tag the zone,
     # leave, and come back hundreds of bars later — those are different retraces, and the one worth
     # reporting is the one that came closest to filling.
-    zone_ms: Optional[int] = None  # first bar of the deepest visit
-    zone_turn_ms: Optional[int] = None  # ...and its most adverse bar
+    zone_ms: Optional[int] = None        # first bar of the deepest visit
+    zone_turn_ms: Optional[int] = None   # ...and its most adverse bar
     zone_turn_px: Optional[float] = None
-    run_bar: Optional[int] = None  # last bar of the visit in progress (contiguity test)
+    run_bar: Optional[int] = None        # last bar of the visit in progress (contiguity test)
     run_ms: Optional[int] = None
     run_turn_ms: Optional[int] = None
     run_turn_px: Optional[float] = None
     fvg: bool = False
-    edge: Optional[float] = None  # first entry edge seen while alive
-    fib: Optional[float] = None  # 0.618 fallback, kept fresh
-    blk_v: bool = False  # a veto was live while in the zone
-    blk_l: bool = False  # the final-hour rule was live while in the zone
-    blk_h: bool = False  # an HTF filter was live while in the zone
+    edge: Optional[float] = None      # first entry edge seen while alive
+    fib: Optional[float] = None       # 0.618 fallback, kept fresh
+    blk_v: bool = False               # a veto was live while in the zone
+    blk_l: bool = False               # the final-hour rule was live while in the zone
+    blk_h: bool = False               # an HTF filter was live while in the zone
 
     def open(self, sos_bar: Optional[int], arm_src: str, swp_nm: str) -> None:
         self.watch, self.sos_bar, self.arm_src, self.swp_nm = True, sos_bar, arm_src, swp_nm
@@ -433,16 +421,14 @@ class _MissWatch:
             return
         px = sig.low if is_long else sig.high
         if self.run_bar is None or sig.index != self.run_bar + 1:
-            self.run_ms = self.run_turn_ms = sig.time_ms  # a new visit
+            self.run_ms = self.run_turn_ms = sig.time_ms   # a new visit
             self.run_turn_px = px
         elif (px < self.run_turn_px) if is_long else (px > self.run_turn_px):
             self.run_turn_px, self.run_turn_ms = px, sig.time_ms
         self.run_bar = sig.index
         if self.zone_turn_px is None or (
-            (self.run_turn_px < self.zone_turn_px)
-            if is_long
-            else (self.run_turn_px > self.zone_turn_px)
-        ):
+                (self.run_turn_px < self.zone_turn_px) if is_long else
+                (self.run_turn_px > self.zone_turn_px)):
             self.zone_ms, self.zone_turn_ms = self.run_ms, self.run_turn_ms
             self.zone_turn_px = self.run_turn_px
 
@@ -460,16 +446,8 @@ class _MissWatch:
 #
 # `start_ms` is the bar the LEG began on (the earlier of the two anchors), which is what gives the
 # drawing an x-span reaching back through the retracement instead of starting at the entry.
-_FIB_RATIOS = (
-    (0.0, "fibo_p7"),
-    (0.382, "fibo_p1"),
-    (0.5, "fibo_p2"),
-    (0.618, "fibo_p3"),
-    (0.702, "fibo_p4"),
-    (0.786, "fibo_p5"),
-    (0.886, "fibo_p6"),
-    (1.0, "fibo_p10"),
-)
+_FIB_RATIOS = ((0.0, "fibo_p7"), (0.382, "fibo_p1"), (0.5, "fibo_p2"), (0.618, "fibo_p3"),
+               (0.702, "fibo_p4"), (0.786, "fibo_p5"), (0.886, "fibo_p6"), (1.0, "fibo_p10"))
 
 
 @dataclass
@@ -552,16 +530,9 @@ class Execution:
         """
         return self._cfg
 
-    def __init__(
-        self,
-        config,
-        initial_capital: float = 1_000_000.0,
-        resolver=None,
-        profile=None,
-        bar_ms: int = 300_000,
-        account=None,
-        leg: str = "strat",
-    ) -> None:
+    def __init__(self, config, initial_capital: float = 1_000_000.0,
+                 resolver=None, profile=None, bar_ms: int = 300_000,
+                 account=None, leg: str = "strat") -> None:
         self._cfg = config
         self._equity_realized = initial_capital  # LEG-LOCAL ledger — R is measured against this
         # The shared account owns the budget and sizes entries. Default = a SoloAccount (no cap,
@@ -572,12 +543,12 @@ class Execution:
         # A2: None ⇒ bar mode (the Pine guess, no costs). See the class docstring.
         self._resolver = resolver
         self._profile = profile
-        self.bar_ms = bar_ms  # bar duration; only tick mode reads it
-        self._costs_usd = 0.0  # this trade's commission + swap + slippage so far
-        self._last_roll_ms: Optional[int] = None  # last rollover already charged
+        self.bar_ms = bar_ms                # bar duration; only tick mode reads it
+        self._costs_usd = 0.0               # this trade's commission + swap + slippage so far
+        self._last_roll_ms: Optional[int] = None   # last rollover already charged
 
         # position state
-        self._pos_dir = 0  # 0 flat, +1 long, -1 short
+        self._pos_dir = 0                  # 0 flat, +1 long, -1 short
         # which layer opened the current position — "primary" (15m) or "secondary" (1m sniper).
         # 15m `step()` only manages a primary; the 1m `step_secondary()` only manages a secondary.
         # They share this one position slot but never the same trade (the secondary arms only when
@@ -595,7 +566,7 @@ class Execution:
         self._qty = 0.0
         self._entry = 0.0
         self._entry_index = 0
-        self._sl = 0.0  # frozen entry stop (1R yardstick)
+        self._sl = 0.0                     # frozen entry stop (1R yardstick)
         # reporting-only accumulators (see Trade) — never read by a decision
         self._entry_ms = 0
         self._exit_ms = 0
@@ -605,8 +576,8 @@ class Execution:
         self._exit_reason = ""
         self._tp1 = 0.0
         self._tp2 = 0.0
-        self._fib: Optional[TradeFib] = None  # the open trade's frozen fib leg (reporting only)
-        self._stage = 0  # 0 full-stop, 1 BE, 2 floor + runner trail
+        self._fib: Optional[TradeFib] = None   # the open trade's frozen fib leg (reporting only)
+        self._stage = 0                    # 0 full-stop, 1 BE, 2 floor + runner trail
         self._max_fav = 0.0
         # Structure-trail anchors, snapshotted at each bar's CLOSE (see _advance_stage). The stop
         # placed at bar N's close is what bar N+1 trades against, so the trail must read bar N's
@@ -616,11 +587,11 @@ class Execution:
         # excursion extremes across the whole hold (reporting only — see Trade.mfe_usd)
         self._ext_high = 0.0
         self._ext_low = 0.0
-        self._legs: List[dict] = []  # per-rung exit ledger of the OPEN trade (reporting only)
+        self._legs: List[dict] = []        # per-rung exit ledger of the OPEN trade (reporting only)
         self._risk_usd = 0.0
-        self._filled_qty = 0.0  # how much of the position has exited
+        self._filled_qty = 0.0             # how much of the position has exited
         self._sos_bar_open: Optional[int] = None
-        self._entry_equity: Optional[float] = None  # equity snapshot at open, for R
+        self._entry_equity: Optional[float] = None   # equity snapshot at open, for R
 
         # resting entry orders (one per side; at most one position at a time)
         self._pend_long: Optional[_Pending] = None
@@ -734,40 +705,16 @@ class Execution:
     # shipped missing two fields that three weeks of green tests never saw.
 
     _POSITION_FIELDS = (
-        "_pos_dir",
-        "_entry_kind",
-        "_qty",
-        "_entry",
-        "_entry_index",
-        "_entry_ms",
-        "_init_stop",
-        "_exit_notional",
-        "_exit_qty",
-        "_exit_ms",
-        "_exit_reason",
-        "_sl",
-        "_tp1",
-        "_tp2",
-        "_fib",
-        "_stage",
-        "_filled_qty",
-        "_sos_bar_open",
-        "_risk_usd",
-        "_entry_equity",
-        "_costs_usd",
-        "_last_roll_ms",
-        "_max_fav",
-        "_trail_swing_hi",
-        "_trail_swing_lo",
-        "_ext_high",
-        "_ext_low",
-        "_legs",
+        "_pos_dir", "_entry_kind", "_qty", "_entry", "_entry_index", "_entry_ms",
+        "_init_stop", "_exit_notional", "_exit_qty", "_exit_ms", "_exit_reason",
+        "_sl", "_tp1", "_tp2", "_fib", "_stage", "_filled_qty", "_sos_bar_open",
+        "_risk_usd", "_entry_equity", "_costs_usd", "_last_roll_ms", "_max_fav",
+        "_trail_swing_hi", "_trail_swing_lo", "_ext_high", "_ext_low", "_legs",
         "_pending_close",
         # SETUP-scoped rather than position-scoped, and carried anyway: it is the
         # one-trade-per-15m-leg latch. Without it a restored bot could re-enter the very setup
         # it is already holding, the moment this trade closes.
-        "_traded_sos_l",
-        "_traded_sos_s",
+        "_traded_sos_l", "_traded_sos_s",
     )
 
     def snapshot_position(self) -> dict:
@@ -778,14 +725,10 @@ class Execution:
         for name in self._POSITION_FIELDS:
             value = getattr(self, name)
             if name == "_fib":
-                value = (
-                    None
-                    if value is None
-                    else {
-                        "levels": [[float(r), float(p)] for r, p in value.levels],
-                        "start_ms": value.start_ms,
-                    }
-                )
+                value = None if value is None else {
+                    "levels": [[float(r), float(p)] for r, p in value.levels],
+                    "start_ms": value.start_ms,
+                }
             elif name == "_legs":
                 value = [dict(leg) for leg in value]
             elif name == "_pending_close":
@@ -811,8 +754,7 @@ class Execution:
         if missing:
             raise ValueError(
                 "refusing to restore an incomplete position record; missing: "
-                + ", ".join(sorted(missing))
-            )
+                + ", ".join(sorted(missing)))
         for name in self._POSITION_FIELDS:
             value = snap[name]
             if name == "_fib" and value is not None:
@@ -864,14 +806,14 @@ class Execution:
         `sig1m` needs `index / time_ms / open / high / low / close` (a `_Bar1mSig`). Returns the
         direction filled this bar (+1/-1) or None. Bar-mode only for now; tick-mode secondary
         fills are a later add (the 1m tick seam isn't wired)."""
-        self._sec_stop_dir = None  # cleared each step; _finalise_trade sets it on a stop-out
-        sink = Decision(index=sig1m.index)  # throwaway — trades land in self.trades regardless
+        self._sec_stop_dir = None            # cleared each step; _finalise_trade sets it on a stop-out
+        sink = Decision(index=sig1m.index)   # throwaway — trades land in self.trades regardless
         filled_dir: Optional[int] = None
 
         # ── Phase A: fill / manage against THIS 1m bar ──
         if self._pos_dir == 0 and self._pend_sec is not None:
             pend = self._pend_sec
-            adj = self._ask_adj(pend.dir, entry=True)  # the sniper is a resting limit too
+            adj = self._ask_adj(pend.dir, entry=True)   # the sniper is a resting limit too
             if pend.dir > 0 and sig1m.low + adj <= pend.edge:
                 o = sig1m.open + adj
                 fill = pend.edge if o > pend.edge else o
@@ -1030,44 +972,21 @@ class Execution:
         arm_ok_l = use_swp_l or use_div_l
         arm_ok_s = use_swp_s or use_div_s
 
-        long_armed = (
-            cfg.exec_aplus
-            and cfg.exec_longs
-            and arm_ok_l
-            and not late
-            and not htf_block_l
-            and not bias_block_l
-            and seq.l_sos_bar is not None
-            and sig.fibo_dir == 1
-            and long_edge is not None
-            and (not dec.long_veto or not cfg.exec_respect_veto)
-            and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l)
-        )
-        short_armed = (
-            cfg.exec_aplus
-            and cfg.exec_shorts
-            and arm_ok_s
-            and not late
-            and not htf_block_s
-            and not bias_block_s
-            and seq.s_sos_bar is not None
-            and sig.fibo_dir == -1
-            and short_edge is not None
-            and (not dec.short_veto or not cfg.exec_respect_veto)
-            and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)
-        )
+        long_armed = (cfg.exec_aplus and cfg.exec_longs and arm_ok_l and not late and not htf_block_l
+                      and not bias_block_l and seq.l_sos_bar is not None and sig.fibo_dir == 1
+                      and long_edge is not None
+                      and (not dec.long_veto or not cfg.exec_respect_veto)
+                      and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l))
+        short_armed = (cfg.exec_aplus and cfg.exec_shorts and arm_ok_s and not late and not htf_block_s
+                       and not bias_block_s and seq.s_sos_bar is not None and sig.fibo_dir == -1
+                       and short_edge is not None
+                       and (not dec.short_veto or not cfg.exec_respect_veto)
+                       and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s))
         dec.long_armed, dec.short_armed = long_armed, short_armed
         # Hand the gate booleans to `_record_blocks` rather than recompute them there — one
         # place decides what "blocked" means, so the marker can never disagree with the arm.
-        self._blk_gates = (
-            late,
-            arm_ok_l,
-            arm_ok_s,
-            htf_block_l,
-            htf_block_s,
-            bias_block_l,
-            bias_block_s,
-        )
+        self._blk_gates = (late, arm_ok_l, arm_ok_s, htf_block_l, htf_block_s,
+                           bias_block_l, bias_block_s)
         return long_armed, short_armed
 
     # ── bar-only gates ───────────────────────────────────────────────────────────
@@ -1080,7 +999,7 @@ class Execution:
         what "the final hour" and "the HTF filter" mean, so a marker can never disagree with the
         arm about it."""
         cfg = self._cfg
-        late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18  # 16:00-17:59 NY block
+        late = cfg.exec_no_late_day and 16 <= sig.ny_hour < 18   # 16:00-17:59 NY block
         htf_l, htf_s = self._htf_exhaustion_block(sig)
         bias_l, bias_s = self._htf_bias_block(sig)
         return late, htf_l, htf_s, bias_l, bias_s
@@ -1111,55 +1030,17 @@ class Execution:
         # Which arm sources COUNT — the live flags already filtered through the enable-toggles,
         # exactly as `_armed` reads them, so "armed" means the same thing in both places.
         sides = (
-            (
-                0,
-                True,
-                seq.l_stage,
-                seq.l_sos_bar,
-                self._traded_sos_l,
-                self._pos_dir <= 0,
-                seq.l_half or seq.l_618,
-                long_edge,
-                dec.long_veto and cfg.exec_respect_veto,
-                htf_l or bias_l,
-                cfg.exec_arm_sweep and seq.sos_l_swp,
-                cfg.exec_arm_div and seq.sos_l_div,
-                seq.l_arm_src,
-                sig.recent_ssl,
-            ),
-            (
-                1,
-                False,
-                seq.s_stage,
-                seq.s_sos_bar,
-                self._traded_sos_s,
-                self._pos_dir >= 0,
-                seq.s_half or seq.s_618,
-                short_edge,
-                dec.short_veto and cfg.exec_respect_veto,
-                htf_s or bias_s,
-                cfg.exec_arm_sweep and seq.sos_s_swp,
-                cfg.exec_arm_div and seq.sos_s_div,
-                seq.s_arm_src,
-                sig.recent_bsl,
-            ),
+            (0, True, seq.l_stage, seq.l_sos_bar, self._traded_sos_l, self._pos_dir <= 0,
+             seq.l_half or seq.l_618, long_edge, dec.long_veto and cfg.exec_respect_veto,
+             htf_l or bias_l, cfg.exec_arm_sweep and seq.sos_l_swp,
+             cfg.exec_arm_div and seq.sos_l_div, seq.l_arm_src, sig.recent_ssl),
+            (1, False, seq.s_stage, seq.s_sos_bar, self._traded_sos_s, self._pos_dir >= 0,
+             seq.s_half or seq.s_618, short_edge, dec.short_veto and cfg.exec_respect_veto,
+             htf_s or bias_s, cfg.exec_arm_sweep and seq.sos_s_swp,
+             cfg.exec_arm_div and seq.sos_s_div, seq.s_arm_src, sig.recent_bsl),
         )
-        for (
-            slot,
-            is_long,
-            stage,
-            sos_bar,
-            traded_sos,
-            flat,
-            zone_hit,
-            edge,
-            veto,
-            htf_any,
-            arm_swp,
-            arm_div,
-            arm_src,
-            swp_nm,
-        ) in sides:
+        for (slot, is_long, stage, sos_bar, traded_sos, flat, zone_hit, edge, veto,
+             htf_any, arm_swp, arm_div, arm_src, swp_nm) in sides:
             m = self._mw[slot]
             # Open the watch on the RISING edge into stage 2 OR HIGHER — a fast leg can print the
             # SOS and tag the 0.5 on the same bar, jumping 1 → 3, and an `== 2` test would never
@@ -1193,8 +1074,7 @@ class Execution:
                 # gates are already resolved through the enable-toggles exactly as `_armed`
                 # reads them — so "armed" means the same thing in an alert as in a decision.
                 self._setup_ctx[slot] = self._setup_context(
-                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any
-                )
+                    sig, m, is_long, arm_swp, arm_div, veto, late, htf_any)
                 continue
 
             # it died (or traded) — book the miss, then close the watch either way
@@ -1207,13 +1087,15 @@ class Execution:
                 self._book_setup_end(ctx, FILLED, "Entered.")
                 continue
             if not flat:
-                self._book_setup_end(ctx, DEAD, "The setup ended while another position was open.")
+                self._book_setup_end(ctx, DEAD,
+                                     "The setup ended while another position was open.")
                 continue
             arm_met = arm_swp or arm_div
             zone_met = m.zone and (m.fvg or not cfg.exec_req_fvg)
             met_n = (1 if arm_met else 0) + 1 + (1 if zone_met else 0)
             if met_n < 2:
-                self._book_setup_end(ctx, DEAD, "The setup died before reaching two confluences.")
+                self._book_setup_end(ctx, DEAD,
+                                     "The setup died before reaching two confluences.")
                 continue
             price = m.edge if m.edge is not None else m.fib
             if price is None:
@@ -1229,37 +1111,25 @@ class Execution:
             else:
                 code = 4 if m.blk_v else 5 if m.blk_l else 6 if m.blk_h else 7
             if arm_met:
-                arm_text = (
-                    "Sweep + RSI div"
-                    if (arm_swp and arm_div)
-                    else "Sweep"
-                    if arm_swp
-                    else "RSI divergence"
-                )
+                arm_text = ("Sweep + RSI div" if (arm_swp and arm_div)
+                            else "Sweep" if arm_swp else "RSI divergence")
                 if arm_swp and m.swp_nm:
                     arm_text += f" · {m.swp_nm}"
             else:
                 arm_text = "RSI divergence" if m.arm_src == "DIV" else "a liquidity sweep"
             miss = MissedSetup(
-                dir=1 if is_long else -1,
-                index=sig.index,
-                time_ms=sig.time_ms,
-                met=met_n,
-                code=code,
-                arm_text=arm_text,
-                arm_met=arm_met,
-                zone=m.zone,
-                zone_time_ms=m.zone_ms,
-                zone_turn_ms=m.zone_turn_ms,
-                fvg=m.fvg,
-                edge=float(price),
+                dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
+                met=met_n, code=code, arm_text=arm_text, arm_met=arm_met,
+                zone=m.zone, zone_time_ms=m.zone_ms, zone_turn_ms=m.zone_turn_ms,
+                fvg=m.fvg, edge=float(price),
                 near=met_n == 3 or (m.zone and not zone_met),
             )
             self.misses.append(miss)
             # The alert reuses the miss's OWN sentence rather than composing a second one. Two
             # explanations for one death can disagree, and the reader has no way to tell which
             # is the strategy's.
-            self._book_setup_end(ctx, DEAD, miss.reasons[0] or miss.labels[0], label=miss.labels[0])
+            self._book_setup_end(ctx, DEAD, miss.reasons[0] or miss.labels[0],
+                                 label=miss.labels[0])
 
     # ── pre-trade setup snapshots (backtest/setups.py) — reporting only ──────────
     #
@@ -1340,7 +1210,8 @@ class Execution:
         if sig.fibo_ash is None or sig.fibo_asl is None:
             return False
 
-        level = fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir, self._cfg.alert_resting_fib)
+        level = fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir,
+                          self._cfg.alert_resting_fib)
         # The BAR's extreme, not its close: price tagging the level intrabar is price having got
         # there, and the close is a different question. Same reading `_MissWatch.visit` takes of
         # the zone itself.
@@ -1353,17 +1224,8 @@ class Execution:
             return True
         return False
 
-    def _setup_context(
-        self,
-        sig,
-        m: _MissWatch,
-        is_long: bool,
-        arm_swp: bool,
-        arm_div: bool,
-        veto: bool,
-        late: bool,
-        htf_any: bool,
-    ) -> dict:
+    def _setup_context(self, sig, m: _MissWatch, is_long: bool, arm_swp: bool, arm_div: bool,
+                       veto: bool, late: bool, htf_any: bool) -> dict:
         """Freeze what this side's live setup looks like on this bar.
 
         ⚠ **`arm_swp` / `arm_div` are the ENABLE-FILTERED flags** — the same ones `_armed` reads.
@@ -1374,13 +1236,8 @@ class Execution:
         cfg = self._cfg
         arm_met = arm_swp or arm_div
         if arm_met:
-            arm_text = (
-                "Sweep + RSI div"
-                if (arm_swp and arm_div)
-                else "Sweep"
-                if arm_swp
-                else "RSI divergence"
-            )
+            arm_text = ("Sweep + RSI div" if (arm_swp and arm_div)
+                        else "Sweep" if arm_swp else "RSI divergence")
             if arm_swp and m.swp_nm:
                 arm_text += f" · {m.swp_nm}"
         else:
@@ -1403,11 +1260,8 @@ class Execution:
         # thing worth saying BEFORE an order exists. `entry` (the one resting price) is read
         # separately in `live_setups()`, from the order itself.
         shallow, deep = sig.fibo_p2, sig.fibo_p6
-        zone = (
-            (float(shallow), float(deep))
-            if (shallow is not None and deep is not None and sig.fibo_dir != 0)
-            else None
-        )
+        zone = (float(shallow), float(deep)) if (shallow is not None and deep is not None
+                                                 and sig.fibo_dir != 0) else None
         # Where the stop WOULD sit for a fill at the deep edge. Routed through `_sl_anchor` so
         # `exec_sl_level` / `exec_sl_custom` / `exec_sl_deep` resolve exactly as they would for a
         # real order — a stop the alert computed its own way is a second claim about one setup.
@@ -1467,9 +1321,8 @@ class Execution:
             "blocked_by": tuple(blocked),
         }
 
-    def _book_setup_end(
-        self, ctx: Optional[dict], state: str, reason: str, label: str = ""
-    ) -> None:
+    def _book_setup_end(self, ctx: Optional[dict], state: str, reason: str,
+                        label: str = "") -> None:
         """Record a setup reaching a terminal state, so the alert layer can close its thread.
 
         A missing `ctx` is dropped in silence and that is deliberate: it means the watch was
@@ -1478,23 +1331,13 @@ class Execution:
         """
         if ctx is None:
             return
-        self._setup_done.append(
-            SetupSnapshot(
-                key=ctx["key"],
-                strategy=self.strategy_name,
-                symbol=self._cfg.symbol or "",
-                side=ctx["side"],
-                state=state,
-                confluences=ctx["confluences"],
-                zone=ctx["zone"],
-                entry=None,
-                stop=ctx["stop"],
-                targets=(),
-                blocked_by=ctx["blocked_by"],
-                reason=(f"{label} — {reason}" if label else reason),
-                tradeable=ctx["tradeable"],
-            )
-        )
+        self._setup_done.append(SetupSnapshot(
+            key=ctx["key"], strategy=self.strategy_name, symbol=self._cfg.symbol or "",
+            side=ctx["side"], state=state, confluences=ctx["confluences"],
+            zone=ctx["zone"], entry=None, stop=ctx["stop"], targets=(),
+            blocked_by=ctx["blocked_by"], reason=(f"{label} — {reason}" if label else reason),
+            tradeable=ctx["tradeable"],
+        ))
 
     def live_setups(self) -> List[SetupSnapshot]:
         """Every setup this strategy is watching right now, plus any that resolved this bar.
@@ -1514,23 +1357,19 @@ class Execution:
             if ctx is None:
                 continue
             resting = pend is not None and pend.sos_bar is not None
-            out.append(
-                SetupSnapshot(
-                    key=ctx["key"],
-                    strategy=self.strategy_name,
-                    symbol=self._cfg.symbol or "",
-                    side=ctx["side"],
-                    state=RESTING if resting else WATCHING,
-                    confluences=ctx["confluences"],
-                    zone=ctx["zone"],
-                    entry=float(pend.edge) if resting else None,
-                    stop=float(pend.sl) if resting else ctx["stop"],
-                    targets=(float(pend.tp1), float(pend.tp2)) if resting else (),
-                    blocked_by=ctx["blocked_by"],
-                    tradeable=ctx["tradeable"],
-                    announce_resting=ctx["announce_resting"],
-                )
-            )
+            out.append(SetupSnapshot(
+                key=ctx["key"], strategy=self.strategy_name, symbol=self._cfg.symbol or "",
+                side=ctx["side"],
+                state=RESTING if resting else WATCHING,
+                confluences=ctx["confluences"],
+                zone=ctx["zone"],
+                entry=float(pend.edge) if resting else None,
+                stop=float(pend.sl) if resting else ctx["stop"],
+                targets=(float(pend.tp1), float(pend.tp2)) if resting else (),
+                blocked_by=ctx["blocked_by"],
+                tradeable=ctx["tradeable"],
+                announce_resting=ctx["announce_resting"],
+            ))
         return out
 
     def drain_setups(self) -> List[SetupSnapshot]:
@@ -1558,20 +1397,12 @@ class Execution:
         # only what price and the engine decide: the SOS is in, the fib agrees, an edge exists
         # to rest on, we're flat, and this leg has not already been traded.
         ready = (
-            (
-                seq.l_sos_bar is not None
-                and sig.fibo_dir == 1
-                and long_edge is not None
-                and self._pos_dir == 0
-                and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l)
-            ),
-            (
-                seq.s_sos_bar is not None
-                and sig.fibo_dir == -1
-                and short_edge is not None
-                and self._pos_dir == 0
-                and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)
-            ),
+            (seq.l_sos_bar is not None and sig.fibo_dir == 1 and long_edge is not None
+             and self._pos_dir == 0
+             and (self._traded_sos_l is None or seq.l_sos_bar != self._traded_sos_l)),
+            (seq.s_sos_bar is not None and sig.fibo_dir == -1 and short_edge is not None
+             and self._pos_dir == 0
+             and (self._traded_sos_s is None or seq.s_sos_bar != self._traded_sos_s)),
         )
         # The min-stop refusal itself happens at order placement; it is recomputed here so a
         # setup refused on PRICE gets a record like every other refusal (Pine 4167-4172). A
@@ -1591,31 +1422,15 @@ class Execution:
                 tight_s = self._stop_is_tight((anchor_s + buf) - short_edge, short_edge)
 
         codes = (
-            _block_codes(
-                not cfg.exec_longs,
-                not arm_ok_l,
-                late,
-                dec.long_veto and cfg.exec_respect_veto,
-                htf_l,
-                bias_l,
-                tight_l,
-            ),
-            _block_codes(
-                not cfg.exec_shorts,
-                not arm_ok_s,
-                late,
-                dec.short_veto and cfg.exec_respect_veto,
-                htf_s,
-                bias_s,
-                tight_s,
-            ),
+            _block_codes(not cfg.exec_longs, not arm_ok_l, late,
+                         dec.long_veto and cfg.exec_respect_veto, htf_l, bias_l, tight_l),
+            _block_codes(not cfg.exec_shorts, not arm_ok_s, late,
+                         dec.short_veto and cfg.exec_respect_veto, htf_s, bias_s, tight_s),
         )
-        for slot, (is_long, ok, cs, edge, sos_bar) in enumerate(
-            (
-                (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
-                (False, ready[1], codes[1], short_edge, seq.s_sos_bar),
-            )
-        ):
+        for slot, (is_long, ok, cs, edge, sos_bar) in enumerate((
+            (True, ready[0], codes[0], long_edge, seq.l_sos_bar),
+            (False, ready[1], codes[1], short_edge, seq.s_sos_bar),
+        )):
             if not ok or not cs or sos_bar is None or edge is None:
                 continue
             # Pine's dedupe (`sosBar*10 + code`), generalised to the full reason SET: one
@@ -1626,16 +1441,9 @@ class Execution:
             if key == self._blk_keys[slot]:
                 continue
             self._blk_keys[slot] = key
-            self.blocks.append(
-                BlockedSetup(
-                    dir=1 if is_long else -1,
-                    index=sig.index,
-                    time_ms=sig.time_ms,
-                    codes=list(cs),
-                    edge=float(edge),
-                    sos_bar=int(sos_bar),
-                )
-            )
+            self.blocks.append(BlockedSetup(
+                dir=1 if is_long else -1, index=sig.index, time_ms=sig.time_ms,
+                codes=list(cs), edge=float(edge), sos_bar=int(sos_bar)))
 
     # ── entry placement (Pine 4264-4507) ─────────────────────────────────────────
     def _place_entries(self, sig, seq, dec, long_edge, short_edge) -> None:
@@ -1654,9 +1462,9 @@ class Execution:
         if long_armed:
             sl = self._sl_anchor(sig, long_edge, True) - cfg.exec_sl_buf_tk * cfg.mintick
             dist = long_edge - sl
-            deep = long_edge <= sig.fibo_p3  # at/below 0.618
-            tp1 = sig.fibo_p2 if deep else sig.fibo_p1  # deep 0.5 / shallow 0.382
-            tp2 = sig.fibo_p1 if deep else sig.fibo_p7  # deep 0.382 / shallow 0.0
+            deep = long_edge <= sig.fibo_p3       # at/below 0.618
+            tp1 = sig.fibo_p2 if deep else sig.fibo_p1   # deep 0.5 / shallow 0.382
+            tp2 = sig.fibo_p1 if deep else sig.fibo_p7   # deep 0.382 / shallow 0.0
             if self._stop_clears_floor(dist, long_edge):
                 qty = (self.equity * cfg.exec_risk_pct / 100.0) / dist
                 self._pend_long = _Pending(1, long_edge, qty, sl, tp1, tp2, seq.l_sos_bar, fib)
@@ -1693,9 +1501,9 @@ class Execution:
         loop below. Add the call to any future consumer of `sig.fvgs`, or that path becomes a
         way around this gate.
         """
-        return (
-            not self._cfg.exec_fvg_pre_zone or sig.fibo_half_bar is None or born < sig.fibo_half_bar
-        )
+        return (not self._cfg.exec_fvg_pre_zone
+                or sig.fibo_half_bar is None
+                or born < sig.fibo_half_bar)
 
     def _fib_snap(self, gb, gt, is_bull, sig) -> Optional[float]:
         """Pine `f_fibEntry` (2026-08-02; named `_fib_snap` here because `mpc_bos` already
@@ -1742,12 +1550,11 @@ class Execution:
             _l = _first(lambda v: v <= near, (p2, p3, p4, p5))
             _s = _first(lambda v: v > near, (p6, p5, p4, p3, p2))
             _d = _first(lambda v: v < far, (p2, p3, p4, p5))
-            _n = _nearest(
-                _s, _d, far - _d if _d is not None else None, _s - near if _s is not None else None
-            )
+            _n = _nearest(_s, _d, far - _d if _d is not None else None,
+                          _s - near if _s is not None else None)
             if cfg.exec_fib_overlap and _l is not None and _l >= far:
                 return _l
-            if near > p3:  # gap shallower than 0.618 — plain edge
+            if near > p3:                       # gap shallower than 0.618 — plain edge
                 return None
             if cfg.exec_fib_deep_edge:
                 return far if far > p6 else _s
@@ -1756,9 +1563,8 @@ class Execution:
             _l = _first(lambda v: v >= near, (p2, p3, p4, p5))
             _s = _first(lambda v: v < near, (p6, p5, p4, p3, p2))
             _d = _first(lambda v: v > far, (p2, p3, p4, p5))
-            _n = _nearest(
-                _s, _d, _d - far if _d is not None else None, near - _s if _s is not None else None
-            )
+            _n = _nearest(_s, _d, _d - far if _d is not None else None,
+                          near - _s if _s is not None else None)
             if cfg.exec_fib_overlap and _l is not None and _l <= far:
                 return _l
             if near < p3:
@@ -1788,7 +1594,7 @@ class Execution:
         for top, bot, ob_bull, _born in sig.obs:
             if ob_bull != is_bull:
                 continue
-            if min(top, hi) < max(bot, lo):  # not in the tradable band at all
+            if min(top, hi) < max(bot, lo):          # not in the tradable band at all
                 continue
             near = min(top, hi) if is_bull else max(bot, lo)
             if is_bull and near < best:
@@ -1841,30 +1647,16 @@ class Execution:
                 # ANDed onto both sides rather than skipping the loop iteration, so with the
                 # toggle off the condition is the original one exactly.
                 pre_ok = self._gap_pre_zone(born, sig)
-                if (
-                    is_bull
-                    and sig.fibo_dir == 1
-                    and bot <= p2
-                    and top >= p6
-                    and l_deep_ok
-                    and pre_ok
-                ):
+                if is_bull and sig.fibo_dir == 1 and bot <= p2 and top >= p6 and l_deep_ok and pre_ok:
                     df = self._fib_snap(bot, top, True, sig)
-                    e = min(top, p2) if df is None else df  # snap override, else shallowest touch
+                    e = min(top, p2) if df is None else df   # snap override, else shallowest touch
                     # A HIGHER tier wins on rank alone, however much further away it rests — that
                     # IS the precedence. Only within one tier does "first price reaches" decide.
                     if long_edge is None or rank > long_rank:
                         long_edge, long_rank = e, rank
                     elif rank == long_rank:
                         long_edge = max(long_edge, e)
-                if (
-                    (not is_bull)
-                    and sig.fibo_dir == -1
-                    and top >= p2
-                    and bot <= p6
-                    and s_deep_ok
-                    and pre_ok
-                ):
+                if (not is_bull) and sig.fibo_dir == -1 and top >= p2 and bot <= p6 and s_deep_ok and pre_ok:
                     df = self._fib_snap(bot, top, False, sig)
                     e = max(bot, p2) if df is None else df
                     if short_edge is None or rank > short_rank:
@@ -1924,19 +1716,11 @@ class Execution:
                 # `exec_nogap_arm` narrows WHICH of those setups may fall back. "Any" is the
                 # original rule exactly — `_nogap_arm_ok` returns True unconditionally — so the
                 # default is byte-identical and nothing historical moves.
-                if (
-                    long_edge is None
-                    and sig.fibo_dir == 1
-                    and not long_stood_down
-                    and self._nogap_arm_ok(seq, True)
-                ):
+                if long_edge is None and sig.fibo_dir == 1 and not long_stood_down \
+                        and self._nogap_arm_ok(seq, True):
                     long_edge = p3
-                if (
-                    short_edge is None
-                    and sig.fibo_dir == -1
-                    and not short_stood_down
-                    and self._nogap_arm_ok(seq, False)
-                ):
+                if short_edge is None and sig.fibo_dir == -1 and not short_stood_down \
+                        and self._nogap_arm_ok(seq, False):
                     short_edge = p3
         return long_edge, short_edge
 
@@ -1958,9 +1742,7 @@ class Execution:
         # "Sweep + RSI div"; the config refuses any third value at construction.
         return (seq.sos_l_swp and seq.sos_l_div) if is_long else (seq.sos_s_swp and seq.sos_s_div)
 
-    def _sl_anchor(
-        self, sig, edge: Optional[float] = None, is_bull: bool = True
-    ) -> Optional[float]:
+    def _sl_anchor(self, sig, edge: Optional[float] = None, is_bull: bool = True) -> Optional[float]:
         """The fib price the stop sits at, before `exec_sl_buf_tk` (Pine `f_slAnchor`).
 
         The five named levels read a fiboP* the fib engine already priced. "Custom" (2026-08-02)
@@ -1980,21 +1762,15 @@ class Execution:
         so the None is reachable only from `_record_blocks`, which checks for it.
         """
         cfg = self._cfg
-        if (
-            cfg.exec_sl_deep
-            and edge is not None
-            and sig.fibo_p5 is not None
-            and (edge <= sig.fibo_p5 if is_bull else edge >= sig.fibo_p5)
-        ):
+        if cfg.exec_sl_deep and edge is not None and sig.fibo_p5 is not None and (
+                edge <= sig.fibo_p5 if is_bull else edge >= sig.fibo_p5):
             return sig.fibo_p10
         if cfg.exec_sl_level == "Custom":
             if sig.fibo_ash is None or sig.fibo_asl is None or sig.fibo_dir == 0:
                 return None
             return fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir, cfg.exec_sl_custom)
         return {
-            "0.618": sig.fibo_p3,
-            "0.702": sig.fibo_p4,
-            "0.786": sig.fibo_p5,
+            "0.618": sig.fibo_p3, "0.702": sig.fibo_p4, "0.786": sig.fibo_p5,
             "0.886": sig.fibo_p6,
         }.get(cfg.exec_sl_level, sig.fibo_p10)
 
@@ -2009,18 +1785,15 @@ class Execution:
         bars refuse every entry rather than pass them. `_min_stop_floor` returns None for
         exactly that case so the caller can reproduce it."""
         c_prev = self._atr_prev_close
-        tr = (
-            (sig.high - sig.low)
-            if c_prev is None
-            else max(sig.high - sig.low, abs(sig.high - c_prev), abs(sig.low - c_prev))
-        )
+        tr = (sig.high - sig.low) if c_prev is None else max(
+            sig.high - sig.low, abs(sig.high - c_prev), abs(sig.low - c_prev))
         self._atr_prev_close = sig.close
         if self._atr is None:
             self._atr_trs.append(tr)
             if len(self._atr_trs) == 14:
-                self._atr = sum(self._atr_trs) / 14.0  # the SMA seed
+                self._atr = sum(self._atr_trs) / 14.0     # the SMA seed
         else:
-            self._atr += (tr - self._atr) / 14.0  # Wilder: alpha = 1/length
+            self._atr += (tr - self._atr) / 14.0          # Wilder: alpha = 1/length
 
     def _min_stop_floor(self, px: float) -> Optional[float]:
         """The floor in PRICE for the selected mode, or None when it cannot be known yet
@@ -2069,7 +1842,8 @@ class Execution:
             buying = pend.dir > 0
             # A long's limit sits BELOW price (price must fall to it); a short's sits above.
             level = _fills.Level(pend.edge, falling=buying)
-            fill = self._resolver.first_touch(self._bar_of(sig), {"entry": level}, buying=buying)
+            fill = self._resolver.first_touch(
+                self._bar_of(sig), {"entry": level}, buying=buying)
             if fill is not None:
                 if self._open_position(pend, fill.price, sig, dec):
                     return True
@@ -2082,18 +1856,15 @@ class Execution:
         # Path order is read off the BID bar, and correctly so: `_ask_adj` shifts open, high and
         # low by the same constant, which leaves every distance between them unchanged.
         targets_first = _intrabar_targets_first(sig.open, sig.high, sig.low)
-        order = (
-            [self._pend_long, self._pend_short]
-            if targets_first
+        order = [self._pend_long, self._pend_short] if targets_first \
             else [self._pend_short, self._pend_long]
-        )
         for pend in order:
             if pend is None:
                 continue
-            adj = self._ask_adj(pend.dir, entry=True)  # long buys the ask; short sells the bid
+            adj = self._ask_adj(pend.dir, entry=True)   # long buys the ask; short sells the bid
             if pend.dir > 0 and sig.low + adj <= pend.edge:
                 o = sig.open + adj
-                fill = pend.edge if o > pend.edge else o  # gap = better fill
+                fill = pend.edge if o > pend.edge else o     # gap = better fill
                 if self._open_position(pend, fill, sig, dec):
                     return True
             if pend.dir < 0 and sig.high >= pend.edge:
@@ -2106,8 +1877,7 @@ class Execution:
         # The gate runs HERE, at the fill — a resting limit reserves nothing until it fills.
         # The account scales the leg's own desired size (pend.qty) to the room; solo → full size.
         granted = self._account.request_fill(
-            self._leg, pend.dir, fill_price, pend.sl, pend.qty, self._cfg.point_value
-        )
+            self._leg, pend.dir, fill_price, pend.sl, pend.qty, self._cfg.point_value)
         if granted <= 0.0:
             # refused (no room / below floor): don't open, drop this order, let the strategy
             # re-arm next bar if the setup still holds. No traded-SOS latch is set (see below).
@@ -2125,7 +1895,7 @@ class Execution:
         self._entry_index = sig.index
         self._entry_ms = sig.time_ms
         self._init_stop = pend.sl
-        self._exit_notional = 0.0  # Σ price×qty of this trade's partial exits
+        self._exit_notional = 0.0       # Σ price×qty of this trade's partial exits
         self._exit_qty = 0.0
         self._exit_ms = sig.time_ms
         self._exit_reason = ""
@@ -2140,18 +1910,18 @@ class Execution:
         self._filled_qty = 0.0
         self._sos_bar_open = pend.sos_bar
         self._risk_usd = abs(granted) * abs(fill_price - pend.sl) * self._cfg.point_value
-        self._entry_equity = self._equity_realized  # R yardstick baseline
+        self._entry_equity = self._equity_realized      # R yardstick baseline
         # Costs are charged AFTER the R baseline is snapshotted, so they land inside the trade's
         # own P&L (and its R) rather than being quietly excluded from it.
         self._costs_usd = 0.0
         self._last_roll_ms = None
         self._charge_commission(pend.qty)
-        self._charge_spread(pend.qty)  # half the round turn; the exits pay the other half
+        self._charge_spread(pend.qty)       # half the round turn; the exits pay the other half
         # Seeded from the ENTRY PRICE, not the entry bar's extreme (Pine `lMaxFav := lEntry`).
         # The bar's FAVOURABLE extreme is where price was on its way INTO the resting limit,
         # i.e. before the trade existed — see the fill-bar note in `step`.
         self._max_fav = fill_price
-        self._trail_swing_hi = None  # structure-trail anchors — same
+        self._trail_swing_hi = None                     # structure-trail anchors — same
         self._trail_swing_lo = None
         # Excursion (reporting only) is seeded ASYMMETRICALLY on the entry bar, and the asymmetry
         # is the whole point: a buy limit is filled on the way DOWN, so the bar's LOW is reached
@@ -2163,7 +1933,7 @@ class Execution:
             self._ext_high, self._ext_low = fill_price, sig.low
         else:
             self._ext_high, self._ext_low = sig.high, fill_price
-        self._legs = []  # per-rung exit ledger (reporting only)
+        self._legs = []                                 # per-rung exit ledger (reporting only)
         # The traded-SOS latch is the PRIMARY's one-trade-per-15m-leg gate (and the secondary's
         # "primary already went" precondition). A secondary fill must NOT move it — its sos_bar is
         # a 1m leg, not the 15m A+ leg — so only a primary sets it.
@@ -2173,9 +1943,8 @@ class Execution:
             else:
                 self._traded_sos_s = pend.sos_bar
         self._pend_long = self._pend_short = self._pend_sec = None
-        dec.fills.append(
-            Fill("entry", "Long" if pend.dir > 0 else "Short", fill_price, granted, pend.dir)
-        )
+        dec.fills.append(Fill("entry", "Long" if pend.dir > 0 else "Short",
+                              fill_price, granted, pend.dir))
         return True
 
     # ── open-trade management (Phase A exits + Phase B staging) ───────────────────
@@ -2220,14 +1989,8 @@ class Execution:
                 return
 
     def _bar_of(self, sig) -> "_fills.Bar":
-        return _fills.Bar(
-            time_ms=sig.time_ms,
-            open=sig.open,
-            high=sig.high,
-            low=sig.low,
-            close=sig.close,
-            duration_ms=self.bar_ms,
-        )
+        return _fills.Bar(time_ms=sig.time_ms, open=sig.open, high=sig.high, low=sig.low,
+                          close=sig.close, duration_ms=self.bar_ms)
 
     def _manage_open_bar(self, sig, dec) -> None:
         """Fill the TP1/TP2/runner brackets against this bar using the frozen stop
@@ -2235,7 +1998,7 @@ class Execution:
         stop = self._current_stop()
         d = self._pos_dir
         targets_first = _intrabar_targets_first(sig.open, sig.high, sig.low)
-        adj = self._exit_adj()  # a short exits by BUYING — test it against the ask
+        adj = self._exit_adj()      # a short exits by BUYING — test it against the ask
 
         # Build the remaining brackets (id, target-price-or-None, portion-qty).
         brackets = self._remaining_brackets()
@@ -2244,8 +2007,7 @@ class Execution:
 
         for oid, target, qty in brackets:
             hit_target = target is not None and (
-                (d > 0 and sig.high >= target) or (d < 0 and sig.low + adj <= target)
-            )
+                (d > 0 and sig.high >= target) or (d < 0 and sig.low + adj <= target))
             hit_stop = (d > 0 and sig.low <= stop) or (d < 0 and sig.high + adj >= stop)
             if not hit_target and not hit_stop:
                 continue
@@ -2290,9 +2052,9 @@ class Execution:
         open, not at its own price (a limit gaps to a better fill, a stop to a worse
         one). Same rule the entry limit already uses (_try_entry_fill)."""
         d = self._pos_dir
-        if is_target:  # limit exit
+        if is_target:                       # limit exit
             gapped = open_ >= level if d > 0 else open_ <= level
-        else:  # stop exit
+        else:                               # stop exit
             gapped = open_ <= level if d > 0 else open_ >= level
         return open_ if gapped else level
 
@@ -2303,9 +2065,9 @@ class Execution:
         d = self._pos_dir
         pnl = (price - self._entry) * d * qty * self._cfg.point_value
         self._equity_realized += pnl
-        self._account.book_pnl(self._leg, pnl)  # realize onto the shared balance as it happens
-        self._charge_commission(qty)  # commission is per SIDE — each ladder leg pays
-        self._charge_spread(qty)  # ...and so does each leg's half of the spread
+        self._account.book_pnl(self._leg, pnl)   # realize onto the shared balance as it happens
+        self._charge_commission(qty)        # commission is per SIDE — each ladder leg pays
+        self._charge_spread(qty)            # ...and so does each leg's half of the spread
         if market:
             self._charge_slippage(qty)
         self._filled_qty += qty
@@ -2339,40 +2101,23 @@ class Execution:
         mae_price = self._ext_low if d > 0 else self._ext_high
         mfe_usd = (mfe_price - self._entry) * d * self._qty * pv
         mae_usd = (mae_price - self._entry) * d * self._qty * pv
-        self.trades.append(
-            Trade(
-                dir=self._pos_dir,
-                entry_index=self._entry_index,
-                entry_price=self._entry,
-                exit_index=sig.index,
-                qty=self._qty,
-                risk_usd=self._risk_usd,
-                pnl_usd=pnl,
-                r=r,
-                entry_ms=self._entry_ms,
-                exit_ms=self._exit_ms,
-                exit_price=avg_exit,
-                costs_usd=self._costs_usd,
-                stop_distance=abs(self._entry - self._init_stop),
-                exit_reason=self._exit_reason,
-                kind=self._entry_kind,
-                mfe_usd=round(mfe_usd, 2),
-                mae_usd=round(mae_usd, 2),
-                mfe_price=round(mfe_price, 5),
-                mae_price=round(mae_price, 5),
-                legs=list(self._legs),
-                tp1=round(self._tp1, 5),
-                tp2=round(self._tp2, 5),
-                fib=self._fib,
-            )
-        )
+        self.trades.append(Trade(
+            dir=self._pos_dir, entry_index=self._entry_index, entry_price=self._entry,
+            exit_index=sig.index, qty=self._qty, risk_usd=self._risk_usd, pnl_usd=pnl, r=r,
+            entry_ms=self._entry_ms, exit_ms=self._exit_ms, exit_price=avg_exit,
+            costs_usd=self._costs_usd,
+            stop_distance=abs(self._entry - self._init_stop), exit_reason=self._exit_reason,
+            kind=self._entry_kind,
+            mfe_usd=round(mfe_usd, 2), mae_usd=round(mae_usd, 2),
+            mfe_price=round(mfe_price, 5), mae_price=round(mae_price, 5), legs=list(self._legs),
+            tp1=round(self._tp1, 5), tp2=round(self._tp2, 5), fib=self._fib))
         dec.closed_r = r
         # A secondary that closes at stage 0 never reached TP1 — it hit its initial stop ("didn't
         # hold"). Flag its direction so the driver kills that 15m leg (a stopped re-entry ends the
         # cascade). A secondary that reached breakeven-or-better (stage >= 1) does NOT flag.
         if self._entry_kind == "secondary" and self._stage == 0:
             self._sec_stop_dir = self._pos_dir
-        self._account.close_position(self._leg)  # P&L already booked; free the reservation
+        self._account.close_position(self._leg)   # P&L already booked; free the reservation
         self._pos_dir = 0
         self._qty = 0.0
         self._filled_qty = 0.0
@@ -2388,7 +2133,7 @@ class Execution:
         """Book a cost against equity. `amount` is signed the way the broker books it:
         negative = charged, positive = credited (a short's gold swap is a real credit)."""
         self._equity_realized += amount
-        self._account.book_pnl(self._leg, amount)  # costs hit the shared balance too
+        self._account.book_pnl(self._leg, amount)   # costs hit the shared balance too
         self._costs_usd += amount
 
     def _charge_commission(self, qty: float) -> None:
@@ -2517,7 +2262,7 @@ class Execution:
         if roll is None or roll[0] == self._last_roll_ms:
             return
         roll_ms, roll_date = roll
-        if roll_ms <= self._entry_ms:  # the rollover predates this position
+        if roll_ms <= self._entry_ms:      # the rollover predates this position
             self._last_roll_ms = roll_ms
             return
         self._last_roll_ms = roll_ms
@@ -2533,16 +2278,12 @@ class Execution:
         """
         from datetime import datetime, time, timedelta, timezone
         from zoneinfo import ZoneInfo
-
         ny = ZoneInfo("America/New_York")
         now = datetime.fromtimestamp(time_ms / 1000.0, tz=timezone.utc).astimezone(ny)
-        day = (
-            now.date()
-            if now.hour >= self._cfg.daily_close_hour_ny
-            else (now - timedelta(days=1)).date()
-        )
-        for _ in range(4):  # step back over any shut days
-            if day.weekday() != 5:  # Saturday books nothing
+        day = now.date() if now.hour >= self._cfg.daily_close_hour_ny else \
+            (now - timedelta(days=1)).date()
+        for _ in range(4):                 # step back over any shut days
+            if day.weekday() != 5:         # Saturday books nothing
                 roll = datetime.combine(day, time(self._cfg.daily_close_hour_ny), tzinfo=ny)
                 return int(roll.timestamp() * 1000), day
             day -= timedelta(days=1)
@@ -2609,11 +2350,11 @@ class Execution:
         if mode == "Breakeven":
             return be
         if mode == "One trail step behind":
-            if self._max_fav is None:  # no bar has staged yet — hold breakeven
+            if self._max_fav is None:            # no bar has staged yet — hold breakeven
                 return be
             step = cfg.exec_trail_step
             return max(be, self._max_fav - step) if d > 0 else min(be, self._max_fav + step)
-        return self._tp1  # "TP1 price" (default)
+        return self._tp1                          # "TP1 price" (default)
 
     def _trail(self) -> Optional[float]:
         """The runner's trailing stop past TP2, or None when it hasn't engaged yet
@@ -2640,7 +2381,7 @@ class Execution:
             return anchor + steps * step * d
         if cfg.exec_runner_trail == "Structure (swing)":
             swing = self._trail_swing_lo if d > 0 else self._trail_swing_hi
-            if swing is None:  # no confirmed swing yet — floor only
+            if swing is None:                     # no confirmed swing yet — floor only
                 return None
             buf = cfg.exec_struct_trail_buf_tk * cfg.mintick
             return swing - buf if d > 0 else swing + buf
@@ -2666,7 +2407,7 @@ class Execution:
             up, dn = (w_up or d_up), (w_dn or d_dn)
         else:
             up, dn = w_up, w_dn
-        return (dn, up)  # long blocked by a fresh breakdown; short by a fresh breakout
+        return (dn, up)   # long blocked by a fresh breakdown; short by a fresh breakout
 
     def _htf_bias_block(self, sig) -> Tuple[bool, bool]:
         cfg = self._cfg
@@ -2682,12 +2423,10 @@ class Execution:
                 return not oppose
             return False
 
-        block_l = leg(cfg.exec_htf_weekly, sig.w_est_state, True) or leg(
-            cfg.exec_htf_daily, sig.d_est_state, True
-        )
-        block_s = leg(cfg.exec_htf_weekly, sig.w_est_state, False) or leg(
-            cfg.exec_htf_daily, sig.d_est_state, False
-        )
+        block_l = leg(cfg.exec_htf_weekly, sig.w_est_state, True) or \
+            leg(cfg.exec_htf_daily, sig.d_est_state, True)
+        block_s = leg(cfg.exec_htf_weekly, sig.w_est_state, False) or \
+            leg(cfg.exec_htf_daily, sig.d_est_state, False)
         return (block_l, block_s)
 
     # ── flat-by-close deviation window ───────────────────────────────────────────

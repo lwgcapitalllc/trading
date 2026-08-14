@@ -18,47 +18,22 @@ sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 sys.path.insert(0, str(_ROOT / "backtest" / "tests"))
 
 from _synth import synth_bars  # noqa: E402
-
 from mpc_bleg import BLegConfig, BLegTracker, MpcBLegStrategy  # noqa: E402
 
 
-def _sig(
-    index,
-    close,
-    high,
-    low,
-    *,
-    bull_sos=False,
-    bear_sos=False,
-    bbh=None,
-    bbl=None,
-    sbh=None,
-    sbl=None,
-    bbh_ms=None,
-    bbl_ms=None,
-    sbh_ms=None,
-    sbl_ms=None,
-):
+def _sig(index, close, high, low, *, bull_sos=False, bear_sos=False,
+         bbh=None, bbl=None, sbh=None, sbl=None,
+         bbh_ms=None, bbl_ms=None, sbh_ms=None, sbl_ms=None):
     # ⚠ The four `*_ms` fields are carried even though most tests here ignore them. `Signals` is a
     # dataclass that ALWAYS has them, so a fixture that omitted them would be a shape production
     # never produces — and the tracker would have to reach for them with `getattr(..., None)`,
     # which permanently erases the difference between "no anchor" and "wrong object passed".
     return SimpleNamespace(
-        index=index,
-        close=close,
-        high=high,
-        low=low,
-        bull_sos=bull_sos,
-        bear_sos=bear_sos,
-        bull_bos_high=bbh,
-        bull_bos_low=bbl,
-        bear_bos_high=sbh,
-        bear_bos_low=sbl,
-        bull_bos_high_ms=bbh_ms,
-        bull_bos_low_ms=bbl_ms,
-        bear_bos_high_ms=sbh_ms,
-        bear_bos_low_ms=sbl_ms,
-    )
+        index=index, close=close, high=high, low=low,
+        bull_sos=bull_sos, bear_sos=bear_sos,
+        bull_bos_high=bbh, bull_bos_low=bbl, bear_bos_high=sbh, bear_bos_low=sbl,
+        bull_bos_high_ms=bbh_ms, bull_bos_low_ms=bbl_ms,
+        bear_bos_high_ms=sbh_ms, bear_bos_low_ms=sbl_ms)
 
 
 def _seq(bleg_arm_l=False, bleg_arm_s=False):
@@ -79,11 +54,12 @@ def test_bleg_max_bars_from_days():
 def test_band_freeze_long():
     tr = BLegTracker(BLegConfig(), tf_seconds=900)
     # leg 100 → 110, this bar's high 112. top = 0.5, bot = 0.382, inv = origin.
-    st = tr.update(_sig(10, close=108, high=112, low=104, bull_sos=True, bbh=110, bbl=100), _seq())
-    assert st.l_top == 105.0  # 100 + 10*0.5
-    assert abs(st.l_bot - 103.82) < 1e-9  # 100 + 10*0.382
-    assert st.l_inv == 100.0  # leg origin (fib 1.0)
-    assert st.l_tgt == 112.0  # expansion extreme = this bar's high
+    st = tr.update(_sig(10, close=108, high=112, low=104, bull_sos=True, bbh=110, bbl=100),
+                   _seq())
+    assert st.l_top == 105.0                    # 100 + 10*0.5
+    assert abs(st.l_bot - 103.82) < 1e-9        # 100 + 10*0.382
+    assert st.l_inv == 100.0                    # leg origin (fib 1.0)
+    assert st.l_tgt == 112.0                    # expansion extreme = this bar's high
     assert st.l_on is False and st.l_bar is None  # frozen, not armed yet
 
 
@@ -104,10 +80,10 @@ def test_arm_and_target_freeze():
 
 # ── tap + staleness death (Pine 3749-3753) ────────────────────────────────────────
 def test_tap_and_staleness_death():
-    cfg = BLegConfig(bleg_max_days=1.25)  # 120 bars on 15m
+    cfg = BLegConfig(bleg_max_days=1.25)   # 120 bars on 15m
     tr = BLegTracker(cfg, tf_seconds=900)
     tr.update(_sig(10, 108, 112, 104, bull_sos=True, bbh=110, bbl=100), _seq())
-    tr.update(_sig(11, 109, 114, 106), _seq(bleg_arm_l=True))  # armed @ bar 11
+    tr.update(_sig(11, 109, 114, 106), _seq(bleg_arm_l=True))   # armed @ bar 11
     # price taps the 0.5 band (low <= top=105) → tapped, still on
     st = tr.update(_sig(12, 106, 107, 104.9), _seq())
     assert st.l_tap is True and st.l_on is True
@@ -121,7 +97,7 @@ def test_invalidation_death_long():
     tr = BLegTracker(BLegConfig(), tf_seconds=900)
     tr.update(_sig(10, 108, 112, 104, bull_sos=True, bbh=110, bbl=100), _seq())
     tr.update(_sig(11, 109, 114, 106), _seq(bleg_arm_l=True))
-    st = tr.update(_sig(12, 99.5, 108, 99), _seq())  # close 99.5 < inv 100
+    st = tr.update(_sig(12, 99.5, 108, 99), _seq())   # close 99.5 < inv 100
     assert st.l_on is False
 
 
@@ -133,7 +109,7 @@ def test_deepest_band_migration():
     # a fresh same-side SOS whose 0.5 (106) is NEARER price(109) than the current top(105):
     # |106-109|=3 vs |105-109|=4 → keep the deeper (farther) existing band, don't migrate.
     st = tr.update(_sig(12, 109, 114, 107, bull_sos=True, bbh=112, bbl=100), _seq())
-    assert st.l_top == 105.0  # unchanged — the deeper band won
+    assert st.l_top == 105.0   # unchanged — the deeper band won
 
 
 # ── end-to-end on the real engine stack ───────────────────────────────────────────
@@ -142,7 +118,7 @@ def test_driver_runs_end_to_end():
     assert len(strat.decisions) == 12 * 96 - 100
     assert isinstance(strat.execution.equity, float)
     for t in strat.execution.trades:
-        assert t.r == t.r  # not NaN
+        assert t.r == t.r          # not NaN
         assert t.qty > 0
 
 
@@ -192,13 +168,11 @@ def test_this_fork_redefaults_the_time_stop_and_the_parent_keeps_its_own():
     from mpc_sos_fade import SosFadeConfig
 
     assert BLegConfig().exec_time_stop_hrs == 8.0
-    assert SosFadeConfig().exec_time_stop_hrs == 36.0, (
+    assert SosFadeConfig().exec_time_stop_hrs == 36.0, \
         "the A+ parent must KEEP 36 — its own plateau is 24h-40h, measured on A+ trades"
-    )
     assert BLegConfig().exec_time_stop_mode == "Before TP1 only"
-    assert SosFadeConfig().exec_time_stop_mode == "Before TP1 only", (
+    assert SosFadeConfig().exec_time_stop_mode == "Before TP1 only", \
         "the MODE is shared on purpose — only the hours fork"
-    )
 
 
 def test_the_time_stop_only_ever_fires_before_tp1():
@@ -214,16 +188,14 @@ def test_the_time_stop_only_ever_fires_before_tp1():
 
     for name in ("mpc_b_leg_strategy.pine", "mpc_b_leg_strategy_export.pine"):
         src = (_ROOT / "indicators" / "strategies" / name).read_text()
-        hits = [ln for ln in src.splitlines() if re.match(r"bool [ls]TimeUp = ", ln)]
-        assert len(hits) == 2, (
-            f"{name}: expected a long and a short time-stop line, got {len(hits)}"
-        )
+        hits = [ln for ln in src.splitlines()
+                if re.match(r"bool [ls]TimeUp = ", ln)]
+        assert len(hits) == 2, f"{name}: expected a long and a short time-stop line, got {len(hits)}"
         for ln in hits:
             stage = "lStage" if ln.startswith("bool lTimeUp") else "sStage"
-            assert f'execTimeStopMode == "Always" or {stage} == 0' in ln, (
-                f"{name}: the stage gate is gone from `{ln.split('=')[0].strip()}` — the clock "
+            assert f'execTimeStopMode == "Always" or {stage} == 0' in ln, \
+                f"{name}: the stage gate is gone from `{ln.split('=')[0].strip()}` — the clock " \
                 "would now cut winners too"
-            )
 
 
 def test_this_fork_redefaults_the_trail_step_and_the_staleness_cap():
@@ -242,9 +214,8 @@ def test_this_fork_redefaults_the_trail_step_and_the_staleness_cap():
     from mpc_sos_fade import SosFadeConfig
 
     assert BLegConfig().exec_trail_pct == 0.05
-    assert SosFadeConfig().exec_trail_pct == 1.0, (
+    assert SosFadeConfig().exec_trail_pct == 1.0, \
         "the A+ parent must KEEP 1.0 — its own sweep says the opposite (0.25% -> 43.6R vs 109.3R)"
-    )
     assert BLegConfig().bleg_max_days == 4.0
 
 
@@ -286,24 +257,17 @@ def test_the_meta_descs_are_the_pine_tooltips_verbatim():
     import json
     import re
 
-    pine = (
-        (_ROOT / "indicators" / "strategies" / "mpc_b_leg_strategy.pine").read_text().splitlines()
-    )
-    meta = json.loads(
-        (_ROOT / "strategies" / "python" / "mpc_bleg" / "mpc_bleg.meta.json").read_text()
-    )
+    pine = (_ROOT / "indicators" / "strategies" / "mpc_b_leg_strategy.pine").read_text().splitlines()
+    meta = json.loads((_ROOT / "strategies" / "python" / "mpc_bleg"
+                       / "mpc_bleg.meta.json").read_text())
     by_name = {p["name"]: p for p in meta["params"]}
     checked = 0
-    for field, ty, var in (
-        ("bleg_max_days", "float", "bLegMaxDays"),
-        ("exec_trail_pct", "float", "execTrailPct"),
-        ("exec_time_stop_hrs", "float", "execTimeStopHrs"),
-        ("exec_time_stop_mode", "string", "execTimeStopMode"),
-    ):
+    for field, ty, var in (("bleg_max_days", "float", "bLegMaxDays"),
+                           ("exec_trail_pct", "float", "execTrailPct"),
+                           ("exec_time_stop_hrs", "float", "execTimeStopHrs"),
+                           ("exec_time_stop_mode", "string", "execTimeStopMode")):
         line = next(ln for ln in pine if ln.startswith(f"{ty} {var} = input."))
         tip = re.search(r'tooltip = "((?:[^"\\]|\\.)*)"', line).group(1)
-        assert by_name[field]["desc"] == tip, (
-            f"{field}: meta desc has drifted from the Pine tooltip"
-        )
+        assert by_name[field]["desc"] == tip, f"{field}: meta desc has drifted from the Pine tooltip"
         checked += 1
     assert checked == 4, "this test matched nothing — the params were renamed, not verified"

@@ -132,25 +132,24 @@ class StructureSnapshot:
 @dataclass(frozen=True)
 class FibTouch:
     """One fib level being reached for the first time on this leg."""
-
-    level: str  # "E1", "TP1", "1.0", ...
-    ratio: float  # 0.618, 0.500, ...
-    price: float  # the level's price
-    role: str  # "entry" (retracement side) | "target" (profit side)
+    level: str        # "E1", "TP1", "1.0", ...
+    ratio: float      # 0.618, 0.500, ...
+    price: float      # the level's price
+    role: str         # "entry" (retracement side) | "target" (profit side)
 
 
 @dataclass
 class StructureFibEvents:
     """The Structure fib's per-bar output."""
 
-    active: bool = False  # anchors valid -> a fib is currently drawn
-    origin_changed: bool = False  # new leg started this bar (touched all reset)
-    direction: int = 0  # 1 bull, -1 bear, 0 none
-    touched: List[FibTouch] = field(default_factory=list)  # levels first-touched THIS bar (events)
+    active: bool = False                              # anchors valid -> a fib is currently drawn
+    origin_changed: bool = False                      # new leg started this bar (touched all reset)
+    direction: int = 0                                # 1 bull, -1 bear, 0 none
+    touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
-    touched_so_far: Set[str] = field(default_factory=set)  # cumulative touched names this leg
-    reset_active: bool = False  # TP3 (0.0) hit -> leg spent/hidden until new leg
-    half_reached: bool = False  # inbound 0.5 tapped this leg (ungated) — A+ EARLY tier
+    touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg
+    reset_active: bool = False                        # TP3 (0.0) hit -> leg spent/hidden until new leg
+    half_reached: bool = False                        # inbound 0.5 tapped this leg (ungated) — A+ EARLY tier
     # The leg's own anchors (Pine `fibo_ash` / `fibo_asl`) — the two prices every level above was
     # measured from. REPORTING ONLY: they are the engine's existing internal state, surfaced
     # unchanged, so nothing about detection or the level maths moves and `compare_fib.py` is
@@ -158,8 +157,8 @@ class StructureFibEvents:
     # bot's Custom SL) without re-deriving anchors from two levels and a direction.
     # Both None whenever `active` is False, which is what keeps a derived price on the same leg
     # as the entry — Pine gets that for free by computing inside its fib block.
-    ash: Optional[float] = None  # swing HIGH anchor
-    asl: Optional[float] = None  # swing LOW anchor
+    ash: Optional[float] = None                       # swing HIGH anchor
+    asl: Optional[float] = None                       # swing LOW anchor
     # The BARS those two anchors sit on (Pine `fibo_ash_loc` / `fibo_asl_loc`). Same standing as
     # the prices above: existing internal state, surfaced unchanged, read by nobody in the level
     # maths — so detection is untouched and `compare_fib.py` is unaffected. A consumer needs them
@@ -181,19 +180,17 @@ class MacroFibEvents:
     See mpc_assistant.pine GRP_MACRO.
     """
 
-    active: bool = False  # levels currently computed (visible + locked + range>0)
-    direction: int = 0  # 1 while a cycle is live (bull-only), 0 otherwise
-    top: Optional[float] = None  # macro_extreme — the HH (0.0 level)
-    bot: Optional[float] = None  # macro_origin — the LL (1.0 level)
-    locked: bool = False  # a cycle bottom is locked (may be hidden)
-    visible: bool = False  # the fib is currently shown (hidden above the top)
-    new_cycle: bool = False  # a fresh cycle locked THIS bar — event
-    extended: bool = False  # the top extended to a new HH THIS bar — event
-    touched: List[FibTouch] = field(default_factory=list)  # levels first-touched THIS bar (events)
+    active: bool = False                              # levels currently computed (visible + locked + range>0)
+    direction: int = 0                                # 1 while a cycle is live (bull-only), 0 otherwise
+    top: Optional[float] = None                       # macro_extreme — the HH (0.0 level)
+    bot: Optional[float] = None                       # macro_origin — the LL (1.0 level)
+    locked: bool = False                              # a cycle bottom is locked (may be hidden)
+    visible: bool = False                             # the fib is currently shown (hidden above the top)
+    new_cycle: bool = False                           # a fresh cycle locked THIS bar — event
+    extended: bool = False                            # the top extended to a new HH THIS bar — event
+    touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
-    touched_so_far: Set[str] = field(
-        default_factory=set
-    )  # cumulative touched names this cycle-range
+    touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this cycle-range
 
 
 @dataclass
@@ -207,13 +204,13 @@ class SniperFibEvents:
     cannot re-confirm until the next BOS resets it. See mpc_assistant.pine GRP_SNIPER.
     """
 
-    active: bool = False  # a zone currently exists (a BOS has fired at least once)
-    direction: int = 0  # 1 bull zone, -1 bear zone, 0 none
-    zone_top: Optional[float] = None  # upper edge (max of the 0.382 / 0.5 levels)
-    zone_bot: Optional[float] = None  # lower edge (min of the 0.382 / 0.5 levels)
-    created: bool = False  # a fresh zone was set THIS bar (a BOS fired) — event
-    confirmed: bool = False  # price entered the zone for the first time THIS bar — event
-    zone_active: bool = False  # cumulative latch: price has entered the current zone
+    active: bool = False                 # a zone currently exists (a BOS has fired at least once)
+    direction: int = 0                   # 1 bull zone, -1 bear zone, 0 none
+    zone_top: Optional[float] = None     # upper edge (max of the 0.382 / 0.5 levels)
+    zone_bot: Optional[float] = None     # lower edge (min of the 0.382 / 0.5 levels)
+    created: bool = False                # a fresh zone was set THIS bar (a BOS fired) — event
+    confirmed: bool = False              # price entered the zone for the first time THIS bar — event
+    zone_active: bool = False            # cumulative latch: price has entered the current zone
 
 
 @dataclass
@@ -227,13 +224,13 @@ class InternalFibEvents:
     mpc_assistant.pine's Internal Fib block.
     """
 
-    active: bool = False  # anchors valid -> a fib is currently drawn
-    direction: int = 0  # 1 bull leg, -1 bear leg, 0 none
-    top: Optional[float] = None  # iFib_ash — the 0.0 anchor (bull) / 1.0 (bear)
-    bot: Optional[float] = None  # iFib_asl — the 1.0 anchor (bull) / 0.0 (bear)
-    seeded: bool = False  # a fresh internal leg seeded THIS bar — event
-    cleared: bool = False  # an external BOS/SOS wiped the fib THIS bar — event
-    reset_active: bool = False  # TP3 (0.0) hit -> leg spent until re-seed/clear
-    touched: List[FibTouch] = field(default_factory=list)  # levels first-touched THIS bar (events)
+    active: bool = False                              # anchors valid -> a fib is currently drawn
+    direction: int = 0                                # 1 bull leg, -1 bear leg, 0 none
+    top: Optional[float] = None                       # iFib_ash — the 0.0 anchor (bull) / 1.0 (bear)
+    bot: Optional[float] = None                       # iFib_asl — the 1.0 anchor (bull) / 0.0 (bear)
+    seeded: bool = False                              # a fresh internal leg seeded THIS bar — event
+    cleared: bool = False                             # an external BOS/SOS wiped the fib THIS bar — event
+    reset_active: bool = False                        # TP3 (0.0) hit -> leg spent until re-seed/clear
+    touched: List[FibTouch] = field(default_factory=list)   # levels first-touched THIS bar (events)
     levels: Dict[str, float] = field(default_factory=dict)  # current price of every level (state)
-    touched_so_far: Set[str] = field(default_factory=set)  # cumulative touched names this leg
+    touched_so_far: Set[str] = field(default_factory=set)   # cumulative touched names this leg

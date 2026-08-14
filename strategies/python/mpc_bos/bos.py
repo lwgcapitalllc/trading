@@ -74,12 +74,12 @@ class BosLeg:
     """
 
     on: bool = False
-    high: Optional[float] = None  # the break leg's high (bull) / the leg's high (bear)
+    high: Optional[float] = None      # the break leg's high (bull) / the leg's high (bear)
     low: Optional[float] = None
-    bar: Optional[int] = None  # the bar the BOS printed — the one-trade-per-leg key
-    ordinal: int = 0  # this break's number since the SOS (1 = the expansion)
-    half: bool = False  # the per-anchor 0.5 latch (see the cycle-complete death)
-    why: str = ""  # why the LAST arm died — reporting only
+    bar: Optional[int] = None         # the bar the BOS printed — the one-trade-per-leg key
+    ordinal: int = 0                  # this break's number since the SOS (1 = the expansion)
+    half: bool = False                # the per-anchor 0.5 latch (see the cycle-complete death)
+    why: str = ""                     # why the LAST arm died — reporting only
 
     def disarmed(self, why: str) -> "BosLeg":
         """This leg with the FLAG off and every number kept — the Pine's `bosL_on := false`."""
@@ -97,23 +97,23 @@ class BosState:
     index: int
     regime_l: bool = False
     regime_s: bool = False
-    count_l: int = 0  # BOS ordinal reached on this side since the SOS
+    count_l: int = 0                  # BOS ordinal reached on this side since the SOS
     count_s: int = 0
-    traded_l: int = 0  # filled trades this regime (F6)
+    traded_l: int = 0                 # filled trades this regime (F6)
     traded_s: int = 0
     long: BosLeg = BosLeg()
     short: BosLeg = BosLeg()
     # The anchor ladder, ratio -> price, for whichever leg is armed. Empty when none is.
     l_levels: dict = None
     s_levels: dict = None
-    l_ready: bool = False  # Pine lFibsReady
+    l_ready: bool = False             # Pine lFibsReady
     s_ready: bool = False
-    l_top: Optional[float] = None  # the band's SHALLOW end (fib 0.5, or 0.382 if opened)
+    l_top: Optional[float] = None     # the band's SHALLOW end (fib 0.5, or 0.382 if opened)
     s_top: Optional[float] = None
     vwap: Optional[float] = None
-    vwap_block_l: bool = False  # F10 — price is not closing on the trend's own side
+    vwap_block_l: bool = False        # F10 — price is not closing on the trend's own side
     vwap_block_s: bool = False
-    fired_l: bool = False  # a BOS printed on this bar (reporting: the [BOS] log line)
+    fired_l: bool = False             # a BOS printed on this bar (reporting: the [BOS] log line)
     fired_s: bool = False
 
     def __post_init__(self) -> None:
@@ -197,25 +197,15 @@ class BosTracker:
 
         return BosState(
             index=sig.index,
-            regime_l=self._reg_l,
-            regime_s=self._reg_s,
-            count_l=self._cnt_l,
-            count_s=self._cnt_s,
-            traded_l=self._trd_l,
-            traded_s=self._trd_s,
-            long=self._leg_l,
-            short=self._leg_s,
-            l_levels=l_levels,
-            s_levels=s_levels,
-            l_ready=l_ready,
-            s_ready=s_ready,
-            l_top=l_top,
-            s_top=s_top,
-            vwap=vwap_value,
-            vwap_block_l=block_l,
-            vwap_block_s=block_s,
-            fired_l=fired_l,
-            fired_s=fired_s,
+            regime_l=self._reg_l, regime_s=self._reg_s,
+            count_l=self._cnt_l, count_s=self._cnt_s,
+            traded_l=self._trd_l, traded_s=self._trd_s,
+            long=self._leg_l, short=self._leg_s,
+            l_levels=l_levels, s_levels=s_levels,
+            l_ready=l_ready, s_ready=s_ready,
+            l_top=l_top, s_top=s_top,
+            vwap=vwap_value, vwap_block_l=block_l, vwap_block_s=block_s,
+            fired_l=fired_l, fired_s=fired_s,
         )
 
     # ── Stage 0 — an SOS opens its own regime and closes the opposite one ────────
@@ -236,13 +226,11 @@ class BosTracker:
         """
         if sig.bear_sos:
             self._leg_l = self._leg_l.disarmed(
-                "opposite SOS — the bullish regime is over" if self._leg_l.on else self._leg_l.why
-            )
+                "opposite SOS — the bullish regime is over" if self._leg_l.on else self._leg_l.why)
             self._reg_l = False
         if sig.bull_sos:
             self._leg_s = self._leg_s.disarmed(
-                "opposite SOS — the bearish regime is over" if self._leg_s.on else self._leg_s.why
-            )
+                "opposite SOS — the bearish regime is over" if self._leg_s.on else self._leg_s.why)
             self._reg_s = False
         if sig.bull_sos and not sig.session_gap_bar:
             self._reg_l, self._cnt_l, self._trd_l = True, 0, 0
@@ -264,24 +252,12 @@ class BosTracker:
         an unguarded read would treat the shift itself as its own first continuation.
         """
         atr = _atr_of(sig)
-        fire_l = (
-            self._reg_l
-            and sig.bull_bos
-            and not sig.bull_sos
-            and not sig.session_gap_bar
-            and sig.bull_bos_high is not None
-            and sig.bull_bos_low is not None
-            and sig.bull_bos_high > sig.bull_bos_low
-        )
-        fire_s = (
-            self._reg_s
-            and sig.bear_bos
-            and not sig.bear_sos
-            and not sig.session_gap_bar
-            and sig.bear_bos_high is not None
-            and sig.bear_bos_low is not None
-            and sig.bear_bos_high > sig.bear_bos_low
-        )
+        fire_l = (self._reg_l and sig.bull_bos and not sig.bull_sos and not sig.session_gap_bar
+                  and sig.bull_bos_high is not None and sig.bull_bos_low is not None
+                  and sig.bull_bos_high > sig.bull_bos_low)
+        fire_s = (self._reg_s and sig.bear_bos and not sig.bear_sos and not sig.session_gap_bar
+                  and sig.bear_bos_high is not None and sig.bear_bos_low is not None
+                  and sig.bear_bos_high > sig.bear_bos_low)
 
         # ⚠ A REFUSED BREAK DISARMS AND KEEPS THE OLD LEG'S NUMBERS. Pine sets `bosL_on := false`
         # and only assigns `bosL_high` / `bosL_low` / `bosL_bar` / `bosL_n` / `bosL_half` INSIDE
@@ -290,54 +266,28 @@ class BosTracker:
         # the parity gate red on every bar after the first refusal. See BosLeg's docstring.
         if fire_l:
             self._cnt_l += 1
-            why = (
-                "re-anchored — a newer BOS on this side took the setup"
-                if self._leg_l.on
-                else self._leg_l.why
-            )
+            why = ("re-anchored — a newer BOS on this side took the setup"
+                   if self._leg_l.on else self._leg_l.why)
             self._leg_l = self._leg_l.disarmed(why)
-            if self._arm_ok(
-                self._cnt_l,
-                sig.close - sig.bull_bos_high,
-                sig.bull_bos_high - sig.bull_bos_low,
-                atr,
-            ):
-                self._leg_l = BosLeg(
-                    on=True,
-                    high=sig.bull_bos_high,
-                    low=sig.bull_bos_low,
-                    bar=sig.index,
-                    ordinal=self._cnt_l,
-                    half=False,
-                    why=why,
-                )
+            if self._arm_ok(self._cnt_l, sig.close - sig.bull_bos_high,
+                            sig.bull_bos_high - sig.bull_bos_low, atr):
+                self._leg_l = BosLeg(on=True, high=sig.bull_bos_high, low=sig.bull_bos_low,
+                                     bar=sig.index, ordinal=self._cnt_l, half=False, why=why)
 
         if fire_s:
             self._cnt_s += 1
-            why = (
-                "re-anchored — a newer BOS on this side took the setup"
-                if self._leg_s.on
-                else self._leg_s.why
-            )
+            why = ("re-anchored — a newer BOS on this side took the setup"
+                   if self._leg_s.on else self._leg_s.why)
             self._leg_s = self._leg_s.disarmed(why)
-            if self._arm_ok(
-                self._cnt_s, sig.bear_bos_low - sig.close, sig.bear_bos_high - sig.bear_bos_low, atr
-            ):
-                self._leg_s = BosLeg(
-                    on=True,
-                    high=sig.bear_bos_high,
-                    low=sig.bear_bos_low,
-                    bar=sig.index,
-                    ordinal=self._cnt_s,
-                    half=False,
-                    why=why,
-                )
+            if self._arm_ok(self._cnt_s, sig.bear_bos_low - sig.close,
+                            sig.bear_bos_high - sig.bear_bos_low, atr):
+                self._leg_s = BosLeg(on=True, high=sig.bear_bos_high, low=sig.bear_bos_low,
+                                     bar=sig.index, ordinal=self._cnt_s, half=False, why=why)
 
         return fire_l, fire_s
 
-    def _arm_ok(
-        self, ordinal: int, displacement: float, leg_size: float, atr: Optional[float]
-    ) -> bool:
+    def _arm_ok(self, ordinal: int, displacement: float, leg_size: float,
+                atr: Optional[float]) -> bool:
         """F1 (which break) + F2 (displacement past the swing) + F3 (leg size), Pine 3502-3504.
 
         ⚠ An unknown ATR reads as a REFUSAL for F2/F3 when they are switched on, matching the
@@ -375,10 +325,8 @@ class BosTracker:
         else:
             l_ext, l_org = self._leg_l.high, self._leg_l.low
             s_ext, s_org = self._leg_s.low, self._leg_s.high
-        return (
-            {r: fib_price(l_ext, l_org, r) for r in _RATIOS},
-            {r: fib_price(s_ext, s_org, r) for r in _RATIOS},
-        )
+        return ({r: fib_price(l_ext, l_org, r) for r in _RATIOS},
+                {r: fib_price(s_ext, s_org, r) for r in _RATIOS})
 
     @staticmethod
     def _ready(levels: dict, bull: bool) -> bool:

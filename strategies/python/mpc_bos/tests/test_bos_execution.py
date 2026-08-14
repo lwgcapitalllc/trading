@@ -18,18 +18,15 @@ for _p in (str(_ROOT), str(_ROOT / "strategies" / "python")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from mpc_sos_fade.config import SosFadeConfig  # noqa: E402
-
-from mpc_bos.bos import BosLeg  # noqa: E402
+from mpc_bos.bos import BosLeg, BosState  # noqa: E402
 from mpc_bos.config import BosConfig  # noqa: E402
 from mpc_bos.execution import BosExecution  # noqa: E402
+from mpc_sos_fade.config import SosFadeConfig  # noqa: E402
 
 
 def levels(ext: float, org: float) -> dict:
-    return {
-        r: ext + (org - ext) * r
-        for r in (0.0, 0.118, 0.236, 0.382, 0.5, 0.618, 0.702, 0.786, 0.886, 1.0)
-    }
+    return {r: ext + (org - ext) * r
+            for r in (0.0, 0.118, 0.236, 0.382, 0.5, 0.618, 0.702, 0.786, 0.886, 1.0)}
 
 
 def execution(**cfg):
@@ -76,32 +73,20 @@ def test_a_dropdown_value_the_pine_cannot_produce_is_refused():
 
 # ── the stop models ─────────────────────────────────────────────────────────────
 def _sig(**kw):
-    base = dict(
-        index=10,
-        time_ms=0,
-        open=100.0,
-        high=100.0,
-        low=100.0,
-        close=100.0,
-        last_conf_high=112.0,
-        last_conf_low=96.0,
-        bull_div_active=False,
-        bear_div_active=False,
-        veto_rsi_ob=False,
-        veto_rsi_os=False,
-    )
+    base = dict(index=10, time_ms=0, open=100.0, high=100.0, low=100.0, close=100.0,
+                last_conf_high=112.0, last_conf_low=96.0,
+                bull_div_active=False, bear_div_active=False,
+                veto_rsi_ob=False, veto_rsi_os=False)
     base.update(kw)
     return SimpleNamespace(**base)
 
 
 def test_every_stop_model_prices_off_the_thing_its_name_says():
-    lv = levels(110.0, 100.0)  # a long leg 100 -> 110
-    for model, expected in (
-        ("Fib 1.0 (leg origin)", 100.0),
-        ("Fib 0.886", 101.14),
-        ("Last confirmed swing", 96.0),
-        ("Broken swing level", 110.0),
-    ):
+    lv = levels(110.0, 100.0)          # a long leg 100 -> 110
+    for model, expected in (("Fib 1.0 (leg origin)", 100.0),
+                            ("Fib 0.886", 101.14),
+                            ("Last confirmed swing", 96.0),
+                            ("Broken swing level", 110.0)):
         ex = execution(bos_sl_model=model)
         got = ex._bos_stop(_sig(), 102.0, lv, broken=110.0, bull=True)
         assert got == pytest.approx(expected, abs=1e-9), model
@@ -113,16 +98,8 @@ def test_the_broken_swing_stop_lands_ABOVE_a_longs_entry_and_that_is_why_it_bare
     ex = execution(bos_sl_model="Broken swing level")
     stop = ex._bos_stop(_sig(), 102.0, levels(110.0, 100.0), broken=110.0, bull=True)
     assert stop > 102.0, "a stop above the entry — dist is negative, so the order is refused"
-    assert (
-        ex._build_pending(
-            _sig(),
-            BosLeg(on=True, high=110.0, low=100.0, bar=1),
-            levels(110.0, 100.0),
-            102.0,
-            bull=True,
-        )
-        is None
-    )
+    assert ex._build_pending(_sig(), BosLeg(on=True, high=110.0, low=100.0, bar=1),
+                             levels(110.0, 100.0), 102.0, bull=True) is None
 
 
 def test_the_atr_stop_does_not_scale_with_the_leg_and_refuses_during_the_warmup():
@@ -136,29 +113,23 @@ def test_the_atr_stop_does_not_scale_with_the_leg_and_refuses_during_the_warmup(
     assert ex._bos_stop(_sig(), 100.0, levels(110.0, 100.0), 110.0, bull=True) is None
 
     ex._atr = 2.0
-    assert ex._bos_stop(_sig(), 100.0, levels(110.0, 100.0), 110.0, bull=True) == pytest.approx(
-        97.4
-    )
+    assert ex._bos_stop(_sig(), 100.0, levels(110.0, 100.0), 110.0, bull=True) == pytest.approx(97.4)
     # a leg ten times smaller — the fib stop would shrink with it, the ATR stop does not
-    assert ex._bos_stop(_sig(), 100.0, levels(101.0, 100.0), 101.0, bull=True) == pytest.approx(
-        97.4
-    )
+    assert ex._bos_stop(_sig(), 100.0, levels(101.0, 100.0), 101.0, bull=True) == pytest.approx(97.4)
 
 
 def test_the_stop_buffer_always_pushes_the_stop_FURTHER_from_the_entry():
     ex = execution(bos_sl_model="Fib 1.0 (leg origin)", exec_sl_buf_tk=50.0)  # 50 ticks = $0.50
-    assert ex._bos_stop(_sig(), 102.0, levels(110.0, 100.0), 110.0, bull=True) == pytest.approx(
-        99.5
-    )
+    assert ex._bos_stop(_sig(), 102.0, levels(110.0, 100.0), 110.0, bull=True) == pytest.approx(99.5)
     assert ex._bos_stop(_sig(), 98.0, levels(90.0, 100.0), 90.0, bull=False) == pytest.approx(100.5)
 
 
 # ── entry depth -> the TP ladder ────────────────────────────────────────────────
 def test_the_tier_is_derived_from_where_the_limit_landed_never_chosen():
     lv = levels(110.0, 100.0)
-    assert BosExecution._tier(lv[0.618], lv, bull=True) == 2  # at 0.618 -> DEEP
-    assert BosExecution._tier(104.5, lv, bull=True) == 1  # between 0.5 and 0.618
-    assert BosExecution._tier(106.0, lv, bull=True) == 0  # shallower than 0.5
+    assert BosExecution._tier(lv[0.618], lv, bull=True) == 2      # at 0.618 -> DEEP
+    assert BosExecution._tier(104.5, lv, bull=True) == 1          # between 0.5 and 0.618
+    assert BosExecution._tier(106.0, lv, bull=True) == 0          # shallower than 0.5
     assert BosExecution._tier(None, lv, bull=True) == 1
 
 
@@ -224,13 +195,13 @@ def test_whatever_is_left_under_100_becomes_the_runner_again():
     _open_a_trade(ex)
     ids = [b[0] for b in ex._remaining_brackets()]
     assert ids == ["L-TP1", "L-TP2", "L-TP3", "L-RUN"]
-    assert ex._remaining_brackets()[-1][2] == pytest.approx(2.0)  # the last 20%
+    assert ex._remaining_brackets()[-1][2] == pytest.approx(2.0)   # the last 20%
 
 
 def test_a_partially_filled_ladder_offers_only_what_is_left():
     ex = execution(exec_tp1_pct=30.0, exec_tp2_pct=30.0, exec_tp3_pct=40.0)
     _open_a_trade(ex)
-    ex._filled_qty = 3.0  # TP1 banked
+    ex._filled_qty = 3.0                       # TP1 banked
     ids = [b[0] for b in ex._remaining_brackets()]
     assert ids == ["L-TP2", "L-TP3"]
     assert sum(b[2] for b in ex._remaining_brackets()) == pytest.approx(7.0)
@@ -275,7 +246,7 @@ def test_priming_the_atr_twice_on_one_bar_advances_it_once():
     bars = [_sig(index=i, high=101.0 + i, low=99.0 + i, close=100.0 + i) for i in range(30)]
     for b in bars:
         ex.prime_atr(b)
-        ex._update_atr(b)  # what the parent's step() does on the same bar
+        ex._update_atr(b)          # what the parent's step() does on the same bar
     once = ex._atr
 
     ex2 = execution()
@@ -304,8 +275,8 @@ def test_the_moving_stop_can_only_ever_tighten():
     ex = execution(bos_move_stop="$ of price", bos_move_stop_val=20.0)
     _open_a_trade(ex)
     ex._entry_index, ex._bar_index, ex._max_fav = 10, 11, 105.0
-    ex._stage = 1  # staged to breakeven
-    assert ex._move_stop() == pytest.approx(85.0)  # far looser than breakeven
+    ex._stage = 1                                   # staged to breakeven
+    assert ex._move_stop() == pytest.approx(85.0)   # far looser than breakeven
     assert ex._current_stop() > 100.0, "the loose moving stop must not pull breakeven down"
 
 
@@ -329,7 +300,7 @@ def test_the_exit_stage_is_a_snapshot_and_the_three_bar_lists_stay_aligned():
     s.exit_stages.append(s._exit_stage())
     s.execution._stage = 2
     s.exit_stages.append(s._exit_stage())
-    s.execution._pos_dir, s.execution._stage = 0, 0  # the trade closes later
+    s.execution._pos_dir, s.execution._stage = 0, 0           # the trade closes later
     s.exit_stages.append(s._exit_stage())
 
     assert s.exit_stages == [1, 2, 0], "a later bar must not rewrite an earlier bar's stage"

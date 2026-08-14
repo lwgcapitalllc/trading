@@ -86,23 +86,21 @@ class OrderBlockEngine:
     the mpc_assistant.pine constants; pass overrides to match a tweaked Pine.
     """
 
-    def __init__(
-        self,
-        max_active: int = 10,  # Pine maxActiveOB
-        body_only: bool = False,  # Pine obBodyOnly
-        max_age: int = 500,  # Pine OB_MAX_AGE
-        min_back: int = 3,  # Pine OB_MIN_BACK
-        max_atr: float = 2.0,  # Pine OB_MAX_ATR
-        dupe_overlap: float = 0.5,  # Pine OB_DUPE_OVERLAP
-        disp_mult: float = 1.0,  # Pine OB_DISP_MULT
-        turn_len: int = 2,  # Pine OB_TURN_LEN
-        turn_scan: int = 8,  # Pine OB_TURN_SCAN
-        turn_wait: int = 10,  # Pine OB_TURN_WAIT
-        push_look: int = 5,  # Pine OB_PUSH_LOOK
-        push_wait: int = 10,  # Pine OB_PUSH_WAIT
-        push_mult: float = 0.3,  # Pine OB_PUSH_MULT
-        atr_len: int = 14,
-    ) -> None:  # Pine ta.atr(14)
+    def __init__(self,
+                 max_active: int = 10,        # Pine maxActiveOB
+                 body_only: bool = False,     # Pine obBodyOnly
+                 max_age: int = 500,          # Pine OB_MAX_AGE
+                 min_back: int = 3,           # Pine OB_MIN_BACK
+                 max_atr: float = 2.0,        # Pine OB_MAX_ATR
+                 dupe_overlap: float = 0.5,   # Pine OB_DUPE_OVERLAP
+                 disp_mult: float = 1.0,      # Pine OB_DISP_MULT
+                 turn_len: int = 2,           # Pine OB_TURN_LEN
+                 turn_scan: int = 8,          # Pine OB_TURN_SCAN
+                 turn_wait: int = 10,         # Pine OB_TURN_WAIT
+                 push_look: int = 5,          # Pine OB_PUSH_LOOK
+                 push_wait: int = 10,         # Pine OB_PUSH_WAIT
+                 push_mult: float = 0.3,      # Pine OB_PUSH_MULT
+                 atr_len: int = 14) -> None:  # Pine ta.atr(14)
         self._max_active = max_active
         self._body_only = body_only
         self._max_age = max_age
@@ -152,9 +150,8 @@ class OrderBlockEngine:
         self._next_id = 0
 
     # ------------------------------------------------------------------
-    def update(
-        self, index: int, open_: float, high: float, low: float, close: float
-    ) -> OrderBlockEvents:
+    def update(self, index: int, open_: float, high: float, low: float,
+               close: float) -> OrderBlockEvents:
         """Feed one closed bar. Returns this bar's OrderBlockEvents."""
         ev = OrderBlockEvents()
 
@@ -237,10 +234,10 @@ class OrderBlockEngine:
             if i == L:
                 continue
             b = self._bars[i]
-            if i < L:  # NEWER than the centre == to its RIGHT: strict
+            if i < L:                 # NEWER than the centre == to its RIGHT: strict
                 if b.low <= centre:
                     return None
-            else:  # OLDER == to its LEFT: an equal low is allowed
+            else:                     # OLDER == to its LEFT: an equal low is allowed
                 if b.low < centre:
                     return None
         return centre
@@ -255,24 +252,17 @@ class OrderBlockEngine:
             if i == L:
                 continue
             b = self._bars[i]
-            if i < L:  # RIGHT: strict
+            if i < L:                 # RIGHT: strict
                 if b.high >= centre:
                     return None
-            else:  # LEFT: an equal high is allowed
+            else:                     # LEFT: an equal high is allowed
                 if b.high > centre:
                     return None
         return centre
 
     # ------------------------------------------------------------------
-    def _extend(
-        self,
-        arr: List[OrderBlock],
-        index: int,
-        high: float,
-        low: float,
-        close: float,
-        ev: OrderBlockEvents,
-    ) -> None:
+    def _extend(self, arr: List[OrderBlock], index: int, high: float, low: float,
+                close: float, ev: OrderBlockEvents) -> None:
         """Pine extendOBs, drawing stripped. Walks the list backwards so removal by index is safe.
 
         MITIGATION — a zone survives exactly ONE thing: price still being inside it at the close.
@@ -309,15 +299,8 @@ class OrderBlockEngine:
                 (ev.mitigated if mitigated else ev.expired).append(ob)
 
     # ------------------------------------------------------------------
-    def _add(
-        self,
-        arr: List[OrderBlock],
-        off: int,
-        is_bullish: bool,
-        index: int,
-        ev: OrderBlockEvents,
-        from_break: bool = False,
-    ) -> bool:
+    def _add(self, arr: List[OrderBlock], off: int, is_bullish: bool, index: int,
+             ev: OrderBlockEvents, from_break: bool = False) -> bool:
         """Pine f_obAdd. `off` is the anchor candle's bars-ago offset. Returns whether a block was
         actually drawn — the caller needs that fact, not merely "the source fired", because every
         gate below can refuse.
@@ -379,11 +362,8 @@ class OrderBlockEngine:
                     dead = True
                     break
                 if left:
-                    if (
-                        bar.low <= top
-                        and bar.high >= bottom
-                        and (bar.close > top or bar.close < bottom)
-                    ):
+                    if (bar.low <= top and bar.high >= bottom
+                            and (bar.close > top or bar.close < bottom)):
                         tapped = True
                         break
                 away = (bar.close - top) if is_bullish else (bottom - bar.close)
@@ -410,16 +390,9 @@ class OrderBlockEngine:
         if not (gone and not dead and not tapped and not dupe and not huge):
             return False
 
-        ob = OrderBlock(
-            top=top,
-            bottom=bottom,
-            is_bullish=is_bullish,
-            origin_index=anchor.index,
-            created_index=index,
-            id=self._take_id(),
-            from_break=from_break,
-            entered=False,
-        )
+        ob = OrderBlock(top=top, bottom=bottom, is_bullish=is_bullish,
+                        origin_index=anchor.index, created_index=index, id=self._take_id(),
+                        from_break=from_break, entered=False)
         arr.append(ob)
         ev.created.append(ob)
         # Pine manageOBs: plain oldest-out at the cap. It used to protect structure-born blocks; with
@@ -477,11 +450,8 @@ class OrderBlockEngine:
         consumed = self._bars[idx]
         prev_body = abs(consumed.close - consumed.open)
         real = prev_body > atr * self._push_mult
-        engulfed = (
-            real
-            and body > prev_body
-            and (pb.close > consumed.open if up else pb.close < consumed.open)
-        )
+        engulfed = real and body > prev_body and (
+            pb.close > consumed.open if up else pb.close < consumed.open)
         if not engulfed:
             return
 
@@ -536,12 +506,8 @@ class OrderBlockEngine:
             return
         # The pivot SERIES `turn_wait` bars ago — non-None exactly when the pivot bar itself was
         # `base` bars ago (a pivot confirms `turn_len` bars after the bar it marks).
-        turn_lo = (
-            self._pv_lo_hist[self._turn_wait] if self._turn_wait < len(self._pv_lo_hist) else None
-        )
-        turn_hi = (
-            self._pv_hi_hist[self._turn_wait] if self._turn_wait < len(self._pv_hi_hist) else None
-        )
+        turn_lo = self._pv_lo_hist[self._turn_wait] if self._turn_wait < len(self._pv_lo_hist) else None
+        turn_hi = self._pv_hi_hist[self._turn_wait] if self._turn_wait < len(self._pv_hi_hist) else None
         if turn_lo is None and turn_hi is None:
             return
 

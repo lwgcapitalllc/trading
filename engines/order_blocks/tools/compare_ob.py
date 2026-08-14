@@ -75,26 +75,26 @@ BULL_TOP = [f"px_ob_bull_top_{k}" for k in range(1, _MAX_SLOTS + 1)]
 BULL_BOT = [f"px_ob_bull_bot_{k}" for k in range(1, _MAX_SLOTS + 1)]
 BEAR_TOP = [f"px_ob_bear_top_{k}" for k in range(1, _MAX_SLOTS + 1)]
 BEAR_BOT = [f"px_ob_bear_bot_{k}" for k in range(1, _MAX_SLOTS + 1)]
-PRICE_FIELDS = BULL_TOP + BULL_BOT + BEAR_TOP + BEAR_BOT  # tolerance-compared, na-aware
+PRICE_FIELDS = BULL_TOP + BULL_BOT + BEAR_TOP + BEAR_BOT      # tolerance-compared, na-aware
 
 COUNT_FIELDS = ["px_ob_bull_count", "px_ob_bear_count"]
 PULSE_FIELDS = ["px_ob_bull_created", "px_ob_bear_created", "px_ob_bull_mit", "px_ob_bear_mit"]
-INT_FIELDS = COUNT_FIELDS + PULSE_FIELDS  # integer-compared, na-aware
+INT_FIELDS = COUNT_FIELDS + PULSE_FIELDS                      # integer-compared, na-aware
 
 ALL_FIELDS = PRICE_FIELDS + INT_FIELDS
 
 # Config columns the export carries, mapped to OrderBlockEngine kwargs. Missing ones fall back to
 # the matching CLI flag (see main), which is what makes a pre-cfg export still checkable.
 CFG_COLUMNS = {
-    "cfg_ob_maxactive": ("max_active", int),
-    "cfg_ob_bodyonly": ("body_only", lambda v: bool(round(v))),
-    "cfg_ob_maxage": ("max_age", int),
-    "cfg_ob_maxatr": ("max_atr", float),
+    "cfg_ob_maxactive":   ("max_active", int),
+    "cfg_ob_bodyonly":    ("body_only", lambda v: bool(round(v))),
+    "cfg_ob_maxage":      ("max_age", int),
+    "cfg_ob_maxatr":      ("max_atr", float),
     "cfg_ob_dupeoverlap": ("dupe_overlap", float),
-    "cfg_ob_dispmult": ("disp_mult", float),
-    "cfg_ob_pushmult": ("push_mult", float),
-    "cfg_ob_turnwait": ("turn_wait", int),
-    "cfg_ob_pushwait": ("push_wait", int),
+    "cfg_ob_dispmult":    ("disp_mult", float),
+    "cfg_ob_pushmult":    ("push_mult", float),
+    "cfg_ob_turnwait":    ("turn_wait", int),
+    "cfg_ob_pushwait":    ("push_wait", int),
 }
 
 
@@ -183,18 +183,15 @@ def _load_rows(path, cols):
         rows = list(csv.DictReader(f))
     tcol = cols.get("time")
     if tcol:
-
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
                 return int(raw)
             try:
                 from datetime import datetime
-
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
-
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -202,29 +199,13 @@ def _load_rows(path, cols):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with ob_export.pine on the chart")
-    ap.add_argument(
-        "--max-active",
-        type=int,
-        default=10,
-        help="fallback if the export has no cfg_ob_maxactive column (Pine default 10)",
-    )
-    ap.add_argument(
-        "--tolerance",
-        type=float,
-        default=1e-6,
-        help="abs tolerance for price fields (default 1e-6)",
-    )
+    ap.add_argument("--max-active", type=int, default=10,
+                    help="fallback if the export has no cfg_ob_maxactive column (Pine default 10)")
+    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument(
-        "--warmup",
-        type=int,
-        default=0,
-        help="skip the first N bars in the report (still fed to the engines)",
-    )
+    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engines)")
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -248,15 +229,11 @@ def main(argv=None):
             cfg[kwarg] = cast(raw)
             cfg_from_export[kwarg] = cfg[kwarg]
     if cfg_from_export:
-        print(
-            "Config read from the export: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(cfg_from_export.items()))
-        )
+        print("Config read from the export: "
+              + ", ".join(f"{k}={v}" for k, v in sorted(cfg_from_export.items())))
     else:
-        print(
-            "WARNING: this export carries no cfg_ob_* columns (taken before 2026-07-31). "
-            "Falling back to engine defaults + --max-active; a mismatch may just be a config gap."
-        )
+        print("WARNING: this export carries no cfg_ob_* columns (taken before 2026-07-31). "
+              "Falling back to engine defaults + --max-active; a mismatch may just be a config gap.")
     ob = OrderBlockEngine(**cfg)
 
     total = 0
@@ -293,15 +270,11 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(
-        f"\nCompared {total} bars from {path.name}  "
-        f"(max_active={cfg.get('max_active')}, tol={args.tolerance})"
-    )
+    print(f"\nCompared {total} bars from {path.name}  "
+          f"(max_active={cfg.get('max_active')}, tol={args.tolerance})")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
-        print(
-            "✓ OB PARITY: every compared field matched on every bar. Python OB engine == Pine source."
-        )
+        print("✓ OB PARITY: every compared field matched on every bar. Python OB engine == Pine source.")
         return 0
 
     print("MISMATCHES BY FIELD:")
@@ -310,23 +283,19 @@ def main(argv=None):
         if n:
             print(f"  {fld:<24} {n} bar(s)")
     print("-" * 72)
-    print(
-        f"Last mismatching bar: {last_mismatch_bar}  "
-        f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})"
-    )
+    print(f"Last mismatching bar: {last_mismatch_bar}  "
+          f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})")
     print(f"First {len(detailed)} mismatching bar(s) (row index, time, field: python vs pine):")
     for idx, tval, ms in detailed:
         print(f"  bar {idx}  {tval}")
         for fld, pv, pinev in ms:
             print(f"      {fld:<24} python={pv!r:<12} pine={pinev!r}")
     print("-" * 72)
-    print(
-        "Tip: mismatches confined to early bars = warmup (ATR still seeding, or a pre-window block "
-        "still lingering in Pine's arrays). Persistent mismatches after a clean run of bars = a "
-        "real logic gap to fix against mpc_assistant.pine. If warmup NEVER clears, re-export a "
-        "WIDER window rather than raising --warmup — a block price never returns to cannot "
-        "mitigate, so a ghost from before the window can sit in Pine's array for ever."
-    )
+    print("Tip: mismatches confined to early bars = warmup (ATR still seeding, or a pre-window block "
+          "still lingering in Pine's arrays). Persistent mismatches after a clean run of bars = a "
+          "real logic gap to fix against mpc_assistant.pine. If warmup NEVER clears, re-export a "
+          "WIDER window rather than raising --warmup — a block price never returns to cannot "
+          "mitigate, so a ghost from before the window can sit in Pine's array for ever.")
     return 1
 
 

@@ -46,8 +46,8 @@ class Signals:
     high: float
     low: float
     close: float
-    session_gap_bar: bool  # Pine sessionGapBar
-    ny_hour: int  # Pine nyHour (America/New_York)
+    session_gap_bar: bool          # Pine sessionGapBar
+    ny_hour: int                   # Pine nyHour (America/New_York)
 
     # structure (st.*)
     bull_sos: bool
@@ -56,10 +56,10 @@ class Signals:
     bear_bos: bool
 
     # liquidity — most-recent swept pool per side (name + bar it was swept on)
-    recent_ssl: str  # "" | "H4 Low" | "Day Low" | "Asia Low" | "Ldn Low" | "NY Low"
+    recent_ssl: str                # "" | "H4 Low" | "Day Low" | "Asia Low" | "Ldn Low" | "NY Low"
     recent_ssl_bar: Optional[int]
     recent_ssl_time: Optional[int]  # ms the winning pool was swept (for the daily-too-old check)
-    recent_bsl: str  # mirror on the high side
+    recent_bsl: str                # mirror on the high side
     recent_bsl_bar: Optional[int]
     recent_bsl_time: Optional[int]
 
@@ -68,27 +68,27 @@ class Signals:
     last_bear_div_bar: Optional[int]
     bull_div_active: bool
     bear_div_active: bool
-    veto_on: bool  # showDiv and divVeto — the veto is switched on at all
-    veto_rsi_ob: bool  # divRsi >= divExtremeOB (blocks longs, LIVE, never exempt)
-    veto_rsi_os: bool  # divRsi <= divExtremeOS (blocks shorts)
+    veto_on: bool                  # showDiv and divVeto — the veto is switched on at all
+    veto_rsi_ob: bool              # divRsi >= divExtremeOB (blocks longs, LIVE, never exempt)
+    veto_rsi_os: bool              # divRsi <= divExtremeOS (blocks shorts)
 
     # Structure fib
     fibo_dir: int
-    fibo_p1: Optional[float]  # 0.382
-    fibo_p2: Optional[float]  # 0.5
-    fibo_p3: Optional[float]  # 0.618 (E1)
-    fibo_p4: Optional[float]  # 0.702
-    fibo_p5: Optional[float]  # 0.786
-    fibo_p6: Optional[float]  # 0.886
-    fibo_p7: Optional[float]  # 0.0  (swing extreme / TP3)
-    fibo_p10: Optional[float]  # 1.0  (leg origin)
+    fibo_p1: Optional[float]        # 0.382
+    fibo_p2: Optional[float]        # 0.5
+    fibo_p3: Optional[float]        # 0.618 (E1)
+    fibo_p4: Optional[float]        # 0.702
+    fibo_p5: Optional[float]        # 0.786
+    fibo_p6: Optional[float]        # 0.886
+    fibo_p7: Optional[float]        # 0.0  (swing extreme / TP3)
+    fibo_p10: Optional[float]       # 1.0  (leg origin)
     # The leg anchors the fiboP* above were built from (Pine fibo_ash / fibo_asl). Only the
     # Custom SL level reads them, to price a ratio that has no fiboP* of its own. None on the
     # same bars every fiboP* is None, which is what keeps a Custom stop on the same leg as the
     # entry — Pine gets that for free by assigning fiboPSl inside the fib block; here it comes
     # from the engine reporting the anchors only on its active path.
-    fibo_ash: Optional[float]  # swing HIGH anchor
-    fibo_asl: Optional[float]  # swing LOW anchor
+    fibo_ash: Optional[float]       # swing HIGH anchor
+    fibo_asl: Optional[float]       # swing LOW anchor
     fibo_half_reached: bool
     fibo_618_ever_reached: bool
     fibo7_touched: bool
@@ -160,8 +160,8 @@ class Signals:
     # BOS bot's entry ladder uses the zone to price a leg that had no qualifying FVG.
     sniper_zone_top: Optional[float] = None
     sniper_zone_bot: Optional[float] = None
-    sz_bar: Optional[int] = None  # the bar the current zone was anchored on
-    sz_bullish: bool = True  # Pine seeds `var bool sz_bullish = true`
+    sz_bar: Optional[int] = None       # the bar the current zone was anchored on
+    sz_bullish: bool = True            # Pine seeds `var bool sz_bullish = true`
 
     # Last CONFIRMED external swing high/low (Pine st.last_conf_high / st.last_conf_low) — the
     # anchor the STRUCTURE runner trail rides (`exec_runner_trail == "Structure (swing)"`).
@@ -186,14 +186,14 @@ class Signals:
 # Prices coincide where a retrace and a target share a ratio (0.5, 0.382), so the key
 # is unambiguous.
 _FIB_KEY = {
-    "p1": "TP2",  # 0.382
-    "p2": "TP1",  # 0.5
-    "p3": "E1",  # 0.618
-    "p4": "E2",  # 0.702
-    "p5": "E3",  # 0.786
-    "p6": "E4",  # 0.886
-    "p7": "TP3",  # 0.0
-    "p10": "1.0",  # 1.0
+    "p1": "TP2",    # 0.382
+    "p2": "TP1",    # 0.5
+    "p3": "E1",     # 0.618
+    "p4": "E2",     # 0.702
+    "p5": "E3",     # 0.786
+    "p6": "E4",     # 0.886
+    "p7": "TP3",    # 0.0
+    "p10": "1.0",   # 1.0
 }
 
 
@@ -203,7 +203,7 @@ class _LiqSlot:
     __slots__ = ("name", "bar", "price", "time")
 
     def __init__(self) -> None:
-        self.name = ""  # "" until swept; then the display name ("Day High")
+        self.name = ""       # "" until swept; then the display name ("Day High")
         self.bar: Optional[int] = None
         self.price: Optional[float] = None
         self.time: Optional[int] = None
@@ -268,20 +268,10 @@ class SignalAdapter:
         self._half_bar: Optional[int] = None
 
     # ── liquidity helpers ──────────────────────────────────────────────────────
-    _HIGH_NAME = {
-        "h4": "H4 High",
-        "day": "Day High",
-        "asia": "Asia High",
-        "london": "Ldn High",
-        "ny": "NY High",
-    }
-    _LOW_NAME = {
-        "h4": "H4 Low",
-        "day": "Day Low",
-        "asia": "Asia Low",
-        "london": "Ldn Low",
-        "ny": "NY Low",
-    }
+    _HIGH_NAME = {"h4": "H4 High", "day": "Day High", "asia": "Asia High",
+                  "london": "Ldn High", "ny": "NY High"}
+    _LOW_NAME = {"h4": "H4 Low", "day": "Day Low", "asia": "Asia Low",
+                 "london": "Ldn Low", "ny": "NY Low"}
 
     @staticmethod
     def _liq_key(level) -> Optional[Tuple[str, str]]:
@@ -351,13 +341,8 @@ class SignalAdapter:
         priority H4 > Day > (session, only if Day empty) Asia > London > NY."""
         show_sess = slots["day"].name == ""  # Pine showSessH = liq_dh == ""
         name, bar, t = "", -1, None
-        order = [
-            ("h4", True),
-            ("day", True),
-            ("asia", show_sess),
-            ("london", show_sess),
-            ("ny", show_sess),
-        ]
+        order = [("h4", True), ("day", True),
+                 ("asia", show_sess), ("london", show_sess), ("ny", show_sess)]
         for k, allowed in order:
             s = slots[k]
             if allowed and s.name != "" and s.bar is not None and s.bar > bar:
@@ -378,17 +363,14 @@ class SignalAdapter:
 
         # session-gap bar (Pine 3726-3728): a time jump > 2x the normal spacing
         bar_gap = 0 if self._prev_time is None else t - self._prev_time
-        normal_gap = (
-            0
-            if (self._prev_time is None or self._prev_prev_time is None)
+        normal_gap = 0 if (self._prev_time is None or self._prev_prev_time is None) \
             else self._prev_time - self._prev_prev_time
-        )
         session_gap_bar = normal_gap > 0 and bar_gap > normal_gap * 2
 
         # NY hour (Pine nyHour = hour(time, "America/New_York")). Bars are UTC epoch-ms.
         from datetime import datetime, timezone
-
-        ny_hour = datetime.fromtimestamp(t / 1000.0, tz=timezone.utc).astimezone(self._ny).hour
+        ny_hour = datetime.fromtimestamp(t / 1000.0, tz=timezone.utc) \
+            .astimezone(self._ny).hour
 
         # structure
         ext = state.snapshot
@@ -413,12 +395,10 @@ class SignalAdapter:
         vb = self._cfg.div_valid_bars
 
         # bullDivStale / bearDivStale (Pine 1945-1946)
-        bull_stale = (leb is not None and lb is not None and leb > lb) or (
-            lbe is not None and lb is not None and lbe > lb
-        )
-        bear_stale = (leb is not None and lbe is not None and leb > lbe) or (
-            lb is not None and lbe is not None and lb > lbe
-        )
+        bull_stale = (leb is not None and lb is not None and leb > lb) or \
+                     (lbe is not None and lb is not None and lbe > lb)
+        bear_stale = (leb is not None and lbe is not None and leb > lbe) or \
+                     (lb is not None and lbe is not None and lb > lbe)
         show_div = self._cfg.show_div
         bull_div_active = show_div and lb is not None and not bull_stale and index - lb <= vb
         bear_div_active = show_div and lbe is not None and not bear_stale and index - lbe <= vb
@@ -437,8 +417,8 @@ class SignalAdapter:
         fibo_dir = fib.direction if fib.active else 0
         p = {name: (lv.get(key) if fib.active else None) for name, key in _FIB_KEY.items()}
         touched = fib.touched_so_far
-        fibo_618_ever = "E1" in touched  # gate ever reached (see engine.py)
-        fibo7_touched = "TP3" in touched  # 0.0 hit
+        fibo_618_ever = "E1" in touched      # gate ever reached (see engine.py)
+        fibo7_touched = "TP3" in touched      # 0.0 hit
         fibo_half = fib.half_reached
 
         # Pine 2649-2650: latch the bar 0.5 was first tagged, never refresh it. Pine clears it in
@@ -459,12 +439,9 @@ class SignalAdapter:
         obs: List[Tuple[float, float, bool, int]] = []
         obs_available = state.order_blocks is not None
         if obs_available:
-            obs = [
-                (b.top, b.bottom, b.is_bullish, b.created_index)
-                for b in (
-                    list(state.order_blocks.active_bull) + list(state.order_blocks.active_bear)
-                )
-            ]
+            obs = [(b.top, b.bottom, b.is_bullish, b.created_index)
+                   for b in (list(state.order_blocks.active_bull)
+                             + list(state.order_blocks.active_bear))]
 
         # Macro POI (Pine 3700-3706): bull discount 0.618-0.886, short premium 0.382+
         poi_long = poi_short = False
@@ -484,65 +461,32 @@ class SignalAdapter:
         self._prev_time = t
 
         return Signals(
-            index=index,
-            time_ms=t,
-            open=o,
-            high=high,
-            low=low,
-            close=c,
-            session_gap_bar=session_gap_bar,
-            ny_hour=ny_hour,
-            bull_sos=bull_sos,
-            bear_sos=bear_sos,
-            bull_bos=bull_bos,
-            bear_bos=bear_bos,
-            recent_ssl=recent_ssl,
-            recent_ssl_bar=recent_ssl_bar,
-            recent_ssl_time=recent_ssl_time,
-            recent_bsl=recent_bsl,
-            recent_bsl_bar=recent_bsl_bar,
-            recent_bsl_time=recent_bsl_time,
-            last_bull_div_bar=lb,
-            last_bear_div_bar=lbe,
-            bull_div_active=bull_div_active,
-            bear_div_active=bear_div_active,
-            veto_on=veto_on,
-            veto_rsi_ob=veto_rsi_ob,
-            veto_rsi_os=veto_rsi_os,
+            index=index, time_ms=t, open=o, high=high, low=low, close=c,
+            session_gap_bar=session_gap_bar, ny_hour=ny_hour,
+            bull_sos=bull_sos, bear_sos=bear_sos, bull_bos=bull_bos, bear_bos=bear_bos,
+            recent_ssl=recent_ssl, recent_ssl_bar=recent_ssl_bar, recent_ssl_time=recent_ssl_time,
+            recent_bsl=recent_bsl, recent_bsl_bar=recent_bsl_bar, recent_bsl_time=recent_bsl_time,
+            last_bull_div_bar=lb, last_bear_div_bar=lbe,
+            bull_div_active=bull_div_active, bear_div_active=bear_div_active,
+            veto_on=veto_on, veto_rsi_ob=veto_rsi_ob, veto_rsi_os=veto_rsi_os,
             fibo_dir=fibo_dir,
-            fibo_p1=p["p1"],
-            fibo_p2=p["p2"],
-            fibo_p3=p["p3"],
-            fibo_p4=p["p4"],
-            fibo_p5=p["p5"],
-            fibo_p6=p["p6"],
-            fibo_p7=p["p7"],
-            fibo_p10=p["p10"],
+            fibo_p1=p["p1"], fibo_p2=p["p2"], fibo_p3=p["p3"], fibo_p4=p["p4"],
+            fibo_p5=p["p5"], fibo_p6=p["p6"], fibo_p7=p["p7"], fibo_p10=p["p10"],
             fibo_ash=(fib.ash if fib.active else None),
             fibo_asl=(fib.asl if fib.active else None),
-            fibo_half_reached=fibo_half,
-            fibo_618_ever_reached=fibo_618_ever,
-            fibo7_touched=fibo7_touched,
-            fibo_half_bar=self._half_bar,
-            fvgs=fvgs,
-            obs=obs,
-            obs_available=obs_available,
-            poi_long_now=poi_long,
-            poi_short_now=poi_short,
-            bull_bos_high=ext.bull_bos_high,
-            bull_bos_low=ext.bull_bos_low,
-            bear_bos_high=ext.bear_bos_high,
-            bear_bos_low=ext.bear_bos_low,
+            fibo_half_reached=fibo_half, fibo_618_ever_reached=fibo_618_ever,
+            fibo7_touched=fibo7_touched, fibo_half_bar=self._half_bar,
+            fvgs=fvgs, obs=obs, obs_available=obs_available,
+            poi_long_now=poi_long, poi_short_now=poi_short,
+            bull_bos_high=ext.bull_bos_high, bull_bos_low=ext.bull_bos_low,
+            bear_bos_high=ext.bear_bos_high, bear_bos_low=ext.bear_bos_low,
             bull_bos_high_ms=self._bar_time(ext.bull_bos_h_loc),
             bull_bos_low_ms=self._bar_time(ext.bull_bos_l_loc),
             bear_bos_high_ms=self._bar_time(ext.bear_bos_h_loc),
             bear_bos_low_ms=self._bar_time(ext.bear_bos_l_loc),
-            last_conf_high=ext.last_conf_high,
-            last_conf_low=ext.last_conf_low,
-            sniper_zone_top=sz.zone_top,
-            sniper_zone_bot=sz.zone_bot,
-            sz_bar=self._sz_bar,
-            sz_bullish=(sz.direction != -1),
+            last_conf_high=ext.last_conf_high, last_conf_low=ext.last_conf_low,
+            sniper_zone_top=sz.zone_top, sniper_zone_bot=sz.zone_bot,
+            sz_bar=self._sz_bar, sz_bullish=(sz.direction != -1),
             fibo_ash_ms=(self._bar_time(fib.ash_loc) if fib.active else None),
             fibo_asl_ms=(self._bar_time(fib.asl_loc) if fib.active else None),
         )
@@ -592,9 +536,9 @@ _POI_SOURCES = {
 # `Execution._entry_edges`. An FVG that the deep-only or pre-zone gate refuses must not suppress
 # an order block the entry may legitimately use, and it cannot, because it never enters the
 # comparison. Ranking before gating would turn a REFUSED gap into a veto on the fallback.
-POI_RANK_OB = 0  # an order block: the fallback, used only when no gap qualifies
-POI_RANK_FVG = 1  # a plain fair value gap: preferred over any block
-POI_RANK_FVG_ON_OB = 2  # a gap an order block sits on: the strongest tier
+POI_RANK_OB = 0          # an order block: the fallback, used only when no gap qualifies
+POI_RANK_FVG = 1         # a plain fair value gap: preferred over any block
+POI_RANK_FVG_ON_OB = 2   # a gap an order block sits on: the strongest tier
 
 # Every other mode returns ONE flat tier, so every candidate ties and the consumers fall straight
 # back to their original nearest-first choice. That is what keeps "FVG" / "Order block" / "Either"

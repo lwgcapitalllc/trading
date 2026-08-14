@@ -15,7 +15,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(_ROOT / "strategies" / "python"))
 
-from mpc_sos_fade import Execution, SeqState, SosFadeConfig  # noqa: E402
+from mpc_sos_fade import SosFadeConfig, Execution, SeqState  # noqa: E402
 from mpc_sos_fade.signals import Signals  # noqa: E402
 
 
@@ -26,63 +26,28 @@ def _cfg(**kw):
     # `exec_sl_level` is pinned for the same reason: the price fixtures put the stop at
     # fibo_p10 = 100.0 and the sizing / −1R assertions are hand-computed off that, so they must
     # not move when the shipped default does (it went 1.0 → 0.886 on 2026-07-27).
-    base = dict(
-        exec_req_fvg=False,
-        exec_be_buf_tk=0.0,
-        exec_risk_pct=10.0,
-        exec_arm_div=True,
-        exec_arm_sweep=False,
-        exec_sl_level="1.0",
-    )
+    base = dict(exec_req_fvg=False, exec_be_buf_tk=0.0, exec_risk_pct=10.0,
+                exec_arm_div=True, exec_arm_sweep=False, exec_sl_level="1.0")
     base.update(kw)
     return SosFadeConfig(**base)
 
 
 def _sig(index, o, h, l, c, dir=1, ny_hour=8, **kw):
     base = dict(
-        index=index,
-        time_ms=index * 900_000,
-        open=o,
-        high=h,
-        low=l,
-        close=c,
-        session_gap_bar=False,
-        ny_hour=ny_hour,
-        bull_sos=False,
-        bear_sos=False,
-        bull_bos=False,
-        bear_bos=False,
-        recent_ssl="",
-        recent_ssl_bar=None,
-        recent_ssl_time=None,
-        recent_bsl="",
-        recent_bsl_bar=None,
-        recent_bsl_time=None,
-        last_bull_div_bar=None,
-        last_bear_div_bar=None,
-        bull_div_active=False,
-        bear_div_active=False,
-        veto_on=False,
-        veto_rsi_ob=False,
-        veto_rsi_os=False,
+        index=index, time_ms=index * 900_000, open=o, high=h, low=l, close=c,
+        session_gap_bar=False, ny_hour=ny_hour,
+        bull_sos=False, bear_sos=False, bull_bos=False, bear_bos=False,
+        recent_ssl="", recent_ssl_bar=None, recent_ssl_time=None,
+        recent_bsl="", recent_bsl_bar=None, recent_bsl_time=None,
+        last_bull_div_bar=None, last_bear_div_bar=None,
+        bull_div_active=False, bear_div_active=False, veto_on=False, veto_rsi_ob=False, veto_rsi_os=False,
         fibo_dir=dir,
-        fibo_p1=106.18,
-        fibo_p2=105.0,
-        fibo_p3=103.82,
-        fibo_p4=102.8,
-        fibo_p5=102.0,
-        fibo_p6=101.14,
-        fibo_p7=110.0,
-        fibo_p10=100.0,
+        fibo_p1=106.18, fibo_p2=105.0, fibo_p3=103.82, fibo_p4=102.8,
+        fibo_p5=102.0, fibo_p6=101.14, fibo_p7=110.0, fibo_p10=100.0,
         # Bull leg, so fiboP7 (0.0) IS the high anchor and fiboP10 (1.0) IS the low one.
-        fibo_ash=110.0,
-        fibo_asl=100.0,
-        fibo_half_reached=True,
-        fibo_618_ever_reached=True,
-        fibo7_touched=False,
-        fvgs=[],
-        poi_long_now=False,
-        poi_short_now=False,
+        fibo_ash=110.0, fibo_asl=100.0,
+        fibo_half_reached=True, fibo_618_ever_reached=True, fibo7_touched=False,
+        fvgs=[], poi_long_now=False, poi_short_now=False,
     )
     base.update(kw)
     return Signals(**base)
@@ -91,29 +56,12 @@ def _sig(index, o, h, l, c, dir=1, ny_hour=8, **kw):
 def _seq_long_ready(sos_bar=1):
     """A long setup fully armed to READY (Stage 4), divergence source live."""
     return SeqState(
-        l_stage=4,
-        s_stage=0,
-        l_sos_bar=sos_bar,
-        s_sos_bar=None,
-        l_half=True,
-        l_618=True,
-        s_half=False,
-        s_618=False,
-        l_poi=False,
-        s_poi=False,
-        l_fvg=False,
-        s_fvg=False,
-        sos_l_swp=False,
-        sos_l_div=True,
-        sos_s_swp=False,
-        sos_s_div=False,
-        new_sweep_l=False,
-        new_div_l=False,
-        new_sweep_s=False,
-        new_div_s=False,
-        retro_link_l=False,
-        retro_link_s=False,
-        l_arm_src="DIV",
+        l_stage=4, s_stage=0, l_sos_bar=sos_bar, s_sos_bar=None,
+        l_half=True, l_618=True, s_half=False, s_618=False,
+        l_poi=False, s_poi=False, l_fvg=False, s_fvg=False,
+        sos_l_swp=False, sos_l_div=True, sos_s_swp=False, sos_s_div=False,
+        new_sweep_l=False, new_div_l=False, new_sweep_s=False, new_div_s=False,
+        retro_link_l=False, retro_link_s=False, l_arm_src="DIV",
     )
 
 
@@ -129,29 +77,12 @@ def _seq_short_ready(sos_bar=1):
     backwards would be silent (the adverse extreme is the highest high on a short, not the lowest
     low), so a long-only fixture cannot see the bug."""
     return SeqState(
-        l_stage=0,
-        s_stage=4,
-        l_sos_bar=None,
-        s_sos_bar=sos_bar,
-        l_half=False,
-        l_618=False,
-        s_half=True,
-        s_618=True,
-        l_poi=False,
-        s_poi=False,
-        l_fvg=False,
-        s_fvg=False,
-        sos_l_swp=False,
-        sos_l_div=False,
-        sos_s_swp=False,
-        sos_s_div=True,
-        new_sweep_l=False,
-        new_div_l=False,
-        new_sweep_s=False,
-        new_div_s=False,
-        retro_link_l=False,
-        retro_link_s=False,
-        s_arm_src="DIV",
+        l_stage=0, s_stage=4, l_sos_bar=None, s_sos_bar=sos_bar,
+        l_half=False, l_618=False, s_half=True, s_618=True,
+        l_poi=False, s_poi=False, l_fvg=False, s_fvg=False,
+        sos_l_swp=False, sos_l_div=False, sos_s_swp=False, sos_s_div=True,
+        new_sweep_l=False, new_div_l=False, new_sweep_s=False, new_div_s=False,
+        retro_link_l=False, retro_link_s=False, s_arm_src="DIV",
     )
 
 
@@ -174,28 +105,12 @@ def _seq_long_dead():
 
 def _seq_flat():
     return SeqState(
-        l_stage=0,
-        s_stage=0,
-        l_sos_bar=None,
-        s_sos_bar=None,
-        l_half=False,
-        l_618=False,
-        s_half=False,
-        s_618=False,
-        l_poi=False,
-        s_poi=False,
-        l_fvg=False,
-        s_fvg=False,
-        sos_l_swp=False,
-        sos_l_div=False,
-        sos_s_swp=False,
-        sos_s_div=False,
-        new_sweep_l=False,
-        new_div_l=False,
-        new_sweep_s=False,
-        new_div_s=False,
-        retro_link_l=False,
-        retro_link_s=False,
+        l_stage=0, s_stage=0, l_sos_bar=None, s_sos_bar=None,
+        l_half=False, l_618=False, s_half=False, s_618=False,
+        l_poi=False, s_poi=False, l_fvg=False, s_fvg=False,
+        sos_l_swp=False, sos_l_div=False, sos_s_swp=False, sos_s_div=False,
+        new_sweep_l=False, new_div_l=False, new_sweep_s=False, new_div_s=False,
+        retro_link_l=False, retro_link_s=False,
     )
 
 
@@ -211,14 +126,14 @@ def test_long_arms_and_places_a_limit():
 
 def test_entry_fills_next_bar_not_this_bar():
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())   # place
     # bar 1 dips to the edge -> fills; but no EXIT may fill on the entry bar
     dec = ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
     entries = [f for f in dec.fills if f.kind == "entry"]
     exits = [f for f in dec.fills if f.kind == "exit"]
     assert len(entries) == 1
-    assert abs(entries[0].price - 103.82) < 1e-9  # filled at the limit
-    assert exits == []  # one-bar delay
+    assert abs(entries[0].price - 103.82) < 1e-9   # filled at the limit
+    assert exits == []                              # one-bar delay
 
 
 def test_sizing_matches_risk_over_stop_distance():
@@ -235,8 +150,8 @@ def test_ladder_wins_tp1_tp2_then_runner_trail():
     # test is about the SCALE-OUT mechanics, so it states the sizes it needs rather than
     # inheriting them — same reason _cfg pins the arm source.
     ex = Execution(_cfg(exec_tp1_pct=30.0, exec_tp2_pct=40.0))
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @103.82
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82
     # bar 2: rallies through TP1(105) and TP2(106.18), never near stop(100)
     dec2 = ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
     ids = {f.order_id for f in dec2.fills if f.kind == "exit"}
@@ -247,7 +162,7 @@ def test_ladder_wins_tp1_tp2_then_runner_trail():
     dec3 = ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())
     assert any(f.order_id == "L-RUN" for f in dec3.fills)
     assert len(ex.trades) == 1
-    assert ex.trades[0].r > 0  # net winner
+    assert ex.trades[0].r > 0        # net winner
 
 
 def test_zero_pct_rungs_bank_nothing_but_still_stage_the_stop():
@@ -256,16 +171,16 @@ def test_zero_pct_rungs_bank_nothing_but_still_stage_the_stop():
     failure mode this guards is the Pine's — `strategy.exit(qty_percent = 0)` closes the WHOLE
     position, turning "bank nothing" into "bank everything". Python must not grow that bug."""
     cfg = _cfg()
-    assert (cfg.exec_tp1_pct, cfg.exec_tp2_pct) == (0.0, 0.0)  # the default under test
+    assert (cfg.exec_tp1_pct, cfg.exec_tp2_pct) == (0.0, 0.0)     # the default under test
     ex = Execution(cfg)
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @103.82
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82
     qty_at_entry = ex._qty
 
     # bar 2: rallies clean through TP1 (105) and TP2 (106.18), nowhere near the stop (100).
     dec2 = ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())
-    assert not [f for f in dec2.fills if f.kind == "exit"]  # nothing banked
-    assert ex._pos_dir == 1 and ex._qty == qty_at_entry  # full size still on
+    assert not [f for f in dec2.fills if f.kind == "exit"]   # nothing banked
+    assert ex._pos_dir == 1 and ex._qty == qty_at_entry      # full size still on
     # ...but the stop staged exactly as if the rungs had filled: TP2 seen -> floor = TP1 price.
     assert dec2.stop is not None and abs(dec2.stop - 105.0) < 1e-9
 
@@ -279,13 +194,13 @@ def test_zero_pct_rungs_bank_nothing_but_still_stage_the_stop():
 # ------------------------------------------------------- losing stop-out --------
 def test_stop_out_is_minus_one_r():
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @103.82
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82
     # bar 2 opens near the low and trades down through the stop (100)
     dec = ex.step(_sig(2, 100.5, 101.0, 99.5, 99.8), _seq_flat())
     assert ex._pos_dir == 0
     assert len(ex.trades) == 1
-    assert abs(ex.trades[0].r - (-1.0)) < 1e-6  # full -1R
+    assert abs(ex.trades[0].r - (-1.0)) < 1e-6     # full -1R
 
 
 def test_trade_records_favorable_and_adverse_excursion():
@@ -296,17 +211,15 @@ def test_trade_records_favorable_and_adverse_excursion():
     so their ratio is price-only — free of qty/point_value.
     """
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @103.82, low 103.5
-    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())  # high 107.0
-    ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())  # runner stops @105
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())     # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())     # fill @103.82, low 103.5
+    ex.step(_sig(2, 104.0, 107.0, 103.9, 106.5), _seq_flat())           # high 107.0
+    ex.step(_sig(3, 106.0, 106.2, 104.9, 105.0), _seq_flat())           # runner stops @105
 
     t = ex.trades[0]
     assert t.mfe_usd > 0 and t.mae_usd < 0
-    expected_ratio = (107.0 - t.entry_price) / (
-        103.5 - t.entry_price
-    )  # favorable vs adverse, signed
-    assert abs(t.mfe_usd / t.mae_usd - expected_ratio) < 1e-3  # 2dp rounding on the stored $ values
+    expected_ratio = (107.0 - t.entry_price) / (103.5 - t.entry_price)   # favorable vs adverse, signed
+    assert abs(t.mfe_usd / t.mae_usd - expected_ratio) < 1e-3   # 2dp rounding on the stored $ values
 
 
 def test_the_entry_bar_cannot_stage_the_stop():
@@ -322,12 +235,12 @@ def test_the_entry_bar_cannot_stage_the_stop():
     104.0. Nothing about that is favourable to the trade, so nothing may stage.
     """
     ex = Execution(_cfg(exec_be_buf_tk=30.0, mintick=0.01), initial_capital=10_000.0)
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place the limit
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())          # place the limit
     dec1 = ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())
 
     assert abs([f for f in dec1.fills if f.kind == "entry"][0].price - 103.82) < 1e-9
-    assert ex._stage == 0  # the entry bar's high reached TP1 — irrelevant
-    assert abs(dec1.stop - 100.0) < 1e-9  # still the real SL, not entry + 0.30
+    assert ex._stage == 0                       # the entry bar's high reached TP1 — irrelevant
+    assert abs(dec1.stop - 100.0) < 1e-9        # still the real SL, not entry + 0.30
 
     # ...and an ordinary next bar must NOT close the trade.
     dec2 = ex.step(_sig(2, 103.50, 104.10, 103.40, 103.60), _seq_flat())
@@ -346,10 +259,10 @@ def test_max_fav_starts_at_the_entry_price_not_the_entry_bars_extreme():
     peak the trade never made — the same contamination as the staging bug above."""
     ex = Execution(_cfg(exec_be_buf_tk=30.0, mintick=0.01))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())  # fill @103.82
-    assert ex._max_fav == 103.82  # not the bar's 105.50
+    ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())      # fill @103.82
+    assert ex._max_fav == 103.82                # not the bar's 105.50
 
-    ex.step(_sig(2, 104.0, 104.60, 103.9, 104.5), _seq_flat())  # now it tracks
+    ex.step(_sig(2, 104.0, 104.60, 103.9, 104.5), _seq_flat())              # now it tracks
     assert ex._max_fav == 104.60
 
 
@@ -361,9 +274,9 @@ def test_entry_bar_excursion_keeps_the_adverse_side_and_drops_the_favourable_one
     wrong path."""
     ex = Execution(_cfg(exec_be_buf_tk=30.0, mintick=0.01))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())  # fill @103.82
-    assert ex._ext_high == 103.82  # the 105.50 approach is NOT favourable
-    assert ex._ext_low == 103.50  # the dip past the fill IS adverse
+    ex.step(_sig(1, 105.40, 105.50, 103.50, 104.00), _seq_long_ready())      # fill @103.82
+    assert ex._ext_high == 103.82               # the 105.50 approach is NOT favourable
+    assert ex._ext_low == 103.50                # the dip past the fill IS adverse
 
 
 def test_late_day_block_stops_new_entries():
@@ -375,9 +288,8 @@ def test_late_day_block_stops_new_entries():
 def test_veto_blocks_when_respected():
     ex = Execution(_cfg())
     # extreme-RSI veto — never exempt, blocks whatever the SOS bar is
-    dec = ex.step(
-        _sig(0, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True), _seq_long_ready()
-    )
+    dec = ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True),
+                  _seq_long_ready())
     assert dec.long_armed is False
 
 
@@ -386,9 +298,8 @@ def test_divergence_before_the_sos_still_vetoes():
     the long, exactly as the old rule did."""
     ex = Execution(_cfg())
     dec = ex.step(
-        _sig(
-            0, 104.0, 104.5, 103.9, 104.2, veto_on=True, bear_div_active=True, last_bear_div_bar=1
-        ),
+        _sig(0, 104.0, 104.5, 103.9, 104.2,
+             veto_on=True, bear_div_active=True, last_bear_div_bar=1),
         _seq_long_ready(sos_bar=1),
     )
     assert dec.long_veto is True
@@ -400,9 +311,8 @@ def test_divergence_after_the_sos_is_exempt():
     the pullback the setup is waiting on, not a reversal — it no longer vetoes."""
     ex = Execution(_cfg())
     dec = ex.step(
-        _sig(
-            0, 104.0, 104.5, 103.9, 104.2, veto_on=True, bear_div_active=True, last_bear_div_bar=5
-        ),
+        _sig(0, 104.0, 104.5, 103.9, 104.2,
+             veto_on=True, bear_div_active=True, last_bear_div_bar=5),
         _seq_long_ready(sos_bar=1),
     )
     assert dec.long_veto is False
@@ -413,16 +323,15 @@ def test_divergence_after_the_sos_is_exempt():
 # Port of the Pine's pink TRADE BLOCKED tag: a setup price and the engine had READY,
 # refused by one of the strategy's own toggles. Reporting only — no decision reads it.
 
-
 def test_a_refused_setup_is_recorded_with_the_reason_and_the_would_be_entry():
     ex = Execution(_cfg())
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
     assert len(ex.blocks) == 1
     b = ex.blocks[0]
-    assert b.dir == 1 and b.codes == [3]  # 3 = the final-hour rule
+    assert b.dir == 1 and b.codes == [3]         # 3 = the final-hour rule
     assert b.labels == ["Final hour"]
     assert "16:00-18:00" in b.reasons[0]
-    assert abs(b.edge - 103.82) < 1e-9  # where the limit would have rested
+    assert abs(b.edge - 103.82) < 1e-9           # where the limit would have rested
 
 
 def test_an_armed_setup_records_no_block():
@@ -440,13 +349,11 @@ def test_every_refusing_rule_is_recorded_in_pine_precedence_order():
     was also blocking). Pine's precedence survives as the ORDER, so `code` — the primary — is
     still exactly what `f_blkCode` would have returned alone."""
     ex = Execution(_cfg(exec_longs=False))
-    ex.step(
-        _sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
-        _seq_long_ready(),
-    )
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
+            _seq_long_ready())
     b = ex.blocks[0]
-    assert b.codes == [1, 3, 4]  # direction off · final hour · veto
-    assert b.code == 1  # the primary — Pine's single answer
+    assert b.codes == [1, 3, 4]     # direction off · final hour · veto
+    assert b.code == 1              # the primary — Pine's single answer
 
 
 def test_one_record_per_setup_per_reason_set_not_per_bar():
@@ -458,18 +365,17 @@ def test_one_record_per_setup_per_reason_set_not_per_bar():
         ex.step(_sig(i, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_long_ready())
     assert len(ex.blocks) == 1
     # the final hour passes, the veto takes over → a second, different refusal
-    ex.step(_sig(4, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True), _seq_long_ready())
+    ex.step(_sig(4, 104.0, 104.5, 103.9, 104.2, veto_on=True, veto_rsi_ob=True),
+            _seq_long_ready())
     assert [b.codes for b in ex.blocks] == [[3], [4]]
     # picking up a SECOND blocker on the same setup is also a different refusal
-    ex.step(
-        _sig(5, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
-        _seq_long_ready(),
-    )
+    ex.step(_sig(5, 104.0, 104.5, 103.9, 104.2, ny_hour=16, veto_on=True, veto_rsi_ob=True),
+            _seq_long_ready())
     assert [b.codes for b in ex.blocks] == [[3], [4], [3, 4]]
 
 
 def test_a_setup_price_never_made_ready_is_not_a_block():
-    """ "Ready" asserts only what price and the engine decide (SOS in, fib agrees, an edge to
+    """"Ready" asserts only what price and the engine decide (SOS in, fib agrees, an edge to
     rest on). With no SOS there is no setup to refuse, whatever the toggles say."""
     ex = Execution(_cfg(exec_longs=False))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, ny_hour=16), _seq_flat())
@@ -480,23 +386,19 @@ def test_a_setup_price_never_made_ready_is_not_a_block():
 # Port of the Pine's orange 2-of-3 callout: a setup that reached two or three of the three
 # confluences and then DIED without becoming a trade. Reporting only, like the blocks.
 
-
 def test_a_setup_that_had_everything_and_never_filled_is_a_3_of_3_miss():
     ex = Execution(_cfg())
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    assert ex.misses == []  # still alive — nothing is booked yet
+    assert ex.misses == []                      # still alive — nothing is booked yet
     ex.step(_sig(1, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
     assert len(ex.misses) == 1
     m = ex.misses[0]
     assert (m.met, m.code, m.dir) == (3, 7, 1)  # 7 = the limit rested and price never came
     assert m.labels == ["Never filled"]
     assert m.near is True
-    assert abs(m.edge - 103.82) < 1e-9  # where the limit would have rested
-    assert m.met_lines == [
-        "Arm — RSI divergence",
-        "SOS — confirmed",
-        "Zone — 0.5-0.886 tagged, FVG live",
-    ]
+    assert abs(m.edge - 103.82) < 1e-9          # where the limit would have rested
+    assert m.met_lines == ["Arm — RSI divergence", "SOS — confirmed",
+                           "Zone — 0.5-0.886 tagged, FVG live"]
 
 
 def test_a_setup_that_never_retraced_is_a_2_of_3_and_is_NOT_a_near_miss():
@@ -518,13 +420,12 @@ def test_a_setup_that_never_retraced_is_a_2_of_3_and_is_NOT_a_near_miss():
 # "which candle turned this" has to be told, not left to derive it. The band here is fiboP2 105.0
 # (0.5) to fiboP6 101.14 (0.886).
 
-
 def test_a_miss_records_the_retrace_it_was_waiting_on_not_just_its_death():
     ex = Execution(_cfg())
     # ⚠ Every bar stays ABOVE the 103.82 entry edge — dip under it and the limit FILLS, the setup
     # becomes a trade and there is no miss to inspect at all.
-    ex.step(_sig(0, 104.6, 104.9, 104.5, 104.7), _seq_long_ready())  # in the band
-    ex.step(_sig(1, 104.3, 104.4, 103.9, 104.0), _seq_long_ready())  # deeper — the turn
+    ex.step(_sig(0, 104.6, 104.9, 104.5, 104.7), _seq_long_ready())   # in the band
+    ex.step(_sig(1, 104.3, 104.4, 103.9, 104.0), _seq_long_ready())   # deeper — the turn
     ex.step(_sig(2, 104.3, 104.8, 104.2, 104.6), _seq_long_ready())
     ex.step(_sig(3, 104.5, 104.9, 104.4, 104.7), _seq_long_dead())
     m = ex.misses[0]
@@ -543,11 +444,11 @@ def test_the_visit_is_measured_off_the_BAND_not_off_the_latch():
 
     ⚠ Watch it go red by testing `zone_hit` instead of the bar's own range."""
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.7, 104.9, 104.6, 104.8), _seq_long_ready())  # in the band
-    ex.step(_sig(1, 106.0, 106.5, 105.9, 106.2), _seq_long_ready())  # ABOVE 0.5 — out
-    ex.step(_sig(2, 106.0, 106.5, 105.2, 106.2), _seq_long_ready())  # still out
-    ex.step(_sig(3, 104.6, 104.8, 104.2, 104.4), _seq_long_ready())  # back in, deeper
-    ex.step(_sig(4, 104.2, 104.3, 103.9, 104.0), _seq_long_ready())  # the turn
+    ex.step(_sig(0, 104.7, 104.9, 104.6, 104.8), _seq_long_ready())     # in the band
+    ex.step(_sig(1, 106.0, 106.5, 105.9, 106.2), _seq_long_ready())     # ABOVE 0.5 — out
+    ex.step(_sig(2, 106.0, 106.5, 105.2, 106.2), _seq_long_ready())     # still out
+    ex.step(_sig(3, 104.6, 104.8, 104.2, 104.4), _seq_long_ready())     # back in, deeper
+    ex.step(_sig(4, 104.2, 104.3, 103.9, 104.0), _seq_long_ready())     # the turn
     ex.step(_sig(5, 104.5, 104.9, 104.4, 104.7), _seq_long_dead())
     m = ex.misses[0]
     assert (m.zone_time_ms, m.zone_turn_ms) == (3 * 900_000, 4 * 900_000)
@@ -557,9 +458,9 @@ def test_the_DEEPEST_visit_is_the_one_reported():
     """A setup can tag the zone, leave, and come back — those are different retraces, and the one
     worth reporting is the one that came closest to filling. The first visit here is shallow."""
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.8, 104.95, 104.7, 104.9), _seq_long_ready())  # shallow visit
-    ex.step(_sig(1, 106.0, 106.5, 105.9, 106.2), _seq_long_ready())  # out
-    ex.step(_sig(2, 104.4, 104.6, 103.9, 104.1), _seq_long_ready())  # deep visit
+    ex.step(_sig(0, 104.8, 104.95, 104.7, 104.9), _seq_long_ready())    # shallow visit
+    ex.step(_sig(1, 106.0, 106.5, 105.9, 106.2), _seq_long_ready())     # out
+    ex.step(_sig(2, 104.4, 104.6, 103.9, 104.1), _seq_long_ready())     # deep visit
     ex.step(_sig(3, 104.5, 104.9, 104.4, 104.7), _seq_long_dead())
     assert ex.misses[0].zone_turn_ms == 2 * 900_000
 
@@ -569,7 +470,7 @@ def test_a_SHORT_setups_turn_is_its_HIGHEST_high():
     backwards would report the shallowest bar of every short as its turn."""
     ex = Execution(_cfg(exec_shorts=True))
     ex.step(_sig(0, 102.0, 102.5, 101.9, 102.2, dir=-1), _seq_short_ready())
-    ex.step(_sig(1, 102.0, 104.9, 101.9, 104.5, dir=-1), _seq_short_ready())  # highest
+    ex.step(_sig(1, 102.0, 104.9, 101.9, 104.5, dir=-1), _seq_short_ready())   # highest
     ex.step(_sig(2, 102.0, 102.5, 101.9, 102.2, dir=-1), _seq_short_ready())
     ex.step(_sig(3, 102.0, 102.5, 101.9, 102.2, dir=-1), _seq_short_dead())
     assert ex.misses[0].zone_turn_ms == 1 * 900_000
@@ -624,7 +525,7 @@ def test_one_record_per_setup_booked_only_when_it_dies():
 def test_a_setup_that_traded_is_never_a_miss():
     ex = Execution(_cfg())
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
-    ex.step(_sig(1, 104.0, 104.5, 103.0, 104.0), _seq_long_ready())  # limit at 103.82 fills
+    ex.step(_sig(1, 104.0, 104.5, 103.0, 104.0), _seq_long_ready())   # limit at 103.82 fills
     assert ex._pos_dir == 1
     ex.step(_sig(2, 104.0, 104.5, 103.9, 104.2), _seq_long_dead())
     assert ex.misses == []
@@ -638,25 +539,19 @@ def test_a_setup_that_traded_is_never_a_miss():
 # Method 3 sits at the BOTTOM of the 2026-08-02 cascade, so every test here has to switch
 # rules 2 and 3 off to reach it. `_m3` says that once instead of four times.
 
-
 def _m3(**kw):
-    return _cfg(
-        exec_req_fvg=True,
-        exec_fib_overlap=False,
-        exec_fib_deep_edge=False,
-        exec_fib_nearest=False,
-        **kw,
-    )
+    return _cfg(exec_req_fvg=True, exec_fib_overlap=False, exec_fib_deep_edge=False,
+                exec_fib_nearest=False, **kw)
 
 
 def test_deep_fib_reprices_a_deep_long_gap_to_the_nearest_shallower_fib():
     """Method 3 ON: a gap floating deep in the zone (near edge below 0.618) rests at the
     fib just SHALLOWER, not the gap edge. Gap top 102.5 sits between 0.786 and 0.702, so
     the limit re-prices to 0.702 = 102.8 (the level price reaches first)."""
-    fvg = [(102.5, 101.5, True, 0)]  # (top, bot, is_bull, born) — deep, between 0.786 and 0.702
+    fvg = [(102.5, 101.5, True, 0)]   # (top, bot, is_bull, born) — deep, between 0.786 and 0.702
     ex_on = Execution(_m3(exec_deep_fib=True))
     le, _ = ex_on._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())
-    assert abs(le - 102.8) < 1e-9  # 0.702, not the 102.5 gap edge
+    assert abs(le - 102.8) < 1e-9          # 0.702, not the 102.5 gap edge
 
 
 def test_deep_fib_off_keeps_the_gap_edge_entry():
@@ -664,7 +559,7 @@ def test_deep_fib_off_keeps_the_gap_edge_entry():
     fvg = [(102.5, 101.5, True, 0)]
     ex_off = Execution(_m3(exec_deep_fib=False))
     le, _ = ex_off._entry_edges(_sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())
-    assert abs(le - 102.5) < 1e-9  # min(top, 0.5) = the gap edge
+    assert abs(le - 102.5) < 1e-9          # min(top, 0.5) = the gap edge
 
 
 def test_deep_fib_leaves_a_shallow_gap_unchanged():
@@ -672,33 +567,17 @@ def test_deep_fib_leaves_a_shallow_gap_unchanged():
     not a Method 3 case — it enters at the gap edge whether the toggle is on or off."""
     fvg = [(104.0, 101.5, True, 0)]
     on = Execution(_m3(exec_deep_fib=True))._entry_edges(
-        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat()
-    )[0]
+        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())[0]
     off = Execution(_m3(exec_deep_fib=False))._entry_edges(
-        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat()
-    )[0]
+        _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg), _seq_flat())[0]
     assert abs(on - 104.0) < 1e-9 and abs(off - 104.0) < 1e-9
 
 
 def _bear_sig(fvg):
     """Short-side leg: 0.5=105 0.618=106.18 0.702=107.2 0.786=108.0 0.886=108.86."""
-    return _sig(
-        0,
-        106,
-        106.1,
-        105.5,
-        105.8,
-        dir=-1,
-        fvgs=fvg,
-        fibo_p2=105.0,
-        fibo_p3=106.18,
-        fibo_p4=107.2,
-        fibo_p5=108.0,
-        fibo_p6=108.86,
-        fibo_p1=103.82,
-        fibo_p7=100.0,
-        fibo_p10=110.0,
-    )
+    return _sig(0, 106, 106.1, 105.5, 105.8, dir=-1, fvgs=fvg,
+                fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.2, fibo_p5=108.0,
+                fibo_p6=108.86, fibo_p1=103.82, fibo_p7=100.0, fibo_p10=110.0)
 
 
 def test_deep_fib_reprices_a_deep_short_gap():
@@ -719,9 +598,8 @@ _FLOAT_GAP = [(102.7, 102.05, True, 0)]
 
 
 def _entry(cfg, fvg=None, sig=None):
-    return Execution(cfg)._entry_edges(
-        sig or _sig(0, 104, 104.5, 103.9, 104.2, fvgs=fvg or _FLOAT_GAP), _seq_flat()
-    )[0]
+    return Execution(cfg)._entry_edges(sig or _sig(0, 104, 104.5, 103.9, 104.2,
+                                                   fvgs=fvg or _FLOAT_GAP), _seq_flat())[0]
 
 
 def test_nearest_fib_takes_the_DEEPER_level_when_it_is_closer():
@@ -729,15 +607,15 @@ def test_nearest_fib_takes_the_DEEPER_level_when_it_is_closer():
     is 0.05 away while the one above is 0.10, so the limit rests at 0.786. Method 3 would
     take 0.702 however far away it was — that is the bug Aaron caught on 30 Jul 2026."""
     assert abs(_entry(_cfg(exec_req_fvg=True)) - 102.0) < 1e-9
-    assert abs(_entry(_m3(exec_deep_fib=True)) - 102.8) < 1e-9  # the old answer, same gap
+    assert abs(_entry(_m3(exec_deep_fib=True)) - 102.8) < 1e-9   # the old answer, same gap
 
 
 def test_nearest_fib_takes_the_SHALLOWER_level_when_that_one_is_closer():
     """The other half of rule 3 — and a tie goes to the shallower level, because that is the
     one price reaches first, so an equal price is bought without giving up the fill."""
-    near_top = [(102.75, 102.3, True, 0)]  # 0.05 up to 0.702, 0.30 down to 0.786
+    near_top = [(102.75, 102.3, True, 0)]     # 0.05 up to 0.702, 0.30 down to 0.786
     assert abs(_entry(_cfg(exec_req_fvg=True), near_top) - 102.8) < 1e-9
-    tie = [(102.7, 102.1, True, 0)]  # 0.10 each way
+    tie = [(102.7, 102.1, True, 0)]           # 0.10 each way
     assert abs(_entry(_cfg(exec_req_fvg=True), tie) - 102.8) < 1e-9
 
 
@@ -751,7 +629,7 @@ def test_deep_edge_rests_inside_the_gap_and_overrides_rule_3():
 def test_deep_edge_falls_back_when_the_gap_reaches_the_band_FLOOR():
     """A gap whose far edge clamps onto 0.886 would rest ON the stop — a zero stop distance
     and a cancelled order. Rule 2 sends it to the level above instead (0.786)."""
-    on_the_floor = [(101.8, 101.0, True, 0)]  # far clamps to 0.886 = 101.14
+    on_the_floor = [(101.8, 101.0, True, 0)]      # far clamps to 0.886 = 101.14
     cfg = _cfg(exec_req_fvg=True, exec_fib_deep_edge=True)
     assert abs(_entry(cfg, on_the_floor) - 102.0) < 1e-9
 
@@ -759,7 +637,7 @@ def test_deep_edge_falls_back_when_the_gap_reaches_the_band_FLOOR():
 def test_overlap_rests_on_the_SHALLOWEST_level_inside_the_gap_body():
     """Rule 1 fires only on a gap whose BODY holds a level, and takes the shallowest of them
     — the one price reaches first. It is independent of rules 2/3, so it wins with both on."""
-    holds_two = [(103.0, 102.0, True, 0)]  # body holds 0.702 and 0.786
+    holds_two = [(103.0, 102.0, True, 0)]         # body holds 0.702 and 0.786
     cfg = _cfg(exec_req_fvg=True, exec_fib_overlap=True)
     assert abs(_entry(cfg, holds_two) - 102.8) < 1e-9
     # …and this is the case rule 1 exists for. Rule 3 does not ask whether the body holds a
@@ -774,11 +652,9 @@ def test_no_rule_ever_snaps_an_entry_onto_0_886():
     every scan stops at 0.786. This gap floats between 0.786 and 0.886, where the nearest
     level below it IS 0.886, and no toggle combination may reach it."""
     between = [(101.8, 101.3, True, 0)]
-    for cfg in (
-        _cfg(exec_req_fvg=True),  # rule 3
-        _cfg(exec_req_fvg=True, exec_fib_overlap=True),  # rule 1 + 3
-        _m3(exec_deep_fib=True),
-    ):  # Method 3
+    for cfg in (_cfg(exec_req_fvg=True),                                    # rule 3
+                _cfg(exec_req_fvg=True, exec_fib_overlap=True),             # rule 1 + 3
+                _m3(exec_deep_fib=True)):                                   # Method 3
         assert _entry(cfg, between) > 101.14
 
 
@@ -792,16 +668,14 @@ def test_the_entry_model_mirrors_on_a_bear_leg():
 
 # ------------------------------------------------ the pre-zone gate (execFvgPreZone) ----
 
-
 def test_pre_zone_gate_refuses_a_gap_the_retrace_itself_printed():
     """A gap born ON or AFTER the bar price first tagged 0.5 is the retrace manufacturing its
     own confluence. STRICTLY earlier survives: born on the zone-entry bar was still forming
     as price arrived, so it was not present."""
     ex = Execution(_cfg(exec_req_fvg=True, exec_fvg_pre_zone=True))
     for born, kept in ((9, True), (10, False), (11, False)):
-        sig = _sig(
-            0, 104, 104.5, 103.9, 104.2, fibo_half_bar=10, fvgs=[(102.7, 102.05, True, born)]
-        )
+        sig = _sig(0, 104, 104.5, 103.9, 104.2, fibo_half_bar=10,
+                   fvgs=[(102.7, 102.05, True, born)])
         assert (ex._entry_edges(sig, _seq_flat())[0] is not None) is kept, born
 
 
@@ -810,26 +684,15 @@ def test_pre_zone_gate_is_inert_when_off_and_before_the_zone_is_reached():
     zone (`fibo_half_bar` None) every gap trivially pre-dates a moment that has not happened,
     so nothing is refused — that is what keeps the gate from suppressing the arm itself."""
     late = [(102.7, 102.05, True, 99)]
-    assert (
-        _entry(
-            _cfg(exec_req_fvg=True, exec_fvg_pre_zone=False),
-            fvg=late,
-            sig=_sig(0, 104, 104.5, 103.9, 104.2, fibo_half_bar=10, fvgs=late),
-        )
-        is not None
-    )
-    assert (
-        _entry(
-            _cfg(exec_req_fvg=True, exec_fvg_pre_zone=True),
-            fvg=late,
-            sig=_sig(0, 104, 104.5, 103.9, 104.2, fibo_half_bar=None, fvgs=late),
-        )
-        is not None
-    )
+    assert _entry(_cfg(exec_req_fvg=True, exec_fvg_pre_zone=False),
+                  fvg=late, sig=_sig(0, 104, 104.5, 103.9, 104.2,
+                                     fibo_half_bar=10, fvgs=late)) is not None
+    assert _entry(_cfg(exec_req_fvg=True, exec_fvg_pre_zone=True),
+                  fvg=late, sig=_sig(0, 104, 104.5, 103.9, 104.2,
+                                     fibo_half_bar=None, fvgs=late)) is not None
 
 
 # ----------------------------------------------- the deep-entry stop (execSlDeep) ----
-
 
 def test_sl_deep_moves_the_stop_to_the_leg_origin_only_for_a_deep_fill():
     """AT OR PAST 0.786 -> fib 1.0 (the leg origin, the only level beyond the whole entry
@@ -837,18 +700,18 @@ def test_sl_deep_moves_the_stop_to_the_leg_origin_only_for_a_deep_fill():
     purpose: rule 3 assigns that fib to the edge directly, so the comparison is exact."""
     sig = _sig(0, 104, 104.5, 103.9, 104.2)
     on = Execution(_cfg(exec_sl_level="0.886", exec_sl_deep=True))
-    assert on._sl_anchor(sig, 102.0, True) == sig.fibo_p10  # exactly 0.786 -> 1.0
-    assert on._sl_anchor(sig, 101.5, True) == sig.fibo_p10  # deeper still -> 1.0
-    assert on._sl_anchor(sig, 102.8, True) == sig.fibo_p6  # 0.702 -> the chosen level
+    assert on._sl_anchor(sig, 102.0, True) == sig.fibo_p10     # exactly 0.786 -> 1.0
+    assert on._sl_anchor(sig, 101.5, True) == sig.fibo_p10     # deeper still -> 1.0
+    assert on._sl_anchor(sig, 102.8, True) == sig.fibo_p6      # 0.702 -> the chosen level
     off = Execution(_cfg(exec_sl_level="0.886", exec_sl_deep=False))
-    assert off._sl_anchor(sig, 102.0, True) == sig.fibo_p6  # toggle off: never moves
+    assert off._sl_anchor(sig, 102.0, True) == sig.fibo_p6     # toggle off: never moves
 
 
 def test_sl_deep_mirrors_on_a_bear_leg_and_treats_a_missing_edge_as_shallow():
     bear = _bear_sig([])
     on = Execution(_cfg(exec_sl_level="0.886", exec_sl_deep=True))
     assert on._sl_anchor(bear, 108.0, False) == bear.fibo_p10  # exactly 0.786 -> 1.0
-    assert on._sl_anchor(bear, 107.2, False) == bear.fibo_p6  # 0.702 -> the chosen level
+    assert on._sl_anchor(bear, 107.2, False) == bear.fibo_p6   # 0.702 -> the chosen level
     # An unknown edge must never silently WIDEN the stop.
     assert on._sl_anchor(bear, None, False) == bear.fibo_p6
 
@@ -857,7 +720,6 @@ def test_sl_deep_mirrors_on_a_bear_leg_and_treats_a_missing_edge_as_shallow():
 # The exit levers added to `mpc_strategy.pine` 2026-07-25. All four tests drive the same
 # long to stage 2 (TP1 105 and TP2 106.18 both taken on bar 2) and then read the stop the
 # bar-2 close staged, so only the lever under test differs.
-
 
 def _stage2_long(ex, last_conf_low=None):
     """Fill a long at 103.82 and rally it through TP1+TP2 on bar 2. Returns bar 2's decision,
@@ -870,20 +732,16 @@ def _stage2_long(ex, last_conf_low=None):
 def test_structure_trail_rides_the_confirmed_swing_low():
     """Structure mode: the runner stop is the last confirmed swing low minus the buffer.
     Swing 105.6, buffer 20 ticks of 0.01 = 0.20 -> 105.4, which beats the TP1 floor (105)."""
-    dec = _stage2_long(
-        Execution(_cfg(exec_runner_trail="Structure (swing)", exec_struct_trail_buf_tk=20.0)),
-        last_conf_low=105.6,
-    )
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)",
+                                      exec_struct_trail_buf_tk=20.0)), last_conf_low=105.6)
     assert abs(dec.stop - 105.4) < 1e-9
 
 
 def test_structure_trail_never_loosens_below_the_stage2_floor():
     """A swing BELOW the floor is ignored — the floor wins. Swing 104.0 - 0.20 = 103.80,
     which is worse than the TP1 floor (105), so the stop stays at 105."""
-    dec = _stage2_long(
-        Execution(_cfg(exec_runner_trail="Structure (swing)", exec_struct_trail_buf_tk=20.0)),
-        last_conf_low=104.0,
-    )
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)",
+                                      exec_struct_trail_buf_tk=20.0)), last_conf_low=104.0)
     assert abs(dec.stop - 105.0) < 1e-9
 
 
@@ -894,20 +752,13 @@ def test_structure_trail_with_no_confirmed_swing_falls_back_to_the_floor():
 
 
 def test_swing_ratchet_climbs_above_the_bare_structure_anchor():
-    """ "Structure + % ratchet": same anchor as Structure (swing low 105.6 - 0.20 = 105.40),
+    """"Structure + % ratchet": same anchor as Structure (swing low 105.6 - 0.20 = 105.40),
     then one step per step of favourable move. Max favourable on bar 2 is 107.0, so the step
     is 107.0 * 1% = 1.07 and the run is 107.0 - 105.40 = 1.60. floor((1.60-1.07)/1.07) = 0,
     so the stop is anchor + 0 = 105.40 — engaged, and never below the anchor."""
-    dec = _stage2_long(
-        Execution(
-            _cfg(
-                exec_runner_trail="Structure + % ratchet",
-                exec_struct_trail_buf_tk=20.0,
-                exec_trail_pct=1.0,
-            )
-        ),
-        last_conf_low=105.6,
-    )
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure + % ratchet",
+                                      exec_struct_trail_buf_tk=20.0,
+                                      exec_trail_pct=1.0)), last_conf_low=105.6)
     assert abs(dec.stop - 105.4) < 1e-9
 
 
@@ -916,20 +767,11 @@ def test_swing_ratchet_is_never_looser_than_the_plain_structure_trail():
     to or TIGHTER than Structure (swing). A tiny step makes the ratchet bind hard; the plain
     trail sits at the anchor. Long, so tighter = higher."""
     swing = 105.6
-    plain = _stage2_long(
-        Execution(_cfg(exec_runner_trail="Structure (swing)", exec_struct_trail_buf_tk=20.0)),
-        last_conf_low=swing,
-    )
-    ratchet = _stage2_long(
-        Execution(
-            _cfg(
-                exec_runner_trail="Structure + % ratchet",
-                exec_struct_trail_buf_tk=20.0,
-                exec_trail_pct=0.2,
-            )
-        ),
-        last_conf_low=swing,
-    )
+    plain = _stage2_long(Execution(_cfg(exec_runner_trail="Structure (swing)",
+                                        exec_struct_trail_buf_tk=20.0)), last_conf_low=swing)
+    ratchet = _stage2_long(Execution(_cfg(exec_runner_trail="Structure + % ratchet",
+                                          exec_struct_trail_buf_tk=20.0,
+                                          exec_trail_pct=0.2)), last_conf_low=swing)
     assert ratchet.stop >= plain.stop - 1e-12
     # ...and with a 0.2% step (0.214) it genuinely binds: run 1.60 -> 6 whole steps past
     # the first, so anchor + 6*0.214 = 106.684, well above the plain trail's 105.40.
@@ -938,9 +780,8 @@ def test_swing_ratchet_is_never_looser_than_the_plain_structure_trail():
 
 def test_swing_ratchet_with_no_confirmed_swing_falls_back_to_the_floor():
     """Same warmup guard as the plain structure trail — no anchor, no trail, floor only."""
-    dec = _stage2_long(
-        Execution(_cfg(exec_runner_trail="Structure + % ratchet")), last_conf_low=None
-    )
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Structure + % ratchet")),
+                       last_conf_low=None)
     assert abs(dec.stop - 105.0) < 1e-9
 
 
@@ -955,24 +796,23 @@ def test_fixed_step_trail_ignores_the_confirmed_swing():
 def test_tp2_stop_mode_breakeven_holds_the_stop_at_entry():
     """'Breakeven' keeps the runner at entry + the BE buffer instead of jumping to TP1.
     Entry 103.82, buffer 0 in these fixtures -> 103.82."""
-    dec = _stage2_long(
-        Execution(_cfg(exec_runner_trail="Fixed step", exec_tp2_stop_mode="Breakeven"))
-    )
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Fixed step",
+                                      exec_tp2_stop_mode="Breakeven")))
     assert abs(dec.stop - 103.82) < 1e-9
 
 
 def test_tp2_stop_mode_one_trail_step_behind():
     """'One trail step behind' floors the stop one 5.0 step under the high-water mark
     (107.0 - 5.0 = 102.0), but never below breakeven (103.82), so breakeven wins here."""
-    dec = _stage2_long(
-        Execution(_cfg(exec_runner_trail="Fixed step", exec_tp2_stop_mode="One trail step behind"))
-    )
+    dec = _stage2_long(Execution(_cfg(exec_runner_trail="Fixed step",
+                                      exec_tp2_stop_mode="One trail step behind")))
     assert abs(dec.stop - 103.82) < 1e-9
 
 
 def test_tp2_stop_mode_one_trail_step_behind_beats_breakeven_on_a_big_run():
     """Same mode, bigger run: high-water 112.0 - 5.0 = 107.0 clears breakeven, so it holds."""
-    ex = Execution(_cfg(exec_runner_trail="Fixed step", exec_tp2_stop_mode="One trail step behind"))
+    ex = Execution(_cfg(exec_runner_trail="Fixed step",
+                        exec_tp2_stop_mode="One trail step behind"))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())
     dec = ex.step(_sig(2, 104.0, 112.0, 103.9, 111.5), _seq_flat())
@@ -1004,7 +844,6 @@ def test_shipped_sl_level_default_is_the_deep_band_edge():
 # 110 - 10v: 0.886 -> 101.14 (= fibo_p6), 0.9 -> 101.0, 1.0 -> 100.0 (= fibo_p10). The entry edge
 # is fibo_p3 = 103.82 (exec_req_fvg off), which is what every stop distance below is measured to.
 
-
 def test_a_custom_ratio_prices_a_level_the_dropdown_never_offered():
     """The whole point: 0.9 sits BETWEEN the 0.886 default and the 1.0 leg origin, and no
     combination of the five choices can express it."""
@@ -1012,7 +851,7 @@ def test_a_custom_ratio_prices_a_level_the_dropdown_never_offered():
     sig = _sig(0, 104.0, 104.5, 103.9, 104.2)
 
     assert abs(ex._sl_anchor(sig) - 101.0) < 1e-12
-    assert sig.fibo_p10 < ex._sl_anchor(sig) < sig.fibo_p6  # deeper than 0.886, shallower than 1.0
+    assert sig.fibo_p10 < ex._sl_anchor(sig) < sig.fibo_p6   # deeper than 0.886, shallower than 1.0
 
 
 def test_custom_at_a_dropdown_value_is_the_SAME_price_to_the_last_bit():
@@ -1022,37 +861,19 @@ def test_custom_at_a_dropdown_value_is_the_SAME_price_to_the_last_bit():
     the fib engine walked to produce fiboP6, and `_TOUCH_EPS`-scale drift would be a real defect.
     Checked on a BEAR leg too, where the anchor arithmetic is the mirror (asl + range*v)."""
     sig = _sig(0, 104.0, 104.5, 103.9, 104.2)
-    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.886))._sl_anchor(
-        sig
-    ) == Execution(_cfg(exec_sl_level="0.886"))._sl_anchor(sig)
-    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=1.0))._sl_anchor(sig) == Execution(
-        _cfg(exec_sl_level="1.0")
-    )._sl_anchor(sig)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.886))._sl_anchor(sig) \
+        == Execution(_cfg(exec_sl_level="0.886"))._sl_anchor(sig)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=1.0))._sl_anchor(sig) \
+        == Execution(_cfg(exec_sl_level="1.0"))._sl_anchor(sig)
 
     # The shared fixture hardcodes BULL-leg fib prices, so a bear leg needs its own coherent set:
     # same anchors, mirrored arithmetic (asl + range*v instead of ash - range*v).
-    bear = _sig(
-        0,
-        104.0,
-        104.5,
-        103.9,
-        104.2,
-        dir=-1,
-        fibo_p1=103.82,
-        fibo_p2=105.0,
-        fibo_p3=106.18,
-        fibo_p4=107.02,
-        fibo_p5=107.86,
-        fibo_p6=108.86,
-        fibo_p7=100.0,
-        fibo_p10=110.0,
-    )
-    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.786))._sl_anchor(
-        bear
-    ) == Execution(_cfg(exec_sl_level="0.786"))._sl_anchor(bear)
-    assert (
-        Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.9))._sl_anchor(bear) > bear.fibo_p6
-    )
+    bear = _sig(0, 104.0, 104.5, 103.9, 104.2, dir=-1,
+                fibo_p1=103.82, fibo_p2=105.0, fibo_p3=106.18, fibo_p4=107.02,
+                fibo_p5=107.86, fibo_p6=108.86, fibo_p7=100.0, fibo_p10=110.0)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.786))._sl_anchor(bear) \
+        == Execution(_cfg(exec_sl_level="0.786"))._sl_anchor(bear)
+    assert Execution(_cfg(exec_sl_level="Custom", exec_sl_custom=0.9))._sl_anchor(bear) > bear.fibo_p6
 
 
 def test_a_custom_stop_sizes_the_position_off_its_own_distance():
@@ -1087,7 +908,7 @@ def test_a_custom_ratio_is_only_validated_when_the_mode_reads_it():
 
     assert cfg.exec_sl_custom == 99.0
     ex = Execution(_cfg(exec_sl_level="0.886", exec_sl_custom=99.0))
-    assert ex._sl_anchor(_sig(0, 104.0, 104.5, 103.9, 104.2)) == 101.14  # still fiboP6
+    assert ex._sl_anchor(_sig(0, 104.0, 104.5, 103.9, 104.2)) == 101.14   # still fiboP6
 
 
 def test_the_custom_default_is_the_shipped_level_so_selecting_it_moves_nothing():
@@ -1101,7 +922,6 @@ def test_the_custom_default_is_the_shipped_level_so_selecting_it_moves_nothing()
 # price). Bars are parked at 107.5-109.5 so nothing ever fills and the placement decision is the
 # only thing under test; their true range is a flat 2.00, which is what makes the ATR exact.
 
-
 def _quiet_bars(ex, seq, n, start=0):
     """`n` bars that never touch the 103.82 entry edge. TR is 2.00 on every one of them
     (high-low = 2.00 dominates both close-gap terms), so ATR(14) settles at exactly 2.00."""
@@ -1112,7 +932,7 @@ def _quiet_bars(ex, seq, n, start=0):
 
 
 def test_off_is_still_inert_for_anyone_reproducing_an_old_run():
-    """ "Off" must stay inert — it is what every result measured before 2026-08-05 was taken at, so
+    """"Off" must stay inert — it is what every result measured before 2026-08-05 was taken at, so
     selecting it has to reproduce those runs exactly.
 
     This used to also assert that "Off" was the DEFAULT. It is not any more (see the test below),
@@ -1177,18 +997,18 @@ def test_atr_floor_refuses_nothing_until_the_atr_exists_then_measures_it():
     ex = Execution(_cfg(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=1.0))
     _quiet_bars(ex, _seq_long_ready(), 13)
     assert ex._atr is None
-    assert ex._pend_long is None  # warmup: floor unknown ⇒ refused
+    assert ex._pend_long is None          # warmup: floor unknown ⇒ refused
 
     _quiet_bars(ex, _seq_long_ready(), 1, start=13)
-    assert abs(ex._atr - 2.0) < 1e-9  # 14 bars of a flat 2.00 true range
-    assert ex._pend_long is not None  # 1 × ATR = 2.00 < the 3.82 stop ⇒ allowed
+    assert abs(ex._atr - 2.0) < 1e-9      # 14 bars of a flat 2.00 true range
+    assert ex._pend_long is not None      # 1 × ATR = 2.00 < the 3.82 stop ⇒ allowed
 
 
 def test_atr_floor_refuses_when_the_multiple_exceeds_the_stop():
     ex = Execution(_cfg(exec_min_stop_mode="x ATR(14)", exec_min_stop_val=2.0))
     _quiet_bars(ex, _seq_long_ready(), 14)
     assert abs(ex._atr - 2.0) < 1e-9
-    assert ex._pend_long is None  # 2 × ATR = 4.00 > the 3.82 stop ⇒ refused
+    assert ex._pend_long is None          # 2 × ATR = 4.00 > the 3.82 stop ⇒ refused
 
 
 def test_atr_follows_wilder_after_the_sma_seed():
@@ -1213,7 +1033,8 @@ def test_a_stop_refused_on_distance_is_recorded_as_blocked_code_7():
 def test_code_7_sits_last_in_precedence_behind_a_toggle_refusal():
     """A setup refused by BOTH a toggle and the floor reports the toggle as primary — the Pine's
     `f_blkCode` returns the first blocker, and `codes[0]` must keep reconciling with it."""
-    ex = Execution(_cfg(exec_longs=False, exec_min_stop_mode="% of price", exec_min_stop_val=5.0))
+    ex = Execution(_cfg(exec_longs=False,
+                        exec_min_stop_mode="% of price", exec_min_stop_val=5.0))
     ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())
     assert ex.blocks[0].codes == [1, 7]
     assert ex.blocks[0].code == 1
@@ -1243,24 +1064,17 @@ def test_the_bleg_fork_pins_the_floor_off_because_it_cannot_enforce_it():
 # Reporting-only, exactly like the excursion fields: nothing reads a recorded ladder back, so
 # these tests pin the RECORD, never a decision.
 
-
 def test_a_filled_trade_records_the_fib_leg_it_was_priced_off():
     """The whole ladder, at the prices the strategy read, on the bar the order was placed."""
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())  # fill @103.82
-    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5), _seq_flat())  # stop out -> closed
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())      # place
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0), _seq_long_ready())      # fill @103.82
+    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5), _seq_flat())              # stop out -> closed
     t = ex.trades[0]
     assert t.fib is not None
     assert t.fib.levels == [
-        (0.0, 110.0),
-        (0.382, 106.18),
-        (0.5, 105.0),
-        (0.618, 103.82),
-        (0.702, 102.8),
-        (0.786, 102.0),
-        (0.886, 101.14),
-        (1.0, 100.0),
+        (0.0, 110.0), (0.382, 106.18), (0.5, 105.0), (0.618, 103.82),
+        (0.702, 102.8), (0.786, 102.0), (0.886, 101.14), (1.0, 100.0),
     ]
 
 
@@ -1269,23 +1083,14 @@ def test_the_recorded_fib_is_the_one_the_ORDER_rested_on_not_the_one_at_the_fill
     would report a leg the order was never priced against, and the stop/targets on that same trade
     would then belong to a different ladder from the one drawn beside them."""
     ex = Execution(_cfg())
-    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())  # place off the 110/100 leg
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2), _seq_long_ready())      # place off the 110/100 leg
     # The leg extends before the limit fills: same setup, every level moved.
-    moved = dict(
-        fibo_p1=126.18,
-        fibo_p2=125.0,
-        fibo_p3=123.82,
-        fibo_p4=122.8,
-        fibo_p5=122.0,
-        fibo_p6=121.14,
-        fibo_p7=130.0,
-        fibo_p10=120.0,
-        fibo_ash=130.0,
-        fibo_asl=120.0,
-    )
-    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0, **moved), _seq_long_ready())  # fill @103.82
-    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5, **moved), _seq_flat())  # stop out
-    assert ex.trades[0].fib.levels[0] == (0.0, 110.0)  # the leg at PLACEMENT, not 130.0
+    moved = dict(fibo_p1=126.18, fibo_p2=125.0, fibo_p3=123.82, fibo_p4=122.8,
+                 fibo_p5=122.0, fibo_p6=121.14, fibo_p7=130.0, fibo_p10=120.0,
+                 fibo_ash=130.0, fibo_asl=120.0)
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0, **moved), _seq_long_ready())   # fill @103.82
+    ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5, **moved), _seq_flat())           # stop out
+    assert ex.trades[0].fib.levels[0] == (0.0, 110.0)      # the leg at PLACEMENT, not 130.0
     assert ex.trades[0].fib.levels[-1] == (1.0, 100.0)
 
 
@@ -1293,14 +1098,12 @@ def test_the_fib_start_is_the_bar_the_LEG_began_not_the_entry():
     """The x-span the chart draws from. A ladder starting at the fill would hide the retracement
     that produced it, which is the thing the layer exists to show."""
     ex = Execution(_cfg())
-    ex.step(
-        _sig(0, 104.0, 104.5, 103.9, 104.2, fibo_ash_ms=7_000, fibo_asl_ms=3_000), _seq_long_ready()
-    )
-    ex.step(
-        _sig(1, 104.3, 104.4, 103.5, 104.0, fibo_ash_ms=7_000, fibo_asl_ms=3_000), _seq_long_ready()
-    )
+    ex.step(_sig(0, 104.0, 104.5, 103.9, 104.2, fibo_ash_ms=7_000, fibo_asl_ms=3_000),
+            _seq_long_ready())
+    ex.step(_sig(1, 104.3, 104.4, 103.5, 104.0, fibo_ash_ms=7_000, fibo_asl_ms=3_000),
+            _seq_long_ready())
     ex.step(_sig(2, 103.8, 103.9, 99.0, 99.5), _seq_flat())
-    assert ex.trades[0].fib.start_ms == 3_000  # the EARLIER anchor — where the leg started
+    assert ex.trades[0].fib.start_ms == 3_000     # the EARLIER anchor — where the leg started
 
 
 def test_an_incompletely_priced_fib_is_recorded_as_NOTHING_rather_than_partially():
@@ -1318,18 +1121,7 @@ def test_the_secondary_reentry_records_no_A_plus_ladder():
     from types import SimpleNamespace
 
     ex = Execution(_cfg())
-    arm = SimpleNamespace(
-        l_armed=True,
-        l_edge=103.0,
-        l_sl=102.0,
-        l_tp1=105.0,
-        l_tp2=106.0,
-        l_leg=1,
-        s_armed=False,
-        s_edge=None,
-        s_sl=None,
-        s_tp1=None,
-        s_tp2=None,
-        s_leg=None,
-    )
+    arm = SimpleNamespace(l_armed=True, l_edge=103.0, l_sl=102.0, l_tp1=105.0, l_tp2=106.0,
+                          l_leg=1, s_armed=False, s_edge=None, s_sl=None,
+                          s_tp1=None, s_tp2=None, s_leg=None)
     assert ex._secondary_pending(arm).fib is None

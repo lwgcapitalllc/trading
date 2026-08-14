@@ -57,12 +57,10 @@ if str(_REPO_ROOT) not in sys.path:
 from equal_highs_lows import EqualHighsLowsEngine
 
 # ── column groups ──
-PRICE_FIELDS = (
-    ["px_eq_tol", "px_eq_ph", "px_eq_pl", "px_eqh_new", "px_eql_new"]
-    + [f"px_eqh_{i}" for i in range(6)]
-    + [f"px_eql_{i}" for i in range(6)]
-)  # price/tolerance scale, tol-compared, na-aware
-COUNT_FIELDS = ["px_eqh_cnt", "px_eql_cnt"]  # active-level counts, exact
+PRICE_FIELDS = (["px_eq_tol", "px_eq_ph", "px_eq_pl", "px_eqh_new", "px_eql_new"]
+                + [f"px_eqh_{i}" for i in range(6)]
+                + [f"px_eql_{i}" for i in range(6)])          # price/tolerance scale, tol-compared, na-aware
+COUNT_FIELDS = ["px_eqh_cnt", "px_eql_cnt"]                    # active-level counts, exact
 ALL_FIELDS = PRICE_FIELDS + COUNT_FIELDS
 
 
@@ -148,18 +146,15 @@ def _load_rows(path, cols):
         rows = list(csv.DictReader(f))
     tcol = cols.get("time")
     if tcol:
-
         def tkey(r):
             raw = (r.get(tcol) or "").strip()
             if raw.isdigit():
                 return int(raw)
             try:
                 from datetime import datetime
-
                 return datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
             except Exception:
                 return None
-
         keys = [tkey(r) for r in rows]
         if all(k is not None for k in keys) and keys != sorted(keys):
             rows = [r for _, r in sorted(zip(keys, rows), key=lambda p: p[0])]
@@ -167,32 +162,14 @@ def _load_rows(path, cols):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("csv", help="CSV exported from TradingView with eq_export.pine on the chart")
-    ap.add_argument(
-        "--pivot-len", type=int, default=2, help="must match the Pine eqPivotLen (default 2)"
-    )
-    ap.add_argument(
-        "--atr-mult", type=float, default=0.1, help="must match the Pine eqAtrMult (default 0.1)"
-    )
-    ap.add_argument(
-        "--max-levels", type=int, default=6, help="must match the Pine eqMax (default 6, per side)"
-    )
-    ap.add_argument(
-        "--tolerance",
-        type=float,
-        default=1e-2,
-        help="abs tolerance for price/tolerance fields (default 1e-2, covers CSV rounding)",
-    )
+    ap.add_argument("--pivot-len", type=int, default=2, help="must match the Pine eqPivotLen (default 2)")
+    ap.add_argument("--atr-mult", type=float, default=0.1, help="must match the Pine eqAtrMult (default 0.1)")
+    ap.add_argument("--max-levels", type=int, default=6, help="must match the Pine eqMax (default 6, per side)")
+    ap.add_argument("--tolerance", type=float, default=1e-2, help="abs tolerance for price/tolerance fields (default 1e-2, covers CSV rounding)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument(
-        "--warmup",
-        type=int,
-        default=0,
-        help="skip the first N bars in the report (still fed to the engine)",
-    )
+    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -204,9 +181,7 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
-    eng = EqualHighsLowsEngine(
-        pivot_len=args.pivot_len, atr_mult=args.atr_mult, max_levels=args.max_levels
-    )
+    eng = EqualHighsLowsEngine(pivot_len=args.pivot_len, atr_mult=args.atr_mult, max_levels=args.max_levels)
 
     total = 0
     per_field_mismatch = {fld: 0 for fld in ALL_FIELDS}
@@ -241,15 +216,11 @@ def main(argv=None):
                 detailed.append((i, tval, bar_mismatches))
 
     # ── Report ──
-    print(
-        f"\nCompared {total} bars from {path.name}  "
-        f"(pivot_len={args.pivot_len}, atr_mult={args.atr_mult}, max_levels={args.max_levels}, tol={args.tolerance})"
-    )
+    print(f"\nCompared {total} bars from {path.name}  "
+          f"(pivot_len={args.pivot_len}, atr_mult={args.atr_mult}, max_levels={args.max_levels}, tol={args.tolerance})")
     print("-" * 72)
     if not any(per_field_mismatch.values()):
-        print(
-            "✓ EQ PARITY: every compared field matched on every bar. Python engine == Pine source."
-        )
+        print("✓ EQ PARITY: every compared field matched on every bar. Python engine == Pine source.")
         return 0
 
     print("MISMATCHES BY FIELD:")
@@ -258,22 +229,18 @@ def main(argv=None):
         if n:
             print(f"  {fld:<12} {n} bar(s)")
     print("-" * 72)
-    print(
-        f"Last mismatching bar: {last_mismatch_bar}  "
-        f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})"
-    )
+    print(f"Last mismatching bar: {last_mismatch_bar}  "
+          f"(if all mismatches are early, re-run with --warmup {(last_mismatch_bar or 0) + 1})")
     print(f"First {len(detailed)} mismatching bar(s) (row index, time, field: python vs pine):")
     for idx, tval, ms in detailed:
         print(f"  bar {idx}  {tval}")
         for fld, pv, pinev in ms:
             print(f"      {fld:<12} python={pv!r:<16} pine={pinev!r}")
     print("-" * 72)
-    print(
-        "Tip: mismatches confined to early bars = warmup (Pine's ATR was already warm and it may hold "
-        "active EQ levels and a prior pivot from before the export window; the cold-started Python "
-        "engine converges once its ATR settles and those off-window levels have been mitigated). "
-        "Persistent mismatches after a clean run = a real logic gap to fix against mpc_assistant.pine."
-    )
+    print("Tip: mismatches confined to early bars = warmup (Pine's ATR was already warm and it may hold "
+          "active EQ levels and a prior pivot from before the export window; the cold-started Python "
+          "engine converges once its ATR settles and those off-window levels have been mitigated). "
+          "Persistent mismatches after a clean run = a real logic gap to fix against mpc_assistant.pine.")
     return 1
 
 

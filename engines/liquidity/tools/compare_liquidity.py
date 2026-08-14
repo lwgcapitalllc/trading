@@ -68,40 +68,28 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from liquidity import LiquidityEngine
-from liquidity.engine import _key_day, _key_h4, _key_week
+from liquidity.engine import _key_day, _key_week, _key_h4
 from sessions.engine import _resolve_tz
 
 # px_<col> : level name in LiquidityLevel.name  (price columns)
 # (The MONTHLY level PMH/PML was removed from the source and the engine on 2026-07-09.)
 PRICE_BY_NAME = {
-    "px_pdh": "PDH",
-    "px_pdl": "PDL",
-    "px_pwh": "PWH",
-    "px_pwl": "PWL",
+    "px_pdh": "PDH", "px_pdl": "PDL",
+    "px_pwh": "PWH", "px_pwl": "PWL",
     "px_pwc": "PWC",
-    "px_h4h": "H4 H",
-    "px_h4l": "H4 L",
-    "px_asia_h": "Asia H",
-    "px_asia_l": "Asia L",
-    "px_london_h": "London H",
-    "px_london_l": "London L",
-    "px_ny_h": "NY H",
-    "px_ny_l": "NY L",
+    "px_h4h": "H4 H", "px_h4l": "H4 L",
+    "px_asia_h": "Asia H", "px_asia_l": "Asia L",
+    "px_london_h": "London H", "px_london_l": "London L",
+    "px_ny_h": "NY H", "px_ny_l": "NY L",
 }
 # px_<col> : level name  (mitigation flag columns — PWC has none)
 MIT_BY_NAME = {
-    "px_pdh_mit": "PDH",
-    "px_pdl_mit": "PDL",
-    "px_pwh_mit": "PWH",
-    "px_pwl_mit": "PWL",
-    "px_h4h_mit": "H4 H",
-    "px_h4l_mit": "H4 L",
-    "px_asia_h_mit": "Asia H",
-    "px_asia_l_mit": "Asia L",
-    "px_london_h_mit": "London H",
-    "px_london_l_mit": "London L",
-    "px_ny_h_mit": "NY H",
-    "px_ny_l_mit": "NY L",
+    "px_pdh_mit": "PDH", "px_pdl_mit": "PDL",
+    "px_pwh_mit": "PWH", "px_pwl_mit": "PWL",
+    "px_h4h_mit": "H4 H", "px_h4l_mit": "H4 L",
+    "px_asia_h_mit": "Asia H", "px_asia_l_mit": "Asia L",
+    "px_london_h_mit": "London H", "px_london_l_mit": "London L",
+    "px_ny_h_mit": "NY H", "px_ny_l_mit": "NY L",
 }
 ROLL_FIELDS = ["px_day_roll", "px_week_roll", "px_h4_roll"]
 
@@ -109,7 +97,7 @@ PRICE_FIELDS = list(PRICE_BY_NAME)
 MIT_FIELDS = list(MIT_BY_NAME)
 ALL_FIELDS = PRICE_FIELDS + MIT_FIELDS + ROLL_FIELDS
 
-_SECONDS_CEILING = 10**11
+_SECONDS_CEILING = 10 ** 11
 
 
 def _num(s):
@@ -144,16 +132,11 @@ def _resolve_columns(header, roll_optional=True):
             raise SystemExit(f"ERROR: column {name!r} not found in export. Header: {header}")
         return col
 
-    cols = {
-        "time": find("time"),
-        "open": find("open", False),
-        "high": find("high"),
-        "low": find("low"),
-        "close": find("close"),
-    }
+    cols = {"time": find("time"), "open": find("open", False),
+            "high": find("high"), "low": find("low"), "close": find("close")}
     for fld in PRICE_FIELDS + MIT_FIELDS:
         cols[fld] = find(fld)
-    for fld in ROLL_FIELDS:  # roll pulses are a calibration aid — optional
+    for fld in ROLL_FIELDS:                      # roll pulses are a calibration aid — optional
         cols[fld] = find(fld, not roll_optional)
     return cols
 
@@ -179,17 +162,13 @@ class _RollWatcher:
 
     def __init__(self, htf_tz, rollover):
         from datetime import timedelta
-
         self._tz = _resolve_tz(htf_tz)
         self._shift = timedelta(hours=(24 - (rollover % 24)) % 24)
         self._keys = {"day": None, "week": None, "h4": None}
         self._fns = {"day": _key_day, "week": _key_week, "h4": _key_h4}
 
     def pulses(self, ts_ms):
-        local = (
-            datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).astimezone(self._tz)
-            + self._shift
-        )
+        local = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc).astimezone(self._tz) + self._shift
         out = {}
         for k, fn in self._fns.items():
             key = fn(local)
@@ -218,40 +197,17 @@ def _values_match(field, py_val, pine_val, tol):
         return False
     if field in PRICE_FIELDS:
         return abs(py_val - pine_val) <= tol
-    return int(round(py_val)) == int(round(pine_val))  # mit + roll flags
+    return int(round(py_val)) == int(round(pine_val))    # mit + roll flags
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    ap.add_argument(
-        "csv", help="CSV exported from TradingView with liquidity_export.pine on the chart"
-    )
-    ap.add_argument(
-        "--htf-tz",
-        default="America/New_York",
-        help="timezone the day/week/month/H4 boundary is cut in (default America/New_York)",
-    )
-    ap.add_argument(
-        "--htf-rollover",
-        type=int,
-        default=18,
-        help="local hour the HTF session OPENS (XAUUSD = 18:00 NY, the validated default)",
-    )
-    ap.add_argument(
-        "--tolerance",
-        type=float,
-        default=1e-6,
-        help="abs tolerance for price fields (default 1e-6)",
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("csv", help="CSV exported from TradingView with liquidity_export.pine on the chart")
+    ap.add_argument("--htf-tz", default="America/New_York", help="timezone the day/week/month/H4 boundary is cut in (default America/New_York)")
+    ap.add_argument("--htf-rollover", type=int, default=18, help="local hour the HTF session OPENS (XAUUSD = 18:00 NY, the validated default)")
+    ap.add_argument("--tolerance", type=float, default=1e-6, help="abs tolerance for price fields (default 1e-6)")
     ap.add_argument("--max-report", type=int, default=30, help="how many mismatching bars to print")
-    ap.add_argument(
-        "--warmup",
-        type=int,
-        default=0,
-        help="skip the first N bars in the report (still fed to the engine)",
-    )
+    ap.add_argument("--warmup", type=int, default=0, help="skip the first N bars in the report (still fed to the engine)")
     args = ap.parse_args(argv)
 
     path = Path(args.csv)
@@ -263,11 +219,8 @@ def main(argv=None):
     cols = _resolve_columns(header)
     rows = _load_rows(path, cols)
 
-    engine = LiquidityEngine(
-        htf_timezone=args.htf_tz,
-        htf_rollover_hours=args.htf_rollover,
-        hide_mitigated_on_new_day=False,
-    )
+    engine = LiquidityEngine(htf_timezone=args.htf_tz, htf_rollover_hours=args.htf_rollover,
+                             hide_mitigated_on_new_day=False)
     watcher = _RollWatcher(args.htf_tz, args.htf_rollover)
     compared_fields = [f for f in ALL_FIELDS if cols.get(f) is not None]
 
@@ -303,17 +256,13 @@ def main(argv=None):
                 detailed.append((i, row[cols["time"]], bar_mismatches))
 
     mismatched_fields = {f: n for f, n in per_field_mismatch.items() if n}
-    print(
-        f"Compared {total} bars ({args.warmup} warmup skipped) across {len(compared_fields)} fields "
-        f"[htf-tz={args.htf_tz} rollover={args.htf_rollover}h]."
-    )
+    print(f"Compared {total} bars ({args.warmup} warmup skipped) across {len(compared_fields)} fields "
+          f"[htf-tz={args.htf_tz} rollover={args.htf_rollover}h].")
     if not mismatched_fields:
         print("PARITY OK — every field matches on every warm bar.")
         return 0
 
-    print(
-        f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}."
-    )
+    print(f"MISMATCH — {sum(mismatched_fields.values())} field-mismatches; last at bar {last_mismatch_bar}.")
     print("Per-field mismatch counts:")
     for fld, n in sorted(mismatched_fields.items(), key=lambda p: -p[1]):
         print(f"  {fld}: {n}")
