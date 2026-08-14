@@ -93,7 +93,13 @@ if [ -d "$VENDOR_DIR/.git" ]; then
   ok "up to date at $VENDOR_DIR"
 else
   rm -rf "$VENDOR_DIR"
-  info "cloning $WATCH_REPO…"
+  # ⚠ BRACES ARE LOAD-BEARING: `$WATCH_REPO…` fails on macOS's system bash.
+  # The ellipsis is UTF-8 `e2 80 a6`, and bash 3.2.57 (what /bin/bash is on macOS)
+  # folds that leading 0xe2 into the identifier — so the name becomes `WATCH_REPO\xe2`,
+  # which `set -u` then kills as unbound. Reproduce: bash -c 'set -u; V=x; echo "$V…"'.
+  # Bash 5 parses it fine, which is why this shipped: it only breaks on the system bash.
+  # Every other `…` here is safe because none of them touches a variable expansion.
+  info "cloning ${WATCH_REPO}…"
   git clone --quiet --depth 1 "$WATCH_REPO" "$VENDOR_DIR"
   ok "cloned to $VENDOR_DIR"
 fi
