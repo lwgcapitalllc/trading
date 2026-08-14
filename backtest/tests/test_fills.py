@@ -12,8 +12,17 @@ import datetime
 import pytest
 
 from backtest.data.ticks import Tick, TickWindowUnavailable
-from backtest.fills import (PROFILES, SPREAD_UNMEASURED, AccountProfile, Bar, BarPathResolver,
-                            CostsNotConfigured, Level, SwapModel, TickPathResolver)
+from backtest.fills import (
+    PROFILES,
+    SPREAD_UNMEASURED,
+    AccountProfile,
+    Bar,
+    BarPathResolver,
+    CostsNotConfigured,
+    Level,
+    SwapModel,
+    TickPathResolver,
+)
 
 _SWAP = SwapModel(swap_long_points=-78.29, swap_short_points=29.49)
 
@@ -39,6 +48,7 @@ class FakeTicks:
 
 # ── cost inputs must be decisions, never defaults ─────────────────────────────
 
+
 def test_profile_refuses_unset_commission():
     with pytest.raises(CostsNotConfigured, match="commission_per_side_per_lot"):
         AccountProfile("mystery")
@@ -63,6 +73,7 @@ def test_negative_commission_rejected():
 
 # ── the verified PU Prime profiles ────────────────────────────────────────────
 
+
 def test_puprime_standard_is_commission_free():
     """Source: puprime.com/account-types (checked 2026-07-16) — Standard $0, Prime $3.5/side/lot,
     ECN $1/side/lot. Corroborated by the live demo's FIXED $0.32 gold spread, which is how a
@@ -83,10 +94,11 @@ def test_commission_is_per_lot_not_per_unit():
     prime = PROFILES["puprime_prime"]
     assert prime.lots(1485) == 14.85
     assert prime.commission(1485) == pytest.approx(3.50 * 14.85)
-    assert prime.commission(100) == pytest.approx(3.50)     # exactly one lot
+    assert prime.commission(100) == pytest.approx(3.50)  # exactly one lot
 
 
 # ── swap: the broker's own formula ────────────────────────────────────────────
+
 
 def test_swap_matches_the_brokers_published_formula():
     """PU Prime, fee-charges page, verbatim:
@@ -100,8 +112,8 @@ def test_swap_matches_the_brokers_published_formula():
 def test_long_pays_and_short_earns():
     """The asymmetry that makes swap change the strategy's direction bias, not just its total."""
     tue = datetime.date(2026, 7, 14)
-    assert _SWAP.charge(1, 1.0, tue) < 0      # long pays
-    assert _SWAP.charge(-1, 1.0, tue) > 0     # short is credited
+    assert _SWAP.charge(1, 1.0, tue) < 0  # long pays
+    assert _SWAP.charge(-1, 1.0, tue) > 0  # short is credited
 
 
 def test_wednesday_is_triple():
@@ -121,7 +133,7 @@ def test_swap_scales_with_lots():
 def test_profile_swap_converts_units_to_lots():
     p = PROFILES["puprime_standard"]
     tue = datetime.date(2026, 7, 14)
-    assert p.swap_charge(1, 100, tue) == pytest.approx(-79.60)     # 100oz = 1 lot
+    assert p.swap_charge(1, 100, tue) == pytest.approx(-79.60)  # 100oz = 1 lot
     assert p.swap_charge(1, 1485, tue) == pytest.approx(-79.60 * 14.85)
 
 
@@ -132,35 +144,44 @@ def test_profile_without_swap_charges_nothing():
 
 # ── BarPathResolver: must stay exactly as dumb as the Pine ────────────────────
 
+
 def test_bar_resolver_ties_resolve_to_targets_first():
     """Byte-for-byte with mpc_sos_fade.execution._intrabar_targets_first, which uses <=. A strict <
     flips every doji-ish bar and silently breaks compare_strategy.py's exit 0."""
-    assert BarPathResolver.targets_first(100.0, 101.0, 99.0) is True    # exact tie
-    assert BarPathResolver.targets_first(100.9, 101.0, 99.0) is True    # open near high
-    assert BarPathResolver.targets_first(99.1, 101.0, 99.0) is False    # open near low
+    assert BarPathResolver.targets_first(100.0, 101.0, 99.0) is True  # exact tie
+    assert BarPathResolver.targets_first(100.9, 101.0, 99.0) is True  # open near high
+    assert BarPathResolver.targets_first(99.1, 101.0, 99.0) is False  # open near low
 
 
 def test_bar_resolver_reports_no_slippage_because_it_cannot_see_any():
     f = BarPathResolver().first_touch(_bar(), {"tp": Level(100.8, falling=False)})
     assert f.key == "tp"
-    assert f.price == 100.8      # the level itself — a bar has no price between its extremes
+    assert f.price == 100.8  # the level itself — a bar has no price between its extremes
     assert f.slippage == 0.0
 
 
 def test_bar_resolver_returns_none_when_nothing_reached():
-    assert BarPathResolver().first_touch(_bar(h=101.0, l=99.0), {"tp": Level(105.0, falling=False)}) is None
+    assert (
+        BarPathResolver().first_touch(_bar(h=101.0, l=99.0), {"tp": Level(105.0, falling=False)})
+        is None
+    )
 
 
 def test_bar_resolver_picks_by_assumed_path():
-    bar = _bar(o=100.9, h=101.0, l=99.0)          # open near high -> up first
-    f = BarPathResolver().first_touch(bar, {"stop": Level(99.5, falling=True), "tp": Level(100.95, falling=False)})
+    bar = _bar(o=100.9, h=101.0, l=99.0)  # open near high -> up first
+    f = BarPathResolver().first_touch(
+        bar, {"stop": Level(99.5, falling=True), "tp": Level(100.95, falling=False)}
+    )
     assert f.key == "tp"
-    bar = _bar(o=99.1, h=101.0, l=99.0)           # open near low -> down first
-    f = BarPathResolver().first_touch(bar, {"stop": Level(99.5, falling=True), "tp": Level(100.95, falling=False)})
+    bar = _bar(o=99.1, h=101.0, l=99.0)  # open near low -> down first
+    f = BarPathResolver().first_touch(
+        bar, {"stop": Level(99.5, falling=True), "tp": Level(100.95, falling=False)}
+    )
     assert f.key == "stop"
 
 
 # ── TickPathResolver: the truth, and the measured slippage ───────────────────
+
 
 def test_tick_resolver_fills_at_the_real_next_price_not_the_level():
     """THE point of tick mode. A long's stop at 99.90 that finds the next bid at 99.78 slipped
@@ -195,14 +216,22 @@ def test_tick_resolver_short_transacts_on_the_ask():
 
 def test_tick_resolver_order_is_chronological_not_by_price():
     """The ambiguous bar: both a target and a stop are in range. The bar guesses; ticks KNOW."""
-    ticks = [Tick(10, 100.60, 100.93), Tick(20, 99.40, 99.73)]   # target first, then stop
+    ticks = [Tick(10, 100.60, 100.93), Tick(20, 99.40, 99.73)]  # target first, then stop
     r = TickPathResolver(FakeTicks(ticks), "XAUUSD.s")
-    f = r.first_touch(_bar(h=101.0, l=99.0), {"stop": Level(99.50, falling=True), "tp": Level(100.50, falling=False)}, buying=False)
+    f = r.first_touch(
+        _bar(h=101.0, l=99.0),
+        {"stop": Level(99.50, falling=True), "tp": Level(100.50, falling=False)},
+        buying=False,
+    )
     assert f.key == "tp"
 
-    ticks = [Tick(10, 99.40, 99.73), Tick(20, 100.60, 100.93)]   # stop first
+    ticks = [Tick(10, 99.40, 99.73), Tick(20, 100.60, 100.93)]  # stop first
     r = TickPathResolver(FakeTicks(ticks), "XAUUSD.s")
-    f = r.first_touch(_bar(h=101.0, l=99.0), {"stop": Level(99.50, falling=True), "tp": Level(100.50, falling=False)}, buying=False)
+    f = r.first_touch(
+        _bar(h=101.0, l=99.0),
+        {"stop": Level(99.50, falling=True), "tp": Level(100.50, falling=False)},
+        buying=False,
+    )
     assert f.key == "stop"
 
 
@@ -218,7 +247,7 @@ def test_a_better_than_asked_fill_is_not_negative_slippage():
 def test_the_fat_tail_lands_where_it_belongs():
     """Measured on XAUUSD.s: the worst single tick gap in one day was $13.74. No flat parameter can
     express that; the tape just does."""
-    ticks = [Tick(10, 100.50, 100.83), Tick(20, 86.76, 87.09)]   # a $13.74 hole
+    ticks = [Tick(10, 100.50, 100.83), Tick(20, 86.76, 87.09)]  # a $13.74 hole
     r = TickPathResolver(FakeTicks(ticks), "XAUUSD.s")
     f = r.first_touch(_bar(l=86.0), {"stop": Level(99.90, falling=True)}, buying=False)
     assert f.price == 86.76
@@ -227,11 +256,11 @@ def test_the_fat_tail_lands_where_it_belongs():
 
 # ── honesty guards ────────────────────────────────────────────────────────────
 
+
 def test_missing_ticks_raise_rather_than_silently_guessing():
     """A backtest that quietly downgrades its own fill model is the failure this module exists to
     prevent."""
-    r = TickPathResolver(FakeTicks([], raise_with=TickWindowUnavailable("agent down")),
-                         "XAUUSD.s")
+    r = TickPathResolver(FakeTicks([], raise_with=TickWindowUnavailable("agent down")), "XAUUSD.s")
     with pytest.raises(TickWindowUnavailable):
         r.first_touch(_bar(), {"tp": Level(100.8, falling=False)}, buying=False)
 
@@ -252,6 +281,7 @@ def test_fallback_is_explicit_and_recorded():
 
 
 # ── latency: the one assumption ──────────────────────────────────────────────
+
 
 def test_latency_shifts_the_window_start():
     """An order is not live until it reaches the broker."""
@@ -275,11 +305,14 @@ def test_latency_can_skip_an_early_fill():
     ticks = [Tick(1_000_010, 99.0, 99.33), Tick(1_000_200, 100.9, 101.23)]
     fake = FakeTicks(ticks)
     r = TickPathResolver(fake, "XAUUSD.s", latency_ms=75)
-    f = r.first_touch(_bar(ms=1_000_000, h=101.5, l=98.5), {"stop": Level(99.50, falling=True)}, buying=False)
+    f = r.first_touch(
+        _bar(ms=1_000_000, h=101.5, l=98.5), {"stop": Level(99.50, falling=True)}, buying=False
+    )
     assert f is None, "the 99.0 tick arrived before our order did"
 
 
 # ── spread (2026-08-02) ──────────────────────────────────────────────────────────
+
 
 def test_each_brokers_spread_is_its_own_measurement():
     """The two differ by ~45%, so quoting one for the other overstates or understates every
@@ -300,6 +333,7 @@ def test_each_brokers_spread_is_its_own_measurement():
 
 # ── the spread belongs to an ACCOUNT TIER, not to a broker ────────────────────
 
+
 def test_the_raw_puprime_tiers_do_not_inherit_standards_measured_spread():
     """🔴 The defect this whole block exists for, shipped until 2026-08-06.
 
@@ -312,27 +346,47 @@ def test_the_raw_puprime_tiers_do_not_inherit_standards_measured_spread():
     a measurement, and the published numbers for these tiers contradict each other across sources
     (their own account-types page puts ECN at $1.00/side and Prime at $3.50; a third-party
     breakdown reverses it). Measure the tier, then replace the sentinel.
+
+    ✅ **ECN was measured on 2026-08-14 (3,033,270 ticks over 5 days) and left this list**, which
+    is the sentinel doing its job rather than the rule weakening. What it may NOT do is take ECN's
+    figure with it: Prime is indistinguishable from ECN on every field the terminal publishes, so
+    "they look the same" is available as an argument again — and it is the same argument that put
+    Standard's 0.32 on all four tiers and was wrong by 2.7x. Prime is measured off Prime's own
+    tick stream or it keeps refusing.
     """
     assert PROFILES["puprime_standard"].spread_measured is True
-    for tier in ("puprime_prime", "puprime_ecn", "puprime_cent"):
+    for tier in ("puprime_prime", "puprime_cent"):
         assert PROFILES[tier].spread_measured is False, tier
         assert PROFILES[tier].spread != PROFILES["puprime_standard"].spread, tier
+    # The raw tier that IS measured must still not be carrying Standard's marked-up number — the
+    # original defect was a shared value, and a tier moving from refusal to 0.32 would satisfy
+    # every assertion above while reinstating it exactly.
+    assert PROFILES["puprime_ecn"].spread_measured is True
+    assert PROFILES["puprime_ecn"].spread != PROFILES["puprime_standard"].spread
 
 
 def test_charging_an_unmeasured_spread_refuses_and_names_the_tool():
     """It must RAISE, never fall back. Two things make a silent fallback worse than a crash here:
     0.0 would run a raw-tier backtest charging commission and no spread at all, and the sentinel
-    is NEGATIVE, so passing it through pays the trader half a spread on every fill."""
+    is NEGATIVE, so passing it through pays the trader half a spread on every fill.
+
+    ⚠ Reads `puprime_prime` since 2026-08-14 — it was `puprime_ecn` until that tier was measured.
+    The tier here has to be one that genuinely still refuses, or this becomes a test of nothing."""
     with pytest.raises(CostsNotConfigured) as exc:
-        PROFILES["puprime_ecn"].spread_or_refuse()
+        PROFILES["puprime_prime"].spread_or_refuse()
     assert "broker_facts.py" in str(exc.value)
-    assert "puprime_ecn" in str(exc.value)
+    assert "puprime_prime" in str(exc.value)
 
 
 def test_a_measured_spread_is_returned_unchanged():
     """The other half of the rule, stated on purpose — a guard that refuses everything is not a
-    guard. Pinned because a rule written in one direction is the one that gets 'simplified'."""
+    guard. Pinned because a rule written in one direction is the one that gets 'simplified'.
+
+    ⚠ **ECN's 0.12 is asserted as a VALUE, not just as 'measured'.** The whole failure this file
+    documents is a tier silently carrying a number that belongs to a different tier, and
+    `spread_measured is True` cannot tell 0.12 from 0.32."""
     assert PROFILES["puprime_standard"].spread_or_refuse() == 0.32
+    assert PROFILES["puprime_ecn"].spread_or_refuse() == 0.12
     assert PROFILES["vantage_demo"].spread_or_refuse() == 0.22
 
 
@@ -354,12 +408,17 @@ def test_modelling_fills_on_an_unmeasured_spread_is_refused_at_construction():
 def test_an_unmeasured_tier_still_builds_a_profile_for_the_cost_it_does_know():
     """The refusal is at the point of CHARGING, not construction. Commission is the one of the
     three costs that is stated per lot and unambiguous, so a raw tier can still be charged it.
-    Refusing to build the profile at all would make the honest part unusable."""
-    ecn = PROFILES["puprime_ecn"]
-    assert ecn.commission(100) == pytest.approx(1.00)
+    Refusing to build the profile at all would make the honest part unusable.
+
+    ⚠ Reads `puprime_prime` since 2026-08-14, for the same reason as the refusal test above: ECN's
+    spread is measured now, so asserting this on ECN would no longer exercise an unmeasured tier."""
+    prime = PROFILES["puprime_prime"]
+    assert prime.spread_measured is False
+    assert prime.commission(100) == pytest.approx(3.50)
 
 
 # ── swap is NOT tier-invariant, and that was measured rather than assumed ─────
+
 
 def test_the_raw_puprime_tiers_refuse_their_swap_too():
     """🔴 The assumption this replaces was written down on 2026-08-06 and overturned the same day.

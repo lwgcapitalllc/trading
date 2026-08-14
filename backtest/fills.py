@@ -30,7 +30,9 @@ difference by making tick mode guess.
   `_SPREAD_XAUUSD_PUPRIME_STANDARD` for the by-hour detail and for Vantage's very different $0.22.
   Re-measure with `algos/tools/broker_facts.py` rather than quoting this line: it is a snapshot of
   a broker's pricing, not a constant. ⚠ **It is a fact about an ACCOUNT TIER, not about the
-  broker** — the raw tiers carry `SPREAD_UNMEASURED` and REFUSE rather than borrowing this figure.
+  broker** — the same symbol on the same broker's **ECN** tier measures **$0.12** (2026-08-14,
+  3,033,270 ticks), 2.7x tighter, and a tier nobody has read carries `SPREAD_UNMEASURED` and
+  REFUSES rather than borrowing either figure.
 * **Commission** — a per-side fact about the ACCOUNT TYPE, not the symbol and not an estimate. It
   lives in `AccountProfile`, because on every broker the same symbol costs different amounts on
   different account tiers (PU Prime Standard: $0 + wide spread; Prime: $3.50/side/lot + raw spread).
@@ -55,9 +57,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Protocol, Sequence
 
-__all__ = ["AccountProfile", "PROFILES", "CostsNotConfigured", "PathResolver", "BarPathResolver",
-           "TickPathResolver", "Bar", "Fill", "Level", "SwapModel", "SENTINEL",
-           "SPREAD_UNMEASURED", "UNMEASURED_SWAP"]
+__all__ = [
+    "AccountProfile",
+    "PROFILES",
+    "CostsNotConfigured",
+    "PathResolver",
+    "BarPathResolver",
+    "TickPathResolver",
+    "Bar",
+    "Fill",
+    "Level",
+    "SwapModel",
+    "SENTINEL",
+    "SPREAD_UNMEASURED",
+    "UNMEASURED_SWAP",
+]
 
 # An un-set cost. Not 0.0: zero is a legitimate value (PU Prime Standard genuinely charges no
 # commission), so zero must be a thing you can deliberately SAY, distinct from never having said
@@ -97,7 +111,7 @@ class Bar:
     high: float
     low: float
     close: float
-    duration_ms: int = 300_000     # 5m default
+    duration_ms: int = 300_000  # 5m default
 
 
 @dataclass(frozen=True)
@@ -132,7 +146,7 @@ class SwapModel:
     swap_short_points: float = SENTINEL
     contract_size: float = 100.0
     digits: int = 2
-    triple_weekday: int = 2          # Wednesday, per PU Prime's swap-rates table
+    triple_weekday: int = 2  # Wednesday, per PU Prime's swap-rates table
     # An account whose swap NOBODY HAS READ. Distinct from `AccountProfile.swap = None`, which
     # means "do not charge swap" on purpose. The point values stay at SENTINEL, which is the
     # honest record — they are literally unset — and every read refuses rather than returning one.
@@ -141,9 +155,11 @@ class SwapModel:
 
     def __post_init__(self) -> None:
         if self.unmeasured:
-            return          # nothing to validate: every read refuses instead
-        for name, v in (("swap_long_points", self.swap_long_points),
-                        ("swap_short_points", self.swap_short_points)):
+            return  # nothing to validate: every read refuses instead
+        for name, v in (
+            ("swap_long_points", self.swap_long_points),
+            ("swap_short_points", self.swap_short_points),
+        ):
             if v == SENTINEL:
                 raise CostsNotConfigured(
                     f"{name} not set. Read it off the symbol's Specification window — it is a "
@@ -167,7 +183,7 @@ class SwapModel:
         if self.unmeasured:
             self._refuse()
         pts = self.swap_long_points if direction > 0 else self.swap_short_points
-        return pts * self.contract_size * (10 ** -self.digits)
+        return pts * self.contract_size * (10**-self.digits)
 
     def nights_charged(self, roll_date) -> int:
         """Nights booked at this rollover — 3 on the triple day, else 1."""
@@ -250,13 +266,13 @@ class AccountProfile:
 
     name: str
     commission_per_side_per_lot: float = SENTINEL
-    contract_size: float = 100.0        # units (oz) per lot — turns qty into lots
+    contract_size: float = 100.0  # units (oz) per lot — turns qty into lots
     mintick: float = 0.01
-    latency_ms: int = 75                # ~1 median tick spacing; the single assumption
+    latency_ms: int = 75  # ~1 median tick spacing; the single assumption
     swap: Optional[SwapModel] = None
-    slippage_ticks: int = 0             # BAR MODE ONLY — see below
-    spread: float = 0.0                 # BAR MODE ONLY — price units; 0.0 = not priced
-    bid_ask_fills: bool = False         # BAR MODE ONLY — moves fills, not just P&L
+    slippage_ticks: int = 0  # BAR MODE ONLY — see below
+    spread: float = 0.0  # BAR MODE ONLY — price units; 0.0 = not priced
+    bid_ask_fills: bool = False  # BAR MODE ONLY — moves fills, not just P&L
 
     def __post_init__(self) -> None:
         if self.commission_per_side_per_lot == SENTINEL:
@@ -366,8 +382,13 @@ class AccountProfile:
 # filled deal. So the commissions below remain the published figures, they still CONTRADICT a
 # third-party source on which tier is which, and **one 0.01-lot round turn on each demo settles it**
 # via `mt5_ops.get_deal_breakdown()`. Until then commission is the one cost here nobody has read.
-_XAUUSD_SWAP = SwapModel(swap_long_points=-79.60, swap_short_points=30.25,
-                         contract_size=100.0, digits=2, triple_weekday=2)
+_XAUUSD_SWAP = SwapModel(
+    swap_long_points=-79.60,
+    swap_short_points=30.25,
+    contract_size=100.0,
+    digits=2,
+    triple_weekday=2,
+)
 
 # Vantage demo (account 25893735, VantageMarkets-Demo) — the BACKTEST-ONLY broker, chosen so bar and
 # tick data match the VANTAGE_XAUUSD TradingView feed the strategies are designed against. Live
@@ -394,8 +415,13 @@ _XAUUSD_SWAP = SwapModel(swap_long_points=-79.60, swap_short_points=30.25,
 # ⚠ **The SPREAD is a separate question and is NOT re-opened by this.** The terminal read 0.27 at
 # that instant, which is one tick, not a measurement — the recorded 0.220 median is over 1,494,459
 # ticks with p90 at exactly 0.270, so a single 0.27 is inside it and contradicts nothing.
-_XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.98,
-                                 contract_size=100.0, digits=2, triple_weekday=2)
+_XAUUSD_SWAP_VANTAGE = SwapModel(
+    swap_long_points=-74.84,
+    swap_short_points=26.98,
+    contract_size=100.0,
+    digits=2,
+    triple_weekday=2,
+)
 
 # Bar-mode spreads, MEASURED off each broker's own cached bid/ask tick stream — never quoted from
 # the other one, and that distinction is not academic: the two differ by 50%.
@@ -408,19 +434,36 @@ _XAUUSD_SWAP_VANTAGE = SwapModel(swap_long_points=-74.84, swap_short_points=26.9
 #     ⚠ Supersedes 0.33 (2026-07-14, 688k ticks). Both are real; this one is 2.7x the sample, is
 #     three weeks newer, and — the part that matters — covers ALL 23 traded hours rather than a
 #     slice, which the previous figure could not claim.
+#   PU Prime XAUUSD.p ECN (2026-08-14, **3,033,270 ticks** over 5 whole days off the LIVE MT5_FFT
+#     terminal's own tick store, account 700152905) — median **0.120** (12 points), p90 0.120,
+#     p99 0.180, max 0.190, min 0.110. **2.7x tighter than Standard, which is what a raw tier is.**
+#     ⚠ Same SHAPE as Standard and that is the corroboration worth having: flat at $0.12 in 22 of
+#     23 traded hours, with the 22:00 UTC REOPEN after the 21:00-22:00 daily break the only wide
+#     one (median $0.16, p99 $0.19). The two tiers disagree on the level and agree on the
+#     structure, which is what a marked-up quote sitting on top of a raw one should look like.
 #   Vantage  XAUUSD   (2026-08-02, 1,494,459 ticks over 60 sampled hours of the local tick cache,
 #     spanning 2025-08 → 2026-07) — median **0.220**, p90 0.270, p99 0.310, max 0.310.
-# Tick mode ignores both: it has the real bid and ask on every tick. These exist so BAR mode, which
-# sees one price per bar, can be told what it cannot measure.
+# Tick mode ignores all three: it has the real bid and ask on every tick. These exist so BAR mode,
+# which sees one price per bar, can be told what it cannot measure.
 #
-# ⚠ **THE SPREAD IS PER ACCOUNT TIER, NOT PER BROKER, AND THE 0.32 BELONGS TO ONE TIER.** The live
-# demo is a **Standard** account — a commission-free tier is priced by MARKING UP the spread, which
-# is why 0.32 reads flat in 22 of 23 hours, and it agrees with PU Prime's published "3.0 pips" for
-# Standard at the $0.10/pip gold convention. Prime and ECN are raw-spread tiers and quote something
-# far tighter. Giving them Standard's number is not a conservative approximation; it is the single
-# number that distinguishes them. They carry `SPREAD_UNMEASURED` until somebody opens an account of
-# that type and measures it. See `docs/BROKER_QUESTIONS.md`.
+# ⚠ **THE SPREAD IS PER ACCOUNT TIER, NOT PER BROKER, AND THE 0.32 BELONGS TO ONE TIER.** The
+# Standard demo is a commission-free tier, priced by MARKING UP the spread, which is why 0.32 reads
+# flat in 22 of 23 hours and agrees with PU Prime's published "3.0 pips" for Standard at the
+# $0.10/pip gold convention. Prime and ECN are raw-spread tiers and quote something far tighter —
+# **now measured at 0.12 on ECN, i.e. the gap really is the 2.7x the tier structure implies.**
+# Giving a raw tier Standard's number is not a conservative approximation; it is the single number
+# that distinguishes them. See `docs/BROKER_QUESTIONS.md`.
+#
+# 🔴 **THE ECN FIGURE MAY NOT BE COPIED ONTO PRIME, AND THE TEMPTATION IS STRONGER HERE THAN
+# ANYWHERE ELSE IN THIS FILE.** Prime and ECN are indistinguishable from the terminal — same
+# symbol, same swap, same 20-point stops level — and a five-minute paired reading on 2026-08-10 had
+# BOTH at $0.12. That is exactly the reasoning that put Standard's 0.32 on all four tiers and shipped
+# for weeks: *they look the same, so they are*. It was wrong then by 2.7x. The 5-day tick stream
+# above was read off ONE account, and the terminal can only hold the ticks of the account it is
+# logged into — so Prime keeps `SPREAD_UNMEASURED` until MT5_FFT has sat on 700152904 for a day.
+# **One tier measured is one tier measured.**
 _SPREAD_XAUUSD_PUPRIME_STANDARD = 0.32
+_SPREAD_XAUUSD_PUPRIME_ECN = 0.12
 _SPREAD_XAUUSD_VANTAGE = 0.22
 
 # 🔴 **SWAP IS NOT ASSUMED TIER-INVARIANT ANY MORE, AND THE ASSUMPTION WAS CHECKED RATHER THAN
@@ -430,8 +473,9 @@ _SPREAD_XAUUSD_VANTAGE = 0.22
 # refuse BOTH costs nobody has read on them. **A tier is measured, or it refuses; there is no third
 # state and no borrowing.** Question 3 in `docs/BROKER_QUESTIONS.md` is what turns one back on.
 PROFILES = {
-    "puprime_standard": AccountProfile("puprime_standard", 0.00, swap=_XAUUSD_SWAP,
-                                       spread=_SPREAD_XAUUSD_PUPRIME_STANDARD),
+    "puprime_standard": AccountProfile(
+        "puprime_standard", 0.00, swap=_XAUUSD_SWAP, spread=_SPREAD_XAUUSD_PUPRIME_STANDARD
+    ),
     # Swap MEASURED on each of these two tiers 2026-08-08 and found identical to Standard's — see
     # the block above `_XAUUSD_SWAP`. The SPREAD is still refused: the only readings taken were the
     # last quotes before a Friday close (Standard 37 points, both raw tiers 17), and a stale
@@ -446,24 +490,42 @@ PROFILES = {
     # non-zero cent — anything from $0.50 to $1.49 per lot prints the same thing. It looked like
     # an answer and was a rounding floor. Size the probe so the charge clears the cent.
     #
-    # ⚠ **THE SPREAD IS STILL REFUSED, AND THAT IS DELIBERATE AFTER MEASURING IT.** Both raw
-    # tiers read a median **$0.12** on 2026-08-10 against a simultaneous Standard control of
-    # $0.31 — a real reading, on a live market, paired so the moment could not be doing the work.
-    # It is not here because it is FIVE MINUTES of one quiet Asian session, where the $0.32 above
-    # is a median over 1,893,438 ticks covering all 23 traded hours, and on this broker the ONLY
-    # wide hour is the 22:00 UTC reopen. Both tiers sat pinned at 11-12 points throughout, which
-    # is flat enough to want the reopen before trusting it.
-    # **Use `backtest/tools/cost_tiers.py --spread puprime_ecn=0.12` to model it; that flag
-    # labels the row `stated` and does not touch this table.** Replace the sentinel only with a
-    # figure read off that tier's own tick stream over a full day.
-    "puprime_prime":    AccountProfile("puprime_prime",    3.50, swap=_XAUUSD_SWAP,
-                                       spread=SPREAD_UNMEASURED),
-    "puprime_ecn":      AccountProfile("puprime_ecn",      1.00, swap=_XAUUSD_SWAP,
-                                       spread=SPREAD_UNMEASURED),
-    "puprime_cent":     AccountProfile("puprime_cent",     0.00, swap=UNMEASURED_SWAP,
-                                       spread=SPREAD_UNMEASURED),
-    "vantage_demo":     AccountProfile("vantage_demo",     0.00, swap=_XAUUSD_SWAP_VANTAGE,
-                                       spread=_SPREAD_XAUUSD_VANTAGE),
+    # ✅ **ECN'S SPREAD IS MEASURED AS OF 2026-08-14 AND THE SENTINEL IS RETIRED FOR THAT TIER
+    # ONLY.** The condition this comment used to set — *"a figure read off that tier's own tick
+    # stream over a full day"* — is met and then some: Aaron left MT5_FFT logged into 700152905
+    # for several days, and `broker_facts.py --history-days 6` read **3,033,270 ticks over 5 whole
+    # days**, median **$0.12**, covering all 23 traded hours INCLUDING the 22:00 UTC reopen that
+    # the previous refusal specifically named as the thing it was waiting for. Distribution and
+    # provenance are in the `_SPREAD_XAUUSD_PUPRIME_ECN` block above.
+    # ⚠ **The superseded reading was FIVE MINUTES of one quiet Asian session on 2026-08-10, and it
+    # happened to land on the same $0.12.** Do not read that as "the short sample was fine after
+    # all" — it could not see the reopen, so it could not have known, and the same five minutes on
+    # Standard would have reported a flat $0.32 and missed a 22:00 hour that is 9% wider. **A
+    # sample that agrees with the truth was still not evidence of it.**
+    # ⚠ **The account switch cannot have contaminated it, and that was CHECKED rather than
+    # assumed.** Both accounts live on the PUPrime-Demo server and MT5 keys its tick store by
+    # server, not by login, so a window straddling the switch would silently mix tiers. The
+    # 2-day window (unambiguously ECN) and the 5-day window return an identical $0.12 median and
+    # an identical by-hour shape, so whatever the wider window contains, it is not a second tier.
+    # 🔴 **PRIME IS STILL REFUSED AND IS NOT AN OVERSIGHT — see the block above
+    # `_SPREAD_XAUUSD_PUPRIME_STANDARD` for why copying ECN's figure onto it is the exact mistake
+    # this sentinel exists to prevent.**
+    # ⚠ **NO STORED RUN RE-PRICES.** `spread_or_refuse()` RAISED for this tier, so nothing that
+    # ever completed charged an ECN spread; the G5a figures were produced with
+    # `cost_tiers.py --spread puprime_ecn=0.12`, i.e. the same number, labelled `stated`. The only
+    # change is that the row now reads `measured` and needs no flag.
+    "puprime_prime": AccountProfile(
+        "puprime_prime", 3.50, swap=_XAUUSD_SWAP, spread=SPREAD_UNMEASURED
+    ),
+    "puprime_ecn": AccountProfile(
+        "puprime_ecn", 1.00, swap=_XAUUSD_SWAP, spread=_SPREAD_XAUUSD_PUPRIME_ECN
+    ),
+    "puprime_cent": AccountProfile(
+        "puprime_cent", 0.00, swap=UNMEASURED_SWAP, spread=SPREAD_UNMEASURED
+    ),
+    "vantage_demo": AccountProfile(
+        "vantage_demo", 0.00, swap=_XAUUSD_SWAP_VANTAGE, spread=_SPREAD_XAUUSD_VANTAGE
+    ),
 }
 
 
@@ -480,7 +542,7 @@ class Level:
     """
 
     price: float
-    falling: bool     # True ⇒ price must FALL to reach it (a long's stop, a short's target)
+    falling: bool  # True ⇒ price must FALL to reach it (a long's stop, a short's target)
 
 
 @dataclass(frozen=True)
@@ -496,7 +558,7 @@ class Fill:
 
     key: str
     price: float
-    slippage: float = 0.0     # adverse distance from the level, >= 0
+    slippage: float = 0.0  # adverse distance from the level, >= 0
 
 
 class PathResolver(Protocol):
@@ -533,7 +595,9 @@ class BarPathResolver:
         """
         return abs(open_ - high) <= abs(open_ - low)
 
-    def first_touch(self, bar: Bar, levels: Dict[str, Level], *, buying: bool = False) -> Optional[Fill]:
+    def first_touch(
+        self, bar: Bar, levels: Dict[str, Level], *, buying: bool = False
+    ) -> Optional[Fill]:
         # `buying` is accepted for interface parity and deliberately unused: a bar carries no
         # bid/ask, so bar mode cannot know which side of the book transacted. Another thing it
         # cannot see — and must not pretend to.
@@ -543,8 +607,9 @@ class BarPathResolver:
             return None
         # Among reached levels, the one the assumed path meets first: travelling up first means the
         # highest level is met before lower ones, and vice versa.
-        key, price = max(reached, key=lambda kp: kp[1]) if up_first \
-            else min(reached, key=lambda kp: kp[1])
+        key, price = (
+            max(reached, key=lambda kp: kp[1]) if up_first else min(reached, key=lambda kp: kp[1])
+        )
         # slippage stays 0.0: a bar cannot show the price BETWEEN its extremes, so bar mode has no
         # basis to claim any. That is a limitation being stated, not an absence being asserted.
         return Fill(key, price, 0.0)
@@ -588,7 +653,7 @@ class TickPathResolver:
         if stream is None:
             return self._bar_guess.first_touch(bar, levels, buying=buying)
         for t in stream:
-            px = t.ask if buying else t.bid          # the side that actually transacts
+            px = t.ask if buying else t.bid  # the side that actually transacts
             for key, lv in levels.items():
                 if not ((px <= lv.price) if lv.falling else (px >= lv.price)):
                     continue
@@ -616,7 +681,8 @@ class TickPathResolver:
             if not self.fallback:
                 raise TickWindowUnavailable(
                     f"no ticks for {self.symbol} at {bar.time_ms} — cannot resolve the intrabar "
-                    f"path. Pass fallback=True to guess instead (and know that you did).")
+                    f"path. Pass fallback=True to guess instead (and know that you did)."
+                )
             self.fallback_bars.append(bar.time_ms)
             return None
         return stream
