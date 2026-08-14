@@ -172,7 +172,16 @@ class SetupAlerts:
             if self._on(BLOCKED_MSG):
                 self._post(alerts.format_blocked(snap, self._digits), reply_to=root)
 
-        if snap.state == RESTING and ENTRY_ZONE_MSG not in sent:
+        # 🔴 **`announce_resting` is checked BEFORE `sent` is marked, and the order is the whole
+        # point.** Marking it first would consume the setup's one resting-message slot on a bar
+        # the message was suppressed, so the announcement would never arrive — the same
+        # bookkeeping-before-the-guard mistake the `tradeable` check above is written to avoid,
+        # and silent in exactly the same way.
+        #
+        # ⚠ **The STRATEGY decides when a resting order is worth announcing** (`backtest/setups.py`
+        # → `announce_resting`). This layer must never learn what a fib is; it only respects the
+        # answer. A strategy that does not implement it defaults True and behaves as before.
+        if snap.state == RESTING and snap.announce_resting and ENTRY_ZONE_MSG not in sent:
             sent.add(ENTRY_ZONE_MSG)
             if self._on(ENTRY_ZONE_MSG):
                 self._post(alerts.format_entry_zone(snap, self._digits), reply_to=root)

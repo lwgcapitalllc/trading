@@ -107,6 +107,29 @@ class SetupSnapshot:
     #: A confluence that is merely unmet is not untradeable — it is the normal state of every
     #: setup before it fills. Getting this wrong hides real signals, and the failure is silent.
     tradeable: bool = True
+    #: Is this setup close enough to acting that its RESTING ORDER is worth telling a human
+    #: about? Gates the "limit resting" message only — never the root, never the outcome, and
+    #: never a trade.
+    #:
+    #: 🔴 **It exists because an order is placed the moment a setup arms, which can be long
+    #: before price could reach it.** Measured live 2026-08-14: a limit rested 41 points below
+    #: price for a whole session, and the Telegram message announcing it arrived 45 minutes
+    #: before anything could plausibly happen (Aaron: *"I only want to know a limit is pending
+    #: when price gets back to 23.6% of the retracement"*). The strategy owns what "close
+    #: enough" means, because only it knows its own geometry — the alert layer has no price and
+    #: must never learn what a fib is.
+    #:
+    #: ⚠ **Defaults True, and that direction is deliberate.** A strategy that does not implement
+    #: this announces exactly as it did before, so adding the field cannot silence an existing
+    #: bot. The opposite default would make a forgotten line look like a quiet market — the
+    #: no-vs-cannot-ask rule, which in this file is already why `tradeable` reads the way it
+    #: does.
+    #:
+    #: ⚠ **A strategy setting this False must guarantee it goes True before any fill it would
+    #: suppress**, or a real trade arrives in the trades room having never been signalled.
+    #: `backtest/tools/alert_rate.py` is what checks that end to end; re-run it after changing
+    #: how a strategy computes this.
+    announce_resting: bool = True
 
     def __post_init__(self) -> None:
         # A bad state would route a message to the wrong formatter and, worse, would leave a

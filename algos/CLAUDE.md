@@ -891,6 +891,15 @@ the import inside the function, never to add an allow-list.**
 ⚠ **`setup_alert_categories` distinguishes ABSENT from EMPTY.** Absent = all four; `[]` = the
 reader switched them all off. Collapsing them would make a config typo look deliberate.
 
+🔴 **The resting-limit message waits for `snap.announce_resting`, and the CHECK ORDER is the whole
+point.** It is tested BEFORE `_sent` is marked — marking first would burn the setup's one
+resting-message slot on a bar the message was suppressed, so the announcement would never arrive.
+Same bookkeeping-before-the-guard trap the `tradeable` check beside it is written to avoid, and
+silent in the same way. ⚠ **The STRATEGY owns when a resting order is worth announcing**
+(`backtest/setups.py`); this layer has no price and must never learn what a fib is. Aaron, on a live
+message: *"I only want to know a limit is pending when price gets back to 23.6% of the
+retracement."*
+
 ⚠ **A setup the strategy has already refused is never announced** (`SetupSnapshot.tradeable`) —
 Aaron's rule: *"I should only be getting signals for the trades originating from my default
 settings."* The guard is checked BEFORE any bookkeeping, so a suppressed setup leaves no thread

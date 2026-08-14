@@ -317,6 +317,24 @@ serialisation of the same trades. The proof is the before/after pair, not the co
 ⚠ **`entry` is read from the ORDER, never recomputed from `sig`** — the identical trap already
 recorded for `Trade.fib`: a fib keeps extending while a limit rests.
 
+🔴 **`alert_resting_fib` (2026-08-14, default 0.236) decides WHEN a pending limit is announced, and
+it changes no trade.** The order is still placed the instant the setup arms; only the Telegram
+message waits. Aaron, on a live send: *"I only want to know a limit is pending when price gets back
+to 23.6% of the retracement."* `_announce_ready` latches per leg on the SOS bar once the bar's
+extreme tags `fib_level(0.236)` — priced through the canonical helper off the same anchors the fib
+engine used, never interpolated from the zone edges.
+⚠ **The ratio MUST stay under 0.5 and `__post_init__` refuses otherwise.** Every fill is at 0.5 or
+deeper, so price cannot fill without crossing a shallower level first — **that is what makes a
+suppressed message provably a setup that never traded**, a guarantee rather than a measurement. At
+0.5 the guarantee is gone and a real trade could reach the trades room unannounced.
+⚠ **The two event families mirror the trade DIFFERENTLY and one of them was measured wrong first**
+— see `_announce_ready`'s docstring. It is deliberately outside the `exec_` namespace and has no
+Pine counterpart, so `compare_strategy.py` is structurally unaffected.
+✅ **REPORTING ONLY, proven by replay: 155,807 M15 bars at HEAD and on the working tree give an
+identical 159-trade list, sum R +142.177389. No figure in this file moves.** Message volume
+332 → 301 resting alerts over 6.5 years, and `alert_rate.py` still reports 159 trades / 158
+announced — the one gap being the warm-up boundary it always was.
+
 🔴 **Only a READY setup can be reported as BLOCKED, and getting this wrong made the message lie.**
 A veto, the final hour or an HTF filter can be live while a setup is merely forming; reporting
 that announced setups as blocked which then rested and filled, under a sentence reading "the setup

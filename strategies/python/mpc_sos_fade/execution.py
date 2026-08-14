@@ -621,6 +621,12 @@ class Execution:
         # cascade on that leg. +1/-1/None; reset at the top of every step_secondary.
         self._sec_stop_dir: Optional[int] = None
 
+        # REPORTING ONLY — the "price has retraced far enough to be worth announcing" latch, per
+        # side, holding the SOS bar of the leg that has already qualified. Read by
+        # `_announce_ready`; nothing that places or prices an order sees it.
+        self._announce_latch_l: Optional[int] = None
+        self._announce_latch_s: Optional[int] = None
+
         self.trades: List[Trade] = []
         # Blocked setups (reporting only — see BlockedSetup). `_blk_keys` is the Pine's
         # per-side dedupe latch (`sosBar*10 + code`): one entry per setup per REASON, so a
@@ -1166,6 +1172,58 @@ class Execution:
         """
         return f"{self.strategy_name}:{'L' if is_long else 'S'}:{sos_bar}"
 
+    def _announce_ready(self, sig, sos_bar: Optional[int], is_long: bool) -> bool:
+        """Has price retraced far enough for this setup's RESTING ORDER to be worth announcing?
+
+        REPORTING ONLY — read by `_setup_context` and by nothing that places, prices or cancels
+        an order. It cannot move a trade, so it is parity-safe in the same way `Trade.mfe_usd`
+        and the whole missed-setup layer are: `compare_strategy.py` diffs the `px_*` decision
+        stream, which this never touches.
+
+        **The rule (Aaron, 2026-08-14):** *"I only want to know a limit is pending when price
+        gets back to 23.6% of the retracement."* The order is placed the instant the setup arms,
+        which on the live bot meant a limit resting 41 points below price for a whole session and
+        a Telegram message about it 45 minutes before anything could happen.
+
+        🔴 **The ratio being SHALLOWER than the entry band is what makes this safe, and it is a
+        guarantee rather than a measurement.** The band runs 0.5-0.886, so any fill must be at
+        0.5 or deeper, and price cannot reach 0.5 without crossing 0.236 first. **A suppressed
+        message therefore belongs to a setup that never filled** — this can never silence the
+        announcement of a trade that happens. ⚠ That property depends on
+        `alert_resting_fib < 0.5`; `__post_init__` refuses anything else rather than trusting the
+        reader, because the failure mode is a real trade reaching the trades room having never
+        been signalled, with nothing anywhere reporting the missing message.
+
+        ⚠ **LATCHED per leg, keyed on the SOS bar**, so a wick to 0.236 that immediately reverses
+        does not un-announce a setup already announced. The alert layer sends the message once
+        per setup anyway, but a flapping input would make the two disagree about why.
+
+        ⚠ **Priced through the canonical `fib_level()` off the same leg anchors the fib engine
+        used**, never by interpolating between the zone edges. Two ways of deriving one price is
+        the failure this file already records for `Trade.fib`.
+        """
+        if sos_bar is None or sig.fibo_dir == 0:
+            return False
+        latch = self._announce_latch_l if is_long else self._announce_latch_s
+        if latch == sos_bar:
+            return True
+        if sig.fibo_ash is None or sig.fibo_asl is None:
+            return False
+
+        level = fib_level(sig.fibo_ash, sig.fibo_asl, sig.fibo_dir,
+                          self._cfg.alert_resting_fib)
+        # The BAR's extreme, not its close: price tagging the level intrabar is price having got
+        # there, and the close is a different question. Same reading `_MissWatch.visit` takes of
+        # the zone itself.
+        reached = sig.low <= level if is_long else sig.high >= level
+        if reached:
+            if is_long:
+                self._announce_latch_l = sos_bar
+            else:
+                self._announce_latch_s = sos_bar
+            return True
+        return False
+
     def _setup_context(self, sig, m: _MissWatch, is_long: bool, arm_swp: bool, arm_div: bool,
                        veto: bool, late: bool, htf_any: bool) -> dict:
         """Freeze what this side's live setup looks like on this bar.
@@ -1229,6 +1287,8 @@ class Execution:
             if htf_any:
                 blocked.append("HTF breakout / bias filter")
 
+        announce = self._announce_ready(sig, m.sos_bar, is_long)
+
         return {
             "key": self._setup_key(is_long, m.sos_bar),
             # Can this setup still reach a fill under the config this bot is running? `_armed`
@@ -1245,6 +1305,7 @@ class Execution:
             # hour can lift while a setup is still alive, so those stay reportable and are
             # carried as `blocked_by` instead.
             "tradeable": arm_met,
+            "announce_resting": announce,
             "side": 1 if is_long else -1,
             "confluences": (
                 Confluence("Arm", arm_met, arm_text),
@@ -1307,6 +1368,7 @@ class Execution:
                 targets=(float(pend.tp1), float(pend.tp2)) if resting else (),
                 blocked_by=ctx["blocked_by"],
                 tradeable=ctx["tradeable"],
+                announce_resting=ctx["announce_resting"],
             ))
         return out
 

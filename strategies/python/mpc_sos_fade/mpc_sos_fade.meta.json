@@ -722,6 +722,17 @@
       ]
     },
     {
+      "name": "alert_resting_fib",
+      "group": "Reporting",
+      "label": "Announce a resting limit at fib",
+      "step": 0.05,
+      "desc": "Reporting only — it never changes a trade, and the order is still placed the moment the setup arms. It decides WHEN the signals channel tells you a limit is pending: price has to retrace this far back down the leg first. At the default the order is announced once price has given back 23.6% of the move, instead of the moment it is placed — which can be hours and tens of dollars before price could reach it. Must stay under 0.5, because every fill happens at 0.5 or deeper and the message has to go out before any trade can.",
+      "guide": [
+        "Told sooner, further from the entry",
+        "Told later, closer to the entry"
+      ]
+    },
+    {
       "name": "fill_model",
       "group": "Fill & costs",
       "label": "Fill model",

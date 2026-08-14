@@ -503,6 +503,17 @@ narrative is in `docs/BACKTEST_BUILD_NOTES.md`.
   forever. A method-presence check called them supported. **An empty registry answering
   confidently, arriving through a base class rather than a literal `{}`.** It is DERIVED from
   `_records_misses`, so a new fork cannot acquire a silent, empty channel by forgetting a line.
+- **`announce_resting` (2026-08-14) gates the "limit resting" MESSAGE and nothing else** — not the
+  root, not the outcome, never a trade; the order is still placed the moment the setup arms.
+  **The STRATEGY decides when its own resting order is worth announcing**, because only it knows its
+  geometry — this layer has no price and must never learn what a fib is. ⚠ **Defaults True**, so a
+  strategy that does not implement it announces as before; the opposite default would make a
+  forgotten line look like a quiet market. 🔴 **Setting it False owes a guarantee that it goes True
+  before any fill it would suppress**, or a real trade reaches the trades room unannounced —
+  `alert_rate.py` checks exactly that, and it is `tradeable`'s failure mode one field along. For
+  `mpc_sos_fade` the guarantee is geometric, not measured: the threshold is shallower than the 0.5
+  entry band, so price cannot fill without crossing it. **No baseline moves — 155,807 M15 bars at
+  HEAD and on the working tree give an identical 159-trade list, sum R +142.177389.**
 - **`tradeable=False` means the strategy has ALREADY decided no price path reaches a fill**, and
   the alert layer suppresses those (Aaron: *"I should only be getting signals for the trades
   originating from my default settings"*). ⚠ **A merely-unmet confluence is NOT untradeable** — it

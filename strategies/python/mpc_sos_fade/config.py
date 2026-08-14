@@ -460,6 +460,26 @@ class SosFadeConfig:
     # ── GRP_STATS — the one decision-affecting stats input (4194) ───────────────
     exec_scratch_r: float = 0.15       # "Scratch band (R)" — grades a closed trade WIN/LOSS/SCRATCH
 
+    # ── Alerts only — NOT a Pine input and NOT a trade decision (2026-08-14) ────────
+    alert_resting_fib: float = 0.236   # "Announce a resting limit at fib"
+    #   How far price must retrace before the signals channel announces that a limit is
+    #   PENDING. Aaron, on a live message: *"I only want to know a limit is pending when price
+    #   gets back to 23.6% of the retracement."* The order itself is placed the moment the setup
+    #   arms — this changes only WHEN a human is told about it.
+    #
+    #   ⚠ **REPORTING ONLY, and there is no Pine counterpart on purpose.** It is read by
+    #   `Execution._announce_ready` and by nothing that places, prices or cancels an order, so
+    #   `compare_strategy.py` is structurally unaffected — the same standing as `Trade.mfe_usd`
+    #   and the whole missed-setup layer. It is deliberately NOT in the `exec_` namespace, so a
+    #   reader scanning for trade-affecting dials does not have to check it.
+    #
+    #   🔴 **It MUST stay shallower than the 0.5 entry band, and `__post_init__` enforces it.**
+    #   Any fill is at 0.5 or deeper, so price cannot reach a fill without crossing this level
+    #   first — which is what guarantees a suppressed message always belongs to a setup that
+    #   never traded. At 0.5 or deeper that guarantee is gone and a real trade could reach the
+    #   trades room having never been signalled, with nothing anywhere reporting the gap.
+    #   `backtest/tools/alert_rate.py` is the end-to-end check; re-run it after moving this.
+
     # ── GRP_APLUS — A+ sequence (156) ───────────────────────────────────────────
     aplus_window: int = 4320           # "Max time: sweep → SOS (minutes)" — staleness backstop
 
@@ -513,6 +533,18 @@ class SosFadeConfig:
         the time stop is Off; every combo is then identical and inert, which is a wasted sweep
         but not an error, and raising on it would kill an otherwise valid grid.
         """
+        if not 0.0 < self.alert_resting_fib < 0.5:
+            # 🔴 Not a style rule. The whole safety property of this gate is that 0.236 is
+            # SHALLOWER than the 0.5 entry band, so every fill must cross it — which is what
+            # makes a suppressed message provably a setup that never traded. At 0.5 or deeper a
+            # real trade could arrive in the trades room having never been announced, and
+            # nothing anywhere would report the missing message. Refuse rather than clamp: a
+            # silently adjusted value would run under a rule the operator did not choose.
+            raise ValueError(
+                f"alert_resting_fib must be in (0, 0.5) — shallower than the 0.5 entry band, so "
+                f"that price cannot fill without crossing it first. Got "
+                f"{self.alert_resting_fib!r}."
+            )
         if self.exec_time_stop_mode not in _TIME_STOP_MODES:
             raise ValueError(
                 f"exec_time_stop_mode must be one of {sorted(_TIME_STOP_MODES)!r}, "

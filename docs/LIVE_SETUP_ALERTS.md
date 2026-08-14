@@ -116,13 +116,17 @@ replaced by a collector:
 |---|---|---|
 | 👀 SETUP FORMING | 608 | 7.7 |
 | 👋 NO TRADE | 449 | 5.7 |
-| 🎯 BUY/SELL LIMIT RESTING | 332 | 4.2 |
+| 🎯 BUY/SELL LIMIT RESTING | 301 | 3.8 |
 | ✅ ENTERED | 158 | 2.0 |
 | 🚫 BLOCKED | 55 | 0.7 |
-| **total** | **1,602** | **20.2** |
+| **total** | **1,571** | **19.9** |
 
 **608 threads, one per setup. Roughly one message every 1.5 days. 26% of announced setups became
 trades.**
+
+⚠ **Re-measured 2026-08-14 after the retrace gate landed** (§5.2): the resting alert went 332 → 301
+and the total 1,602 → 1,571. The 31 suppressed messages are setups where price never retraced to
+0.236, i.e. never came close to filling — the invariant below is unchanged at 159 / 158.
 
 ✅ **THE INVARIANT HOLDS, and it is checked by the tool rather than asserted here.** Aaron's
 requirement, 2026-08-13: *"the same trade signals that are going to the LWG Capital Algo trades
@@ -303,6 +307,18 @@ by the alert layer.
 ⚠ **The entry price can move while the limit rests and this message is NOT re-sent** (Aaron's call,
 2026-08-13). `_entry_edges` is recomputed every bar and a new gap can shift the resting price. The
 "Entered" message carries the real fill.
+
+🔴 **AND THAT ONE-MESSAGE RULE IS WHY THIS MESSAGE NOW WAITS FOR A RETRACE.** Measured on the live
+bot 2026-08-14: one setup went through **four broker tickets in 45 minutes** — 4,323.55 / 4,330.63 /
+4,331.81 / 4,333.66, size falling 1.71 → 0.71 lots as the stop widened — and only the first was ever
+announced. So the phone said 4,323.55 while the broker held 4,333.66. Announcing once was the right
+call and it was made without noticing it leaves the one message that IS sent quietly wrong.
+✅ **Fixed by sending LATER rather than more often** (`announce_resting`, `backtest/setups.py`): the
+strategy holds the message until price retraces to its `alert_resting_fib` (0.236 for
+`mpc_sos_fade`), which is both nearer the action and a fresher price. **The order is unchanged — it
+still rests the moment the setup arms.** ⚠ **The threshold must stay SHALLOWER than the entry band**,
+which is what makes a suppressed message provably a setup that never traded. Volume over 6.5 years:
+332 → 301 resting alerts, invariant unchanged at 159 trades / 158 announced.
 
 ### 5.3 Entered — replies to 5.1
 
