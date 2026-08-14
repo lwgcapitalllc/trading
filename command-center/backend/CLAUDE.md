@@ -1213,6 +1213,23 @@ carries a plain-English `reason` instead. A missing commit (never fetched), an u
 bot with no package: `0` would mean *up to date*, the most reassuring answer available and the one
 most likely to be wrong. Same rule as `mt5_link` and `grid_sensitivity_score`.
 
+### The ceiling on a promote is the REMOTE, not this laptop's HEAD (2026-08-14)
+
+🔴 **A successful deploy of `mpc_sos_fade_demo` landed v164 while the backtester read v165, and
+nothing anywhere said why.** `promote.py` PULLS on the VPS and deploys from its working tree, so a
+commit sitting unpushed here is code the VPS cannot fetch — the promote runs, reports success,
+restarts the bot, and leaves it behind by exactly those commits. Every number on the Configure tab
+was correct; the reader was left pressing a button that could not change anything.
+
+`compare()` now carries **`unpushed_commits`** — commits touching this bot's TREES that are not on
+`@{upstream}`. ⚠ **It is scoped to the bot's own trees**, or a commit to `algos/live/` would tell the
+reader to push before a deploy that is already complete. ⚠ **`None` (no upstream to measure against)
+is not `[]` (measured, all pushed)** — the same rule as `mt5_link`, on a precondition rather than a
+reading. ⚠ **`versions_behind` is deliberately unchanged**: it answers *how far behind is the bot*,
+and folding the unpushed count into it would make a true number silently mean something else. This
+is `uncommitted_edits` one step further out — **the working tree is not HEAD, and HEAD is not what
+the VPS can reach.**
+
 ### The settings that change without anyone asking
 
 `setting_changes` diffs the strategy's dataclass DEFAULTS between the two commits and marks which
@@ -1246,7 +1263,7 @@ defect; the same discipline the trade-fib layer follows.
 `backtest/` holds both the fill model the bot runs on and the lab's own cache, and no path can tell
 those apart. Naming the area is derived; naming the effect would be a guess wearing a label.
 
-✅ **28 tests (`tests/test_bot_versions.py`), non-vacuity proven by MUTATION** — a fail-watch
+✅ **34 tests (`tests/test_bot_versions.py`), non-vacuity proven by MUTATION** — a fail-watch
 against HEAD is vacuous for a new module. Four mutations, four distinct tests red: dropping the
 shared trees from `trees_for`, returning `0` instead of `None` for an unfetched commit, letting a
 subclass override win silently, and claiming a new setting `was: "Off"`.

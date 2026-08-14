@@ -26,6 +26,7 @@ function compare(over: Partial<BotVersionCompare> = {}): BotVersionCompare {
     local_version: 121,
     versions_behind: 21,
     uncommitted_files: [],
+    unpushed_commits: [],
     comparable: true,
     reason: '',
     changes: [
@@ -67,22 +68,47 @@ function version(cmp: BotVersionCompare | null): BotDeployedVersion {
   }
 }
 
-/** Intercept every bot endpoint the Configure tab touches. Nothing reaches the live box. */
+/**
+ * Intercept every bot endpoint the Configure tab touches. Nothing reaches the live box.
+ *
+ * ⚠ **`/version` ANSWERS DIFFERENTLY AFTER A SUCCESSFUL PROMOTE, and a fixed payload would make
+ * three of these checks vacuous.** `usePromoteBot` invalidates that query on success, so the real
+ * banner re-reads the deployed version and re-renders off the NEW state. A mock frozen at
+ * `deployed_version: 100` would leave the page saying "21 versions behind" after a deploy —
+ * indistinguishable from the defect being tested — and would let the success line quote
+ * `local_version` for ever without anything noticing. `landsAt` is the version the promote
+ * actually reaches, which is NOT always `local_version`: see the unpushed-commits check.
+ */
 async function mockBot(page: Page, cmp: BotVersionCompare | null, opts: {
-  promoteOk?: boolean; restarted?: boolean
+  promoteOk?: boolean; restarted?: boolean; landsAt?: number
 } = {}) {
+  let promoted = false
+  const after = (): BotVersionCompare | null => {
+    if (!cmp || !promoted) return cmp
+    const at = opts.landsAt ?? cmp.local_version ?? 0
+    const behind = Math.max(0, (cmp.local_version ?? 0) - at)
+    return {
+      ...cmp,
+      deployed_version: at,
+      versions_behind: behind,
+      changes: behind ? cmp.changes : [],
+      setting_changes: behind ? cmp.setting_changes : [],
+    }
+  }
   await page.route('**/api/bots/*/version', r =>
-    r.fulfill({ json: version(cmp) }))
+    r.fulfill({ json: version(after()) }))
   await page.route('**/api/bots/*/promote/preview', r =>
     r.fulfill({ json: { ok: true, output: 'dry run — nothing was deployed.', restarted: false } }))
-  await page.route('**/api/bots/*/promote', r =>
-    r.fulfill({
+  await page.route('**/api/bots/*/promote', r => {
+    if (opts.promoteOk ?? true) promoted = true
+    return r.fulfill({
       json: {
         ok: opts.promoteOk ?? true,
         restarted: opts.restarted ?? true,
         output: 'pinned 556bf70c18b7 (a9bf348, 2026-08-07)',
       },
-    }))
+    })
+  })
 }
 
 /** ⚠ Every assertion is scoped to this. The Risk-per-trade card carries its OWN `Deploy`
@@ -217,4 +243,112 @@ test('a deploy that did NOT restart says the bot is still on the old code', asyn
   await banner(page).getByRole('button', { name: /Deploy & restart/ }).click()
   await expect(banner(page).getByText(/restart .* to pick it up/)).toBeVisible()
   await expect(banner(page).getByText(/is running v121/)).toHaveCount(0)
+})
+
+// ── the accordion that would not close (2026-08-14) ─────────────────────────────
+//
+// Reported off the screen: *"even after I click the deploy button it always stays there enabled
+// like it wants me to click it again … after deployment is successful still looks like I can
+// click deploy still. The whole accordion should collapse and be back in a successful state."*
+
+test('a successful deploy collapses the panel and stops offering the deploy it just did', async ({ page }) => {
+  // MUTATION: render the `<pre>` unconditionally again — it leaves the banner in its pre-deploy
+  // shape under a green success line, which is what made a finished deploy read as a pending one
+  // for a SECOND time.
+  // ⚠ **The `!refreshing` guard on the changes block is NOT covered here, and the mutation for it
+  // was RUN and stayed green.** That guard only governs the seconds between the promote returning
+  // and the version refetch landing; a Playwright assertion retries until it settles, so it can
+  // only ever see the settled state. Named rather than claimed.
+  await mockBot(page, compare(), { promoteOk: true, restarted: true })
+  await openConfigure(page)
+
+  // The PREVIEW's output is shown without being asked for — it is what you read before deciding.
+  await banner(page).getByRole('button', { name: /Deploy v100 → v121/ }).click()
+  await expect(banner(page).getByText(/dry run — nothing was deployed/)).toBeVisible()
+
+  await banner(page).getByRole('button', { name: /Deploy & restart/ }).click()
+  await expect(banner(page).getByText(/Deployed —/)).toBeVisible()
+
+  // The banner has re-read the version and turned over to the up-to-date state.
+  await expect(banner(page).getByText(/is up to date/)).toBeVisible()
+  await expect(banner(page).getByRole('button', { name: /Deploy v100 → v121/ })).toHaveCount(0)
+  await expect(banner(page).getByText(/setting would change on this bot/)).toHaveCount(0)
+  // The promote output is no longer holding the panel open.
+  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toHaveCount(0)
+})
+
+test('the promote output is one click away, not thrown away', async ({ page }) => {
+  // MUTATION: drop the toggle and render nothing after a success. Collapsing a panel is only
+  // honest if the thing collapsed can still be read — the same rule the Missed layer follows for
+  // the reasons it unticks by default.
+  await mockBot(page, compare(), { promoteOk: true, restarted: true })
+  await openConfigure(page)
+
+  await banner(page).getByRole('button', { name: /Deploy v100 → v121/ }).click()
+  await banner(page).getByRole('button', { name: /Deploy & restart/ }).click()
+  await expect(banner(page).getByText(/Deployed —/)).toBeVisible()
+
+  await banner(page).getByTestId('deploy-output-toggle').click()
+  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toBeVisible()
+})
+
+test('a FAILED deploy keeps its output on screen without being asked', async ({ page }) => {
+  // MUTATION: collapse the output on every deploy rather than on a successful one. A failure's
+  // output is the only place the reason lives, so hiding it behind a click is the one case where
+  // collapsing costs the reader the answer.
+  await mockBot(page, compare(), { promoteOk: false, restarted: false })
+  await openConfigure(page)
+
+  await banner(page).getByRole('button', { name: /Deploy v100 → v121/ }).click()
+  await banner(page).getByRole('button', { name: /Deploy & restart/ }).click()
+  await expect(banner(page).getByText(/Deploy failed/)).toBeVisible()
+  await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toBeVisible()
+  await expect(banner(page).getByTestId('deploy-output-toggle')).toHaveCount(0)
+})
+
+// ── the reason a successful deploy can leave a bot behind ───────────────────────
+//
+// 🔴 MEASURED 2026-08-14: a deploy of mpc_sos_fade_demo landed v164 while the backtester read
+// v165, because the one commit between them was unpushed. The promote pulls on the VPS, so the
+// remote is the ceiling — and the page said nothing, so the Deploy button looked broken.
+
+test('unpushed commits are named, with the version a promote can actually reach', async ({ page }) => {
+  // MUTATION: drop the unpushed block. Every number on the banner stays correct and the reader is
+  // left pressing a button that cannot change anything.
+  await mockBot(page, compare({
+    unpushed_commits: ['6a71a9f feat(signals): announce on the retrace'],
+  }))
+  await openConfigure(page)
+  await expect(banner(page).getByText(/1 commit touching this bot is not pushed/)).toBeVisible()
+  await expect(banner(page).getByText(/can only reach/)).toBeVisible()
+  await expect(banner(page).getByText('v120').first()).toBeVisible()
+})
+
+test('nothing unpushed says nothing, and so does an unmeasurable upstream', async ({ page }) => {
+  // MUTATION: render the block on `unpushed_commits != null` (or on length >= 0). A permanent
+  // "0 commits are not pushed" line is a row nobody reads, on the banner whose whole value is
+  // that every line on it means something. `null` is "no upstream to ask", not "all pushed" —
+  // both are silent HERE, and collapsing them upstream is what makes the answer wrong.
+  await mockBot(page, compare({ unpushed_commits: null }))
+  await openConfigure(page)
+  await expect(banner(page).getByText(/is 21 versions behind/)).toBeVisible()
+  await expect(banner(page).getByText(/not pushed/)).toHaveCount(0)
+})
+
+test('the success line names the version that LANDED, not the one in the backtester', async ({ page }) => {
+  // 🔴 MEASURED 2026-08-14: it read `v{local_version}` — what the reader ASKED for — so a deploy
+  // that could only reach v164 announced "running v165". Those differ exactly when the deploy
+  // fell short, which is precisely when the sentence is read.
+  // MUTATION: put `c.local_version` back in that line.
+  await mockBot(page, compare({
+    unpushed_commits: ['6a71a9f feat(signals): announce on the retrace'],
+  }), { promoteOk: true, restarted: true, landsAt: 120 })
+  await openConfigure(page)
+
+  await banner(page).getByRole('button', { name: /Deploy v100 → v121/ }).click()
+  await banner(page).getByRole('button', { name: /Deploy & restart/ }).click()
+  await expect(banner(page).getByText(/restarted and is running v120/)).toBeVisible()
+  await expect(banner(page).getByText(/is running v121/)).toHaveCount(0)
+  // And it is honest that the bot is still short of the backtester.
+  await expect(banner(page).getByText(/is 1 version behind/)).toBeVisible()
 })

@@ -397,6 +397,10 @@ class BotVersionCompare(BaseModel):
     local_version: Optional[int] = None
     versions_behind: Optional[int] = None
     uncommitted_files: list[str] = []
+    # Commits touching this bot's trees that are NOT on the branch the VPS pulls from — so a
+    # promote cannot reach them however many times it is pressed. `None` = no upstream to
+    # measure against; `[]` = everything is pushed. The two are different answers.
+    unpushed_commits: Optional[list[str]] = None
     comparable: bool = False
     reason: str = ""
     changes: list[BotCodeChange] = []

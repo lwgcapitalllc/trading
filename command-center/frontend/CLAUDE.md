@@ -1220,7 +1220,7 @@ question it had not already thought of.
 **Added 2026-08-05.** This folder had no test runner at all: the convention was "verify it in a
 real browser", done by hand, which is why the Overview's twelve defects each survived until
 somebody looked. `@playwright/test` + `tests/*.spec.ts` keeps those checks runnable —
-**110 tests in 13 files** (counted 2026-08-08 with `npx playwright test --list`; the figure here had
+**189 tests in 17 files** (counted 2026-08-14 with `npx playwright test --list`; the figure here had
 been left at a stale "66 in 5" through several passes — re-count it rather than incrementing it),
 run with `npm test` from `frontend/`.
 
@@ -1963,7 +1963,44 @@ it to pick this up* rather than claiming the new version is live. And a FAILED d
 is **untouched and still on v100**, because a promote that fails leaves the running bot exactly as
 it was; claiming otherwise sends somebody to debug a bot that is fine.
 
-✅ **`tests/bots-version.spec.ts` — 10 checks, and they need NO BACKEND and no VPS** (the real
+### The accordion that would not close, and the deploy that landed short (2026-08-14)
+
+🔴 **A SUCCESSFUL deploy left the panel in its PRE-DEPLOY shape under a green success line** — the
+promote's `<pre>` held the block open at full height and the "N settings would change" section still
+described the state before the deploy. A success now collapses to the green line with the output
+behind a **Show output** toggle; a **preview** and a **FAILED** deploy keep theirs open unasked,
+because that text is what you read before deciding and the only place a failure's reason lives.
+
+🔴 **And the Deploy button stayed live across the refetch.** `usePromoteBot` invalidates the version
+on success, so for the length of that request every number on the banner — including the button's own
+`v163 → v165` label — still describes the state before the deploy. It reads `isFetching` now
+(`checking…`, disabled) and the changes block is withheld over that window. ⚠ **That last guard has
+NO browser check and its mutation was RUN and stayed green**: it governs only a transient, and a
+Playwright assertion retries until the state settles. Named rather than glossed.
+
+🔴 **The success line named `local_version` — what the reader ASKED for, not what landed.** MEASURED:
+it read *"running v165"* over a bot running **v164**. It is `deployed_version` now, and is withheld
+until the refetch answers — **a version quoted from the pre-deploy payload is a claim about the thing
+that just changed.**
+
+🔴 **`unpushed_commits` is why that deploy landed short, and the page could not say it. A promote
+PULLS on the VPS, so the ceiling is the REMOTE, never this laptop's HEAD** — an unpushed commit is
+unreachable however many times Deploy is pressed, and every number on the banner stays correct while
+the button looks broken. It names the count and the version a promote can actually reach, beside the
+uncommitted-files line it is the outward twin of. ⚠ **`null` = no upstream to ask, `[]` = measured
+and all pushed** — both silent here, and collapsing them upstream is what makes the answer wrong.
+
+⚠ **The `/version` mock must ANSWER DIFFERENTLY AFTER A PROMOTE or three checks are vacuous** — a
+route frozen at `deployed_version: 100` leaves the page reading "21 versions behind" after a deploy,
+indistinguishable from the defect. `landsAt` is what pins a deploy that deliberately falls short.
+
+🔴 **And the mutation harness silently no-opped TWICE: restoring the file and applying the next
+mutation IN THE SAME SHELL CALL left Vite serving the previous module**, so two mutations read as
+*did not bite* against plainly mutated source. **The `__pycache__` trap from `backend/CLAUDE.md`,
+arriving in the dev server.** Every step asserts the replacement APPLIED and runs in its own call —
+**a mutation that silently no-ops looks exactly like a test doing its job.**
+
+✅ **`tests/bots-version.spec.ts` — 16 checks, and they need NO BACKEND and no VPS** (the real
 `/version` route SSHes to the live trading box and `/promote` deploys onto it, so both are
 intercepted whole — the `calendar.spec.ts` shape, and it matters more here than anywhere).
 ⚠ **A fail-watch against HEAD is VACUOUS** — the banner did not exist, so every check would go red

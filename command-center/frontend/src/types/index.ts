@@ -593,6 +593,10 @@ export interface BotVersionCompare {
   local_version: number | null
   versions_behind: number | null
   uncommitted_files: string[]
+  /** Commits touching this bot that the VPS cannot fetch, because they are not pushed. A
+   *  promote pulls, so these are unreachable however many times Deploy is pressed. `null`
+   *  means there is no upstream to compare against — NOT that everything is pushed. */
+  unpushed_commits: string[] | null
   comparable: boolean
   reason: string
   changes: BotCodeChange[]

@@ -129,6 +129,35 @@ def uncommitted_edits(trees: list[str]) -> list[str]:
     return [ln[3:].strip() for ln in out.splitlines() if ln.strip()]
 
 
+def unpushed_commits(trees: list[str]) -> list[str] | None:
+    """Commits touching `trees` that exist HERE and not on the branch the VPS pulls from.
+
+    🔴 **A promote pulls on the VPS and deploys from ITS working tree, so the ceiling on what
+    can be deployed is the UPSTREAM — never this laptop's HEAD.** A local commit the remote has
+    never seen is code the VPS cannot fetch, so the promote runs, reports success, restarts the
+    bot, and leaves it behind by exactly those commits. Every number on the page is then
+    correct and the reader is left with a Deploy button that appears to have done nothing.
+
+    MEASURED 2026-08-14: a deploy of `mpc_sos_fade_demo` landed **v164** while the backtester
+    read **v165**, because the single commit between them was sitting unpushed on this machine.
+    The banner said "1 version behind" straight after a successful deploy and nothing on it
+    said why. This is the same shape as `uncommitted_edits` one step further out — the working
+    tree is not HEAD, and HEAD is not what the VPS can reach.
+
+    `None` when there is no upstream to measure against (a detached HEAD, a branch tracking
+    nothing). Never `[]`, which is the claim *everything is pushed*.
+    """
+    if not trees:
+        return None
+    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    if not upstream or not upstream.strip():
+        return None
+    out = _git("log", "--format=%h %s", f"{upstream.strip()}..HEAD", "--", *trees)
+    if out is None:
+        return None
+    return [ln.strip() for ln in out.splitlines() if ln.strip()]
+
+
 def changes_between(from_commit: str, to_commit: str, trees: list[str]) -> list[dict] | None:
     """Every commit touching `trees` in `(from_commit, to_commit]`, newest first.
 
@@ -307,11 +336,13 @@ def compare(strategy_package: str, deployed_commit: str, stated_params: dict) ->
     trees = trees_for(strategy_package)
     local_version = version_at("HEAD", trees)
     dirty = uncommitted_edits(trees)
+    unpushed = unpushed_commits(trees)
     base = {
         "deployed_version": None,
         "local_version": local_version,
         "versions_behind": None,
         "uncommitted_files": dirty,
+        "unpushed_commits": unpushed,
         "comparable": False,
         "reason": "",
         "changes": [],

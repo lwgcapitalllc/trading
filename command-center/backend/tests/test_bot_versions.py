@@ -227,3 +227,67 @@ def test_values_render_the_way_the_banner_prints_them(value, expected):
 
 def test_an_unparsed_value_renders_as_a_question_mark_not_as_a_number():
     assert bv._render(bv._UNPARSED) == "?"
+
+
+# ── what the VPS can actually REACH ─────────────────────────────────────────────
+#
+# 🔴 MEASURED 2026-08-14: a successful deploy of mpc_sos_fade_demo landed v164 while the
+# backtester read v165, because the single commit between them was unpushed. The promote pulls
+# on the VPS, so the remote — not this laptop's HEAD — is the ceiling on what can be deployed.
+# Every number on the banner was correct and nothing on it explained why pressing Deploy again
+# would change nothing.
+
+def test_a_bot_with_no_trees_cannot_be_asked_what_is_unpushed():
+    """`None`, never `[]`. An empty list is the claim *everything is pushed*, and there is no
+    such measurement for a bot whose code we cannot name."""
+    assert bv.unpushed_commits([]) is None
+
+
+def test_no_upstream_reads_as_UNKNOWN_rather_than_all_pushed(monkeypatch):
+    """A detached HEAD or a branch tracking nothing cannot answer this. Returning `[]` would put
+    a silent all-clear on the one line that explains a deploy landing short."""
+    monkeypatch.setattr(bv, "_git", lambda *a: None if a[0] == "rev-parse" else "")
+    assert bv.unpushed_commits(["engines"]) is None
+
+
+def test_an_upstream_that_holds_everything_is_an_empty_list_not_None(monkeypatch):
+    """The other half of the same rule: *measured, nothing outstanding* is a real answer and has
+    to be distinguishable from *could not ask*."""
+    calls = {"rev-parse": "origin/main\n", "log": ""}
+    monkeypatch.setattr(bv, "_git", lambda *a: calls.get(a[0]))
+    assert bv.unpushed_commits(["engines"]) == []
+
+
+def test_unpushed_commits_are_listed_one_per_line(monkeypatch):
+    """The banner renders the COUNT and puts the subjects on the tooltip, so a blank-line artefact
+    would inflate the count the reader acts on."""
+    log = "6a71a9f feat(signals): announce on the retrace\n\n72405c1 fix(signals): wording\n"
+    monkeypatch.setattr(bv, "_git",
+                        lambda *a: "origin/main\n" if a[0] == "rev-parse" else log)
+    got = bv.unpushed_commits(["engines"])
+    assert got == ["6a71a9f feat(signals): announce on the retrace", "72405c1 fix(signals): wording"]
+
+
+def test_it_asks_only_about_THIS_BOTS_trees(monkeypatch):
+    """A commit to `algos/live/` is unpushed code that this bot does not run — counting it would
+    tell the reader to push before a deploy that is already complete."""
+    seen: list[tuple] = []
+
+    def fake(*a):
+        seen.append(a)
+        return "origin/main\n" if a[0] == "rev-parse" else ""
+
+    monkeypatch.setattr(bv, "_git", fake)
+    bv.unpushed_commits(["strategies/python/mpc_sos_fade", "engines", "backtest"])
+    log = next(a for a in seen if a[0] == "log")
+    assert "--" in log
+    assert log[log.index("--") + 1:] == ("strategies/python/mpc_sos_fade", "engines", "backtest")
+
+
+def test_compare_carries_the_unpushed_list_so_the_banner_can_explain_a_short_deploy():
+    """It rides on every `compare()` result, INCLUDING the ones that refuse — a bot that has
+    never been promoted is exactly where 'push first' is worth saying before the first deploy."""
+    r = bv.compare("mpc_sos_fade", "", {})
+    assert "unpushed_commits" in r
+    r2 = bv.compare("mpc_sos_fade", "HEAD", {})
+    assert "unpushed_commits" in r2

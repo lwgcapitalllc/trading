@@ -321,7 +321,7 @@ function Warn({ children }: { children: React.ReactNode }) {
 // disabled state and the preview gate to drift apart — on the one control that changes what a
 // live account trades.
 function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string }) {
-  const { data: v, isLoading } = useBotVersion(botKey)
+  const { data: v, isLoading, isFetching } = useBotVersion(botKey)
   const preview = usePreviewPromote()
   const promote = usePromoteBot()
   // 🔴 This was a bare `output: string | null`, so a FINISHED deploy rendered under the
@@ -333,8 +333,20 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
     { kind: 'preview' | 'deploy'; ok: boolean; restarted: boolean; output: string } | null
   >(null)
   const [showChanges, setShowChanges] = useState(false)
+  // A FINISHED deploy shows its `<pre>` only on request. The output is the thing you read
+  // while deciding whether to press the button and the thing you read when it FAILS — after a
+  // success it is 40 lines of confirmation sitting under a green line that already said so,
+  // holding the panel open in the shape it had before the deploy. A failure keeps it open.
+  const [showOutput, setShowOutput] = useState(false)
 
-  const busy = preview.isPending || promote.isPending
+  // 🔴 `usePromoteBot` invalidates this bot's version on success, so for the length of that
+  // refetch EVERY number on this banner still describes the state BEFORE the deploy — the
+  // versions behind, the settings that would change, and the Deploy button's own `v163 → v165`
+  // label. Leaving the button live across that window is what makes a finished deploy read as
+  // a pending one and invites a second press on stale data.
+  const deployed = result?.kind === 'deploy' && result.ok
+  const refreshing = deployed && isFetching
+  const busy = preview.isPending || promote.isPending || refreshing
   const c = v?.compare ?? null
 
   if (isLoading) {
@@ -365,11 +377,17 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
   // the same question and dropping it makes "not affected" look like "not checked".
   const willChange = c.setting_changes.filter(s => !s.stated)
   const pinned = c.setting_changes.filter(s => s.stated)
+  // `null` is "no upstream to ask" — not "everything is pushed". Both render nothing here, but
+  // they must never be collapsed into one value upstream of this line.
+  const unpushed = c.unpushed_commits ?? []
+  // The highest version a promote could actually land right now.
+  const deployable = c.local_version == null ? null : c.local_version - unpushed.length
 
   const deployBtn = (
     <button
       onClick={() => {
         setResult(null)
+        setShowOutput(false)
         preview.mutate({ botName: botKey }, {
           onSuccess: r => setResult({ kind: 'preview', ok: r.ok, restarted: false, output: r.output }),
         })
@@ -381,7 +399,9 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
         : 'text-[10px] text-text-tertiary hover:text-text-secondary'}`}
     >
       <Upload size={behind > 0 ? 13 : 10} />
-      {busy ? 'working…'
+      {promote.isPending ? 'deploying…'
+        : refreshing ? 'checking…'
+        : preview.isPending ? 'working…'
         : behind > 0 ? `Deploy v${c.deployed_version} → v${c.local_version}`
         : 'Re-deploy'}
     </button>
@@ -433,7 +453,27 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
         </p>
       )}
 
-      {behind > 0 && (
+      {/* 🔴 The reason a successful deploy can leave a bot behind, and the page said nothing
+          about it until 2026-08-14. A promote PULLS on the VPS, so the highest version it can
+          ever reach is the one on the remote — a commit sitting unpushed here is unreachable
+          however many times Deploy is pressed. `null` means there is no upstream to compare
+          against and renders nothing; `[]` is the measured "all pushed" and renders nothing
+          too. Only a real count speaks. */}
+      {unpushed.length > 0 && (
+        <p className="text-[10px] text-amber-400/90 mt-[9px] leading-[1.5]"
+           title={unpushed.join('\n')}>
+          <strong>{unpushed.length} commit{unpushed.length === 1 ? '' : 's'} touching this bot
+          {unpushed.length === 1 ? ' is' : ' are'} not pushed.</strong>{' '}
+          A promote pulls on the VPS, so it can only reach{' '}
+          <span className="font-mono">v{deployable}</span>
+          {deployable != null && c.local_version != null && deployable < c.local_version
+            ? <> — push first, or the bot lands {c.local_version - deployable} version
+                {c.local_version - deployable === 1 ? '' : 's'} short of your backtester.</>
+            : '.'}
+        </p>
+      )}
+
+      {behind > 0 && !refreshing && (
         <div className="mt-[11px] border-t border-amber-400/20 pt-[10px] space-y-[9px]">
           {willChange.length > 0 ? (
             <div>
@@ -492,9 +532,15 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
             <p className={`flex items-center gap-[6px] text-[12px] font-semibold mb-[6px] ${
               result.ok ? 'text-pos-text' : 'text-neg-text'}`}>
               {result.ok ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+              {/* 🔴 It named `c.local_version` — the BACKTESTER's version, i.e. what the reader
+                  asked for rather than what landed. Those differ whenever the deploy could not
+                  reach HEAD, which is exactly the unpushed case above: on 2026-08-14 this line
+                  read "running v165" over a bot running v164. It is `deployed_version` now, and
+                  it is withheld until the refetch answers — a version quoted from the pre-deploy
+                  payload is a claim about the thing that just changed. */}
               {result.ok
                 ? `Deployed${result.restarted
-                    ? ` — ${botLabel} restarted and is running v${c.local_version}`
+                    ? ` — ${botLabel} restarted${refreshing ? '' : ` and is running v${c.deployed_version}`}`
                     : ` — restart ${botLabel} to pick it up`}`
                 : `Deploy failed — ${botLabel} is untouched and still on v${c.deployed_version}`}
             </p>
@@ -503,9 +549,18 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
               Checked the code on the VPS — nothing deployed yet
             </p>
           )}
-          <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
-                          whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto
-                          bg-bg-base/60 rounded p-[8px]">{result.output}</pre>
+          {refreshing && (
+            <p className="text-[10px] text-text-tertiary mb-[6px]">re-reading the deployed version…</p>
+          )}
+          {/* A preview's output IS the thing you read before deciding, and a failure's output is
+              the only place the reason lives. A SUCCESS has already been summarised by the green
+              line above, so it collapses behind a toggle — that `<pre>` holding the panel open in
+              its pre-deploy shape is what made a finished deploy look like a pending one. */}
+          {(result.kind === 'preview' || !result.ok || showOutput) && (
+            <pre className="text-[10px] leading-[1.45] font-mono text-text-secondary
+                            whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto
+                            bg-bg-base/60 rounded p-[8px]">{result.output}</pre>
+          )}
           <div className="flex items-center gap-[8px] mt-[9px] flex-wrap">
             {/* The deploy button exists ONLY on the preview. Leaving it up after a successful
                 deploy is what made a finished promote read as a pending one. */}
@@ -527,8 +582,17 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
                 <PackageCheck size={12} /> Deploy &amp; restart <span className="font-mono">{botLabel}</span>
               </button>
             )}
+            {deployed && (
+              <button
+                data-testid="deploy-output-toggle"
+                onClick={() => setShowOutput(s => !s)}
+                className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
+              >
+                {showOutput ? 'Hide output' : 'Show output'}
+              </button>
+            )}
             <button
-              onClick={() => setResult(null)}
+              onClick={() => { setResult(null); setShowOutput(false) }}
               className="text-[10px] px-[10px] py-[5px] rounded text-text-tertiary hover:text-text-secondary"
             >
               {result.kind === 'deploy' ? 'Close' : 'Cancel'}
