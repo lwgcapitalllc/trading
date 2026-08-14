@@ -2056,6 +2056,39 @@ assertion passes against a broken banner. That is the third instance recorded he
 (`svg.first()` was the sidebar logo; a page-wide Retry matched the page header's own).
 `data-testid="version-banner"` is a declared test seam and **every assertion is scoped to it**.
 
+#### The confirmation says one thing, and the dirty-file line said a FALSE one (2026-08-14)
+
+Aaron, on the v168 promote: *"this confirmation looks complicated."* Two separate faults stacked
+under one green tick.
+
+🔴 **The dirty-file warning claimed a refusal that cannot happen, and a promote had just
+disproved it six inches above.** It read *"a promote refuses a dirty tree — commit or revert
+first"* over a deploy of v168 that succeeded with **54 files edited here**. The two dirty checks
+run on DIFFERENT MACHINES: `promote.py::dirty_paths` runs on the VPS and measures the VPS's own
+checkout, while `compare().uncommitted_files` measures THIS laptop. A local edit cannot block a
+promote and never could. It now says what is true — those files are not in v168, so a lab run
+here is not testing what the bot has, and committing and pushing is how they reach it.
+⚠ **This is `unpushed_commits` from the other end**: there the page understated what a promote
+could reach, here it invented a reason one would be refused. **Both come from reading a fact
+measured on one machine as though it described the other.** ⚠ **The VPS-side dirty state — the
+one that really does refuse — is still not measured anywhere on this page.**
+
+🔴 **And the success line restated the header.** *"Deployed — MPC SOS Fade restarted and is
+running v168"* sat directly under *"MPC SOS Fade is up to date · Deployed v168 · Backtester
+v168"*, with the bot's name in the page title above both: the version three times, the name
+three times, under two green ticks. It is **`Deployed and restarted`** now. ⚠ **A FAILURE stays
+explicit** (`Deploy failed — <bot> is untouched and still on v164`) and the asymmetry is the
+point: after a success the header has re-read the version and agrees, while after a failure the
+banner still describes the state BEFORE the attempt, so the line must carry the version itself.
+⚠ **The *restart it to pick it up* branch also stays explicit** — nothing in the header says the
+running process is older than the snapshot on disk.
+
+⚠ **`the success line names the version that LANDED` MOVED rather than went.** Its subject was a
+string that no longer exists, and the rule it guards is live — a deploy that could not reach HEAD
+must never be described as having landed there — so it asserts the HEADER now, where that fact
+went. **Re-mutated to confirm it still bites**: rendering `local_version` as the deployed version
+turns it red.
+
 ## The Accounts tab is a RAIL + DETAIL, not a stack of cards (2026-08-12)
 
 `AccountsTab` was a card per account, stacked down the page. Aaron's report is the spec for what

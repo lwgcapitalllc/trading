@@ -573,8 +573,8 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
               (<span className="font-mono">{c.uncommitted_files[0]}</span>)
             </>
           ) : null}
-          . Not part of v{c.local_version}, and a promote refuses a dirty tree — commit or revert
-          first.
+          . Not in v{c.local_version}, so a lab run here is not testing what the bot has. Commit and
+          push to deploy them.
         </p>
       )}
 
@@ -684,12 +684,16 @@ function VersionBanner({ botKey, botLabel }: { botKey: string; botLabel: string 
                   read "running v165" over a bot running v164. It is `deployed_version` now, and
                   it is withheld until the refetch answers — a version quoted from the pre-deploy
                   payload is a claim about the thing that just changed. */}
+              {/* Terse on SUCCESS, explicit on FAILURE, and the asymmetry is the point. The
+                  header directly above already reads "up to date · Deployed v168 · Backtester
+                  v168", so naming the bot and the version again is the same fact three times
+                  and it is what made a working confirmation read as complicated. A FAILURE has
+                  no such header — the banner still describes the state before the attempt — so
+                  it has to say the version itself. */}
               {result.ok
-                ? `Deployed${
-                    result.restarted
-                      ? ` — ${botLabel} restarted${refreshing ? '' : ` and is running v${c.deployed_version}`}`
-                      : ` — restart ${botLabel} to pick it up`
-                  }`
+                ? result.restarted
+                  ? 'Deployed and restarted'
+                  : `Deployed — restart ${botLabel} to pick it up`
                 : `Deploy failed — ${botLabel} is untouched and still on v${c.deployed_version}`}
             </p>
           ) : (

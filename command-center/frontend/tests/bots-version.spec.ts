@@ -227,13 +227,19 @@ test('a setting the deployed version never had says so — it does not claim it 
 })
 
 test('uncommitted edits are called out with the file named', async ({ page }) => {
-  // MUTATION: drop the dirty-tree block. `promote.py` refuses a dirty tree, so without this the
-  // reader meets that refusal with no explanation — and the backtester really is running those
-  // edits while the version number describes a commit.
+  // MUTATION: drop the dirty-tree block. The backtester really is running those edits while the
+  // version number beside them describes a commit, so a lab result and a deployed version can
+  // silently disagree with nothing on screen accounting for it.
+  //
+  // 🔴 **It must NOT say a promote refuses a dirty tree, and it did until 2026-08-14.** These
+  // files are on THIS machine; `promote.py::dirty_paths` runs on the VPS and measures the VPS's
+  // own checkout. A promote of v168 succeeded with 54 files edited here, directly under a
+  // sentence saying it would be refused.
   await mockBot(page, compare({ uncommitted_files: ['backtest/replay/loop.py'] }))
   await openConfigure(page)
   await expect(banner(page).getByText(/1 edited file/)).toBeVisible()
   await expect(banner(page).getByText(/backtest\/replay\/loop\.py/)).toBeVisible()
+  await expect(banner(page).getByText(/refuses a dirty tree/)).toHaveCount(0)
 })
 
 // ── the bug Aaron hit: a finished deploy that read as a pending one ─────────────
@@ -254,7 +260,11 @@ test('a finished deploy says DEPLOYED and withdraws the deploy button', async ({
   await banner(page)
     .getByRole('button', { name: /Deploy & restart/ })
     .click()
-  await expect(banner(page).getByText(/Deployed — .* restarted and is running v121/)).toBeVisible()
+  // The confirmation is TERSE — the header beside it already reads "up to date · Deployed v121
+  // · Backtester v121", and repeating the bot and the version there is what made a working
+  // confirmation read as complicated.
+  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
+  await expect(banner(page).getByText(/MPC SOS Fade restarted/)).toHaveCount(0)
   await expect(banner(page).getByText(/nothing deployed yet/)).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: /Deploy & restart/ })).toHaveCount(0)
   await expect(banner(page).getByRole('button', { name: 'Close' })).toBeVisible()
@@ -322,7 +332,7 @@ test('a successful deploy collapses the panel and stops offering the deploy it j
   await banner(page)
     .getByRole('button', { name: /Deploy & restart/ })
     .click()
-  await expect(banner(page).getByText(/Deployed —/)).toBeVisible()
+  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
 
   // The banner has re-read the version and turned over to the up-to-date state.
   await expect(banner(page).getByText(/is up to date/)).toBeVisible()
@@ -369,7 +379,7 @@ test('the promote output is one click away, not thrown away', async ({ page }) =
   await banner(page)
     .getByRole('button', { name: /Deploy & restart/ })
     .click()
-  await expect(banner(page).getByText(/Deployed —/)).toBeVisible()
+  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
 
   await banner(page).getByTestId('deploy-output-toggle').click()
   await expect(banner(page).getByText(/pinned 556bf70c18b7/)).toBeVisible()
@@ -449,8 +459,15 @@ test('the success line names the version that LANDED, not the one in the backtes
   await banner(page)
     .getByRole('button', { name: /Deploy & restart/ })
     .click()
-  await expect(banner(page).getByText(/restarted and is running v120/)).toBeVisible()
-  await expect(banner(page).getByText(/is running v121/)).toHaveCount(0)
+  // ⚠ **The success line no longer names a version and this check MOVED rather than went**
+  // (2026-08-14): the header carries it, so that is where the claim is now pinned. The rule is
+  // unchanged and is the one that was live — a deploy that could not reach HEAD must never be
+  // described as having landed there.
+  await expect(banner(page).getByText(/Deployed and restarted/)).toBeVisible()
+  await expect(banner(page).getByText('v120').first()).toBeVisible()
+  // Nowhere on the banner does v121 read as the DEPLOYED version.
+  await expect(banner(page).getByText(/running v121/)).toHaveCount(0)
+  await expect(banner(page).getByText(/Deployed v121/)).toHaveCount(0)
   // And it is honest that the bot is still short of the backtester.
   await expect(banner(page).getByText(/is 1 version behind/)).toBeVisible()
 })
