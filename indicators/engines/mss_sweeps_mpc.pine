@@ -1112,6 +1112,10 @@ string msMarkSizeIn = input.string("Large", "Sweep marker size", options = ["Tin
 bool   msRejectText  = input.bool(false, "Label rejected sweeps with the reason", group = GRP_MSSTY, tooltip = "Print the failing gate next to the grey cross. Useful while you are deciding whether the trend filter earns its place; noisy afterwards.")
 color  msRejectCol   = input.color(#787b86, "Rejected sweep", group = GRP_MSSTY, tooltip = "Rejected sweeps are deliberately a neutral grey — never a dimmed green or red, because a washed-out green reads as a weak BUY rather than as no trade at all.")
 string msRejectSizeIn = input.string("Small", "Rejected marker size", options = ["Tiny", "Small", "Normal", "Large"], group = GRP_MSSTY)
+bool   msShowLevelTag = input.bool(true, "Tag the armed level", group = GRP_MSSTY, tooltip = "Put a tag on the right end of every armed level reading direction, level type and price — e.g. \"▲ iHL 3891.20\". Without it a dashed line is just a line: you cannot tell a protected LOW waiting to be swept downward from a protected HIGH waiting to be swept upward.")
+color  msArmBullCol   = input.color(#26a69a, "Armed level — bullish (protected iHL)", group = GRP_MSSTY, tooltip = "A protected higher low. Price is expected to dip THROUGH it and close back above — a long.")
+color  msArmBearCol   = input.color(#ef5350, "Armed level — bearish (protected iLH)", group = GRP_MSSTY, tooltip = "A protected lower high. Price is expected to poke ABOVE it and close back below — a short.")
+string msLevelColMode = input.string("By direction", "Armed level colour", options = ["By direction", "Single colour"], group = GRP_MSSTY, tooltip = "By direction = green for a protected low, red for a protected high, so the line itself says which way the trade would be. Single colour falls back to the \"Protected level\" colour above.")
 
 string msRejectSize = msRejectSizeIn == "Tiny" ? size.tiny : msRejectSizeIn == "Normal" ? size.normal : msRejectSizeIn == "Large" ? size.large : size.small
 
@@ -1205,6 +1209,16 @@ f_msWhyShort(bool dirOk, bool runOk) =>
     not dirOk ? "wrong trend" : not runOk ? "trend too young" : ""
 
 // ── Draw and disarm ──────────────────────────────────────
+// The armed level carries a live tag on its right end. It is a separate object from the line
+// because it has to be re-anchored every bar as the line extends, and because on a sweep it is
+// REPLACED (with a "SWEPT" tag frozen at the sweep bar) rather than deleted.
+var label msArmLbl = na
+
+f_msDropTag() =>
+    if not na(msArmLbl)
+        label.delete(msArmLbl)
+    int _dropped = 0
+
 f_msCloseLine() =>
     if not na(msArmLine)
         line.set_x2(msArmLine, bar_index)
@@ -1223,6 +1237,11 @@ if msSweepLow
             line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBullCol, style = line.style_solid, width = 2)
             if msShowZone
                 box.new(bar_index - 1, msArmLevel, bar_index + 1, low, xloc = xloc.bar_index, border_color = color.new(msBullCol, 30), bgcolor = color.new(msBullCol, 75))
+            // Names the level that was taken, at the price it was taken at. "A sweep happened
+            // here" and "THIS level was swept" are different facts and only the second one is
+            // actionable — it is the stop.
+            if msShowLevelTag
+                label.new(bar_index + 2, msArmLevel, "▲ SWEPT iHL " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = msBullCol, size = size.small)
     else
         msCntFiltered += 1
         if msShowFiltered
@@ -1234,19 +1253,23 @@ if msSweepLow
             float _roff = na(msAtr) ? 0.0 : msAtr * 0.5
             label.new(bar_index, low - _roff, msRejectText ? f_msWhyShort(msExtOkLong, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bullish HL sweep — NOT TAKEN\n\n" + f_msWhy(msExtOkLong, msRunOk, "bullish"))
     f_msCloseLine()
+    f_msDropTag()
     msArmDir := 0
     msArmLevel := na
     msArmLoc := na
     msArmBar := na
     msArmLine := na
+    msArmLbl := na
 else if msFailLow
     msCntFailed += 1
     f_msCloseLine()
+    f_msDropTag()
     msArmDir := 0
     msArmLevel := na
     msArmLoc := na
     msArmBar := na
     msArmLine := na
+    msArmLbl := na
 
 if msSweepHigh
     msCntRaw += 1
@@ -1258,25 +1281,31 @@ if msSweepHigh
             line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, color = msBearCol, style = line.style_solid, width = 2)
             if msShowZone
                 box.new(bar_index - 1, high, bar_index + 1, msArmLevel, xloc = xloc.bar_index, border_color = color.new(msBearCol, 30), bgcolor = color.new(msBearCol, 75))
+            if msShowLevelTag
+                label.new(bar_index + 2, msArmLevel, "▼ SWEPT iLH " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = msBearCol, size = size.small)
     else
         msCntFiltered += 1
         if msShowFiltered
             float _roff = na(msAtr) ? 0.0 : msAtr * 0.5
             label.new(bar_index, high + _roff, msRejectText ? f_msWhyShort(msExtOkShort, msRunOk) : "", style = label.style_xcross, color = msRejectCol, textcolor = msRejectCol, size = msRejectSize, tooltip = "Bearish LH sweep — NOT TAKEN\n\n" + f_msWhy(msExtOkShort, msRunOk, "bearish"))
     f_msCloseLine()
+    f_msDropTag()
     msArmDir := 0
     msArmLevel := na
     msArmLoc := na
     msArmBar := na
     msArmLine := na
+    msArmLbl := na
 else if msFailHigh
     msCntFailed += 1
     f_msCloseLine()
+    f_msDropTag()
     msArmDir := 0
     msArmLevel := na
     msArmLoc := na
     msArmBar := na
     msArmLine := na
+    msArmLbl := na
 
 // ── Invalidation that is NOT a sweep ─────────────────────
 // 🔴 This is the defect in the LuxAlgo original, fixed. There, the armed direction survives an
@@ -1292,11 +1321,13 @@ if msArmDir != 0 and (msShiftAgainst or msExtAgainst or msStale)
     if msStale and not msShiftAgainst and not msExtAgainst
         msCntExpired += 1
     f_msCloseLine()
+    f_msDropTag()
     msArmDir := 0
     msArmLevel := na
     msArmLoc := na
     msArmBar := na
     msArmLine := na
+    msArmLbl := na
 
 // ── Arm on a continuation break ──────────────────────────
 // Armed UNCONDITIONALLY — the trend filter is applied to the signal, not to the arming, so
@@ -1314,27 +1345,39 @@ bool msArmBear = int_bear_bos and not na(i_last_lh) and (na(i_last_lh_loc[1]) or
 
 if msArmBull
     f_msCloseLine()
+    f_msDropTag()
     msArmDir   := 1
     msArmLevel := i_last_hl
     msArmLoc   := i_last_hl_loc
     msArmBar   := bar_index
     msCntArmed += 1
-    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = msLevelCol, style = line.style_dashed, width = msLevelWidth) : na
+    color _c = msLevelColMode == "Single colour" ? msLevelCol : msArmBullCol
+    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = _c, style = line.style_dashed, width = msLevelWidth) : na
+    msArmLbl   := msShowLevelTag ? label.new(bar_index + 2, msArmLevel, "▲ iHL " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = _c, size = size.small, tooltip = "Protected higher low, armed by a bullish iBOS.\nWaiting for price to dip through it and CLOSE back above.\nThat close would be a long.") : na
 
 if msArmBear
     f_msCloseLine()
+    f_msDropTag()
     msArmDir   := -1
     msArmLevel := i_last_lh
     msArmLoc   := i_last_lh_loc
     msArmBar   := bar_index
     msCntArmed += 1
-    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = msLevelCol, style = line.style_dashed, width = msLevelWidth) : na
+    color _c = msLevelColMode == "Single colour" ? msLevelCol : msArmBearCol
+    msArmLine  := msShowLevel ? line.new(msArmLoc, msArmLevel, bar_index, msArmLevel, xloc = xloc.bar_index, extend = extend.right, color = _c, style = line.style_dashed, width = msLevelWidth) : na
+    msArmLbl   := msShowLevelTag ? label.new(bar_index + 2, msArmLevel, "▼ iLH " + str.tostring(msArmLevel, format.mintick), xloc = xloc.bar_index, style = label.style_label_left, color = color(na), textcolor = _c, size = size.small, tooltip = "Protected lower high, armed by a bearish iBOS.\nWaiting for price to poke above it and CLOSE back below.\nThat close would be a short.") : na
+
+// ── Keep the live tag on the right end of the line ───────
+// The line uses extend.right, so its visible end moves every bar while the label does not.
+// Without this the tag strands itself back at the bar the level was armed on.
+if not na(msArmLbl)
+    label.set_x(msArmLbl, bar_index + 2)
 
 // ── Stats table ──────────────────────────────────────────
 // Read "raw" against "signalled". A filter that removes most of the sample and leaves the same
 // hit rate has not helped; it has just made the sample smaller. That question is settled by
 // replaying it, not by this table — the table only tells you how big the difference IS.
-var table msTbl = table.new(position.top_right, 2, 10, border_width = 1)
+var table msTbl = table.new(position.top_right, 2, 12, border_width = 1)
 
 if barstate.islast and msShowStats
     table.cell(msTbl, 0, 0, "MSS Sweeps (MPC)", text_color = chart.fg_color, text_size = size.small, bgcolor = color.new(msLevelCol, 70))
@@ -1360,6 +1403,10 @@ if barstate.islast and msShowStats
     table.cell(msTbl, 1, 8, "SIGNAL — shaded wick, tinted bar", text_color = msBullCol, text_size = size.small)
     table.cell(msTbl, 0, 9, "✕ grey",   text_color = msRejectCol, text_size = size.small)
     table.cell(msTbl, 1, 9, "swept, refused — hover for the gate", text_color = msRejectCol, text_size = size.small)
+    table.cell(msTbl, 0, 10, "▲ iHL",  text_color = msArmBullCol, text_size = size.small)
+    table.cell(msTbl, 1, 10, "armed low — dip through, close above = long", text_color = msArmBullCol, text_size = size.small)
+    table.cell(msTbl, 0, 11, "▼ iLH",  text_color = msArmBearCol, text_size = size.small)
+    table.cell(msTbl, 1, 11, "armed high — poke above, close below = short", text_color = msArmBearCol, text_size = size.small)
 
 // ── Signal bar tint ──────────────────────────────────────
 // bgcolor() has to be a top-level call, so it cannot live inside the drawing blocks above.
